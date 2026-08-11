@@ -52,7 +52,7 @@ describe('Phase 9 registration email rendering', () => {
   test('waitlist joined email explains when a teammate was added by someone else', () => {
     const rendered = renderRegistrationEmail('waitlist_joined', {
       leagueName: 'Late Doubles',
-      waitlistType: 'ADD',
+      priorityRank: 3,
       position: 2,
       waitlistSize: 5,
       addedByName: 'Alice Example',
@@ -61,7 +61,7 @@ describe('Phase 9 registration email rendering', () => {
 
     expect(rendered.subject).toBe('You were added to the Late Doubles waitlist');
     expect(rendered.textBody).toContain('Alice Example added you to this waitlist.');
-    expect(rendered.textBody).toContain('Your waitlist entry type: ADD to this league');
+    expect(rendered.textBody).toContain('Your priority: #3 on your league priority list');
     expect(rendered.textBody).toContain(
       'If you believe this was a mistake, please reach out to Alice Example.',
     );
@@ -70,22 +70,19 @@ describe('Phase 9 registration email rendering', () => {
     );
   });
 
-  test('waitlist joined email shows entry type, replaced league, and position of total', () => {
+  test('waitlist joined email shows priority rank and position of total', () => {
     const rendered = renderRegistrationEmail('waitlist_joined', {
       leagueName: 'Late Doubles',
-      waitlistType: 'REPLACE',
-      replacementLeagueName: 'Early Doubles',
+      priorityRank: 2,
       position: 2,
       waitlistSize: 5,
       dashboardUrl: 'https://example.test/registration/view',
     });
 
     expect(rendered.subject).toBe('You have joined the Late Doubles waitlist');
-    expect(rendered.textBody).toContain('Waitlist entry type: REPLACE one of your leagues');
-    expect(rendered.textBody).toContain('Replaces league: Early Doubles');
+    expect(rendered.textBody).toContain('Your priority: #2 on your league priority list');
     expect(rendered.textBody).toContain('Current position: 2 of 5');
     expect(rendered.textBody).toContain('View waitlist: https://example.test/registration/view');
-    expect(rendered.htmlBody).not.toContain('Replacement league');
   });
 
   test('temporary offer email includes no-response and temporary spot wording', () => {

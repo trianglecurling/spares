@@ -37,9 +37,7 @@ type EntryTeamMemberRow = {
   memberId: number | null;
   memberName: string | null;
   pendingName: string | null;
-  entryType: 'add' | 'replace';
-  replacesLeagueId: number | null;
-  replacesLeagueName: string | null;
+  priorityRank: number | null;
   points: number;
   countsAsReturning: boolean;
   registered: boolean;
@@ -144,8 +142,6 @@ type TeamEditorMemberRow = {
   key: string;
   memberId: number | '';
   pendingName: string;
-  entryType: 'add' | 'replace';
-  replacesLeagueId: number | null;
 };
 
 type TeamEditorState = {
@@ -156,7 +152,7 @@ type TeamEditorState = {
 };
 
 function emptyTeamEditorMember(index: number): TeamEditorMemberRow {
-  return { key: `new-${index}-${Date.now()}`, memberId: '', pendingName: '', entryType: 'add', replacesLeagueId: null };
+  return { key: `new-${index}-${Date.now()}`, memberId: '', pendingName: '' };
 }
 
 export default function LeaguePlayInEntryTab({ leagueId }: { leagueId: number }) {
@@ -262,8 +258,6 @@ export default function LeaguePlayInEntryTab({ leagueId }: { leagueId: number })
           key: `existing-${member.id}`,
           memberId: member.memberId ?? '',
           pendingName: member.pendingName ?? '',
-          entryType: member.entryType,
-          replacesLeagueId: member.replacesLeagueId,
         })),
       });
       return;
@@ -283,8 +277,6 @@ export default function LeaguePlayInEntryTab({ leagueId }: { leagueId: number })
       .map((member) => ({
         memberId: member.memberId === '' ? null : member.memberId,
         pendingName: member.memberId === '' ? member.pendingName.trim() || null : null,
-        entryType: member.entryType,
-        replacesLeagueId: member.entryType === 'replace' ? member.replacesLeagueId : null,
       }));
     if (members.length === 0) {
       showAlert('Add at least one teammate before saving.', 'warning');
@@ -627,9 +619,7 @@ export default function LeaguePlayInEntryTab({ leagueId }: { leagueId: number })
                         {' · '}
                         <span className="tabular-nums">{formatTlinePoints(member.points)} pts</span>
                         {member.memberId != null ? (member.registered ? ' · registered' : ' · not registered') : null}
-                        {member.entryType === 'replace'
-                          ? ` · REPLACE${member.replacesLeagueName ? ` (${member.replacesLeagueName})` : ''}`
-                          : ''}
+                        {member.priorityRank != null ? ` · priority ${member.priorityRank}` : ''}
                       </li>
                     ))}
                   </ul>

@@ -3,7 +3,6 @@ import { config } from '../config.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { sendRegistrationEmailForDashboard } from './registrationEmailService.js';
 import { getActiveWaitlistEntryPosition } from './waitlistEntityService.js';
-import { memberParticipationOnWaitlistEntry } from './waitlistMemberMembership.js';
 import { parseTeamRosterPlacements } from './waitlistTeamRoster.js';
 import { waitlistMemberDisplayName } from './waitlistAudit.js';
 
@@ -51,24 +50,6 @@ export async function sendWaitlistEntryJoinedNotifications(input: {
   for (const member of members) {
     if (!member.email?.trim()) continue;
 
-    const participation = memberParticipationOnWaitlistEntry(member.id, {
-      memberId: entry.member_id,
-      entryType: entry.entry_type,
-      replacesLineageStartLeagueId: entry.replaces_lineage_start_league_id,
-      originalReplacesLeagueId: entry.original_replaces_league_id,
-      teamRosterPlacements: entry.team_roster_placements,
-    });
-
-    let replacementLeagueName: string | null = null;
-    if (participation.entryType === 'replace' && participation.replacesLeagueId != null) {
-      const [replacementLeague] = await db
-        .select({ name: schema.leagues.name })
-        .from(schema.leagues)
-        .where(eq(schema.leagues.id, participation.replacesLeagueId))
-        .limit(1);
-      replacementLeagueName = replacementLeague?.name ?? null;
-    }
-
     const recipientRegistrationId = input.registrationId ?? entry.source_registration_id ?? null;
     const isPrimarySelfJoin =
       member.id === input.addedByMemberId &&
@@ -85,8 +66,7 @@ export async function sendWaitlistEntryJoinedNotifications(input: {
         waitlistEntryId: input.entryId,
         payload: {
           leagueName: input.leagueName,
-          waitlistType: participation.entryType === 'replace' ? 'REPLACE' : 'ADD',
-          replacementLeagueName,
+          priorityRank: entry.priority_rank,
           position,
           waitlistSize: total,
           addedByName: isPrimarySelfJoin ? null : addedByName,

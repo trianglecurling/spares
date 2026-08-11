@@ -10,16 +10,6 @@ A login identity in the application.
 
 The app uses email-based login without passwords. A person may have access to more than one curler account, including through delegated impersonation.
 
-## ADD waitlist entry
-
-A waitlist entry where the registrant wants to add the league as an additional league.
-
-A registrant may be on ADD waitlists only if adding that league would result in them being in no more than two leagues.
-
-There is no limit to the number of ADD waitlists a registrant may be on while eligible.
-
-If a registrant reaches two leagues, existing ADD waitlist entries must be resolved immediately by either removing them or converting up to two of them to REPLACE entries.
-
 ## Anonymous visitor
 
 A person visiting the site who is not logged in.
@@ -35,10 +25,9 @@ Each curler registers individually, but registrants must provide teammate inform
 BYOT leagues:
 
 - Have team-based capacity.
-- Do not use the waitlist system.
 - Do not use the sabbatical system.
-- Cannot be selected as a third league.
-- Must count as one of the registrant’s first two leagues.
+- Must be ranked above every standard league on the priority list.
+- Require a full team roster on the priority entry.
 - Are treated as guaranteed for payment purposes, although staff may later manually refund or adjust if a curler is not placed.
 
 ## Club Bonspiel
@@ -127,13 +116,24 @@ A registering team is guaranteed automatic entry when its total strictly exceeds
 
 ## Guaranteed return
 
-A protected right for a returning member to return to an eligible league during priority registration.
+A protected right for a returning member to return to an eligible league during priority registration, granted when the league is ranked 1st or 2nd on the registrant's priority list.
 
-A member may claim up to two protected league spots total during priority registration.
+A member may claim up to two protected league spots total during priority registration, and never more than their desired league count.
 
-Protected claims include guaranteed returns and sabbaticals.
+Protected claims include guaranteed returns, guaranteed fallbacks, and sabbaticals.
 
-To receive a guaranteed return, the member must register during priority registration and must be eligible based on league continuity and prior participation. Play-in based leagues do not offer guaranteed returns.
+To receive a guaranteed return, the member must register during priority registration and must be eligible based on league continuity and prior participation. For a play-in based league, the declared entry team must also have a full roster and clear the TLINE guarantee bar.
+
+## Guaranteed fallback
+
+A held league spot granted for a return-eligible league ranked 3rd or lower on
+the priority list, when fewer than two guaranteed returns were granted.
+
+A guaranteed fallback is billed and rostered exactly like a guaranteed return.
+The difference is intent: the registrant would rather have a higher-ranked
+league and keeps the fallback if those do not come through.
+
+Play-in based leagues never receive a guaranteed fallback.
 
 ## Ice privileges
 
@@ -210,20 +210,25 @@ League fees may vary by league.
 
 League fees confer session-specific ice privileges.
 
+## League priority list
+
+The ordered list of leagues a registrant wants to play in, most wanted first,
+collected on a single page during registration alongside the desired league
+count.
+
+The list may be longer than the desired league count. Each entry derives a
+guarantee label from its rank and the registrant's return rights. See
+`league-priority.md`.
+
 ## League selection
 
-A league-related choice made during registration.
+A league-related choice made during registration that is not a priority list
+entry:
 
-Examples include:
-
-- Guaranteed return.
 - Sabbatical.
 - Drop.
-- Return subject to availability.
-- Waitlist ADD.
-- Waitlist REPLACE.
-- Third-league interest.
-- BYOT request.
+- Junior Recreational.
+- Spare-only.
 
 ## Member
 
@@ -294,15 +299,14 @@ A league whose roster is decided by TLINE points and playdowns instead of guaran
 
 The top teams by combined TLINE points receive automatic entry. The remaining spots are decided by playdowns.
 
-## Play-in request
+## Play-in entry
 
-A league selection type for joining a play-in based league.
+A priority list entry for a play-in based league.
 
-Play-in requests declare a full entry team and follow the same ADD/REPLACE semantics as waitlist entries. Payment is immediate for guaranteed teams and deferred otherwise.
-
-A play-in request does not count as one of the two protected claims. If two
-guaranteed returns are also selected, the registrant must choose a REPLACE
-target for the play-in request.
+The entry declares an entry team. A full roster that clears the TLINE guarantee
+bar earns a Guaranteed return label, is billed immediately, and consumes one of
+the two protected claims. Anything else is Subject to availability and defers
+payment. A play-in entry never receives a Guaranteed fallback.
 
 ## Playdown
 
@@ -336,19 +340,17 @@ Anyone may register during priority registration, including new members, but onl
 
 ## Protected claim
 
-A guaranteed return or sabbatical.
+A guaranteed return, guaranteed fallback, or sabbatical.
 
-A member may have at most two protected claims during priority registration.
+A member may have at most two protected claims during priority registration, and
+never more than their desired league count.
 
 Examples:
 
 - Two guaranteed returns.
 - One guaranteed return and one sabbatical.
+- Two guaranteed fallbacks.
 - Two sabbaticals.
-
-A play-in request does not count as a protected claim. A member may select two
-guaranteed returns and also join a competitive league; if so, they must choose
-which league to replace if they get into the play-in league.
 
 A member may not play in two guaranteed-return leagues and also hold a third league on sabbatical.
 
@@ -359,16 +361,6 @@ The primary membership type for curlers.
 Regular membership is required for normal league participation and spare-only registration.
 
 Regular members may be eligible for ice privileges, league registration, spare-only registration, discounts, and the Club Bonspiel.
-
-## REPLACE waitlist entry
-
-A waitlist entry where the registrant wants to join a league by replacing one of their current leagues.
-
-A REPLACE entry must identify which current league would be given up if the waitlist offer is accepted.
-
-The REPLACE target cannot be a play-in league.
-
-A registrant may have at most two active REPLACE waitlist entries.
 
 ## Registration
 
@@ -393,12 +385,6 @@ Possible states:
 The person completing the registration form.
 
 The registrant may be registering themselves or another curler.
-
-## Return subject to availability
-
-A choice indicating that a returning member would like to return to a previous league but is not claiming or cannot claim a guaranteed return spot.
-
-This is treated as non-guaranteed and may be handled through availability or waitlist procedures.
 
 ## Returning member
 
@@ -507,19 +493,11 @@ The person filling the spot:
 
 The original sabbatical member cannot return mid-session.
 
-## Third-league interest
+## Subject to availability
 
-An ordered list of additional leagues a registrant would be interested in if third-league spots are available.
-
-Third-league interest:
-
-- Is ranked by the registrant.
-- Has no limit.
-- Is not a formal waitlist.
-- Is handled after first/second league demand is satisfied.
-- Defers payment.
-- May be processed manually by staff.
-- Cannot include BYOT leagues.
+The guarantee label for a priority list entry that is neither guaranteed nor
+queueable, because the league has no waitlist. The registrant wants it; staff
+place them if room exists. Defers payment.
 
 ## TLINE points
 

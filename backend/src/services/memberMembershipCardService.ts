@@ -40,21 +40,6 @@ const UNPAID_MEMBERSHIP_REGISTRATION_STATUSES = [
  * commits roster rows. Waitlists/sabbaticals/third-league interest are handled
  * elsewhere (or intentionally omitted).
  */
-const OPTIMISTIC_MEMBERSHIP_CARD_LEAGUE_SELECTION_TYPES = [
-  'guaranteed_return',
-  'byot_request',
-  'instructional_join',
-  'return_subject_to_availability',
-  'play_in_request',
-] as const;
-
-const TERMINAL_REGISTRATION_SELECTION_STATUSES = [
-  'dropped',
-  'not_placed',
-  'cancelled',
-  'declined',
-] as const;
-
 const DASHBOARD_SESSION_CACHE_TTL_MS = 10 * 60 * 1000;
 
 type DashboardSession = {
@@ -387,51 +372,6 @@ async function loadPendingRegistrationMembershipGrant(
 }
 
 /**
- * League choices on unpaid submitted registrations. Roster rows are not written
- * while checkout is still required, so surface these optimistically as pending.
- */
-async function loadPendingUnpaidRegistrationLeagues(
-  memberId: number,
-  sessionId: number,
-): Promise<Array<{ leagueId: number; leagueName: string; participation: 'roster' }>> {
-  const { db, schema } = getDrizzleDb();
-  const rows = await db
-    .select({
-      leagueId: schema.leagues.id,
-      leagueName: schema.leagues.name,
-    })
-    .from(schema.registrationSelections)
-    .innerJoin(
-      schema.curlingRegistrations,
-      eq(schema.registrationSelections.registration_id, schema.curlingRegistrations.id),
-    )
-    .innerJoin(schema.leagues, eq(schema.registrationSelections.league_id, schema.leagues.id))
-    .where(
-      and(
-        eq(schema.curlingRegistrations.curler_member_id, memberId),
-        eq(schema.curlingRegistrations.session_id, sessionId),
-        inArray(schema.curlingRegistrations.status, [...UNPAID_MEMBERSHIP_REGISTRATION_STATUSES]),
-        inArray(schema.registrationSelections.selection_type, [...OPTIMISTIC_MEMBERSHIP_CARD_LEAGUE_SELECTION_TYPES]),
-        // Exclude terminal outcomes; unpaid selections are usually confirmed/pending.
-        notInArray(schema.registrationSelections.status, [...TERMINAL_REGISTRATION_SELECTION_STATUSES]),
-      ),
-    )
-    .orderBy(asc(schema.leagues.day_of_week), asc(schema.leagues.name));
-
-  // Use roster participation (no badge): the card already shows pending registration payment.
-  const byLeagueId = new Map<number, { leagueId: number; leagueName: string; participation: 'roster' }>();
-  for (const row of rows) {
-    if (byLeagueId.has(row.leagueId)) continue;
-    byLeagueId.set(row.leagueId, {
-      leagueId: row.leagueId,
-      leagueName: row.leagueName,
-      participation: 'roster',
-    });
-  }
-  return Array.from(byLeagueId.values());
-}
-
-/**
  * Play-in leagues where the member is on an active entry declaration but not
  * yet on the league roster (staff has not granted entry). Guaranteed teams are
  * listed like roster; others get pending (may still need to play in).
@@ -496,7 +436,7 @@ async function loadSessionLeagues(memberId: number, sessionId: number): Promise<
     { leagueId: number; leagueName: string; participation: MembershipCardLeagueParticipation }
   >();
 
-  const [rosterRows, sabbaticalRows, waitlistRows, playInEntryRows, pendingRegistrationRows] = await Promise.all([
+  const [rosterRows, sabbaticalRows, waitlistRows, playInEntryRows] = await Promise.all([
     db
       .select({
         leagueId: schema.leagueRoster.league_id,
@@ -550,7 +490,6 @@ async function loadSessionLeagues(memberId: number, sessionId: number): Promise<
       .where(eq(schema.waitlistEntries.status, 'active'))
       .orderBy(asc(schema.leagues.day_of_week), asc(schema.leagues.name)),
     loadPlayInEntryLeagues(memberId, sessionId),
-    loadPendingUnpaidRegistrationLeagues(memberId, sessionId),
   ]);
 
   for (const row of rosterRows) {
@@ -596,19 +535,9 @@ async function loadSessionLeagues(memberId: number, sessionId: number): Promise<
     });
   }
 
-  for (const row of pendingRegistrationRows) {
-    if (byLeagueId.has(row.leagueId)) continue;
-    byLeagueId.set(row.leagueId, {
-      leagueId: row.leagueId,
-      leagueName: row.leagueName,
-      participation: row.participation,
-    });
-  }
-
   return {
     leagues: Array.from(byLeagueId.values()).sort((a, b) => a.leagueName.localeCompare(b.leagueName)),
-    // Unpaid submitted league selections should also unlock optimistic ice privileges.
-    onSessionRoster: rosterRows.length > 0 || pendingRegistrationRows.length > 0 || playInEntryRows.length > 0,
+    onSessionRoster: rosterRows.length > 0 || playInEntryRows.length > 0,
   };
 }
 

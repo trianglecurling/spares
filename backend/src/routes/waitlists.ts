@@ -79,22 +79,18 @@ const detailQuerySchema = z.object({
 const reasonSchema = z.object({ reason: z.string().min(1) });
 const teamRosterPlacementSchema = z.object({
   memberId: z.number().int().positive(),
-  entryType: z.enum(['add', 'replace']),
-  replacesLeagueId: z.number().int().positive().optional().nullable(),
 });
 const teamRosterPlacementsSchema = z.array(teamRosterPlacementSchema).optional().nullable();
 const createEntrySchema = z.object({
   placementLeagueId: z.number().int().positive(),
   memberId: z.number().int().positive(),
-  entryType: z.enum(['add', 'replace']),
-  replacesLeagueId: z.number().int().positive().optional().nullable(),
   teamRosterText: z.string().optional().nullable(),
   teamRosterPlacements: teamRosterPlacementsSchema,
   reason: z.string().min(1),
 });
 const updateEntrySchema = z.object({
-  entryType: z.enum(['add', 'replace']).optional(),
-  replacesLeagueId: z.number().int().positive().optional().nullable(),
+  priorityRank: z.number().int().positive().optional().nullable(),
+  desiredLeagueCount: z.number().int().positive().optional().nullable(),
   teamRosterText: z.string().optional().nullable(),
   teamRosterPlacements: teamRosterPlacementsSchema,
   reason: z.string().min(1),
@@ -130,8 +126,6 @@ const processVacanciesSchema = z.object({
   override: z.boolean().optional(),
 });
 const joinWaitlistSchema = z.object({
-  entryType: z.enum(['add', 'replace']).optional(),
-  replacesLeagueId: z.number().int().positive().optional().nullable(),
   teamRosterText: z.string().optional().nullable(),
   teamRosterPlacements: teamRosterPlacementsSchema,
 });
@@ -216,8 +210,6 @@ export async function waitlistRoutes(fastify: FastifyInstance): Promise<void> {
       return await joinMemberWaitlist({
         member,
         waitlistId: params.waitlistId,
-        entryType: body.entryType,
-        replacesLeagueId: body.replacesLeagueId,
         teamRosterText: body.teamRosterText,
         teamRosterPlacements: body.teamRosterPlacements,
       });
@@ -271,8 +263,6 @@ export async function waitlistRoutes(fastify: FastifyInstance): Promise<void> {
         waitlistId: params.waitlistId,
         placementLeagueId: body.placementLeagueId,
         memberId: body.memberId,
-        entryType: body.entryType,
-        replacesLeagueId: body.replacesLeagueId,
         teamRosterText: body.teamRosterText,
         teamRosterPlacements: body.teamRosterPlacements,
         reason: body.reason,
@@ -338,8 +328,8 @@ export async function waitlistRoutes(fastify: FastifyInstance): Promise<void> {
         entryId: params.entryId,
         actorMemberId: member.id,
         reason: body.reason,
-        entryType: body.entryType,
-        replacesLeagueId: body.replacesLeagueId,
+        priorityRank: body.priorityRank,
+        desiredLeagueCount: body.desiredLeagueCount,
         teamRosterText: body.teamRosterText,
         teamRosterPlacements: body.teamRosterPlacements,
       });

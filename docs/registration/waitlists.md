@@ -2,17 +2,19 @@
 
 ## Purpose
 
-Waitlists are used when a standard league has more interested curlers than
-available spots.
+Waitlists are used when a league has more interested curlers than available
+spots.
 
-A waitlist records a curler's interest in joining a standard league, either by
-adding that league or by replacing another league.
+A waitlist records a curler's interest in joining a league. Every entry on a
+registrant's priority list that is labeled Waitlisted becomes a waitlist entry
+at submit, carrying its priority rank and the registrant's desired league count.
+See `league-priority.md`.
 
 Waitlists are not used for:
 
-- Bring-your-own-team leagues
 - Junior Recreational
-- Third-league interest
+- Leagues configured without a waitlist, where the entry is instead labeled
+  Subject to availability
 
 ---
 
@@ -49,58 +51,37 @@ Club experience accrues at 0.5 years per completed session, with a maximum of
 
 ---
 
-## Waitlist types
+## Entry shape
 
-Each waitlist entry has one intent:
+There is no ADD or REPLACE entry type. Each entry carries:
 
-- ADD
-- REPLACE
+- `priority_rank` — where the league sat on the registrant's priority list
+- `desired_league_count` — how many leagues the registrant wants in total
 
----
+Both are snapshots taken at submit. Together they say everything the old entry
+types said, and they stay correct when the registrant's circumstances change.
 
-## ADD waitlist entries
-
-ADD means the curler wants to add the league while ending up in no more than two
+There is no limit on the number of waitlists a curler may be on. Entries are
+first-come, first-served within each waitlist and roll forward to successor
 leagues.
 
-Rules:
-
-- ADD is allowed only if the curler currently has zero or one league for the
-  session.
-- There is no limit on the number of ADD waitlists.
-- ADD entries are first-come, first-served within the waitlist.
-- ADD entries roll forward to successor leagues.
-- Once a curler reaches two leagues, active ADD entries must be resolved.
-
-When a curler reaches two leagues, they must choose for each active ADD entry:
-
-- Remove the entry; or
-- Convert it to REPLACE and identify which league would be replaced.
-
-If converting entries to REPLACE would exceed the two-REPLACE-entry limit, the
-curler must remove enough entries to comply.
-
-Registration progress should be blocked until this cleanup is complete.
-
 ---
 
-## REPLACE waitlist entries
+## Displacement
 
-REPLACE means the curler wants to join the waitlisted league by giving up
-another league.
+Whether a placement costs the curler another league is decided when the offer is
+accepted, not when the entry is created.
 
-Rules:
+On acceptance:
 
-- A REPLACE entry must identify the league that would be replaced.
-- The REPLACE target cannot be a play-in league.
-- A curler may have at most two active REPLACE waitlist entries.
-- REPLACE entries are first-come, first-served within the waitlist.
-- REPLACE entries roll forward to successor leagues.
+1. Place the curler on the league roster.
+2. If they now hold more leagues than their desired league count, release their
+   lowest-priority held league. Guaranteed spots are never released this way.
+3. Skip any of their remaining entries that rank below the leagues they now
+   hold, because those spots can no longer be used.
 
-The system must clearly show both:
-
-- The league the curler wants to join.
-- The league the curler would give up.
+The registration and staff UI should show the curler's full priority list so it
+is clear which league would be given up.
 
 ---
 
@@ -124,21 +105,14 @@ removed, moved, or otherwise modified according to the rules.
 When a league has a configured successor, active waitlist entries automatically
 roll forward to the successor league.
 
-Rollover should preserve order.
+Rollover should preserve order, priority rank, and desired league count.
 
-Rollover should preserve the entry's ADD or REPLACE intent when still valid.
+An entry for a league where the curler no longer meets eligibility requirements
+must be resolved before the curler can complete relevant registration steps.
 
-If an entry becomes invalid because the curler's circumstances changed, the
-entry must be resolved before the curler can complete relevant registration
-steps.
-
-Examples of entries that may require cleanup:
-
-- An ADD entry for a curler who now has two leagues.
-- A REPLACE entry where the replacement league no longer exists or is no longer
-  held by the curler.
-- An entry for a league where the curler no longer meets eligibility
-  requirements.
+Because entries no longer name a specific replacement league, rollover cannot
+be invalidated by the curler dropping or gaining a league. The desired count and
+rank remain meaningful regardless.
 
 ---
 
@@ -148,25 +122,32 @@ After priority registration closes, staff may process waitlists.
 
 Placement priority for standard leagues is:
 
-1. Guaranteed returns and sabbatical returns are resolved first.
-2. Remaining permanent spots are offered to the waitlist.
+1. Guaranteed returns, guaranteed fallbacks, and sabbatical returns are resolved
+   first. These are already rostered at submit.
+2. Remaining permanent spots are offered to the waitlist in queue order.
 3. Temporary sabbatical spots are offered to the waitlist separately.
-4. Third-league requests are handled only after first/second league demand is
-   satisfied.
 
 Permanent vacancies are filled before temporary sabbatical-fill vacancies.
+
+An entry is eligible for an offer only when:
+
+- The curler currently holds fewer leagues than their desired league count, and
+- None of their higher-ranked entries are still awaiting a response.
+
+This is what keeps a curler's third and later choices from being filled before
+everyone's first and second choices have been considered.
 
 ---
 
 ## Offer response rule
 
-When a waitlist offer is sent, it includes a response deadline chosen by staff.
+Entries created from registration default to `auto_accept`, because the priority
+list and desired count already state the curler's intent. Those offers resolve
+immediately without contacting the curler.
 
-If the curler does not accept by that deadline, the offer is treated as
-declined.
-
-Most curlers pre-select auto-accept or auto-decline during priority
-registration, so staff usually know the intended response before sending.
+When an entry's preference is `ask`, the offer includes a response deadline
+chosen by staff. If the curler does not accept by that deadline, the offer is
+treated as declined.
 
 Suggested user-facing wording:
 
@@ -215,23 +196,6 @@ Temporary sabbatical-fill spots are offered after permanent vacancies.
 
 ---
 
-## Third-league interest is not a waitlist
-
-Third-league interest is separate from the waitlist system.
-
-A curler may provide an ordered list of third-league options during
-registration.
-
-Third-league interest:
-
-- Has no maximum number of choices.
-- Is not first-come, first-served.
-- Does not create waitlist entries.
-- Is handled manually or outside the application for V1.
-- Defers payment.
-
----
-
 ## Auditing
 
 Any waitlist update must be audited.
@@ -244,10 +208,10 @@ Audit at least the following events:
 - Entry created
 - Entry removed
 - Entry rolled forward
-- Entry converted from ADD to REPLACE
-- Entry converted from REPLACE to ADD, if allowed
-- Replacement league changed
+- Priority rank changed
+- Desired league count changed
 - Entry moved to bottom after second decline
+- League released by displacement after a placement
 - Entry manually reordered by staff
 - Offer sent
 - Offer accepted

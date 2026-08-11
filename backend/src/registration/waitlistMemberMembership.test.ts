@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
   isPrimaryWaitlistEntryMember,
-  memberParticipationOnWaitlistEntry,
   waitlistEntryIncludesMember,
   waitlistTeammateContactMessage,
 } from './waitlistMemberMembership.js';
@@ -10,10 +9,7 @@ describe('waitlistMemberMembership', () => {
   test('treats primary and roster members as on the waitlist entry', () => {
     const entry = {
       memberId: 10,
-      teamRosterPlacements: JSON.stringify([
-        { memberId: 10, entryType: 'add' },
-        { memberId: 20, entryType: 'replace', replacesLeagueId: 5 },
-      ]),
+      teamRosterPlacements: JSON.stringify([{ memberId: 10 }, { memberId: 20 }]),
     };
 
     expect(waitlistEntryIncludesMember(10, entry)).toBe(true);
@@ -29,21 +25,9 @@ describe('waitlistMemberMembership', () => {
     );
   });
 
-  test('uses each member placement for participation details', () => {
-    const entry = {
-      memberId: 10,
-      entryType: 'add' as const,
-      replacesLineageStartLeagueId: null,
-      originalReplacesLeagueId: null,
-      teamRosterPlacements: JSON.stringify([
-        { memberId: 10, entryType: 'add' },
-        { memberId: 20, entryType: 'replace', replacesLeagueId: 5 },
-      ]),
-    };
-
-    expect(memberParticipationOnWaitlistEntry(20, entry)).toEqual({
-      entryType: 'replace',
-      replacesLeagueId: 5,
-    });
+  test('an entry without a declared roster still includes its primary member', () => {
+    const entry = { memberId: 10, teamRosterPlacements: null };
+    expect(waitlistEntryIncludesMember(10, entry)).toBe(true);
+    expect(waitlistEntryIncludesMember(20, entry)).toBe(false);
   });
 });

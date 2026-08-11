@@ -1,6 +1,6 @@
 import { eq, inArray } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
-import type { LeagueEntryTeamStatusSqlite, WaitlistEntryTypeSqlite } from '../db/drizzle-schema.js';
+import type { LeagueEntryTeamStatusSqlite } from '../db/drizzle-schema.js';
 
 /**
  * Play-in ("TLINE") entry evaluation for play-in based leagues.
@@ -304,8 +304,6 @@ export type LeagueEntryTeamMemberRow = {
   memberId: number | null;
   memberName: string | null;
   pendingName: string | null;
-  entryType: WaitlistEntryTypeSqlite;
-  replacesLeagueId: number | null;
   sourceRegistrationId: number | null;
 };
 
@@ -405,8 +403,6 @@ export async function loadLeagueEntryTeams(leagueId: number): Promise<LeagueEntr
       entryTeamId: schema.leagueEntryTeamMembers.entry_team_id,
       memberId: schema.leagueEntryTeamMembers.member_id,
       pendingName: schema.leagueEntryTeamMembers.pending_name,
-      entryType: schema.leagueEntryTeamMembers.entry_type,
-      replacesLeagueId: schema.leagueEntryTeamMembers.replaces_league_id,
       sourceRegistrationId: schema.leagueEntryTeamMembers.source_registration_id,
     })
     .from(schema.leagueEntryTeamMembers)
@@ -444,8 +440,6 @@ export async function loadLeagueEntryTeams(leagueId: number): Promise<LeagueEntr
         memberId: row.memberId ?? null,
         memberName: row.memberId != null ? names.get(row.memberId) ?? `Member #${row.memberId}` : null,
         pendingName: row.pendingName ?? null,
-        entryType: row.entryType,
-        replacesLeagueId: row.replacesLeagueId ?? null,
         sourceRegistrationId: row.sourceRegistrationId ?? null,
       })),
   }));
@@ -470,6 +464,7 @@ export type PlayInLeagueConfigRow = {
   capacityValue: number;
   playInSpotCount: number;
   isPlayInBased: boolean;
+  sessionId: number | null;
 };
 
 export async function loadPlayInLeagueConfig(leagueId: number): Promise<PlayInLeagueConfigRow | null> {
@@ -483,6 +478,7 @@ export async function loadPlayInLeagueConfig(leagueId: number): Promise<PlayInLe
       capacityValue: schema.leagues.capacity_value,
       playInSpotCount: schema.leagues.play_in_spot_count,
       isPlayInBased: schema.leagues.is_play_in_based,
+      sessionId: schema.leagues.session_id,
     })
     .from(schema.leagues)
     .where(eq(schema.leagues.id, leagueId))
@@ -497,6 +493,7 @@ export async function loadPlayInLeagueConfig(leagueId: number): Promise<PlayInLe
     capacityValue: row.capacityValue,
     playInSpotCount: row.playInSpotCount,
     isPlayInBased: Boolean(row.isPlayInBased),
+    sessionId: row.sessionId ?? null,
   };
 }
 

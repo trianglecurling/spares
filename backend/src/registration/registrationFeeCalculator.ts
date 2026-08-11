@@ -1,8 +1,9 @@
 import { validateDiscountClaims } from './registrationEligibility.js';
 import type { DecisionMessage } from './registrationDecisionTypes.js';
+import { evaluateLeaguePriorities, type LeaguePriorityEvaluation } from './leaguePriorityEvaluation.js';
 import {
+  getLeague,
   getSelectionLeague,
-  isSelectionReplacedByGuaranteedPlayIn,
   type RegistrationContext,
   type RegistrationInvoiceLineKind,
 } from './registrationContext.js';
@@ -26,35 +27,42 @@ export type RegistrationFeePreview = {
   nonDiscountableSubtotalMinor: number;
   blockingErrors: DecisionMessage[];
   warnings: DecisionMessage[];
+  /**
+   * What the registrant could still owe if every league they asked for comes
+   * through, up to their desired league count. Equal to `totalDueMinor` when
+   * every wanted league is already guaranteed.
+   */
+  estimatedMaximumTotalDueMinor: number;
 };
 
 function positiveMinor(value: number): number {
   return Math.max(0, Math.round(value));
 }
 
-const REAL_LEAGUE_SELECTION_TYPES = new Set([
-  'guaranteed_return',
-  'return_subject_to_availability',
-  'waitlist_add',
-  'waitlist_replace',
-  'byot_request',
-  'play_in_request',
-  'instructional_join',
-]);
-
 /**
  * A curler gets the basic (spare-only) ice privilege fee when they explicitly chose basic ice
- * (regular_spare_only), or when they chose league play but only selected fee-0 leagues, which is
- * equivalent to basic ice. In the latter case the fee is added silently.
+ * (regular_spare_only), or when they chose league play but every league they are being charged for
+ * is free, which is equivalent to basic ice. In the latter case the fee is added silently.
  */
-function qualifiesForSpareOnlyIce(context: RegistrationContext): boolean {
+function qualifiesForSpareOnlyIce(context: RegistrationContext, chargedLeagueIds: number[]): boolean {
   if (context.membershipOption === 'regular_spare_only') return true;
   if (context.membershipOption !== 'regular') return false;
-  const realSelections = context.selections.filter(
-    (selection) => selection.leagueId != null && REAL_LEAGUE_SELECTION_TYPES.has(selection.selectionType)
-  );
-  if (realSelections.length === 0) return false;
-  return realSelections.every((selection) => (context.leagues[selection.leagueId!]?.registrationFeeMinor ?? 0) === 0);
+  if (chargedLeagueIds.length === 0) return false;
+  return chargedLeagueIds.every((leagueId) => (context.leagues[leagueId]?.registrationFeeMinor ?? 0) === 0);
+}
+
+/**
+ * The leagues that widen the estimate ceiling: the most expensive entries the
+ * registrant could still be placed into, up to their desired league count.
+ * Most expensive rather than next-by-priority so the quote is a true maximum.
+ */
+function ceilingLeagueIds(evaluation: LeaguePriorityEvaluation): number[] {
+  const remainingSlots = Math.max(0, evaluation.desiredLeagueCount - evaluation.guaranteedCount);
+  return evaluation.entries
+    .filter((entry) => !entry.guaranteed)
+    .sort((a, b) => b.feeMinor - a.feeMinor)
+    .slice(0, remainingSlots)
+    .map((entry) => entry.leagueId);
 }
 
 function addCharge(
@@ -173,32 +181,35 @@ function addOrdinaryDiscounts(context: RegistrationContext, lineItems: Registrat
   return discountLineItems;
 }
 
-function addSelectionCharges(context: RegistrationContext, lineItems: RegistrationFeeLineItem[]): void {
+function addLeagueCharges(
+  context: RegistrationContext,
+  lineItems: RegistrationFeeLineItem[],
+  chargedLeagueIds: number[],
+): void {
+  for (const leagueId of chargedLeagueIds) {
+    const league = getLeague(context, leagueId);
+    if (!league) continue;
+    addCharge(lineItems, {
+      lineType: 'league_fee',
+      description: `${league.name} league fee`,
+      amountMinor: league.registrationFeeMinor,
+      discountEligible: league.discountEligible !== false,
+      relatedLeagueId: league.id,
+      discountScope: 'eligible_invoice_items',
+    });
+  }
+
   for (const selection of context.selections) {
-    if (isSelectionReplacedByGuaranteedPlayIn(context, selection)) continue;
+    if (selection.selectionType !== 'sabbatical') continue;
     const league = getSelectionLeague(context, selection);
-    if (
-      league &&
-      ['guaranteed_return', 'byot_request', 'play_in_request', 'instructional_join'].includes(selection.selectionType)
-    ) {
-      addCharge(lineItems, {
-        lineType: 'league_fee',
-        description: `${league.name} league fee`,
-        amountMinor: league.registrationFeeMinor,
-        discountEligible: league.discountEligible !== false,
-        relatedLeagueId: league.id,
-        discountScope: 'eligible_invoice_items',
-      });
-    }
-    if (league && selection.selectionType === 'sabbatical') {
-      addCharge(lineItems, {
-        lineType: 'sabbatical_fee',
-        description: `${league.name} sabbatical fee`,
-        amountMinor: context.priceConfig.sabbaticalFeeMinor,
-        discountEligible: false,
-        relatedLeagueId: league.id,
-      });
-    }
+    if (!league) continue;
+    addCharge(lineItems, {
+      lineType: 'sabbatical_fee',
+      description: `${league.name} sabbatical fee`,
+      amountMinor: context.priceConfig.sabbaticalFeeMinor,
+      discountEligible: false,
+      relatedLeagueId: league.id,
+    });
   }
 }
 
@@ -229,14 +240,11 @@ function zeroRegistrationFeePreview(): RegistrationFeePreview {
     nonDiscountableSubtotalMinor: 0,
     blockingErrors: [],
     warnings: [],
+    estimatedMaximumTotalDueMinor: 0,
   };
 }
 
-export function calculateRegistrationFees(context: RegistrationContext): RegistrationFeePreview {
-  if (context.registrant.hasLifetimeMembership) {
-    return zeroRegistrationFeePreview();
-  }
-
+function computePreview(context: RegistrationContext, chargedLeagueIds: number[]): RegistrationFeePreview {
   const lineItems: RegistrationFeeLineItem[] = [];
   const blockingErrors = validateDiscountClaims(context).blockingErrors;
 
@@ -257,7 +265,7 @@ export function calculateRegistrationFees(context: RegistrationContext): Registr
       discountEligible: false,
     });
   }
-  if (qualifiesForSpareOnlyIce(context)) {
+  if (qualifiesForSpareOnlyIce(context, chargedLeagueIds)) {
     addCharge(lineItems, {
       lineType: 'spare_only_fee',
       description: 'Basic ice privileges',
@@ -275,7 +283,7 @@ export function calculateRegistrationFees(context: RegistrationContext): Registr
     });
   }
 
-  addSelectionCharges(context, lineItems);
+  addLeagueCharges(context, lineItems, chargedLeagueIds);
 
   const ordinaryDiscounts = context.isSocialToRegularUpgrade ? [] : addOrdinaryDiscounts(context, lineItems);
   const sabbaticalFillDiscounts = addSabbaticalFillDiscounts(context);
@@ -304,15 +312,57 @@ export function calculateRegistrationFees(context: RegistrationContext): Registr
     .reduce((sum, item) => sum + item.amountMinor, 0);
   const nonDiscountableSubtotalMinor = subtotalMinor - discountEligibleSubtotalMinor;
 
+  const totalDueMinor = Math.max(0, subtotalMinor - discountTotalMinor);
+
   return {
     lineItems,
     discountLineItems,
     subtotalMinor,
     discountTotalMinor,
-    totalDueMinor: Math.max(0, subtotalMinor - discountTotalMinor),
+    totalDueMinor,
     discountEligibleSubtotalMinor,
     nonDiscountableSubtotalMinor,
     blockingErrors,
     warnings: [],
+    estimatedMaximumTotalDueMinor: totalDueMinor,
+  };
+}
+
+/**
+ * Fees for what the registrant is committed to today: membership, sabbaticals,
+ * and every guaranteed league on their priority list. Non-guaranteed leagues are
+ * not billed, because the registrant may never be placed in them; they only
+ * widen `estimatedMaximumTotalDueMinor`.
+ */
+export function calculateRegistrationFees(
+  context: RegistrationContext,
+  options?: {
+    /**
+     * Bill exactly these leagues instead of the guaranteed ones. Used once
+     * placement is settled, when the registrant owes for the leagues they were
+     * actually placed into rather than the ones they were promised.
+     */
+    chargedLeagueIds?: number[];
+  },
+): RegistrationFeePreview {
+  if (context.registrant.hasLifetimeMembership) {
+    return zeroRegistrationFeePreview();
+  }
+
+  if (options?.chargedLeagueIds) {
+    return computePreview(context, options.chargedLeagueIds);
+  }
+
+  const evaluation = evaluateLeaguePriorities(context);
+  const guaranteedLeagueIds = evaluation.entries.filter((entry) => entry.guaranteed).map((entry) => entry.leagueId);
+  const confirmed = computePreview(context, guaranteedLeagueIds);
+
+  const ceiling = ceilingLeagueIds(evaluation);
+  if (ceiling.length === 0) return confirmed;
+
+  const maximum = computePreview(context, [...guaranteedLeagueIds, ...ceiling]);
+  return {
+    ...confirmed,
+    estimatedMaximumTotalDueMinor: Math.max(confirmed.totalDueMinor, maximum.totalDueMinor),
   };
 }

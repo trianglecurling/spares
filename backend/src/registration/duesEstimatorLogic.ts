@@ -1,7 +1,7 @@
-import type { RegistrationMembershipOption, RegistrationSelectionInput, LeagueConfig } from './registrationContext.js';
+import type { RegistrationMembershipOption, LeaguePriorityInput, LeagueConfig } from './registrationContext.js';
 import { calculateRegistrationFees, type RegistrationFeePreview } from './registrationFeeCalculator.js';
 import type { PriceConfigInput, RegistrationDiscountSettingsStored } from './registrationConfigValidation.js';
-import { league, selection, registrationContext } from './registrationTestFixtures.js';
+import { league, priority, registrationContext } from './registrationTestFixtures.js';
 
 export type DuesSessionIceTime = 'none' | 'spare_only' | '1_league' | '2_leagues' | '3_leagues';
 
@@ -57,12 +57,9 @@ function buildSyntheticLeagues(count: number, sessionId: number, defaultFeeMinor
   return leagues;
 }
 
-function buildLeagueSelections(count: number): RegistrationSelectionInput[] {
+function buildLeaguePriorities(count: number): LeaguePriorityInput[] {
   return Array.from({ length: count }, (_, index) =>
-    selection({
-      leagueId: 90_000 + index,
-      selectionType: 'guaranteed_return',
-    }),
+    priority({ leagueId: 90_000 + index, priorityRank: index + 1 }),
   );
 }
 
@@ -211,6 +208,7 @@ function calculateSessionDues(input: {
       nonDiscountableSubtotalMinor: 0,
       blockingErrors: [],
       warnings: [],
+      estimatedMaximumTotalDueMinor: 0,
     };
   }
 
@@ -223,14 +221,16 @@ function calculateSessionDues(input: {
       ? leagueCountForIceTime(input.sessionSelection.iceTime)
       : 0;
   const leagues = buildSyntheticLeagues(leagueCount, input.session.id, input.priceConfig.defaultLeagueFeeMinor);
-  const selections = buildLeagueSelections(leagueCount);
+  const priorities = buildLeaguePriorities(leagueCount);
 
   const context = registrationContext({
     season: input.season,
     session: input.session,
     isFirstSessionOfSeason: input.isFirstSessionOfSeason,
     membershipOption,
-    selections,
+    selections: [],
+    priorities,
+    desiredLeagueCount: leagueCount,
     leagues,
     priceConfig: input.priceConfig,
     discountSettings: input.discountSettings,
@@ -249,7 +249,9 @@ function calculateSessionDues(input: {
     },
   });
 
-  let preview = calculateRegistrationFees(context);
+  let preview: RegistrationFeePreview = calculateRegistrationFees(context, {
+    chargedLeagueIds: priorities.map((entry) => entry.leagueId),
+  });
   if (input.subtractRegularMembership) {
     preview = subtractRegularMembershipCharge(preview);
   }
@@ -329,6 +331,7 @@ export function estimateAnnualDuesWithSettings(
           nonDiscountableSubtotalMinor: 0,
           blockingErrors: [],
           warnings: [],
+          estimatedMaximumTotalDueMinor: 0,
         };
 
   const fall = mapPreviewToBreakdown(fallPreview);

@@ -16,9 +16,9 @@ const faqItems: Array<{ question: string; answer: string; accent: string }> = [
     accent: 'border-t-teal-500 bg-gradient-to-b from-teal-50/80 to-white',
   },
   {
-    question: "What's the difference between ADD and REPLACE?",
+    question: 'What if I am offered a league I ranked below one I already hold?',
     answer:
-      'ADD means you want the league as your first or second league. REPLACE means you would give up a league you already hold to take this one. If you already hold two leagues, you can be on at most two REPLACE waitlists.',
+      'You are only offered leagues while you hold fewer than the number of leagues you asked to play. If accepting an offer would put you over that number, your lowest-priority league is released to make room.',
     accent: 'border-t-cyan-500 bg-gradient-to-b from-cyan-50/70 to-white',
   },
 ];
@@ -27,7 +27,7 @@ const alsoKnowItems: string[] = [
   'You may remove yourself from a waitlist at any time, but you lose your position; re-joining starts at the back with a fresh decline count.',
   'Permanent spots are offered before temporary sabbatical-fill spots.',
   'Joining a waitlist defers payment until placement is known.',
-  'Not available for the Tuesday competitive league (which uses a play-in system) or third-league interest.',
+  'Not available for the Tuesday competitive league, which uses a play-in system.',
   'Waitlists for doubles leagues are team-based. You must join the waitlist as a pair.'
 ];
 
@@ -36,7 +36,7 @@ export default function WaitlistsExplainerPage() {
     <PublicLayout>
       <SeoMeta
         title="League waitlists | Triangle Curling Club"
-        description="How league waitlists work: how to join, offers, declines, ADD vs REPLACE, and common questions."
+        description="How league waitlists work: how to join, offers, declines, priority order, and common questions."
         canonicalPath="/explainers/waitlists"
       />
 
@@ -63,9 +63,15 @@ export default function WaitlistsExplainerPage() {
               <h2 className="public-subheading text-teal-900">How to join a waitlist</h2>
               <ol className="list-decimal space-y-2 pl-5 text-sm text-gray-700 sm:text-base">
                 <li>Start registration and create an account if you do not already have one.</li>
-                <li>On the waitlists step, join one or more eligible league waitlists.</li>
-                <li>Choose ADD (add as a first or second league) or REPLACE (give up another league).</li>
-                <li>If you are already on a waitlist, confirm whether to auto-accept, auto-decline, or leave it.</li>
+                <li>
+                  On the league priority step, say how many leagues you want to play and list the leagues you want,
+                  most wanted first.
+                </li>
+                <li>
+                  Any league on your list that is not guaranteed to you becomes a waitlist entry carrying its place in
+                  your order.
+                </li>
+                <li>You can also join a league waitlist directly from the league page at any time.</li>
               </ol>
               <p className="pt-1">
                 <Link

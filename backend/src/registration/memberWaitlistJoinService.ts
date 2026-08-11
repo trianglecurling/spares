@@ -1,6 +1,5 @@
 import { and, desc, eq, inArray, lt, notInArray, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
-import type { WaitlistEntryTypeSqlite } from '../db/drizzle-schema.js';
 import type { Member } from '../types.js';
 import { RegistrationMemberValidationError } from './registrationMemberService.js';
 import { effectiveExperienceYears } from './registrationAgeExperience.js';
@@ -17,7 +16,6 @@ import {
 } from './registrationContext.js';
 import { getEffectiveRegistrationWindow } from './registrationShellService.js';
 import { getActiveWaitlistEntryPosition, resolvePlacementLeagueForWaitlist } from './waitlistEntityService.js';
-import { loadLeagueContinuityMap, resolveLeagueInSession } from './waitlistLineage.js';
 import { addWaitlistEntry, WaitlistStaffValidationError } from './waitlistStaffService.js';
 import {
   findActiveWaitlistEntryForMemberOnWaitlist,
@@ -82,14 +80,6 @@ const SUBMITTED_REGISTRATION_STATUSES = [
 ] as const;
 
 /** Registration selections that commit the member to a league roster for the session. */
-const ROSTER_BOUND_REGISTRATION_SELECTION_TYPES = ['guaranteed_return', 'byot_request', 'play_in_request'] as const;
-
-const INACTIVE_REGISTRATION_SELECTION_STATUSES = ['dropped', 'cancelled', 'declined', 'not_placed'] as const;
-
-function countsTowardAddWaitlistLimit(format: LeagueConfig['format']): boolean {
-  return format !== 'instructional';
-}
-
 function expectedByotRosterSize(format: LeagueConfig['format']): number | null {
   if (format === 'teams') return 4;
   if (format === 'doubles') return 2;
@@ -208,7 +198,6 @@ async function loadPriorSessionLeagueHoldsForCurrentSession(
   const priorRosterHolds = await loadLeagueHoldsFromRoster(memberId, priorSessionId);
   if (priorRosterHolds.length === 0) return [];
 
-  const continuityMap = await loadLeagueContinuityMap();
   const { db, schema } = getDrizzleDb();
   const currentLeagues = await db
     .select({
@@ -224,11 +213,7 @@ async function loadPriorSessionLeagueHoldsForCurrentSession(
 
   const mapped: MemberLeagueHold[] = [];
   for (const hold of priorRosterHolds) {
-    let currentLeagueId = resolveLeagueInSession(hold.leagueId, currentSessionId, continuityMap);
-    if (currentLeagueId == null) {
-      currentLeagueId =
-        currentLeagues.find((league) => league.predecessorLeagueId === hold.leagueId)?.id ?? null;
-    }
+    const currentLeagueId = currentLeagues.find((league) => league.predecessorLeagueId === hold.leagueId)?.id ?? null;
     if (currentLeagueId == null) continue;
     const currentLeague = currentLeagueById.get(currentLeagueId);
     if (!currentLeague) continue;
@@ -241,35 +226,6 @@ async function loadPriorSessionLeagueHoldsForCurrentSession(
   }
 
   return mapped;
-}
-
-async function loadLeagueHoldsFromRegistration(registrationId: number): Promise<MemberLeagueHold[]> {
-  const { db, schema } = getDrizzleDb();
-  const rows = await db
-    .select({
-      leagueId: schema.registrationSelections.league_id,
-      leagueName: schema.leagues.name,
-      format: schema.leagues.format,
-      isPlayInBased: schema.leagues.is_play_in_based,
-    })
-    .from(schema.registrationSelections)
-    .innerJoin(schema.leagues, eq(schema.registrationSelections.league_id, schema.leagues.id))
-    .where(
-      and(
-        eq(schema.registrationSelections.registration_id, registrationId),
-        sql`${schema.registrationSelections.league_id} IS NOT NULL`,
-        inArray(schema.registrationSelections.selection_type, [...ROSTER_BOUND_REGISTRATION_SELECTION_TYPES]),
-        notInArray(schema.registrationSelections.status, [...INACTIVE_REGISTRATION_SELECTION_STATUSES]),
-      ),
-    );
-  return rows
-    .filter((row): row is typeof row & { leagueId: number } => row.leagueId != null)
-    .map((row) => ({
-      leagueId: row.leagueId,
-      leagueName: row.leagueName,
-      format: row.format,
-      isPlayInBased: row.isPlayInBased === 1,
-    }));
 }
 
 async function loadLeagueHoldsFromRoster(memberId: number, sessionId: number): Promise<MemberLeagueHold[]> {
@@ -296,10 +252,6 @@ async function loadLeagueHoldsFromRoster(memberId: number, sessionId: number): P
     format: row.format,
     isPlayInBased: row.isPlayInBased === 1,
   }));
-}
-
-function waitlistReplaceableHolds(holds: MemberLeagueHold[]): MemberLeagueHold[] {
-  return holds.filter((hold) => !hold.isPlayInBased);
 }
 
 async function loadCompletedSessions(memberId: number): Promise<RegistrationContext['experience']['completedSessions']> {
@@ -423,6 +375,7 @@ async function buildMemberWaitlistContext(input: {
     existingWaitlistEntries: input.existingWaitlistEntries,
     leagues: { [input.placementLeague.id]: input.placementLeague },
     selections: [],
+    priorities: [],
     discountClaims: {},
     ...settings,
     sabbaticalDurationLimitYears: defaultSabbaticalDurationLimitYears(),
@@ -450,10 +403,8 @@ export async function getTeamMemberPlacementOptions(sessionId: number, memberIds
     {
       memberId: number;
       memberName: string;
-      addAvailable: boolean;
-      addBlockedReason: string | null;
-      replacementLeagues: Array<{ id: number; name: string; format: LeagueConfig['format'] }>;
-      activeReplaceWaitlists: number;
+      currentLeagueCount: number;
+      alreadyOnWaitlistCount: number;
     }
   > = {};
 
@@ -465,24 +416,11 @@ export async function getTeamMemberPlacementOptions(sessionId: number, memberIds
       `Member #${memberRow.id}`;
     const { holds } = await resolveMemberLeagueHolds(memberRow.id, sessionId);
     const existingWaitlistEntries = await loadExistingWaitlistEntriesForMember(memberRow.id, sessionId);
-    const countedLeagues = countLeaguesForAddLimit(holds);
-    const addAvailable = countedLeagues <= 1;
-    const activeReplaceWaitlists = existingWaitlistEntries.filter(
-      (entry) => isActiveWaitlistEntry(entry) && entry.entryType === 'replace',
-    ).length;
     result[memberRow.id] = {
       memberId: memberRow.id,
       memberName,
-      addAvailable,
-      addBlockedReason: addAvailable
-        ? null
-        : 'ADD waitlist entries are only available for members with zero or one current leagues.',
-      replacementLeagues: waitlistReplaceableHolds(holds).map((hold) => ({
-        id: hold.leagueId,
-        name: hold.leagueName,
-        format: hold.format,
-      })),
-      activeReplaceWaitlists,
+      currentLeagueCount: holds.length,
+      alreadyOnWaitlistCount: existingWaitlistEntries.filter((entry) => isActiveWaitlistEntry(entry)).length,
     };
   }
 
@@ -500,22 +438,17 @@ function mergeMemberLeagueHolds(holds: MemberLeagueHold[]): MemberLeagueHold[] {
 async function resolveMemberLeagueHolds(memberId: number, sessionId: number) {
   const submittedRegistration = await loadSubmittedRegistration(memberId, sessionId);
   const rosterHolds = await loadLeagueHoldsFromRoster(memberId, sessionId);
-  const registrationHolds = submittedRegistration
-    ? await loadLeagueHoldsFromRegistration(submittedRegistration.id)
-    : [];
+  // Guaranteed priority entries are already written to league_roster at submit,
+  // so a submitted registration adds nothing beyond the roster.
   const priorSessionHolds = submittedRegistration
     ? []
     : await loadPriorSessionLeagueHoldsForCurrentSession(memberId, sessionId);
-  const holds = mergeMemberLeagueHolds([...rosterHolds, ...registrationHolds, ...priorSessionHolds]);
+  const holds = mergeMemberLeagueHolds([...rosterHolds, ...priorSessionHolds]);
   return {
     holds,
     usesRegistration: submittedRegistration != null,
     registration: submittedRegistration,
   };
-}
-
-function countLeaguesForAddLimit(holds: MemberLeagueHold[]): number {
-  return holds.filter((hold) => countsTowardAddWaitlistLimit(hold.format)).length;
 }
 
 async function loadPlacementLeagueForWaitlist(waitlistId: number) {
@@ -585,22 +518,6 @@ export async function getMemberWaitlistJoinContext(member: Member, waitlistId: n
   ]);
   const warnings = experienceEvaluation.experienceWarning ? [experienceEvaluation.experienceWarning] : [];
 
-  const countedLeagues = countLeaguesForAddLimit(holds);
-  const addAvailable = countedLeagues <= 1;
-  const addBlockedReason = addAvailable
-    ? null
-    : 'ADD waitlist entries are only available for members with zero or one current leagues.'
-
-  const activeReplaceWaitlists = existingWaitlistEntries.filter(
-    (entry) => isActiveWaitlistEntry(entry) && entry.entryType === 'replace',
-  ).length;
-
-  const replacementLeagues = waitlistReplaceableHolds(holds).map((hold) => ({
-    id: hold.leagueId,
-    name: hold.leagueName,
-    format: hold.format,
-  }));
-
   const expectedRosterSize = expectedByotRosterSize(league.format);
   const requiresByotRoster = league.leagueType === 'bring_your_own_team';
 
@@ -616,11 +533,7 @@ export async function getMemberWaitlistJoinContext(member: Member, waitlistId: n
     alreadyOnWaitlist: Boolean(existingEntry),
     existingEntryId: existingEntry?.id ?? null,
     usesRegistration,
-    countedLeagues,
-    addAvailable,
-    addBlockedReason,
-    replacementLeagues,
-    activeReplaceWaitlists,
+    currentLeagueCount: holds.length,
     requiresByotRoster,
     expectedByotRosterSize: expectedRosterSize,
     blockingErrors,
@@ -632,14 +545,8 @@ export async function getMemberWaitlistJoinContext(member: Member, waitlistId: n
 export async function joinMemberWaitlist(input: {
   member: Member;
   waitlistId: number;
-  entryType?: WaitlistEntryTypeSqlite;
-  replacesLeagueId?: number | null;
   teamRosterText?: string | null;
-  teamRosterPlacements?: Array<{
-    memberId: number;
-    entryType: WaitlistEntryTypeSqlite;
-    replacesLeagueId?: number | null;
-  }> | null;
+  teamRosterPlacements?: Array<{ memberId: number }> | null;
 }) {
   const contextPayload = await getMemberWaitlistJoinContext(input.member, input.waitlistId);
   if (contextPayload.alreadyOnWaitlist) {
@@ -651,37 +558,10 @@ export async function joinMemberWaitlist(input: {
     });
   }
   const hasTeamPlacements = (input.teamRosterPlacements?.length ?? 0) > 0;
-  if (contextPayload.requiresByotRoster) {
-    if (!hasTeamPlacements && !input.teamRosterText?.trim()) {
-      throw new RegistrationMemberValidationError({
-        teamRosterPlacements: 'Provide team roster placement details for each player.',
-      });
-    }
-  } else {
-    const entryType = input.entryType ?? 'add';
-    if (entryType === 'add' && !contextPayload.addAvailable) {
-      throw new RegistrationMemberValidationError({
-        entryType: contextPayload.addBlockedReason ?? 'ADD waitlist entries are not available.',
-      });
-    }
-    if (entryType === 'replace') {
-      if (!input.replacesLeagueId) {
-        throw new RegistrationMemberValidationError({
-          replacesLeagueId: 'Select the league you want to replace.',
-        });
-      }
-      if (!contextPayload.replacementLeagues.some((league) => league.id === input.replacesLeagueId)) {
-        throw new RegistrationMemberValidationError({
-          replacesLeagueId: 'Select a league you currently hold.',
-        });
-      }
-      // Cap REPLACE waitlists only when ADD is unavailable (already at two leagues).
-      if (!contextPayload.addAvailable && contextPayload.activeReplaceWaitlists >= 2) {
-        throw new RegistrationMemberValidationError({
-          entryType: 'A member may have at most two active REPLACE waitlists when already holding two leagues.',
-        });
-      }
-    }
+  if (contextPayload.requiresByotRoster && !hasTeamPlacements && !input.teamRosterText?.trim()) {
+    throw new RegistrationMemberValidationError({
+      teamRosterPlacements: 'Provide team roster placement details for each player.',
+    });
   }
 
   let result;
@@ -689,16 +569,10 @@ export async function joinMemberWaitlist(input: {
     result = await addWaitlistEntry({
       leagueId: contextPayload.placementLeagueId,
       memberId: input.member.id,
-      entryType: input.entryType ?? 'add',
-      replacesLeagueId: input.entryType === 'replace' ? input.replacesLeagueId : null,
       teamRosterText: input.teamRosterText,
       teamRosterPlacements: input.teamRosterPlacements,
       actorMemberId: input.member.id,
-      reason:
-        (input.entryType ?? input.teamRosterPlacements?.find((placement) => placement.memberId === input.member.id)?.entryType) ===
-        'replace'
-          ? 'WAITLIST_REPLACE_CREATED'
-          : 'WAITLIST_ADD_CREATED',
+      reason: 'WAITLIST_ENTRY_CREATED',
       auditSource: 'member_self',
     });
   } catch (error) {
@@ -712,7 +586,6 @@ export async function joinMemberWaitlist(input: {
 
   return {
     entryId: result.entry.id,
-    entryType: result.entry.entry_type,
     position,
     queueTotal: total,
   };

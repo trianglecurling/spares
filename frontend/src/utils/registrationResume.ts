@@ -55,12 +55,7 @@ export const REGISTRATION_FLOW_STEPS = new Set([
   'discounts',
   'experience',
   'basic-ice',
-  'prior-league-selection',
-  'league-selection',
-  'league-requests',
-  'basic-ice-fallback',
-  'third-league-interest',
-  'league-summary',
+  'league-priority',
   'review',
 ]);
 
@@ -144,18 +139,17 @@ export function resumePointerMatchesGuestDraft(
 
 export function resolvePostShellResumeStepFromPayment(
   payment: RegistrationMembershipPaymentResumeShape,
-  options?: { hasPriorSeasonReturnLeagues?: boolean },
 ): string {
   const option = payment.selection.membershipOption;
 
   if (option === 'none') return 'discounts';
   if (option === 'social') return 'review';
-  if (option === 'junior_recreational') return 'league-summary';
-  if (option === 'regular_spare_only') return 'league-selection';
+  if (option === 'junior_recreational') return 'review';
+  if (option === 'regular_spare_only') return 'league-priority';
 
   const ice = payment.icePrivilegesChoice;
   if (ice && ice !== 'none') {
-    return options?.hasPriorSeasonReturnLeagues ? 'prior-league-selection' : 'league-selection';
+    return 'league-priority';
   }
 
   if (payment.selection.experienceType) {
@@ -173,7 +167,6 @@ export function resolveResumeStepFromDraft(input: {
   draft: RegistrationShellResumePayload;
   pointer: RegistrationResumePointerV1 | null;
   membershipPayment?: RegistrationMembershipPaymentResumeShape | null;
-  hasPriorSeasonReturnLeagues?: boolean;
 }): string {
   if (input.pointer && resumePointerMatchesDraft(input.pointer, input.draft)) {
     return input.pointer.step;
@@ -185,9 +178,7 @@ export function resolveResumeStepFromDraft(input: {
   }
 
   if (input.membershipPayment) {
-    return resolvePostShellResumeStepFromPayment(input.membershipPayment, {
-      hasPriorSeasonReturnLeagues: input.hasPriorSeasonReturnLeagues,
-    });
+    return resolvePostShellResumeStepFromPayment(input.membershipPayment);
   }
 
   return shellStep;

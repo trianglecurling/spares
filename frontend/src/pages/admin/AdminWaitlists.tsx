@@ -8,7 +8,6 @@ import FormField from '../../components/FormField';
 import Modal from '../../components/Modal';
 import MemberAutocomplete from '../../components/MemberAutocomplete';
 import MemberMultiSelect from '../../components/MemberMultiSelect';
-import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
 import {
   expectedByotRosterSize,
   formatTeamRosterHeadline,
@@ -23,13 +22,11 @@ import { useMemberOptions } from '../../contexts/MemberOptionsContext';
 import { memberHasScope } from '../../utils/permissions';
 import HelpCallout from '../../components/HelpCallout';
 import InlineStateMessage from '../../components/InlineStateMessage';
-import WaitlistTeamRosterPlacementsEditor from '../../components/waitlists/WaitlistTeamRosterPlacementsEditor';
 import {
   placementsAreComplete,
   syncPlacementsWithMembers,
   toPlacementPayload,
   type WaitlistTeamMemberPlacement,
-  type WaitlistTeamMemberPlacementOptions,
 } from '../../components/waitlists/waitlistTeamRosterShared';
 
 const PERMANENT_VACANCIES_HELP =
@@ -69,8 +66,6 @@ type WaitlistEntry = {
   memberId: number;
   memberName: string;
   memberEmail: string;
-  entryType: 'add' | 'replace';
-  replacesLeagueId: number | null;
   teamRosterText?: string | null;
   team_roster_text?: string | null;
   teamRosterPlacements?: WaitlistTeamMemberPlacement[];
@@ -78,8 +73,8 @@ type WaitlistEntry = {
   declineCount: number;
   offerResponsePreference?: WaitlistOfferResponsePreference;
   offerResponsePreferenceLabel?: string;
-  desiredAddWaitlistLeagueCount?: number | null;
-  addWaitlistPriorityRank?: number | null;
+  desiredLeagueCount?: number | null;
+  priorityRank?: number | null;
   status: string;
   pendingOffer: WaitlistOffer | null;
   acceptedOffer: WaitlistOffer | null;
@@ -138,11 +133,6 @@ type ReasonDialogState = {
   onSubmit: (reason: string, options?: { expiresAt?: string }) => Promise<void>;
 } | null;
 
-const ENTRY_TYPE_OPTIONS: ChoiceOption<'add' | 'replace'>[] = [
-  { value: 'add', label: 'Add as an additional league' },
-  { value: 'replace', label: 'Replace an existing league' },
-];
-
 type WaitlistJoinContext = {
   waitlistId: number;
   placementLeagueId: number;
@@ -156,10 +146,6 @@ type WaitlistJoinContext = {
   existingEntryId: number | null;
   usesRegistration: boolean;
   countedLeagues: number;
-  addAvailable: boolean;
-  addBlockedReason: string | null;
-  replacementLeagues: Array<{ id: number; name: string; format: string }>;
-  activeReplaceWaitlists: number;
   requiresByotRoster: boolean;
   expectedByotRosterSize: number | null;
   blockingErrors: string[];
@@ -407,8 +393,8 @@ function WaitlistListPage() {
                     title: 'Process session vacancies',
                     description:
                       sessionOptions.length === 1
-                        ? `Send permanent offers across all leagues with vacancies in ${sessionOptions[0].label}. Members with ranked ADD waitlist preferences will only receive offers up to their chosen limit.`
-                        : 'Send permanent offers across all leagues with vacancies in the selected session. Members with ranked ADD waitlist preferences will only receive offers up to their chosen limit.',
+                        ? `Send permanent offers across all leagues with vacancies in ${sessionOptions[0].label}. Members are offered leagues in their priority order, up to the number of leagues they asked to play.`
+                        : 'Send permanent offers across all leagues with vacancies in the selected session. Members are offered leagues in their priority order, up to the number of leagues they asked to play.',
                     confirmText: 'Process vacancies',
                     requireExpiresAt: true,
                     onSubmit: runAction(async (reason, options) => {
@@ -477,8 +463,6 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
   const [dialog, setDialog] = useState<ReasonDialogState>(null);
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [addMemberId, setAddMemberId] = useState<number | ''>('');
-  const [addEntryType, setAddEntryType] = useState<'add' | 'replace'>('add');
-  const [addReplacesLeagueId, setAddReplacesLeagueId] = useState<number | null>(null);
   const [addReason, setAddReason] = useState('');
   const [addSubmitting, setAddSubmitting] = useState(false);
   const [renameModalOpen, setRenameModalOpen] = useState(false);
@@ -489,29 +473,18 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
   const [joinContext, setJoinContext] = useState<WaitlistJoinContext | null>(null);
   const [joinContextLoading, setJoinContextLoading] = useState(false);
   const [joinContextError, setJoinContextError] = useState<string | null>(null);
-  const [joinEntryType, setJoinEntryType] = useState<'add' | 'replace'>('add');
-  const [joinReplacesLeagueId, setJoinReplacesLeagueId] = useState<number | null>(null);
   const [joinTeamRosterText, setJoinTeamRosterText] = useState('');
   const [joinSubmitting, setJoinSubmitting] = useState(false);
-  const joinEntryTypeId = useId();
-  const joinReplacesLeagueIdField = useId();
   const joinTeamRosterId = useId();
   const addTeamRosterId = useId();
   const [joinPlacements, setJoinPlacements] = useState<WaitlistTeamMemberPlacement[]>([]);
   const [editPlacements, setEditPlacements] = useState<WaitlistTeamMemberPlacement[]>([]);
   const [addTeammateIds, setAddTeammateIds] = useState<number[]>([]);
   const [addPlacements, setAddPlacements] = useState<WaitlistTeamMemberPlacement[]>([]);
-  const [placementOptionsByMemberId, setPlacementOptionsByMemberId] = useState<
-    Record<number, WaitlistTeamMemberPlacementOptions>
-  >({});
   const [editEntry, setEditEntry] = useState<WaitlistEntry | null>(null);
-  const [editEntryType, setEditEntryType] = useState<'add' | 'replace'>('add');
-  const [editReplacesLeagueId, setEditReplacesLeagueId] = useState<number | null>(null);
   const [editRosterText, setEditRosterText] = useState('');
   const [editReason, setEditReason] = useState('');
   const [editSubmitting, setEditSubmitting] = useState(false);
-  const editEntryTypeId = useId();
-  const editReplacesLeagueIdField = useId();
   const editRosterId = useId();
   const editReasonId = useId();
 
@@ -590,26 +563,6 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
     return placementsAreComplete(joinPlacements, joinContext.expectedByotRosterSize);
   }, [joinContext, joinPlacements]);
 
-  const loadPlacementOptions = useCallback(
-    async (memberIds: number[]) => {
-      const uniqueMemberIds = [...new Set(memberIds)];
-      if (uniqueMemberIds.length === 0) {
-        setPlacementOptionsByMemberId({});
-        return;
-      }
-      try {
-        const res = await api.get<Record<number, WaitlistTeamMemberPlacementOptions>>(
-          `/waitlists/${waitlistId}/team-member-placement-options`,
-          { params: { memberIds: uniqueMemberIds.join(',') } },
-        );
-        setPlacementOptionsByMemberId(res.data);
-      } catch {
-        setPlacementOptionsByMemberId({});
-      }
-    },
-    [waitlistId],
-  );
-
   const updateJoinTeamRosterMembers = (memberIds: number[]) => {
     if (!member) return;
     setJoinTeamRosterText(buildTeamRosterTextFromMembers(joiningMemberName, memberIds, memberOptionById));
@@ -619,7 +572,6 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
       memberOptionById,
     );
     setJoinPlacements((current) => syncPlacementsWithMembers(members, current));
-    void loadPlacementOptions(members.map((entry) => entry.memberId));
   };
 
   const requiresByotRoster = data?.league.leagueType === 'bring_your_own_team';
@@ -652,14 +604,6 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
   }, [addPlacements, expectedByotSize, requiresByotRoster]);
 
   useEffect(() => {
-    if (!joinModalOpen || !joinContext?.requiresByotRoster) return;
-    const memberIds = joinPlacements.map((placement) => placement.memberId);
-    if (memberIds.length > 0) {
-      void loadPlacementOptions(memberIds);
-    }
-  }, [joinContext?.requiresByotRoster, joinModalOpen, joinPlacements, loadPlacementOptions]);
-
-  useEffect(() => {
     if (typeof addMemberId !== 'number') {
       setAddTeammateIds([]);
       setAddPlacements([]);
@@ -668,21 +612,11 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
     const name = memberOptionById.get(addMemberId)?.name;
     if (!name) return;
     setAddTeammateIds([]);
-    setAddPlacements([
-      {
-        memberId: addMemberId,
-        memberName: name,
-        entryType: 'add',
-        replacesLeagueId: null,
-      },
-    ]);
-    void loadPlacementOptions([addMemberId]);
-  }, [addMemberId, loadPlacementOptions, memberOptionById]);
+    setAddPlacements([{ memberId: addMemberId, memberName: name }]);
+  }, [addMemberId, memberOptionById]);
 
   const openEditEntryModal = (entry: WaitlistEntry) => {
     setEditEntry(entry);
-    setEditEntryType(entry.entryType);
-    setEditReplacesLeagueId(entry.replacesLeagueId);
     setEditRosterText(waitlistEntryTeamRosterText(entry) ?? entry.memberName);
     const initialPlacements =
       entry.teamRosterPlacements ??
@@ -701,7 +635,6 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
       );
     setEditPlacements(initialPlacements);
     setEditReason('');
-    void loadPlacementOptions(initialPlacements.map((placement) => placement.memberId));
   };
 
   const updateEditRosterMembers = (memberIds: number[]) => {
@@ -713,7 +646,6 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
       memberOptionById,
     );
     setEditPlacements((current) => syncPlacementsWithMembers(members, current));
-    void loadPlacementOptions(members.map((entry) => entry.memberId));
   };
 
   const updateAddTeamRosterMembers = (memberIds: number[]) => {
@@ -725,28 +657,18 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
       memberOptionById,
     );
     setAddPlacements((current) => syncPlacementsWithMembers(members, current));
-    void loadPlacementOptions(members.map((entry) => entry.memberId));
   };
 
   const submitEditEntry = async () => {
     if (!editEntry || !editReason.trim()) return;
-    if (!requiresByotRoster && editEntryType === 'replace' && editReplacesLeagueId == null) {
-      showAlert('Select the league being replaced for a REPLACE entry.', 'warning');
-      return;
-    }
     if (requiresByotRoster && !editByotRosterComplete) {
-      showAlert('Complete ADD or REPLACE details for every team member.', 'warning');
+      showAlert('Add every team member before saving.', 'warning');
       return;
     }
     setEditSubmitting(true);
     try {
       await api.patch(`/waitlists/entries/${editEntry.id}`, {
-        ...(requiresByotRoster
-          ? { teamRosterPlacements: toPlacementPayload(editPlacements) }
-          : {
-              entryType: editEntryType,
-              replacesLeagueId: editEntryType === 'replace' ? editReplacesLeagueId : null,
-            }),
+        ...(requiresByotRoster ? { teamRosterPlacements: toPlacementPayload(editPlacements) } : {}),
         reason: editReason.trim(),
       });
       showAlert('Waitlist entry updated.', 'success');
@@ -763,25 +685,11 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
     setJoinModalOpen(true);
     setJoinContextLoading(true);
     setJoinContextError(null);
-    setJoinEntryType('add');
-    setJoinReplacesLeagueId(null);
     setJoinTeamRosterText('');
-    setJoinPlacements(
-      member
-        ? [
-            {
-              memberId: member.id,
-              memberName: joiningMemberName,
-              entryType: 'add',
-              replacesLeagueId: null,
-            },
-          ]
-        : [],
-    );
+    setJoinPlacements(member ? [{ memberId: member.id, memberName: joiningMemberName }] : []);
     try {
       const res = await api.get<WaitlistJoinContext>(`/waitlists/${waitlistId}/join-context`);
       setJoinContext(res.data);
-      setJoinEntryType(res.data.addAvailable ? 'add' : res.data.replacementLeagues.length > 0 ? 'replace' : 'add');
     } catch (err) {
       setJoinContextError(getApiErrorMessage(err, 'Unable to load waitlist join options.'));
       setJoinContext(null);
@@ -790,34 +698,10 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
     }
   }, [waitlistId]);
 
-  const memberJoinEntryTypeOptions = useMemo((): ChoiceOption<'add' | 'replace'>[] => {
-    if (!joinContext) return ENTRY_TYPE_OPTIONS;
-    return ENTRY_TYPE_OPTIONS.map((option) => {
-      if (option.type === 'divider' || !('value' in option) || option.value !== 'add' || joinContext.addAvailable) {
-        return option;
-      }
-      return {
-        ...option,
-        disabled: true,
-        description: joinContext.addBlockedReason ?? 'ADD is not available for your current league schedule.',
-      };
-    });
-  }, [joinContext]);
-
-  const memberReplaceLeagueOptions = useMemo(
-    () => (joinContext?.replacementLeagues ?? []).map((league) => ({ value: league.id, label: league.name })),
-    [joinContext],
-  );
-
   const submitJoinWaitlist = async () => {
     if (!joinContext) return;
-    if (joinContext.requiresByotRoster) {
-      if (!joinByotRosterComplete) {
-        showAlert('Complete ADD or REPLACE details for every team member.', 'warning');
-        return;
-      }
-    } else if (joinEntryType === 'replace' && joinReplacesLeagueId == null) {
-      showAlert('Select the league you want to replace.', 'warning');
+    if (joinContext.requiresByotRoster && !joinByotRosterComplete) {
+      showAlert('Add every team member before joining.', 'warning');
       return;
     }
     setJoinSubmitting(true);
@@ -825,10 +709,7 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
       await api.post(`/waitlists/${waitlistId}/join`, {
         ...(joinContext.requiresByotRoster
           ? { teamRosterPlacements: toPlacementPayload(joinPlacements) }
-          : {
-              entryType: joinEntryType,
-              replacesLeagueId: joinEntryType === 'replace' ? joinReplacesLeagueId : null,
-            }),
+          : {}),
       });
       showAlert('You have joined the waitlist.', 'success');
       setJoinModalOpen(false);
@@ -861,17 +742,6 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
       showAlert(getApiErrorMessage(err, 'Unable to leave waitlist.'), 'error');
     }
   };
-
-  const replacementLeagueOptionsForMember = useCallback(
-    (memberId: number | null | undefined) => {
-      if (typeof memberId !== 'number') return [];
-      return (placementOptionsByMemberId[memberId]?.replacementLeagues ?? []).map((league) => ({
-        value: league.id,
-        label: league.name,
-      }));
-    },
-    [placementOptionsByMemberId],
-  );
 
   const openRenameModal = () => {
     if (!data) return;
@@ -920,13 +790,8 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
 
   const submitAddEntry = async () => {
     if (!data || addMemberId === '' || !addReason.trim()) return;
-    if (requiresByotRoster) {
-      if (!addByotRosterComplete) {
-        showAlert('Complete ADD or REPLACE details for every team member.', 'warning');
-        return;
-      }
-    } else if (addEntryType === 'replace' && addReplacesLeagueId == null) {
-      showAlert('Select the league being replaced for a REPLACE entry.', 'warning');
+    if (requiresByotRoster && !addByotRosterComplete) {
+      showAlert('Add every team member before saving.', 'warning');
       return;
     }
     setAddSubmitting(true);
@@ -934,19 +799,12 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
       await api.post(`/waitlists/${waitlistId}/entries`, {
         placementLeagueId: data.placementLeagueId,
         memberId: addMemberId,
-        ...(requiresByotRoster
-          ? { teamRosterPlacements: toPlacementPayload(addPlacements), entryType: 'add' }
-          : {
-              entryType: addEntryType,
-              replacesLeagueId: addEntryType === 'replace' ? addReplacesLeagueId : null,
-            }),
+        ...(requiresByotRoster ? { teamRosterPlacements: toPlacementPayload(addPlacements) } : {}),
         reason: addReason.trim(),
       });
       showAlert('Waitlist entry added.', 'success');
       setAddModalOpen(false);
       setAddMemberId('');
-      setAddEntryType('add');
-      setAddReplacesLeagueId(null);
       setAddReason('');
       await load();
     } catch (err) {
@@ -1185,9 +1043,7 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
               <>
                 <p className="text-sm text-gray-600 dark:text-gray-300">
                   Join the waitlist for {joinContext.placementLeague.name}.
-                  {joinContext.requiresByotRoster
-                    ? ' Add your team and specify whether each player is joining as an ADD or REPLACE.'
-                    : ' Choose whether this is an ADD or REPLACE entry.'}
+                  {joinContext.requiresByotRoster ? ' Add your full team to the entry.' : ''}
                 </p>
                 {joinContext.usesRegistration ? (
                   <p className="text-sm text-gray-600 dark:text-gray-300">
@@ -1195,7 +1051,7 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
                   </p>
                 ) : (
                   <p className="text-sm text-gray-600 dark:text-gray-300">
-                    League limits are based on your current session roster. Instructional leagues do not count toward the ADD limit.
+                    League limits are based on your current session roster.
                   </p>
                 )}
                 {joinContext.warnings.length > 0 ? (
@@ -1208,35 +1064,7 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
                     {joinContext.blockingErrors.join(' ')}
                   </div>
                 ) : null}
-                {!joinContext.requiresByotRoster ? (
-                  <>
-                    <FormField label="Entry type" htmlFor={joinEntryTypeId}>
-                      <ChoiceInput<'add' | 'replace'>
-                        inputId={joinEntryTypeId}
-                        layout="popover"
-                        value={joinEntryType}
-                        onChange={(next) => {
-                          if (next === 'add' || next === 'replace') setJoinEntryType(next);
-                        }}
-                        options={memberJoinEntryTypeOptions}
-                      />
-                    </FormField>
-                    {joinEntryType === 'replace' ? (
-                      <FormField label="League to replace" htmlFor={joinReplacesLeagueIdField} required>
-                        <ChoiceInput<number>
-                          inputId={joinReplacesLeagueIdField}
-                          layout="popover"
-                          value={joinReplacesLeagueId}
-                          onChange={(next) => {
-                            if (typeof next === 'number') setJoinReplacesLeagueId(next);
-                          }}
-                          options={memberReplaceLeagueOptions}
-                          emptyText="No leagues available to replace."
-                        />
-                      </FormField>
-                    ) : null}
-                  </>
-                ) : (
+                {joinContext.requiresByotRoster ? (
                   <>
                     <FormField label="Team roster" htmlFor={joinTeamRosterId} required>
                       <MemberMultiSelect
@@ -1258,15 +1086,8 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
                         ]}
                       />
                     </FormField>
-                    <FormField label="Team member placements" htmlFor={`${joinTeamRosterId}-placements`} required>
-                      <WaitlistTeamRosterPlacementsEditor
-                        placements={joinPlacements}
-                        placementOptionsByMemberId={placementOptionsByMemberId}
-                        onChange={setJoinPlacements}
-                      />
-                    </FormField>
                   </>
-                )}
+                ) : null}
               </>
             ) : null}
             <div className="flex justify-end gap-3">
@@ -1280,7 +1101,6 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
                   joinContextLoading ||
                   !joinContext ||
                   !joinContext.canJoin ||
-                  (!joinContext.requiresByotRoster && joinEntryType === 'replace' && joinReplacesLeagueId == null) ||
                   !joinByotRosterComplete
                 }
               >
@@ -1301,35 +1121,7 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
               <p className="text-sm text-gray-600 dark:text-gray-300">
                 {`Update ${editEntry.memberName}'s waitlist entry.`}
               </p>
-              {!requiresByotRoster ? (
-                <>
-                  <FormField label="Entry type" htmlFor={editEntryTypeId}>
-                    <ChoiceInput<'add' | 'replace'>
-                      inputId={editEntryTypeId}
-                      layout="popover"
-                      value={editEntryType}
-                      onChange={(next) => {
-                        if (next === 'add' || next === 'replace') setEditEntryType(next);
-                      }}
-                      options={ENTRY_TYPE_OPTIONS}
-                    />
-                  </FormField>
-                  {editEntryType === 'replace' ? (
-                    <FormField label="Replaces league" htmlFor={editReplacesLeagueIdField} required>
-                      <ChoiceInput<number>
-                        inputId={editReplacesLeagueIdField}
-                        layout="popover"
-                        value={editReplacesLeagueId}
-                        onChange={(next) => {
-                          if (typeof next === 'number') setEditReplacesLeagueId(next);
-                        }}
-                        options={replacementLeagueOptionsForMember(editEntry.memberId)}
-                        emptyText="No leagues available to replace."
-                      />
-                    </FormField>
-                  ) : null}
-                </>
-              ) : (
+              {requiresByotRoster ? (
                 <>
                   <FormField label="Team roster" htmlFor={editRosterId} required>
                     <MemberMultiSelect
@@ -1347,15 +1139,8 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
                       ]}
                     />
                   </FormField>
-                  <FormField label="Team member placements" htmlFor={`${editRosterId}-placements`} required>
-                    <WaitlistTeamRosterPlacementsEditor
-                      placements={editPlacements}
-                      placementOptionsByMemberId={placementOptionsByMemberId}
-                      onChange={setEditPlacements}
-                    />
-                  </FormField>
                 </>
-              )}
+              ) : null}
               <FormField label="Reason" htmlFor={editReasonId} required>
                 <textarea
                   id={editReasonId}
@@ -1372,10 +1157,7 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
                 <Button
                   onClick={() => void submitEditEntry()}
                   disabled={
-                    editSubmitting ||
-                    !editReason.trim() ||
-                    !editByotRosterComplete ||
-                    (!requiresByotRoster && editEntryType === 'replace' && editReplacesLeagueId == null)
+                    editSubmitting || !editReason.trim() || !editByotRosterComplete
                   }
                 >
                   Save changes
@@ -1395,37 +1177,7 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
             <FormField label="Member" htmlFor="waitlistAddMember">
               <MemberAutocomplete inputId="waitlistAddMember" value={addMemberId} onChange={setAddMemberId} />
             </FormField>
-            {!requiresByotRoster ? (
-              <>
-                <FormField label="Entry type" htmlFor="waitlistAddEntryType">
-                  <ChoiceInput<'add' | 'replace'>
-                    inputId="waitlistAddEntryType"
-                    layout="popover"
-                    value={addEntryType}
-                    onChange={(next) => {
-                      if (next === 'add' || next === 'replace') setAddEntryType(next);
-                    }}
-                    options={ENTRY_TYPE_OPTIONS}
-                  />
-                </FormField>
-                {addEntryType === 'replace' ? (
-                  <FormField label="Replaces league" htmlFor="waitlistAddReplacesLeague">
-                    <ChoiceInput<number>
-                      inputId="waitlistAddReplacesLeague"
-                      layout="popover"
-                      value={addReplacesLeagueId}
-                      onChange={(next) => {
-                        if (typeof next === 'number') setAddReplacesLeagueId(next);
-                      }}
-                      options={replacementLeagueOptionsForMember(
-                        typeof addMemberId === 'number' ? addMemberId : null,
-                      )}
-                      emptyText="No leagues available to replace."
-                    />
-                  </FormField>
-                ) : null}
-              </>
-            ) : typeof addMemberId === 'number' && addMemberName ? (
+            {requiresByotRoster && typeof addMemberId === 'number' && addMemberName ? (
               <>
                 <FormField label="Team roster" htmlFor={addTeamRosterId} required>
                   <MemberMultiSelect
@@ -1441,13 +1193,6 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
                         label: addMemberName,
                       },
                     ]}
-                  />
-                </FormField>
-                <FormField label="Team member placements" htmlFor={`${addTeamRosterId}-placements`} required>
-                  <WaitlistTeamRosterPlacementsEditor
-                    placements={addPlacements}
-                    placementOptionsByMemberId={placementOptionsByMemberId}
-                    onChange={setAddPlacements}
                   />
                 </FormField>
               </>
@@ -1516,11 +1261,11 @@ function WaitlistEntryRow({
           <p className="mt-1 text-xs text-gray-500">
             If a spot opens: {waitlistOfferPreferenceLabel(entry)}
           </p>
-          {entry.entryType === 'add' && entry.addWaitlistPriorityRank != null ? (
+          {entry.priorityRank != null ? (
             <p className="mt-1 text-xs text-gray-500">
-              Fulfillment preference: priority {entry.addWaitlistPriorityRank}
-              {entry.desiredAddWaitlistLeagueCount != null
-                ? ` · up to ${entry.desiredAddWaitlistLeagueCount} ${entry.desiredAddWaitlistLeagueCount === 1 ? 'league' : 'leagues'}`
+              League priority {entry.priorityRank}
+              {entry.desiredLeagueCount != null
+                ? ` · wants up to ${entry.desiredLeagueCount} ${entry.desiredLeagueCount === 1 ? 'league' : 'leagues'}`
                 : ''}
             </p>
           ) : null}

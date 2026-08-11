@@ -6,70 +6,32 @@ import FormCheckbox from '../FormCheckbox';
 import FormField from '../FormField';
 import InlineStateMessage from '../InlineStateMessage';
 import Modal from '../Modal';
-import { useMemberOptions } from '../../contexts/MemberOptionsContext';
-import RegistrationByotWaitlistFields from './RegistrationByotWaitlistFields';
-import RegistrationWaitlistEntriesEditor from './RegistrationWaitlistEntriesEditor';
-import RegistrationWaitlistFulfillmentFields from './RegistrationWaitlistFulfillmentFields';
 import RegistrationImmediatePaymentConfirmationModal from './RegistrationImmediatePaymentConfirmationModal';
-import type { WaitlistTeamMemberPlacementOptions } from '../waitlists/waitlistTeamRosterShared';
+import LeaguePriorityStep from './LeaguePriorityStep';
+import type {
+  LeaguePrioritySavePayload,
+  RegistrationLeagueCatalogPayload,
+} from './leaguePriorityShared';
 import {
-  addWaitlistPriorityFromOrder,
-  applyAddWaitlistPriorityOrder,
-  buildReplaceableLeagueOptions,
-  defaultDesiredAddWaitlistLeagueCount,
-  getActiveWaitlistLeagueIds,
-  countProtectedClaimSelections,
-  PROTECTED_RETURN_SELECTION_TYPES,
-  REAL_LEAGUE_SELECTION_TYPES,
-  remainingFirstTwoLeagueSlots,
-  requiresWaitlistFulfillmentPreferences,
   editValidationErrorMessage,
-  firstByotWaitlistRosterValidationMessage,
-  firstOptionalByotRosterValidationMessage,
   hasClubExperienceRecord,
   isJuniorRecreationalEligibleDate,
-  isLeagueSelectionEligibleLeague,
-  isPlayInBasedLeague,
-  isThirdLeagueInterestEligibleLeague,
-  isThirdLeagueInterestSelection,
-  joinWaitlistSelection,
-  leagueScheduleText,
   loadMembershipEditContext,
   loadRegistrationEditContext,
-  continuingSabbaticalForLeague,
-  formatCurrency,
-  hasPlayInWithTwoGuaranteedReturns,
-  priorLeagueChoiceValue,
-  priorSeasonReturnLeaguesFromPayload,
-  PLAY_IN_WITH_TWO_GUARANTEED_RETURNS_NOTICE,
   registrationDiscountLabel,
-  saveLeagueSelections,
-  setThirdLeagueInterestSelections,
+  saveLeaguePriorities,
   submitRegistrationEdits,
   submitStaffRegistrationEdits,
-  updateLeagueSelection,
-  waitlistEntryTypeFromSelection,
-  waitlistJoinOptionDescription,
-  withoutInvalidPlayInPriorSelections,
   type IcePrivilegesChoice,
   type LeagueEligibilityInput,
   type RegistrationLeagueEvaluation,
-  type RegistrationLeagueSelectionPayload,
   type RegistrationMembershipPaymentPayload,
-  type RegistrationSelectionInput,
-  type RegistrationSelectionType,
   type RegistrationShellCurler,
   type RegistrationWindow,
   type SubmitRegistrationEditsResult,
 } from './registrationViewEditShared';
 
-export type RegistrationEditModalKind =
-  | 'membership'
-  | 'confirmedLeagues'
-  | 'sabbaticals'
-  | 'waitlists'
-  | 'thirdLeague'
-  | null;
+export type RegistrationEditModalKind = 'membership' | 'leaguePriority' | null;
 
 type SharedEditProps = {
   registrationId: number;
@@ -116,269 +78,6 @@ function EditModalShell({
         </div>
       </div>
     </Modal>
-  );
-}
-
-function useLeagueEditState(registrationId: number, isOpen: boolean, finalizeEdits: SharedEditProps['finalizeEdits']) {
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [leaguePayload, setLeaguePayload] = useState<RegistrationLeagueSelectionPayload | null>(null);
-  const [selections, setSelections] = useState<RegistrationSelectionInput[]>([]);
-  const [desiredAddWaitlistLeagueCount, setDesiredAddWaitlistLeagueCount] = useState<number | null>(null);
-  const [waitlistOrder, setWaitlistOrder] = useState<number[]>([]);
-  const [windowState, setWindowState] = useState<RegistrationWindow | null>(null);
-  const [curler, setCurler] = useState<RegistrationShellCurler | null>(null);
-  const [membership, setMembership] = useState<RegistrationMembershipPaymentPayload | null>(null);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    let canceled = false;
-    setLoading(true);
-    setError(null);
-    void loadRegistrationEditContext(registrationId)
-      .then((context) => {
-        if (canceled) return;
-        setLeaguePayload(context.league);
-        const nextSelections = withoutInvalidPlayInPriorSelections(context.league.selections, context.league.leagues);
-        setSelections(nextSelections);
-        setWaitlistOrder(
-          getActiveWaitlistLeagueIds({
-            selections: nextSelections,
-            existingEntries: context.league.existingWaitlistEntries,
-          }),
-        );
-        setDesiredAddWaitlistLeagueCount(
-          requiresWaitlistFulfillmentPreferences(nextSelections)
-            ? (context.league.desiredAddWaitlistLeagueCount ??
-                defaultDesiredAddWaitlistLeagueCount(context.league.activeLeagueIds, nextSelections))
-            : null,
-        );
-        setWindowState(context.window);
-        setCurler(context.curler);
-        setMembership(context.membership);
-      })
-      .catch((err) => {
-        if (!canceled) setError(editValidationErrorMessage(err, 'Unable to load league choices.'));
-      })
-      .finally(() => {
-        if (!canceled) setLoading(false);
-      });
-    return () => {
-      canceled = true;
-    };
-  }, [isOpen, registrationId]);
-
-  const priorSeasonReturnLeagues = useMemo(
-    () => priorSeasonReturnLeaguesFromPayload(leaguePayload, windowState?.state),
-    [leaguePayload, windowState?.state],
-  );
-
-  const priorSeasonReturnLeagueIds = useMemo(
-    () => new Set(priorSeasonReturnLeagues.map((league) => league.id)),
-    [priorSeasonReturnLeagues],
-  );
-
-  const selectedLeagueIds = useMemo(
-    () =>
-      new Set(
-        selections
-          .filter((selection) => selection.leagueId != null && !isThirdLeagueInterestSelection(selection))
-          .map((selection) => selection.leagueId as number),
-      ),
-    [selections],
-  );
-
-  const waitlistEligibleLeagues = useMemo(
-    () =>
-      (leaguePayload?.leagues ?? []).filter(
-        (league) =>
-          league.allowsWaitlist &&
-          isLeagueSelectionEligibleLeague(league, {
-            dateOfBirth: curler?.dateOfBirth,
-            experienceType: membership?.selection.experienceType ?? 'none_or_minimal',
-            experienceSelfReportedYears: membership?.selection.experienceSelfReportedYears,
-            knownExperienceYears: membership?.knownExperienceYears,
-            membershipOption: membership?.selection.membershipOption,
-          }),
-      ),
-    [curler?.dateOfBirth, leaguePayload, membership],
-  );
-
-  const leagueCatalogOrder = useMemo(() => {
-    const order = new Map<number, number>();
-    (leaguePayload?.leagues ?? []).forEach((league, index) => order.set(league.id, index));
-    return order;
-  }, [leaguePayload]);
-
-  const priorSeasonProtectedReturnCount = useMemo(
-    () => countProtectedClaimSelections(selections),
-    [selections],
-  );
-
-  const scheduledLeagueSelections = useMemo(
-    () => selections.filter((selection) => selection.selectionType === 'guaranteed_return' || selection.selectionType === 'byot_request'),
-    [selections],
-  );
-
-  const leagueName = useCallback(
-    (leagueId: number | null | undefined) =>
-      leaguePayload?.leagues.find((league) => league.id === leagueId)?.name ?? `League #${leagueId ?? 'unknown'}`,
-    [leaguePayload],
-  );
-
-  const selectionLabel = useCallback((selection: RegistrationSelectionInput) => {
-    switch (selection.selectionType) {
-      case 'guaranteed_return':
-        return 'Guaranteed return';
-      case 'sabbatical':
-        return 'Sabbatical';
-      case 'drop':
-        return 'Drop';
-      case 'byot_request':
-        return 'Bring-your-own-team request';
-      case 'waitlist_add':
-        return 'Waitlist: ADD';
-      case 'waitlist_replace':
-        return `Waitlist: REPLACE${selection.replacesLeagueId ? ` (${leagueName(selection.replacesLeagueId)})` : ''}`;
-      default:
-        return selection.selectionType.replace(/_/g, ' ');
-    }
-  }, [leagueName]);
-
-  useEffect(() => {
-    setWaitlistOrder((current) => {
-      const next = getActiveWaitlistLeagueIds({
-        selections,
-        existingEntries: leaguePayload?.existingWaitlistEntries,
-        orderLeagueIds: current,
-      });
-      if (next.length === current.length && next.every((id, index) => id === current[index])) return current;
-      return next;
-    });
-    const addPriority = addWaitlistPriorityFromOrder({
-      orderLeagueIds: getActiveWaitlistLeagueIds({
-        selections,
-        existingEntries: leaguePayload?.existingWaitlistEntries,
-      }),
-      selections,
-      existingEntries: leaguePayload?.existingWaitlistEntries,
-    });
-    if (addPriority.length < 2) {
-      setDesiredAddWaitlistLeagueCount(null);
-      return;
-    }
-    setDesiredAddWaitlistLeagueCount((current) => {
-      const remaining = remainingFirstTwoLeagueSlots(leaguePayload?.activeLeagueIds ?? [], selections);
-      if (remaining <= 0) return null;
-      if (remaining <= 1) return 1;
-      return (
-        current ??
-        defaultDesiredAddWaitlistLeagueCount(leaguePayload?.activeLeagueIds ?? [], selections) ??
-        Math.min(remaining, 2)
-      );
-    });
-  }, [selections, leaguePayload?.activeLeagueIds, leaguePayload?.existingWaitlistEntries]);
-
-  const saveSelections = async (onSaved: () => void | Promise<void>) => {
-    setSaving(true);
-    setError(null);
-    try {
-      const orderForSave = getActiveWaitlistLeagueIds({
-        selections,
-        existingEntries: leaguePayload?.existingWaitlistEntries,
-        orderLeagueIds: waitlistOrder,
-      });
-      const selectionsWithOrder = applyAddWaitlistPriorityOrder(selections, orderForSave);
-      const addPriority = addWaitlistPriorityFromOrder({
-        orderLeagueIds: orderForSave,
-        selections: selectionsWithOrder,
-        existingEntries: leaguePayload?.existingWaitlistEntries,
-      });
-      const data = await saveLeagueSelections(registrationId, {
-        selections: selectionsWithOrder,
-        desiredAddWaitlistLeagueCount,
-        addWaitlistPriority: addPriority,
-      });
-      setLeaguePayload(data);
-      setSelections(data.selections);
-      setWaitlistOrder(
-        getActiveWaitlistLeagueIds({
-          selections: data.selections,
-          existingEntries: data.existingWaitlistEntries,
-        }),
-      );
-      setDesiredAddWaitlistLeagueCount(
-        requiresWaitlistFulfillmentPreferences(data.selections)
-          ? (data.desiredAddWaitlistLeagueCount ??
-              defaultDesiredAddWaitlistLeagueCount(data.activeLeagueIds, data.selections))
-          : null,
-      );
-      await finalizeEdits({
-        evaluation: data.evaluation,
-        onSaved,
-        setSaving,
-        setError,
-      });
-    } catch (err) {
-      setError(editValidationErrorMessage(err, 'Unable to save league choices.'));
-      setSaving(false);
-    }
-  };
-
-  return {
-    loading,
-    saving,
-    error,
-    setError,
-    leaguePayload,
-    selections,
-    setSelections,
-    windowState,
-    curler,
-    membership,
-    priorSeasonReturnLeagues,
-    priorSeasonReturnLeagueIds,
-    selectedLeagueIds,
-    waitlistEligibleLeagues,
-    leagueCatalogOrder,
-    priorSeasonProtectedReturnCount,
-    scheduledLeagueSelections,
-    leagueName,
-    selectionLabel,
-    saveSelections,
-    setSaving,
-    desiredAddWaitlistLeagueCount,
-    setDesiredAddWaitlistLeagueCount,
-    waitlistOrder,
-    setWaitlistOrder,
-  };
-}
-
-function useRegistrationMemberMaps(isOpen: boolean) {
-  const memberOptions = useMemberOptions({ autoLoad: isOpen });
-  const memberOptionById = useMemo(
-    () => new Map(memberOptions.options.map((option) => [option.id, option])),
-    [memberOptions.options],
-  );
-  const memberOptionIdByName = useMemo(
-    () => new Map(memberOptions.options.map((option) => [option.name.trim().toLowerCase(), option.id])),
-    [memberOptions.options],
-  );
-  return { memberOptionById, memberOptionIdByName };
-}
-
-function byotWaitlistRosterValidationMessage(
-  state: Pick<ReturnType<typeof useLeagueEditState>, 'selections' | 'leaguePayload' | 'curler'>,
-  memberOptionById: Map<number, { name: string }>,
-  memberOptionIdByName: Map<string, number>,
-): string | null {
-  return firstByotWaitlistRosterValidationMessage(
-    state.selections,
-    state.leaguePayload?.leagues ?? [],
-    memberOptionById,
-    memberOptionIdByName,
-    { id: state.curler?.id ?? null, name: state.curler?.name ?? 'Registering curler' },
   );
 }
 
@@ -718,544 +417,87 @@ function MembershipEditModal({ registrationId, isOpen, onClose, onSaved, finaliz
   );
 }
 
-function PriorLeagueEditModal({
-  registrationId,
-  isOpen,
-  onClose,
-  onSaved,
-  finalizeEdits,
-  title,
-}: SharedEditProps & { title: string }) {
-  const state = useLeagueEditState(registrationId, isOpen, finalizeEdits);
-  const { memberOptionById, memberOptionIdByName } = useRegistrationMemberMaps(isOpen);
-  const [placementOptionsByLeagueId, setPlacementOptionsByLeagueId] = useState<
-    Record<number, Record<number, WaitlistTeamMemberPlacementOptions>>
-  >({});
-  const showsAvailabilityReturn = state.priorSeasonReturnLeagues.length > 2;
+/**
+ * The whole league side of a registration is one ordered list now, so editing it
+ * reuses the same step component the registration wizard renders.
+ */
+function LeaguePriorityEditModal({ registrationId, isOpen, onClose, onSaved, finalizeEdits }: SharedEditProps) {
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [leaguePayload, setLeaguePayload] = useState<RegistrationLeagueCatalogPayload | null>(null);
+  const [curler, setCurler] = useState<RegistrationShellCurler | null>(null);
+  const [membership, setMembership] = useState<RegistrationMembershipPaymentPayload | null>(null);
 
-  function handleSave() {
-    const undecidedLeague = state.priorSeasonReturnLeagues.find(
-      (league) =>
-        priorLeagueChoiceValue(
-          state.selections.find((selection) => selection.leagueId === league.id),
-          league,
-        ) == null,
-    );
-    if (undecidedLeague) {
-      state.setError('Choose whether to return, join the competitive league, extend sabbatical, or drop each prior league before saving.');
-      return;
-    }
-    if (state.priorSeasonProtectedReturnCount > 2) {
-      state.setError('You can protect at most two league spots. Choose subject-to-availability return for any additional leagues.');
-      return;
-    }
-    const rosterMessage =
-      byotWaitlistRosterValidationMessage(state, memberOptionById, memberOptionIdByName) ??
-      firstOptionalByotRosterValidationMessage(
-        state.selections,
-        state.leaguePayload?.leagues ?? [],
-        memberOptionIdByName,
-        { id: state.curler?.id ?? null, name: state.curler?.name ?? 'Registering curler' },
-      );
-    if (rosterMessage) {
-      state.setError(rosterMessage);
-      return;
-    }
-    void state.saveSelections(onSaved);
-  }
-
-  return (
-    <EditModalShell
-      isOpen={isOpen}
-      title={title}
-      onClose={onClose}
-      saving={state.saving}
-      error={state.error}
-      onSave={handleSave}
-    >
-      {state.loading ? (
-        <InlineStateMessage title="Loading league choices" description="Checking guaranteed return spots." />
-      ) : state.priorSeasonReturnLeagues.length === 0 ? (
-        <InlineStateMessage
-          tone="warning"
-          title="No prior league spots"
-          description="This registration does not include returning-league choices to edit here."
-        />
-      ) : (
-        <div className="space-y-5">
-          <p className="text-sm text-gray-600 dark:text-gray-300">
-            Update return, sabbatical extension, and drop choices for prior-season leagues and continuing sabbaticals.
-          </p>
-          {(state.leaguePayload?.continuingSabbaticals?.length ?? 0) > 0 ? (
-            <InlineStateMessage
-              tone="neutral"
-              title="Continuing sabbaticals"
-              description="This curler can return this session, extend the sabbatical for a fee, or release the protected spot."
-            />
-          ) : null}
-          {showsAvailabilityReturn ? (
-            <InlineStateMessage
-              tone="neutral"
-              title="More than two prior leagues"
-              description="A curler can protect up to two prior league spots. Additional leagues can be requested subject to availability."
-            />
-          ) : null}
-          {state.priorSeasonReturnLeagues.map((league) => {
-            const currentSelection = state.selections.find((selection) => selection.leagueId === league.id);
-            const value = priorLeagueChoiceValue(currentSelection, league);
-            const isPlayInPrior = isPlayInBasedLeague(league);
-            const selectedProtected = currentSelection
-              ? PROTECTED_RETURN_SELECTION_TYPES.has(currentSelection.selectionType)
-              : false;
-            const protectedLimitReached = state.priorSeasonProtectedReturnCount >= 2 && !selectedProtected;
-            const continuingSabbatical = continuingSabbaticalForLeague(state.leaguePayload, league.id);
-            const sabbaticalFeeLabel = continuingSabbatical
-              ? formatCurrency(continuingSabbatical.sabbaticalFeeMinor)
-              : null;
-            return (
-              <div key={league.id} className="space-y-3">
-                <FormField label={league.name} htmlFor={`edit-prior-league-${league.id}`} required>
-                  {continuingSabbatical ? (
-                    <p className="mb-2 text-xs text-amber-800 dark:text-amber-200">
-                      Currently on sabbatical since{' '}
-                      {new Date(`${continuingSabbatical.firstSabbaticalStartDate}T00:00:00`).toLocaleDateString()}.
-                    </p>
-                  ) : null}
-                  <ChoiceInput
-                    inputId={`edit-prior-league-${league.id}`}
-                    layout="block"
-                    value={value}
-                    placeholder="Make a selection"
-                    onChange={(next) =>
-                      state.setSelections((current) =>
-                        updateLeagueSelection(current, league.id, (next ?? 'none') as RegistrationSelectionType | 'none'),
-                      )
-                    }
-                    options={
-                      isPlayInPrior
-                        ? [
-                            {
-                              value: 'play_in_request',
-                              label: 'Join competitive league',
-                              description: 'Declare the team on league requests. This does not use a protected league spot.',
-                            },
-                            {
-                              value: 'drop',
-                              label: 'Not joining',
-                              description: 'Skip this competitive league for now.',
-                            },
-                          ]
-                        : [
-                      {
-                        value: 'guaranteed_return',
-                        label: continuingSabbatical
-                          ? 'Return to league this session'
-                          : showsAvailabilityReturn
-                            ? 'Return to league (guaranteed)'
-                            : 'Return to league',
-                        description: protectedLimitReached
-                          ? 'You have already selected two protected league spots.'
-                          : continuingSabbatical
-                            ? 'End the sabbatical and play in this league this session.'
-                            : 'Claim this guaranteed return spot.',
-                        disabled: protectedLimitReached,
-                      },
-                      ...(!continuingSabbatical && showsAvailabilityReturn
-                        ? [
-                            {
-                              value: 'return_subject_to_availability',
-                              label: 'Attempt to return to the league (subject to availability)',
-                              description: 'Request this league without using one of the two guaranteed return spots.',
-                            },
-                          ]
-                        : []),
-                      ...(league.allowsSabbatical
-                        ? [
-                            {
-                              value: 'sabbatical',
-                              label: continuingSabbatical ? 'Extend sabbatical' : 'Take a sabbatical for the league',
-                              description: continuingSabbatical
-                                ? continuingSabbatical.canExtend
-                                  ? `Remain on sabbatical for this session. Sabbatical fee: ${sabbaticalFeeLabel}.`
-                                  : continuingSabbatical.extensionBlockedMessage ??
-                                    'The sabbatical duration limit has been reached.'
-                                : protectedLimitReached
-                                  ? 'Sabbaticals also count toward the two protected league spots.'
-                                  : 'Preserve the spot while stepping away for this session.',
-                              disabled:
-                                protectedLimitReached ||
-                                Boolean(continuingSabbatical && !continuingSabbatical.canExtend),
-                            },
-                          ]
-                        : []),
-                      {
-                        value: 'drop',
-                        label: continuingSabbatical ? 'Release protected spot' : 'Drop the league',
-                        description: continuingSabbatical
-                          ? 'Permanently release this sabbatical-protected spot.'
-                          : 'Release this guaranteed return spot.',
-                      },
-                    ]
-                    }
-                  />
-                </FormField>
-                {currentSelection?.selectionType === 'guaranteed_return' &&
-                league.leagueType === 'bring_your_own_team' ? (
-                  <RegistrationByotWaitlistFields
-                    league={league}
-                    selection={currentSelection}
-                    inputId={`edit-prior-roster-${league.id}`}
-                    revealRosterOnDemand
-                    rosterOptional
-                    omitTeamMemberPlacements
-                    registeringCurler={{
-                      id: state.curler?.id ?? null,
-                      name: state.curler?.name ?? 'Registering curler',
-                    }}
-                    memberOptionById={memberOptionById}
-                    memberOptionIdByName={memberOptionIdByName}
-                    placementOptionsByMemberId={placementOptionsByLeagueId[league.id] ?? {}}
-                    onPlacementOptionsLoaded={(options) =>
-                      setPlacementOptionsByLeagueId((current) => ({ ...current, [league.id]: options }))
-                    }
-                    onSelectionsChange={(updater) => state.setSelections(updater)}
-                  />
-                ) : null}
-              </div>
-            );
-          })}
-          {hasPlayInWithTwoGuaranteedReturns(state.selections) ? (
-            <p className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-100">
-              {PLAY_IN_WITH_TWO_GUARANTEED_RETURNS_NOTICE}
-            </p>
-          ) : null}
-        </div>
-      )}
-    </EditModalShell>
-  );
-}
-
-function WaitlistEditModal({
-  registrationId,
-  isOpen,
-  onClose,
-  onSaved,
-  finalizeEdits,
-}: SharedEditProps) {
-  const state = useLeagueEditState(registrationId, isOpen, finalizeEdits);
-  const { memberOptionById, memberOptionIdByName } = useRegistrationMemberMaps(isOpen);
-  const [placementOptionsByLeagueId, setPlacementOptionsByLeagueId] = useState<
-    Record<number, Record<number, WaitlistTeamMemberPlacementOptions>>
-  >({});
-  const addWaitlistInputId = useId();
-
-  const visibleWaitlistSelections = state.selections.filter(
-    (selection) =>
-      selection.leagueId != null &&
-      (selection.selectionType === 'waitlist_add' ||
-        selection.selectionType === 'waitlist_replace' ||
-        selection.selectionType === 'waitlist_add_auto_decline' ||
-        selection.selectionType === 'waitlist_replace_auto_decline' ||
-        selection.selectionType === 'waitlist_keep_auto_accept' ||
-        selection.selectionType === 'waitlist_keep_auto_decline'),
-  );
-
-  const displayedWaitlists = visibleWaitlistSelections.map((selection) => {
-    const existing = state.leaguePayload?.existingWaitlistEntries?.find(
-      (entry) => entry.leagueId === selection.leagueId,
-    );
-    return {
-      leagueId: selection.leagueId as number,
-      entryType: waitlistEntryTypeFromSelection(selection, existing?.entryType ?? 'add'),
-      replacesLeagueId: selection.replacesLeagueId ?? existing?.replacesLeagueId ?? null,
-      selection,
-      isExisting: false,
-      position: existing?.position,
+  useEffect(() => {
+    if (!isOpen) return;
+    let canceled = false;
+    setLoading(true);
+    setError(null);
+    void loadRegistrationEditContext(registrationId)
+      .then((context) => {
+        if (canceled) return;
+        setLeaguePayload(context.league);
+        setCurler(context.curler);
+        setMembership(context.membership);
+      })
+      .catch((err) => {
+        if (!canceled) setError(editValidationErrorMessage(err, 'Unable to load league choices.'));
+      })
+      .finally(() => {
+        if (!canceled) setLoading(false);
+      });
+    return () => {
+      canceled = true;
     };
-  });
+  }, [isOpen, registrationId]);
 
-  const joinWaitlistLeagueOptions = state.waitlistEligibleLeagues
-    .filter((league) => !state.selectedLeagueIds.has(league.id))
-    .map((league) => ({
-      value: league.id,
-      label: league.name,
-      description: waitlistJoinOptionDescription(league, leagueScheduleText(league)),
-    }));
-
-  const replacementLeagueOptions = buildReplaceableLeagueOptions({
-    activeLeagueIds: state.leaguePayload?.activeLeagueIds ?? [],
-    selections: state.selections,
-    leagueName: state.leagueName,
-    selectionLabel: state.selectionLabel,
-    existingEntries: state.leaguePayload?.existingWaitlistEntries,
-    excludedLeagueIds: (state.leaguePayload?.leagues ?? [])
-      .filter((league) => isPlayInBasedLeague(league))
-      .map((league) => league.id),
-  });
-
-  function handleSave() {
-    const hasRealLeagueSelection = state.selections.some(
-      (selection) => selection.leagueId != null && REAL_LEAGUE_SELECTION_TYPES.has(selection.selectionType),
-    );
-    if (!hasRealLeagueSelection && visibleWaitlistSelections.length === 0) {
-      state.setError('Select at least one waitlist to save.');
-      return;
-    }
-    for (const waitlist of displayedWaitlists) {
-      if (waitlist.entryType === 'replace' && waitlist.replacesLeagueId == null) {
-        state.setError(`Select which league to replace for ${state.leagueName(waitlist.leagueId)}.`);
-        return;
-      }
-    }
-    const rosterMessage = byotWaitlistRosterValidationMessage(state, memberOptionById, memberOptionIdByName);
-    if (rosterMessage) {
-      state.setError(rosterMessage);
-      return;
-    }
-    const addPriority = addWaitlistPriorityFromOrder({
-      orderLeagueIds: getActiveWaitlistLeagueIds({
-        selections: state.selections,
-        existingEntries: state.leaguePayload?.existingWaitlistEntries,
-        orderLeagueIds: state.waitlistOrder,
-      }),
-      selections: state.selections,
-      existingEntries: state.leaguePayload?.existingWaitlistEntries,
-    });
-    if (addPriority.length >= 2) {
-      const remaining = remainingFirstTwoLeagueSlots(state.leaguePayload?.activeLeagueIds ?? [], state.selections);
-      const resolvedCount = remaining <= 1 ? 1 : state.desiredAddWaitlistLeagueCount;
-      if (resolvedCount == null) {
-        state.setError('Choose how many waitlist leagues to accept if multiple spots open.');
-        return;
-      }
-    }
-    void state.saveSelections(onSaved);
-  }
-
-  return (
-    <EditModalShell
-      isOpen={isOpen}
-      title="Edit waitlists"
-      onClose={onClose}
-      saving={state.saving}
-      error={state.error}
-      onSave={handleSave}
-    >
-      {state.loading ? (
-        <InlineStateMessage title="Loading waitlists" description="Gathering current waitlist choices." />
-      ) : (
-        <div className="space-y-5">
-          {displayedWaitlists.length === 0 ? (
-            <p className="text-sm text-gray-600 dark:text-gray-300">No waitlist selections are listed yet.</p>
-          ) : (
-            <RegistrationWaitlistEntriesEditor
-              entries={displayedWaitlists}
-              selections={state.selections}
-              activeLeagueIds={state.leaguePayload?.activeLeagueIds ?? []}
-              existingEntries={state.leaguePayload?.existingWaitlistEntries}
-              waitlistOrder={state.waitlistOrder}
-              leagues={state.leaguePayload?.leagues ?? []}
-              leagueName={state.leagueName}
-              selectionLabel={state.selectionLabel}
-              leagueCatalogItem={(leagueId) => state.leaguePayload?.leagues.find((league) => league.id === leagueId)}
-              preferenceFromSelection={() => null}
-              preferenceOptions={[]}
-              autoDeclineWarning={() => ''}
-              tone="app"
-              onSelectionsChange={(updater) => state.setSelections(updater)}
-              onOrderChange={(nextOrder) => {
-                state.setWaitlistOrder(nextOrder);
-                state.setSelections((current) => applyAddWaitlistPriorityOrder(current, nextOrder));
-              }}
-              onRemove={(leagueId) =>
-                state.setSelections((current) => updateLeagueSelection(current, leagueId, 'none'))
-              }
-              renderByotFields={(selection, league, inputId) => (
-                <RegistrationByotWaitlistFields
-                  league={league}
-                  selection={selection}
-                  inputId={inputId}
-                  registeringCurler={{
-                    id: state.curler?.id ?? null,
-                    name: state.curler?.name ?? 'Registering curler',
-                  }}
-                  memberOptionById={memberOptionById}
-                  memberOptionIdByName={memberOptionIdByName}
-                  placementOptionsByMemberId={placementOptionsByLeagueId[league.id] ?? {}}
-                  onPlacementOptionsLoaded={(options) =>
-                    setPlacementOptionsByLeagueId((current) => ({ ...current, [league.id]: options }))
-                  }
-                  onSelectionsChange={(updater) => state.setSelections(updater)}
-                />
-              )}
-            />
-          )}
-
-          <FormField label="Add a league waitlist" htmlFor={addWaitlistInputId}>
-            <ChoiceInput
-              inputId={addWaitlistInputId}
-              layout="popover"
-              value={null}
-              onChange={(next) => {
-                if (typeof next !== 'number') return;
-                const joined = joinWaitlistSelection(state.selections, next, {
-                  activeLeagueIds: state.leaguePayload?.activeLeagueIds ?? [],
-                  existingEntries: state.leaguePayload?.existingWaitlistEntries,
-                  replaceOptions: replacementLeagueOptions,
-                });
-                state.setSelections(joined.selections);
-              }}
-              options={joinWaitlistLeagueOptions}
-              emptyText="No waitlist-eligible leagues remain."
-            />
-          </FormField>
-
-          <RegistrationWaitlistFulfillmentFields
-            selections={state.selections}
-            activeLeagueIds={state.leaguePayload?.activeLeagueIds ?? []}
-            desiredAddWaitlistLeagueCount={state.desiredAddWaitlistLeagueCount}
-            tone="app"
-            onDesiredCountChange={state.setDesiredAddWaitlistLeagueCount}
-          />
-        </div>
-      )}
-    </EditModalShell>
-  );
-}
-
-function ThirdLeagueEditModal({
-  registrationId,
-  isOpen,
-  onClose,
-  onSaved,
-  finalizeEdits,
-}: SharedEditProps) {
-  const state = useLeagueEditState(registrationId, isOpen, finalizeEdits);
-  const { memberOptionById, memberOptionIdByName } = useRegistrationMemberMaps(isOpen);
-  const [placementOptionsByLeagueId, setPlacementOptionsByLeagueId] = useState<
-    Record<number, Record<number, WaitlistTeamMemberPlacementOptions>>
-  >({});
-  const thirdLeagueInputId = useId();
-  const leagueEligibilityInput: LeagueEligibilityInput = {
-    dateOfBirth: state.curler?.dateOfBirth,
-    experienceType: state.membership?.selection.experienceType ?? 'none_or_minimal',
-    experienceSelfReportedYears: state.membership?.selection.experienceSelfReportedYears,
-    knownExperienceYears: state.membership?.knownExperienceYears,
-    membershipOption: state.membership?.selection.membershipOption,
+  const eligibility: LeagueEligibilityInput = {
+    dateOfBirth: curler?.dateOfBirth,
+    experienceType: membership?.selection.experienceType ?? 'none_or_minimal',
+    experienceSelfReportedYears: membership?.selection.experienceSelfReportedYears,
+    knownExperienceYears: membership?.knownExperienceYears,
+    membershipOption: membership?.selection.membershipOption,
   };
-  const thirdLeagueInterestOptions = (state.leaguePayload?.leagues ?? [])
-    .filter((league) => isThirdLeagueInterestEligibleLeague(league, leagueEligibilityInput))
-    .map((league) => ({ value: league.id, label: league.name }));
-  const eligibleThirdLeagueIds = new Set(thirdLeagueInterestOptions.map((option) => option.value));
-  const thirdLeagueSelectedIds = state.selections
-    .filter(
-      (selection) =>
-        isThirdLeagueInterestSelection(selection) &&
-        selection.leagueId != null &&
-        eligibleThirdLeagueIds.has(selection.leagueId),
-    )
-    .map((selection) => selection.leagueId as number);
-  const selectedThirdLeagueByotSelections = state.selections.filter(
-    (selection) =>
-      isThirdLeagueInterestSelection(selection) &&
-      selection.leagueId != null &&
-      eligibleThirdLeagueIds.has(selection.leagueId) &&
-      state.leaguePayload?.leagues.find((league) => league.id === selection.leagueId)?.leagueType ===
-        'bring_your_own_team',
-  );
 
-  function handleSave() {
-    const rosterMessage = firstOptionalByotRosterValidationMessage(
-      state.selections,
-      state.leaguePayload?.leagues ?? [],
-      memberOptionIdByName,
-      { id: state.curler?.id ?? null, name: state.curler?.name ?? 'Registering curler' },
-    );
-    if (rosterMessage) {
-      state.setError(rosterMessage);
-      return;
+  const save = async (input: LeaguePrioritySavePayload) => {
+    setSaving(true);
+    setError(null);
+    try {
+      const data = await saveLeaguePriorities(registrationId, input);
+      setLeaguePayload(data);
+      await finalizeEdits({ evaluation: data.evaluation, onSaved, setSaving, setError });
+    } catch (err) {
+      const message = editValidationErrorMessage(err, 'Unable to save league choices.');
+      setError(message);
+      setSaving(false);
+      throw new Error(message);
     }
-    void state.saveSelections(onSaved);
-  }
+  };
 
   return (
-    <EditModalShell
-      isOpen={isOpen}
-      title="Edit third-league interest"
-      onClose={onClose}
-      saving={state.saving}
-      error={state.error}
-      onSave={handleSave}
-    >
-      {state.loading ? (
-        <InlineStateMessage title="Loading third-league options" description="Gathering eligible leagues." />
-      ) : thirdLeagueInterestOptions.length === 0 ? (
-        <InlineStateMessage
-          tone="warning"
-          title="No eligible leagues"
-          description="There are no additional leagues available for this curler's age and experience path."
-        />
-      ) : (
-        <div className="space-y-4">
-          <p className="text-sm text-gray-600 dark:text-gray-300">
-            These choices tell staff which additional leagues would be suitable if third-league spots are available. They are not waitlist entries. Bring-your-own-team leagues may include an optional team roster.
-          </p>
-          <ChoiceInput
-            inputId={thirdLeagueInputId}
-            layout="block"
-            maxSelectedItems={null}
-            multiSelectionIndicatorStyle="checkboxes"
-            ariaLabel="Third-league interest"
-            value={thirdLeagueSelectedIds}
-            onChange={(nextValue) => {
-              const selected = Array.isArray(nextValue) ? nextValue : nextValue != null ? [nextValue] : [];
-              state.setSelections((current) =>
-                setThirdLeagueInterestSelections(
-                  current,
-                  selected.filter((id): id is number => typeof id === 'number'),
-                  state.priorSeasonReturnLeagueIds,
-                ),
-              );
-            }}
-            options={thirdLeagueInterestOptions}
+    <Modal isOpen={isOpen} onClose={onClose} title="Edit league priorities" size="lg" verticalAlign="start">
+      <div className="space-y-4">
+        {loading ? (
+          <InlineStateMessage title="Loading league choices..." />
+        ) : (
+          <LeaguePriorityStep
+            payload={leaguePayload}
+            eligibility={eligibility}
+            registeringCurler={{ id: curler?.id ?? null, name: curler?.name ?? 'Registering curler' }}
+            saving={saving}
+            continueLabel={saving ? 'Saving…' : 'Save changes'}
+            onSave={save}
           />
-          {selectedThirdLeagueByotSelections.map((selection) => {
-            const league = state.leaguePayload?.leagues.find((item) => item.id === selection.leagueId);
-            if (!league) return null;
-            return (
-              <div
-                key={`edit-third-league-byot-${league.id}`}
-                className="space-y-2 rounded-lg border border-gray-200 p-3 dark:border-gray-700"
-              >
-                <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{league.name}</p>
-                <p className="text-sm text-gray-600 dark:text-gray-300">
-                  Optional roster for this bring-your-own-team league.
-                </p>
-                <RegistrationByotWaitlistFields
-                  league={league}
-                  selection={selection}
-                  inputId={`edit-third-league-roster-${league.id}`}
-                  revealRosterOnDemand
-                  rosterOptional
-                  omitTeamMemberPlacements
-                  registeringCurler={{
-                    id: state.curler?.id ?? null,
-                    name: state.curler?.name ?? 'Registering curler',
-                  }}
-                  memberOptionById={memberOptionById}
-                  memberOptionIdByName={memberOptionIdByName}
-                  placementOptionsByMemberId={placementOptionsByLeagueId[league.id] ?? {}}
-                  onPlacementOptionsLoaded={(options) =>
-                    setPlacementOptionsByLeagueId((current) => ({ ...current, [league.id]: options }))
-                  }
-                  onSelectionsChange={(updater) => state.setSelections(updater)}
-                />
-              </div>
-            );
-          })}
+        )}
+        {error ? <InlineStateMessage tone="error" title={error} /> : null}
+        <div className="flex flex-wrap justify-end gap-3 border-t border-gray-200 pt-4 dark:border-gray-700">
+          <Button type="button" variant="secondary" disabled={saving} onClick={onClose}>
+            Cancel
+          </Button>
         </div>
-      )}
-    </EditModalShell>
+      </div>
+    </Modal>
   );
 }
 
@@ -1433,10 +675,7 @@ export default function RegistrationViewEditModals({
   return (
     <>
       <MembershipEditModal {...shared} isOpen={activeModal === 'membership'} />
-      <PriorLeagueEditModal {...shared} title="Edit confirmed leagues" isOpen={activeModal === 'confirmedLeagues'} />
-      <PriorLeagueEditModal {...shared} title="Edit sabbaticals" isOpen={activeModal === 'sabbaticals'} />
-      <WaitlistEditModal {...shared} isOpen={activeModal === 'waitlists'} />
-      <ThirdLeagueEditModal {...shared} isOpen={activeModal === 'thirdLeague'} />
+      <LeaguePriorityEditModal {...shared} isOpen={activeModal === 'leaguePriority'} />
       <Modal
         isOpen={staffSavePrompt != null}
         onClose={handleStaffSavePromptCancel}

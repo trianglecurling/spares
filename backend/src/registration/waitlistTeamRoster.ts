@@ -1,13 +1,17 @@
-import { eq, inArray } from 'drizzle-orm';
+import { inArray } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
-import type { WaitlistEntryTypeSqlite } from '../db/drizzle-schema.js';
 import { waitlistMemberDisplayName } from './waitlistAudit.js';
 import { WaitlistStaffValidationError } from './waitlistErrors.js';
+import { countPriorityRoster, expectedByotRosterSize, pendingRosterNames } from './leaguePriorityEvaluation.js';
+import type { LeagueConfig } from './registrationContext.js';
 
+/**
+ * A teammate on a bring-your-own-team roster. Whether joining costs the member
+ * another league is derived from their priority list at placement time, so a
+ * placement is just an identity.
+ */
 export type WaitlistTeamMemberPlacementInput = {
   memberId: number;
-  entryType: WaitlistEntryTypeSqlite;
-  replacesLeagueId?: number | null;
 };
 
 export type WaitlistTeamMemberPlacement = WaitlistTeamMemberPlacementInput & {
@@ -18,17 +22,12 @@ function rosterFirstName(name: string): string {
   return name.trim().split(/\s+/)[0]?.toLowerCase() ?? '';
 }
 
-export function expectedByotRosterSizeFromFormat(format: string): number | null {
-  if (format === 'teams') return 4;
-  if (format === 'doubles') return 2;
-  return null;
+export function expectedByotRosterSizeFromFormat(format: LeagueConfig['format']): number | null {
+  return expectedByotRosterSize({ format });
 }
 
 export function waitlistRosterEntries(text: string | null | undefined): string[] {
-  return (text ?? '')
-    .split(/[\n,;]+/)
-    .map((entry) => entry.trim())
-    .filter(Boolean);
+  return pendingRosterNames(text);
 }
 
 export function countHybridRoster(input: {
@@ -36,36 +35,15 @@ export function countHybridRoster(input: {
   pendingRosterText?: string | null;
   teamRosterText?: string | null;
   primaryMemberId?: number | null;
-  expectedSize?: number | null;
 }): { memberCount: number; pendingCount: number; total: number } {
-  const placements = input.placements ?? [];
-  const pendingNames = waitlistRosterEntries(input.pendingRosterText);
-  if (placements.length > 0) {
-    return {
-      memberCount: placements.length,
-      pendingCount: pendingNames.length,
-      total: placements.length + pendingNames.length,
-    };
-  }
-  const legacyNames = waitlistRosterEntries(input.teamRosterText);
-  if (legacyNames.length > 0) {
+  if ((input.placements?.length ?? 0) === 0 && input.teamRosterText?.trim()) {
+    const legacyNames = waitlistRosterEntries(input.teamRosterText);
     return { memberCount: legacyNames.length, pendingCount: 0, total: legacyNames.length };
   }
-  if (
-    input.expectedSize != null &&
-    pendingNames.length === input.expectedSize
-  ) {
-    return { memberCount: pendingNames.length, pendingCount: 0, total: pendingNames.length };
-  }
-  if (
-    input.primaryMemberId != null &&
-    input.expectedSize != null &&
-    pendingNames.length > 0 &&
-    pendingNames.length + 1 === input.expectedSize
-  ) {
-    return { memberCount: 1, pendingCount: pendingNames.length, total: input.expectedSize };
-  }
-  return { memberCount: 0, pendingCount: pendingNames.length, total: pendingNames.length };
+  return countPriorityRoster(
+    { teamRosterPlacements: input.placements ?? null, byotTeammateText: input.pendingRosterText ?? null },
+    input.primaryMemberId,
+  );
 }
 
 export function parseTeamRosterPlacements(raw: string | null | undefined): WaitlistTeamMemberPlacementInput[] {
@@ -73,39 +51,23 @@ export function parseTeamRosterPlacements(raw: string | null | undefined): Waitl
   try {
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
-    return parsed
-      .map((item): WaitlistTeamMemberPlacementInput | null => {
-        if (!item || typeof item !== 'object') return null;
-        const memberId = Number((item as { memberId?: unknown }).memberId);
-        const entryType = (item as { entryType?: unknown }).entryType;
-        if (!Number.isFinite(memberId) || (entryType !== 'add' && entryType !== 'replace')) return null;
-        const replacesLeagueIdRaw = (item as { replacesLeagueId?: unknown }).replacesLeagueId;
-        const replacesLeagueId =
-          replacesLeagueIdRaw == null || replacesLeagueIdRaw === ''
-            ? null
-            : Number.isFinite(Number(replacesLeagueIdRaw))
-              ? Number(replacesLeagueIdRaw)
-              : null;
-        return {
-          memberId,
-          entryType,
-          replacesLeagueId,
-        };
-      })
-      .filter((item): item is WaitlistTeamMemberPlacementInput => item != null);
+    const seen = new Set<number>();
+    const placements: WaitlistTeamMemberPlacementInput[] = [];
+    for (const item of parsed) {
+      if (!item || typeof item !== 'object') continue;
+      const memberId = Number((item as { memberId?: unknown }).memberId);
+      if (!Number.isFinite(memberId) || seen.has(memberId)) continue;
+      seen.add(memberId);
+      placements.push({ memberId });
+    }
+    return placements;
   } catch {
     return [];
   }
 }
 
 export function serializeTeamRosterPlacements(placements: WaitlistTeamMemberPlacementInput[]): string {
-  return JSON.stringify(
-    placements.map((placement) => ({
-      memberId: placement.memberId,
-      entryType: placement.entryType,
-      replacesLeagueId: placement.replacesLeagueId ?? null,
-    })),
-  );
+  return JSON.stringify(placements.map((placement) => ({ memberId: placement.memberId })));
 }
 
 export function buildTeamRosterText(memberNames: string[]): string {
@@ -113,20 +75,6 @@ export function buildTeamRosterText(memberNames: string[]): string {
     rosterFirstName(left).localeCompare(rosterFirstName(right), undefined, { sensitivity: 'base' }),
   );
   return sorted.join('\n');
-}
-
-export function derivePrimaryEntryFields(
-  primaryMemberId: number,
-  placements: WaitlistTeamMemberPlacementInput[],
-): { entryType: WaitlistEntryTypeSqlite; replacesLeagueId: number | null } {
-  const primary = placements.find((placement) => placement.memberId === primaryMemberId);
-  if (!primary) {
-    return { entryType: 'add', replacesLeagueId: null };
-  }
-  return {
-    entryType: primary.entryType,
-    replacesLeagueId: primary.entryType === 'replace' ? primary.replacesLeagueId ?? null : null,
-  };
 }
 
 async function loadMemberNames(memberIds: number[]): Promise<Map<number, string>> {
@@ -166,20 +114,15 @@ export async function enrichTeamRosterPlacements(
 }
 
 export async function normalizeAndValidateTeamRosterPlacements(input: {
-  league: { league_type: string; format: string };
+  league: { league_type: string; format: LeagueConfig['format'] };
   primaryMemberId: number;
   sessionId: number;
   placements?: WaitlistTeamMemberPlacementInput[] | null;
-  fallbackEntryType?: WaitlistEntryTypeSqlite;
-  fallbackReplacesLeagueId?: number | null;
   teamRosterText?: string | null;
   pendingRosterText?: string | null;
-  enforceMemberPlacementRules: boolean;
 }): Promise<{
   placements: WaitlistTeamMemberPlacementInput[];
   teamRosterText: string;
-  entryType: WaitlistEntryTypeSqlite;
-  replacesLeagueId: number | null;
 }> {
   if (input.league.league_type !== 'bring_your_own_team') {
     throw new WaitlistStaffValidationError({
@@ -190,8 +133,6 @@ export async function normalizeAndValidateTeamRosterPlacements(input: {
   const expectedSize = expectedByotRosterSizeFromFormat(input.league.format);
   let placements: WaitlistTeamMemberPlacementInput[] = (input.placements ?? []).map((placement) => ({
     memberId: placement.memberId,
-    entryType: placement.entryType,
-    replacesLeagueId: placement.entryType === 'replace' ? placement.replacesLeagueId ?? null : null,
   }));
 
   const pendingNames = waitlistRosterEntries(input.pendingRosterText);
@@ -199,18 +140,10 @@ export async function normalizeAndValidateTeamRosterPlacements(input: {
   if (placements.length === 0 && input.teamRosterText?.trim()) {
     const names = waitlistRosterEntries(input.teamRosterText);
     const nameRows = await loadMemberNamesByNames(names);
-    const fallbackEntryType = input.fallbackEntryType ?? 'add';
-    const fallbackReplacesLeagueId =
-      fallbackEntryType === 'replace' ? input.fallbackReplacesLeagueId ?? null : null;
     placements = names
       .map((name): WaitlistTeamMemberPlacementInput | null => {
         const memberId = nameRows.get(name.trim().toLowerCase());
-        if (memberId == null) return null;
-        return {
-          memberId,
-          entryType: fallbackEntryType,
-          replacesLeagueId: fallbackReplacesLeagueId,
-        };
+        return memberId == null ? null : { memberId };
       })
       .filter((item): item is WaitlistTeamMemberPlacementInput => item != null);
   }
@@ -231,11 +164,6 @@ export async function normalizeAndValidateTeamRosterPlacements(input: {
   }
 
   if (pendingNames.length > 0) {
-    if (pendingNames.some((name) => !name.trim())) {
-      throw new WaitlistStaffValidationError({
-        teamRosterPlacements: 'Each pending teammate must have a name.',
-      });
-    }
     const pendingLower = pendingNames.map((name) => name.trim().toLowerCase());
     if (new Set(pendingLower).size !== pendingLower.length) {
       throw new WaitlistStaffValidationError({
@@ -257,68 +185,15 @@ export async function normalizeAndValidateTeamRosterPlacements(input: {
     });
   }
 
-  for (const placement of placements) {
-    if (placement.entryType === 'replace' && !placement.replacesLeagueId) {
-      throw new WaitlistStaffValidationError({
-        teamRosterPlacements: 'Each REPLACE team member must identify a league to replace.',
-      });
-    }
-  }
-
-  if (input.enforceMemberPlacementRules) {
-    const { getTeamMemberPlacementOptions } = await import('./memberWaitlistJoinService.js');
-    const options = await getTeamMemberPlacementOptions(input.sessionId, memberIds);
-    for (const placement of placements) {
-      const memberOptions = options[placement.memberId];
-      if (!memberOptions) {
-        throw new WaitlistStaffValidationError({
-          teamRosterPlacements: `Unable to load placement options for member #${placement.memberId}.`,
-        });
-      }
-      if (placement.entryType === 'add' && !memberOptions.addAvailable) {
-        throw new WaitlistStaffValidationError({
-          teamRosterPlacements:
-            memberOptions.addBlockedReason ??
-            `${memberOptions.memberName} is not eligible for an ADD waitlist entry.`,
-        });
-      }
-      if (placement.entryType === 'replace') {
-        if (!placement.replacesLeagueId) {
-          throw new WaitlistStaffValidationError({
-            teamRosterPlacements: 'Each REPLACE team member must identify a league to replace.',
-          });
-        }
-        if (!memberOptions.replacementLeagues.some((league) => league.id === placement.replacesLeagueId)) {
-          throw new WaitlistStaffValidationError({
-            teamRosterPlacements: `${memberOptions.memberName} must select a league they currently hold.`,
-          });
-        }
-        // Cap REPLACE waitlists only when ADD is unavailable (already at two leagues).
-        if (!memberOptions.addAvailable && memberOptions.activeReplaceWaitlists >= 2) {
-          throw new WaitlistStaffValidationError({
-            teamRosterPlacements: `${memberOptions.memberName} may have at most two active REPLACE waitlists when already holding two leagues.`,
-          });
-        }
-      }
-    }
-  } else {
-    const { db, schema } = getDrizzleDb();
-    const sessionLeagues = await db
-      .select({ id: schema.leagues.id })
-      .from(schema.leagues)
-      .where(eq(schema.leagues.session_id, input.sessionId));
-    const sessionLeagueIds = new Set(sessionLeagues.map((league) => league.id));
-    for (const placement of placements) {
-      if (
-        placement.entryType === 'replace' &&
-        placement.replacesLeagueId &&
-        !sessionLeagueIds.has(placement.replacesLeagueId)
-      ) {
-        throw new WaitlistStaffValidationError({
-          teamRosterPlacements: 'Replacement leagues must belong to the current session.',
-        });
-      }
-    }
+  const { db, schema } = getDrizzleDb();
+  const sessionMembers = await db
+    .select({ id: schema.members.id })
+    .from(schema.members)
+    .where(inArray(schema.members.id, memberIds));
+  if (sessionMembers.length !== memberIds.length) {
+    throw new WaitlistStaffValidationError({
+      teamRosterPlacements: 'One or more selected teammates could not be found.',
+    });
   }
 
   const memberNames = await loadMemberNames(memberIds);
@@ -328,14 +203,8 @@ export async function normalizeAndValidateTeamRosterPlacements(input: {
       .filter((name): name is string => Boolean(name)),
     ...pendingNames,
   ]);
-  const { entryType, replacesLeagueId } = derivePrimaryEntryFields(input.primaryMemberId, placements);
 
-  return {
-    placements,
-    teamRosterText,
-    entryType,
-    replacesLeagueId,
-  };
+  return { placements, teamRosterText };
 }
 
 async function loadMemberNamesByNames(names: string[]): Promise<Map<string, number>> {
@@ -365,8 +234,6 @@ async function loadMemberNamesByNames(names: string[]): Promise<Map<string, numb
 
 export async function hydrateTeamRosterPlacementsForEntry(input: {
   primaryMemberId: number;
-  entryType: WaitlistEntryTypeSqlite;
-  replacesLeagueId: number | null;
   teamRosterPlacementsJson: string | null | undefined;
   teamRosterText: string | null | undefined;
 }): Promise<WaitlistTeamMemberPlacement[]> {
@@ -381,26 +248,12 @@ export async function hydrateTeamRosterPlacementsForEntry(input: {
   const fallbackPlacements = names
     .map((name): WaitlistTeamMemberPlacementInput | null => {
       const memberId = nameRows.get(name.trim().toLowerCase());
-      if (memberId == null) return null;
-      return {
-        memberId,
-        entryType: input.entryType,
-        replacesLeagueId: input.entryType === 'replace' ? input.replacesLeagueId : null,
-      };
+      return memberId == null ? null : { memberId };
     })
     .filter((item): item is WaitlistTeamMemberPlacementInput => item != null);
 
-  if (!fallbackPlacements.some((placement) => placement.memberId === input.primaryMemberId) && names.length > 0) {
-    const primaryName = names.find((name) => nameRows.get(name.trim().toLowerCase()) === input.primaryMemberId);
-    if (primaryName) {
-      // already included via name match
-    } else {
-      fallbackPlacements.unshift({
-        memberId: input.primaryMemberId,
-        entryType: input.entryType,
-        replacesLeagueId: input.entryType === 'replace' ? input.replacesLeagueId : null,
-      });
-    }
+  if (!fallbackPlacements.some((placement) => placement.memberId === input.primaryMemberId)) {
+    fallbackPlacements.unshift({ memberId: input.primaryMemberId });
   }
 
   return enrichTeamRosterPlacements(fallbackPlacements);
@@ -408,19 +261,12 @@ export async function hydrateTeamRosterPlacementsForEntry(input: {
 
 export function formatTeamRosterPlacementsDisplay(placements: WaitlistTeamMemberPlacement[]): string | null {
   if (placements.length === 0) return null;
-  const sorted = [...placements].sort((left, right) =>
-    rosterFirstName(left.memberName).localeCompare(rosterFirstName(right.memberName), undefined, {
-      sensitivity: 'base',
-    }),
-  );
-  return sorted
-    .map((placement) => {
-      const typeLabel = placement.entryType === 'replace' ? 'REPLACE' : 'ADD';
-      const leagueSuffix =
-        placement.entryType === 'replace' && placement.replacesLeagueId != null
-          ? ` (#${placement.replacesLeagueId})`
-          : '';
-      return `${placement.memberName} (${typeLabel}${leagueSuffix})`;
-    })
+  return [...placements]
+    .sort((left, right) =>
+      rosterFirstName(left.memberName).localeCompare(rosterFirstName(right.memberName), undefined, {
+        sensitivity: 'base',
+      }),
+    )
+    .map((placement) => placement.memberName)
     .join(', ');
 }

@@ -19,18 +19,18 @@ import { effectiveExperienceYears, isJuniorRecreationalEligible } from './regist
 import { memberExperienceBaselinesFromRow, type MemberExperienceBaselines } from './curlingExperienceYears.js';
 import { effectiveLeagueRegistrationFeeMinor } from './registrationConfigValidation.js';
 import { calculateRegistrationFees, type RegistrationFeeLineItem, type RegistrationFeePreview } from './registrationFeeCalculator.js';
-import { evaluateExistingWaitlistPreferences, evaluateWaitlistCleanup } from './registrationLeagueSelections.js';
 import { decideRegistrationPayment, type RegistrationPaymentDecision } from './registrationPaymentDecision.js';
 import {
   formatRegistrationPaymentDeadline,
   getRegistrationPaymentDeadline,
 } from './registrationPaymentDeadline.js';
 import {
-  guaranteedPlayInReplacedLeagueIds,
   type LeagueConfig,
+  type LeaguePriorityInput,
   type RegistrationContext,
   type RegistrationSelectionInput,
 } from './registrationContext.js';
+import { evaluateLeaguePriorities, type LeaguePriorityEvaluation } from './leaguePriorityEvaluation.js';
 import { formatRegistrationTeammatesDisplay, sendRegistrationEmailForDashboard, type RegistrationEmailPayload, type RegistrationMessageType, type RegistrationReceiptLineItem } from './registrationEmailService.js';
 import {
   assertStaffEditableRegistration,
@@ -39,6 +39,7 @@ import {
 } from './registrationPriorityEdit.js';
 import { canViewOrEditRegistration, getEffectiveRegistrationWindow, getRegistrationById, getRegistrationShellPayload } from './registrationShellService.js';
 import {
+  guaranteedPlacementsFromEvaluation,
   removeOrphanedRegistrationRosterPlacements,
   syncRegistrationRosterPlacements,
 } from './registrationRosterService.js';
@@ -47,10 +48,12 @@ import {
   isActiveSabbaticalRecord,
   sabbaticalMatchesLeagueLineage,
 } from './registrationSabbaticalContinuity.js';
-import { removeExistingWaitlistsMarkedForRemoval, removeOrphanedRegistrationWaitlistEntries } from './registrationWaitlistCleanup.js';
+import {
+  removeOrphanedRegistrationWaitlistEntries,
+  removeWaitlistEntriesNotOnPriorityList,
+} from './registrationWaitlistCleanup.js';
 import { getWaitlistQueuePosition, insertWaitlistAuditEvent } from './waitlistAudit.js';
 import { loadExistingWaitlistEntriesForMember, waitlistEntryIncludesMember } from './waitlistMemberMembership.js';
-import { offerPreferenceFromSelectionType } from './waitlistOfferPreference.js';
 import { sendWaitlistEntryJoinedNotifications } from './waitlistJoinedNotificationService.js';
 import type { Member } from '../types.js';
 import { memberCanManageRegistrations } from '../utils/registrationStaffAccess.js';
@@ -377,18 +380,17 @@ function memberDisplayName(row: { name?: string | null; first_name?: string | nu
   return parts.length > 0 ? parts.join(' ') : row.name?.trim() || row.email?.trim() || 'there';
 }
 
-async function selectionTeammatesDisplayText(selection: {
+async function priorityTeammatesDisplayText(priority: {
   byotTeammateText?: string | null;
-  teamRosterText?: string | null;
-  teamRosterPlacements?: RegistrationSelectionInput['teamRosterPlacements'];
+  teamRosterPlacements?: LeaguePriorityInput['teamRosterPlacements'];
 }): Promise<string | null> {
   const { enrichTeamRosterPlacements, waitlistRosterEntries } = await import('./waitlistTeamRoster.js');
-  const placements = selection.teamRosterPlacements ?? [];
+  const placements = priority.teamRosterPlacements ?? [];
   const enriched = placements.length > 0 ? await enrichTeamRosterPlacements(placements) : [];
   return formatRegistrationTeammatesDisplay({
     memberNames: enriched.map((placement) => placement.memberName),
-    pendingNames: waitlistRosterEntries(selection.byotTeammateText),
-    legacyRosterText: selection.teamRosterText,
+    pendingNames: waitlistRosterEntries(priority.byotTeammateText),
+    legacyRosterText: null,
   });
 }
 
@@ -397,17 +399,24 @@ async function registrationSummaryLines(context: RegistrationContext): Promise<s
   if (context.membershipOption && context.membershipOption !== 'none') {
     lines.push(`${context.membershipOption.replace(/_/g, ' ')} membership`);
   }
-  for (const selection of context.selections) {
-    const leagueName = selection.leagueId ? context.leagues[selection.leagueId]?.name : null;
-    const label = selection.selectionType.replace(/_/g, ' ');
-    let line = leagueName ? `${label}: ${leagueName}` : label;
-    if (selection.selectionType === 'byot_request' || selection.selectionType === 'play_in_request') {
-      const teammates = await selectionTeammatesDisplayText(selection);
-      if (teammates) {
-        line += ` · Teammates: ${teammates}`;
-      }
+
+  const evaluation = evaluateLeaguePriorities(context);
+  const labelByLeagueId = new Map(evaluation.entries.map((entry) => [entry.leagueId, entry.label]));
+  for (const priority of [...context.priorities].sort((a, b) => a.priorityRank - b.priorityRank)) {
+    const league = context.leagues[priority.leagueId];
+    const label = GUARANTEE_LABEL_TEXT[labelByLeagueId.get(priority.leagueId) ?? 'subject_to_availability'];
+    let line = `${priority.priorityRank}. ${league?.name ?? `League ${priority.leagueId}`} — ${label}`;
+    const teammates = await priorityTeammatesDisplayText(priority);
+    if (teammates) {
+      line += ` · Teammates: ${teammates}`;
     }
     lines.push(line);
+  }
+
+  for (const selection of context.selections) {
+    const leagueName = selection.leagueId ? context.leagues[selection.leagueId]?.name : null;
+    const label = SELECTION_TYPE_LABELS[selection.selectionType] ?? selection.selectionType.replace(/_/g, ' ');
+    lines.push(leagueName ? `${label}: ${leagueName}` : label);
   }
   return lines;
 }
@@ -421,22 +430,17 @@ const MEMBERSHIP_OPTION_LABELS: Record<string, string> = {
 };
 
 const SELECTION_TYPE_LABELS: Record<string, string> = {
-  guaranteed_return: 'Guaranteed return',
-  return_subject_to_availability: 'Return subject to availability',
-  waitlist_add: 'Waitlist (add)',
-  waitlist_replace: 'Waitlist (replace)',
-  waitlist_add_auto_decline: 'Waitlist (add, auto-decline offers)',
-  waitlist_replace_auto_decline: 'Waitlist (replace, auto-decline offers)',
-  waitlist_keep_auto_accept: 'Stay on waitlist (auto-accept offers)',
-  waitlist_keep_auto_decline: 'Stay on waitlist (auto-decline offers)',
-  waitlist_remove: 'Remove from waitlist',
-  byot_request: 'Bring-your-own-team request',
-  play_in_request: 'Play-in request',
-  instructional_join: 'Instructional join',
   sabbatical: 'Sabbatical',
-  third_league_interest: 'Third-league interest',
-  spare_only: 'Spare only',
   drop: 'Drop league',
+  junior_recreational: 'Junior recreational program',
+  spare_only: 'Spare only',
+};
+
+const GUARANTEE_LABEL_TEXT: Record<string, string> = {
+  guaranteed_return: 'Guaranteed return',
+  guaranteed_fallback: 'Guaranteed fallback',
+  waitlisted: 'Waitlisted',
+  subject_to_availability: 'Subject to availability',
 };
 
 function humanizeRegistrationToken(value: string | null | undefined): string {
@@ -468,35 +472,6 @@ async function paymentDeadlineFieldsForSeasonSession(
     paymentDeadlineDisplay,
     payLaterAvailable: paymentOutcome === 'immediate_payment' && Boolean(paymentDeadlineAt),
   };
-}
-
-function formatRegistrationSelectionDetailLine(input: {
-  selectionType: string;
-  status: string;
-  leagueName: string | null;
-  replacesLeagueId: number | null;
-  replacedLeagueName: string | null;
-  isTemporarySabbaticalFill: boolean;
-  teammatesText: string | null;
-  rank: number | null;
-}): string {
-  const typeLabel = SELECTION_TYPE_LABELS[input.selectionType] ?? humanizeRegistrationToken(input.selectionType);
-  const leagueSuffix = input.leagueName ? `: ${input.leagueName}` : '';
-  const rankPrefix = input.rank != null && input.selectionType === 'third_league_interest' ? `${input.rank}. ` : '';
-  const parts = [`${rankPrefix}${typeLabel}${leagueSuffix} (${humanizeRegistrationToken(input.status)})`];
-  if (input.selectionType === 'waitlist_replace' && input.replacedLeagueName) {
-    parts.push(`Would replace ${input.replacedLeagueName}`);
-  }
-  if (input.isTemporarySabbaticalFill) {
-    parts.push('Temporary sabbatical-fill spot');
-  }
-  if (
-    (input.selectionType === 'byot_request' || input.selectionType === 'play_in_request') &&
-    input.teammatesText?.trim()
-  ) {
-    parts.push(`Teammates: ${input.teammatesText.trim()}`);
-  }
-  return parts.join(' · ');
 }
 
 async function buildRegistrationPaymentConfirmationEmailPayload(input: {
@@ -538,34 +513,7 @@ async function buildRegistrationPaymentConfirmationEmailPayload(input: {
   const [curler] = registration.curler_member_id
     ? await db.select().from(schema.members).where(eq(schema.members.id, registration.curler_member_id)).limit(1)
     : [];
-  const selections = await db
-    .select({
-      selectionType: schema.registrationSelections.selection_type,
-      status: schema.registrationSelections.status,
-      rank: schema.registrationSelections.rank,
-      leagueId: schema.registrationSelections.league_id,
-      replacesLeagueId: schema.registrationSelections.replaces_league_id,
-      isTemporarySabbaticalFill: schema.registrationSelections.is_temporary_sabbatical_fill,
-      byotTeammateText: schema.registrationSelections.byot_teammate_text,
-      teamRosterPlacements: schema.registrationSelections.team_roster_placements,
-      leagueName: schema.leagues.name,
-    })
-    .from(schema.registrationSelections)
-    .leftJoin(schema.leagues, eq(schema.registrationSelections.league_id, schema.leagues.id))
-    .where(eq(schema.registrationSelections.registration_id, input.registrationId))
-    .orderBy(asc(schema.registrationSelections.rank), asc(schema.registrationSelections.id));
-  const replacedLeagueIds = [...new Set(
-    selections
-      .map((selection) => selection.replacesLeagueId)
-      .filter((leagueId): leagueId is number => leagueId != null)
-  )];
-  const replacedLeagues = replacedLeagueIds.length > 0
-    ? await db
-        .select({ id: schema.leagues.id, name: schema.leagues.name })
-        .from(schema.leagues)
-        .where(inArray(schema.leagues.id, replacedLeagueIds))
-    : [];
-  const replacedLeagueNames = new Map(replacedLeagues.map((league) => [league.id, league.name]));
+  const summaryLines = await registrationSummaryLines(await buildRegistrationContextForDraft(input.registrationId));
   const lineItems = await db
     .select({
       description: schema.registrationInvoiceLineItems.description,
@@ -575,7 +523,6 @@ async function buildRegistrationPaymentConfirmationEmailPayload(input: {
     .where(eq(schema.registrationInvoiceLineItems.invoice_id, input.invoice.id))
     .orderBy(asc(schema.registrationInvoiceLineItems.sort_order), asc(schema.registrationInvoiceLineItems.id));
 
-  const { parseTeamRosterPlacements } = await import('./waitlistTeamRoster.js');
   const registrationDetailLines = [
     `Season: ${season?.name ?? 'Not available'}`,
     `Session: ${session?.name ?? 'Not available'}`,
@@ -588,26 +535,8 @@ async function buildRegistrationPaymentConfirmationEmailPayload(input: {
   if (registration.reciprocal_discount_claimed === 1) {
     registrationDetailLines.push('Reciprocal club discount claimed');
   }
-  if (selections.length > 0) {
-    registrationDetailLines.push('League and program choices:');
-    for (const selection of selections) {
-      const teammatesText = await selectionTeammatesDisplayText({
-        byotTeammateText: selection.byotTeammateText,
-        teamRosterPlacements: parseTeamRosterPlacements(selection.teamRosterPlacements),
-      });
-      registrationDetailLines.push(
-        formatRegistrationSelectionDetailLine({
-          selectionType: selection.selectionType,
-          status: selection.status,
-          leagueName: selection.leagueName,
-          replacesLeagueId: selection.replacesLeagueId,
-          replacedLeagueName: selection.replacesLeagueId ? replacedLeagueNames.get(selection.replacesLeagueId) ?? null : null,
-          isTemporarySabbaticalFill: selection.isTemporarySabbaticalFill === 1,
-          teammatesText,
-          rank: selection.rank,
-        })
-      );
-    }
+  if (summaryLines.length > 0) {
+    registrationDetailLines.push('League and program choices:', ...summaryLines);
   } else {
     registrationDetailLines.push('League and program choices: none listed');
   }
@@ -770,15 +699,27 @@ async function loadRegistrationSelections(registrationId: number): Promise<Regis
     .where(eq(schema.registrationSelections.registration_id, registrationId))
     .orderBy(asc(schema.registrationSelections.rank), asc(schema.registrationSelections.id));
 
-  const { parseTeamRosterPlacements } = await import('./waitlistTeamRoster.js');
   return rows.map((row) => ({
     selectionType: row.selection_type,
     leagueId: row.league_id,
-    rank: row.rank,
-    replacesLeagueId: row.replaces_league_id,
+    isTemporarySabbaticalFill: row.is_temporary_sabbatical_fill === 1,
+  }));
+}
+
+async function loadRegistrationLeaguePriorities(registrationId: number): Promise<LeaguePriorityInput[]> {
+  const { db, schema } = getDrizzleDb();
+  const rows = await db
+    .select()
+    .from(schema.registrationLeaguePriorities)
+    .where(eq(schema.registrationLeaguePriorities.registration_id, registrationId))
+    .orderBy(asc(schema.registrationLeaguePriorities.priority_rank), asc(schema.registrationLeaguePriorities.id));
+
+  const { parseTeamRosterPlacements } = await import('./waitlistTeamRoster.js');
+  return rows.map((row, index) => ({
+    leagueId: row.league_id,
+    priorityRank: index + 1,
     byotTeammateText: row.byot_teammate_text,
     teamRosterPlacements: parseTeamRosterPlacements(row.team_roster_placements),
-    isTemporarySabbaticalFill: row.is_temporary_sabbatical_fill === 1,
   }));
 }
 
@@ -916,7 +857,7 @@ type RegistrationMembershipPaymentSourceRow = {
   reciprocal_club_name: string | null;
   experience_type: CurlingExperienceTypeSqlite | null;
   experience_self_reported_years: number | null;
-  desired_add_waitlist_league_count?: number | null;
+  desired_league_count?: number | null;
 };
 
 async function buildRegistrationContextFromSourceRow(
@@ -954,15 +895,17 @@ async function buildRegistrationContextFromSourceRow(
   const emptyContextState: [
     Record<number, LeagueConfig>,
     RegistrationSelectionInput[],
+    LeaguePriorityInput[],
     number[],
     RegistrationContext['existingSabbaticals'],
     RegistrationContext['existingWaitlistEntries'],
     RegistrationContext['juniorAssistance'] | undefined,
-  ] = [{}, [], [], [], [], undefined];
-  const [leagues, selections, activeLeagueIds, existingSabbaticals, existingWaitlistEntries, juniorAssistance] = options.registrationId
+  ] = [{}, [], [], [], [], [], undefined];
+  const [leagues, selections, priorities, activeLeagueIds, existingSabbaticals, existingWaitlistEntries, juniorAssistance] = options.registrationId
     ? await Promise.all([
         loadLeaguesForSession(registration.session_id, defaultLeagueFeeMinor),
         loadRegistrationSelections(options.registrationId),
+        loadRegistrationLeaguePriorities(options.registrationId),
         memberId ? loadActiveLeagueIds(memberId, registration.session_id) : Promise.resolve([]),
         memberId ? loadExistingSabbaticals(memberId) : Promise.resolve([]),
         memberId ? loadExistingWaitlistEntriesForMember(memberId, registration.session_id) : Promise.resolve([]),
@@ -977,7 +920,7 @@ async function buildRegistrationContextFromSourceRow(
   const playInEntry = options.registrationId
     ? await loadPlayInEntryContextsForRegistration({
         memberId,
-        selections,
+        priorities,
         leagues,
       })
     : undefined;
@@ -1020,6 +963,7 @@ async function buildRegistrationContextFromSourceRow(
     existingWaitlistEntries,
     leagues,
     selections,
+    priorities,
     discountClaims:
       membershipOption === 'social'
         ? {}
@@ -1038,7 +982,7 @@ async function buildRegistrationContextFromSourceRow(
     juniorAssistance,
     playInEntry,
     sabbaticalDurationLimitYears: defaultSabbaticalDurationLimitYears(),
-    desiredAddWaitlistLeagueCount: registration.desired_add_waitlist_league_count ?? null,
+    desiredLeagueCount: registration.desired_league_count ?? null,
   };
 }
 
@@ -1404,21 +1348,6 @@ function collectDecisionErrors(
   }
 }
 
-const REAL_LEAGUE_SELECTION_TYPES_FOR_SUBMIT = new Set([
-  'guaranteed_return',
-  'return_subject_to_availability',
-  'third_league_interest',
-  'waitlist_add',
-  'waitlist_replace',
-  'waitlist_add_auto_decline',
-  'waitlist_replace_auto_decline',
-  'waitlist_keep_auto_accept',
-  'waitlist_keep_auto_decline',
-  'byot_request',
-  'play_in_request',
-  'instructional_join',
-]);
-
 function assertReadyToSubmit(
   registration: { status: string; ice_privileges_choice?: CurlingIcePrivilegesChoiceSqlite | null },
   context: RegistrationContext,
@@ -1458,26 +1387,15 @@ function assertReadyToSubmit(
   }
   const details: Record<string, string> = {};
   if (registration.ice_privileges_choice === 'league_play' && context.membershipOption !== 'none') {
-    const hasLeagueSelection = context.selections.some(
-      (selection) => selection.leagueId != null && REAL_LEAGUE_SELECTION_TYPES_FOR_SUBMIT.has(selection.selectionType)
-    );
-    if (!hasLeagueSelection) {
-      details.iceLeagues = 'Select at least one league to continue with league play.';
+    if (context.priorities.length === 0) {
+      details.iceLeagues = 'Add at least one league to your priority list to continue with league play.';
     }
   }
   if (evaluation.feePreview.blockingErrors.length > 0) {
     collectDecisionErrors('fees', evaluation.feePreview.blockingErrors, details);
   }
-  if (evaluation.selectionValidation.blockingErrors.length > 0) {
-    collectDecisionErrors('selection', evaluation.selectionValidation.blockingErrors, details);
-  }
-  const waitlistCleanup = evaluateWaitlistCleanup(context);
-  if (waitlistCleanup.blockingErrors.length > 0) {
-    collectDecisionErrors('waitlistCleanup', waitlistCleanup.blockingErrors, details);
-  }
-  const existingWaitlistPreferences = evaluateExistingWaitlistPreferences(context);
-  if (existingWaitlistPreferences.blockingErrors.length > 0) {
-    collectDecisionErrors('existingWaitlist', existingWaitlistPreferences.blockingErrors, details);
+  if (evaluation.priorityValidation.blockingErrors.length > 0) {
+    collectDecisionErrors('priority', evaluation.priorityValidation.blockingErrors, details);
   }
   if (Object.keys(details).length > 0) {
     throw new RegistrationMembershipPaymentValidationError(details);
@@ -1577,43 +1495,32 @@ function isFutureTimestamp(value: unknown): boolean {
   return Number.isFinite(timestamp) && timestamp > Date.now();
 }
 
-function waitlistReason(selectionType: RegistrationSelectionInput['selectionType']): string {
-  return selectionType === 'waitlist_replace' ? 'WAITLIST_REPLACE_CREATED' : 'WAITLIST_ADD_CREATED';
-}
-
+/**
+ * Turns every waitlisted entry on the priority list into a waitlist row,
+ * carrying the rank and desired league count the offer coordinator needs to
+ * decide who gets offered what.
+ */
 async function persistRegistrationWaitlists(input: {
   tx: any;
   registrationId: number;
   actorMemberId: number;
   curlerMemberId: number;
-  selections: RegistrationSelectionInput[];
-  desiredAddWaitlistLeagueCount?: number | null;
+  context: RegistrationContext;
+  evaluation: LeaguePriorityEvaluation;
   notifications?: Array<{
     entryId: number;
     waitlistId: number;
     leagueId: number;
-    entryType: 'add' | 'replace';
-    replacesLeagueId: number | null;
+    priorityRank: number;
   }>;
 }): Promise<void> {
   const { schema } = getDrizzleDb();
-  const { replacementLineageFromLeagueId } = await import('./waitlistEntityService.js');
-  const waitlistSelections = input.selections.filter((selection) =>
-    ['waitlist_add', 'waitlist_replace', 'waitlist_add_auto_decline', 'waitlist_replace_auto_decline'].includes(
-      selection.selectionType,
-    ),
-  );
-  for (const selection of waitlistSelections) {
-    if (!selection.leagueId) continue;
-    const normalizedSelection: RegistrationSelectionInput = {
-      ...selection,
-      selectionType:
-        selection.selectionType === 'waitlist_add_auto_decline'
-          ? 'waitlist_add'
-          : selection.selectionType === 'waitlist_replace_auto_decline'
-            ? 'waitlist_replace'
-            : selection.selectionType,
-    };
+  const waitlistedEntries = input.evaluation.entries.filter((entry) => entry.label === 'waitlisted');
+
+  for (const entry of waitlistedEntries) {
+    const priority = input.context.priorities.find((item) => item.leagueId === entry.leagueId);
+    if (!priority) continue;
+
     const [league] = await input.tx
       .select({
         waitlistId: schema.leagues.waitlist_id,
@@ -1622,7 +1529,7 @@ async function persistRegistrationWaitlists(input: {
         sessionId: schema.leagues.session_id,
       })
       .from(schema.leagues)
-      .where(eq(schema.leagues.id, selection.leagueId))
+      .where(eq(schema.leagues.id, entry.leagueId))
       .limit(1);
     if (!league?.waitlistId || league.sessionId == null) continue;
 
@@ -1635,21 +1542,15 @@ async function persistRegistrationWaitlists(input: {
           eq(schema.waitlistEntries.status, 'active'),
         ),
       );
-    const { waitlistEntryIncludesMember } = await import('./waitlistMemberMembership.js');
-    const existingParticipation = activeEntries.find((entry: (typeof activeEntries)[number]) =>
-      waitlistEntryIncludesMember(input.curlerMemberId, entry),
+    const existingParticipation = activeEntries.find((row: (typeof activeEntries)[number]) =>
+      waitlistEntryIncludesMember(input.curlerMemberId, row),
     );
-    if (existingParticipation && existingParticipation.member_id !== input.curlerMemberId) {
-      continue;
-    }
+    // Someone else already listed this member on their team entry; that entry wins.
+    if (existingParticipation && existingParticipation.member_id !== input.curlerMemberId) continue;
     const existing = existingParticipation ?? null;
 
-    const fallbackEntryType = normalizedSelection.selectionType === 'waitlist_replace' ? 'replace' : 'add';
-    let entryType = fallbackEntryType;
-    let replacesLeagueId = normalizedSelection.replacesLeagueId ?? null;
-    let teamRosterText = normalizedSelection.teamRosterText?.trim() || normalizedSelection.byotTeammateText?.trim() || null;
+    let teamRosterText = priority.byotTeammateText?.trim() || null;
     let teamRosterPlacements: string | null = null;
-
     if (league.leagueType === 'bring_your_own_team') {
       const { normalizeAndValidateTeamRosterPlacements, serializeTeamRosterPlacements } = await import(
         './waitlistTeamRoster.js'
@@ -1658,42 +1559,22 @@ async function persistRegistrationWaitlists(input: {
         league: { league_type: league.leagueType, format: league.format },
         primaryMemberId: input.curlerMemberId,
         sessionId: league.sessionId,
-        placements: normalizedSelection.teamRosterPlacements,
-        fallbackEntryType,
-        fallbackReplacesLeagueId: normalizedSelection.replacesLeagueId ?? null,
+        placements: priority.teamRosterPlacements,
         teamRosterText,
-        pendingRosterText: normalizedSelection.byotTeammateText,
-        enforceMemberPlacementRules: true,
+        pendingRosterText: priority.byotTeammateText,
       });
-      entryType = normalized.entryType;
-      replacesLeagueId = normalized.replacesLeagueId;
       teamRosterText = normalized.teamRosterText;
       teamRosterPlacements = serializeTeamRosterPlacements(normalized.placements);
     }
-
-    const replacement =
-      entryType === 'replace' && replacesLeagueId
-        ? await replacementLineageFromLeagueId(replacesLeagueId)
-        : null;
-
-    const offerResponsePreference = offerPreferenceFromSelectionType(selection.selectionType) ?? 'ask';
-    const addWaitlistPriorityRank =
-      entryType === 'add' && normalizedSelection.rank != null ? normalizedSelection.rank : null;
-    const desiredAddWaitlistLeagueCount =
-      entryType === 'add' ? (input.desiredAddWaitlistLeagueCount ?? null) : null;
 
     const nextEntry = {
       member_id: input.curlerMemberId,
       waitlist_id: league.waitlistId,
       source_registration_id: input.registrationId,
-      entry_type: entryType,
-      replaces_lineage_start_league_id: replacement?.lineageStartLeagueId ?? null,
-      original_replaces_league_id: replacement?.originalReplacesLeagueId ?? null,
       team_roster_text: teamRosterText,
       team_roster_placements: teamRosterPlacements,
-      offer_response_preference: offerResponsePreference,
-      desired_add_waitlist_league_count: desiredAddWaitlistLeagueCount,
-      add_waitlist_priority_rank: addWaitlistPriorityRank,
+      priority_rank: priority.priorityRank,
+      desired_league_count: input.evaluation.desiredLeagueCount,
       status: 'active',
       updated_at: sql`CURRENT_TIMESTAMP`,
     };
@@ -1705,39 +1586,21 @@ async function persistRegistrationWaitlists(input: {
     if (existing) {
       entryId = existing.id;
       before = {
-        entryType: existing.entry_type,
-        replacesLineageStartLeagueId: existing.replaces_lineage_start_league_id,
+        priorityRank: existing.priority_rank,
+        desiredLeagueCount: existing.desired_league_count,
         teamRosterText: existing.team_roster_text,
         teamRosterPlacements: existing.team_roster_placements,
         sourceRegistrationId: existing.source_registration_id,
-        offerResponsePreference: existing.offer_response_preference,
         status: existing.status,
       };
-      const entryTypeChanged = existing.entry_type !== nextEntry.entry_type;
-      const replacementChanged = existing.replaces_lineage_start_league_id !== nextEntry.replaces_lineage_start_league_id;
-      const rosterChanged = existing.team_roster_text !== nextEntry.team_roster_text;
-      const placementsChanged = existing.team_roster_placements !== nextEntry.team_roster_placements;
-      const sourceChanged = existing.source_registration_id !== input.registrationId;
-      const preferenceChanged = existing.offer_response_preference !== nextEntry.offer_response_preference;
-      if (
-        !entryTypeChanged &&
-        !replacementChanged &&
-        !rosterChanged &&
-        !placementsChanged &&
-        !sourceChanged &&
-        !preferenceChanged
-      ) {
-        continue;
-      }
-      action = entryTypeChanged
-        ? nextEntry.entry_type === 'replace'
-          ? 'entry_converted_add_to_replace'
-          : 'entry_converted_replace_to_add'
-        : preferenceChanged && !entryTypeChanged && !replacementChanged && !rosterChanged && !placementsChanged && !sourceChanged
-          ? 'offer_preference_changed'
-          : replacementChanged
-            ? 'replacement_league_changed'
-            : 'staff_correction';
+      const unchanged =
+        existing.priority_rank === nextEntry.priority_rank &&
+        existing.desired_league_count === nextEntry.desired_league_count &&
+        existing.team_roster_text === nextEntry.team_roster_text &&
+        existing.team_roster_placements === nextEntry.team_roster_placements &&
+        existing.source_registration_id === input.registrationId;
+      if (unchanged) continue;
+      action = 'staff_correction';
       await input.tx.update(schema.waitlistEntries).set(nextEntry).where(eq(schema.waitlistEntries.id, entryId));
     } else {
       const joinedAt = new Date();
@@ -1745,7 +1608,7 @@ async function persistRegistrationWaitlists(input: {
         .insert(schema.waitlistEntries)
         .values({
           ...nextEntry,
-          position_sort_key: waitlistPositionSortKey(input.registrationId, selection.leagueId),
+          position_sort_key: waitlistPositionSortKey(input.registrationId, entry.leagueId),
           joined_at: dbValue(joinedAt),
         })
         .returning({ id: schema.waitlistEntries.id });
@@ -1754,88 +1617,21 @@ async function persistRegistrationWaitlists(input: {
       input.notifications?.push({
         entryId,
         waitlistId: league.waitlistId,
-        leagueId: selection.leagueId,
-        entryType: nextEntry.entry_type as 'add' | 'replace',
-        replacesLeagueId: selection.replacesLeagueId ?? null,
+        leagueId: entry.leagueId,
+        priorityRank: priority.priorityRank,
       });
     }
 
-    const queuePosition =
-      league?.waitlistId != null ? await getWaitlistQueuePosition(input.tx, league.waitlistId, entryId) : null;
+    const queuePosition = await getWaitlistQueuePosition(input.tx, league.waitlistId, entryId);
     await insertWaitlistAuditEvent(input.tx, {
       waitlistEntryId: entryId,
-      leagueId: selection.leagueId,
+      leagueId: entry.leagueId,
       memberId: input.curlerMemberId,
       actorMemberId: input.actorMemberId,
       source: 'registration_submission',
       action,
-      reason: existing ? 'WAITLIST_ENTRY_UPDATED_FROM_REGISTRATION' : waitlistReason(normalizedSelection.selectionType),
+      reason: existing ? 'WAITLIST_ENTRY_UPDATED_FROM_REGISTRATION' : 'WAITLIST_ENTRY_CREATED_FROM_PRIORITY_LIST',
       before: before ?? null,
-      after,
-      metadata: { sourceRegistrationId: input.registrationId, reason: 'REGISTRATION_SUBMITTED' },
-      position: queuePosition?.position ?? null,
-      queueTotal: queuePosition?.total ?? null,
-    });
-  }
-}
-
-async function persistWaitlistOfferPreferences(input: {
-  tx: any;
-  registrationId: number;
-  actorMemberId: number;
-  curlerMemberId: number;
-  selections: RegistrationSelectionInput[];
-}): Promise<void> {
-  const { schema } = getDrizzleDb();
-  const keepSelections = input.selections.filter(
-    (selection) =>
-      selection.leagueId != null &&
-      (selection.selectionType === 'waitlist_keep_auto_accept' || selection.selectionType === 'waitlist_keep_auto_decline'),
-  );
-  if (keepSelections.length === 0) return;
-
-  for (const selection of keepSelections) {
-    const leagueId = selection.leagueId!;
-    const offerResponsePreference = offerPreferenceFromSelectionType(selection.selectionType);
-    if (!offerResponsePreference) continue;
-
-    const [league] = await input.tx
-      .select({ waitlistId: schema.leagues.waitlist_id })
-      .from(schema.leagues)
-      .where(eq(schema.leagues.id, leagueId))
-      .limit(1);
-    if (!league?.waitlistId) continue;
-
-    const activeEntries = await input.tx
-      .select()
-      .from(schema.waitlistEntries)
-      .where(and(eq(schema.waitlistEntries.waitlist_id, league.waitlistId), eq(schema.waitlistEntries.status, 'active')));
-
-    const existing = activeEntries.find((entry: (typeof activeEntries)[number]) =>
-      waitlistEntryIncludesMember(input.curlerMemberId, entry),
-    );
-    if (!existing || existing.offer_response_preference === offerResponsePreference) continue;
-
-    const before = { offerResponsePreference: existing.offer_response_preference };
-    const after = { offerResponsePreference };
-    await input.tx
-      .update(schema.waitlistEntries)
-      .set({
-        offer_response_preference: offerResponsePreference,
-        updated_at: sql`CURRENT_TIMESTAMP`,
-      })
-      .where(eq(schema.waitlistEntries.id, existing.id));
-
-    const queuePosition = await getWaitlistQueuePosition(input.tx, league.waitlistId, existing.id);
-    await insertWaitlistAuditEvent(input.tx, {
-      waitlistEntryId: existing.id,
-      leagueId,
-      memberId: existing.member_id,
-      actorMemberId: input.actorMemberId,
-      source: 'registration_submission',
-      action: 'offer_preference_changed',
-      reason: 'WAITLIST_OFFER_PREFERENCE_SET_FROM_REGISTRATION',
-      before,
       after,
       metadata: { sourceRegistrationId: input.registrationId, reason: 'REGISTRATION_SUBMITTED' },
       position: queuePosition?.position ?? null,
@@ -1895,35 +1691,39 @@ async function persistSabbaticalDecisions(input: {
   const rows = await loadMemberSabbaticalRows(input.tx, input.curlerMemberId);
 
   for (const selection of input.context.selections) {
-    if (!selection.leagueId) continue;
+    if (!selection.leagueId || selection.selectionType !== 'drop') continue;
     const league = input.context.leagues[selection.leagueId];
     if (!league) continue;
 
     const lineageRow = findActiveLineageSabbaticalRow(rows, league);
     if (!lineageRow) continue;
 
-    if (selection.selectionType === 'drop') {
-      await input.tx
-        .update(schema.curlingLeagueSabbaticals)
-        .set({
-          status: 'released',
-          released_at: sql`CURRENT_TIMESTAMP`,
-          released_reason: 'REGISTRATION_DROP',
-          updated_at: sql`CURRENT_TIMESTAMP`,
-        })
-        .where(eq(schema.curlingLeagueSabbaticals.id, lineageRow.id));
-      continue;
-    }
+    await input.tx
+      .update(schema.curlingLeagueSabbaticals)
+      .set({
+        status: 'released',
+        released_at: sql`CURRENT_TIMESTAMP`,
+        released_reason: 'REGISTRATION_DROP',
+        updated_at: sql`CURRENT_TIMESTAMP`,
+      })
+      .where(eq(schema.curlingLeagueSabbaticals.id, lineageRow.id));
+  }
 
-    if (selection.selectionType === 'guaranteed_return') {
-      await input.tx
-        .update(schema.curlingLeagueSabbaticals)
-        .set({
-          status: 'returning',
-          updated_at: sql`CURRENT_TIMESTAMP`,
-        })
-        .where(eq(schema.curlingLeagueSabbaticals.id, lineageRow.id));
-    }
+  // A league back on the priority list with a guaranteed label ends the sabbatical.
+  const evaluation = evaluateLeaguePriorities(input.context);
+  for (const entry of evaluation.entries) {
+    if (!entry.guaranteed) continue;
+    const league = input.context.leagues[entry.leagueId];
+    if (!league) continue;
+    const lineageRow = findActiveLineageSabbaticalRow(rows, league);
+    if (!lineageRow) continue;
+    await input.tx
+      .update(schema.curlingLeagueSabbaticals)
+      .set({
+        status: 'returning',
+        updated_at: sql`CURRENT_TIMESTAMP`,
+      })
+      .where(eq(schema.curlingLeagueSabbaticals.id, lineageRow.id));
   }
 }
 
@@ -2039,54 +1839,25 @@ async function persistRegistrationSabbaticals(input: {
   }
 }
 
-async function setSubmittedSelectionStatuses(
-  tx: any,
-  registrationId: number,
-  options?: { droppedLeagueIds?: Iterable<number> },
-): Promise<void> {
+async function setSubmittedSelectionStatuses(tx: any, registrationId: number): Promise<void> {
   const { schema } = getDrizzleDb();
-  const droppedLeagueIds = [...new Set(options?.droppedLeagueIds ?? [])].filter(
-    (leagueId) => Number.isInteger(leagueId) && leagueId > 0,
-  );
-  if (droppedLeagueIds.length > 0) {
-    // Guaranteed play-in REPLACE releases these leagues immediately — do not confirm or roster them.
-    await tx
-      .update(schema.registrationSelections)
-      .set({ status: 'dropped', updated_at: sql`CURRENT_TIMESTAMP` })
-      .where(
-        and(
-          eq(schema.registrationSelections.registration_id, registrationId),
-          inArray(schema.registrationSelections.league_id, droppedLeagueIds),
-          sql`${schema.registrationSelections.selection_type} IN ('guaranteed_return', 'byot_request', 'instructional_join')`,
-        ),
-      );
-  }
   await tx
     .update(schema.registrationSelections)
     .set({ status: 'confirmed', updated_at: sql`CURRENT_TIMESTAMP` })
     .where(
       and(
         eq(schema.registrationSelections.registration_id, registrationId),
-        sql`${schema.registrationSelections.selection_type} IN ('guaranteed_return', 'byot_request', 'play_in_request', 'instructional_join', 'spare_only', 'junior_recreational')`,
+        sql`${schema.registrationSelections.selection_type} IN ('spare_only', 'junior_recreational', 'sabbatical')`,
         sql`${schema.registrationSelections.status} NOT IN ('dropped', 'not_placed', 'cancelled', 'declined')`,
       ),
     );
   await tx
     .update(schema.registrationSelections)
-    .set({ status: 'pending', updated_at: sql`CURRENT_TIMESTAMP` })
+    .set({ status: 'dropped', updated_at: sql`CURRENT_TIMESTAMP` })
     .where(
       and(
         eq(schema.registrationSelections.registration_id, registrationId),
-        sql`${schema.registrationSelections.selection_type} IN ('return_subject_to_availability', 'third_league_interest')`,
-      ),
-    );
-  await tx
-    .update(schema.registrationSelections)
-    .set({ status: 'waitlisted', updated_at: sql`CURRENT_TIMESTAMP` })
-    .where(
-      and(
-        eq(schema.registrationSelections.registration_id, registrationId),
-        sql`${schema.registrationSelections.selection_type} IN ('waitlist_add', 'waitlist_replace', 'waitlist_add_auto_decline', 'waitlist_replace_auto_decline', 'waitlist_keep_auto_accept', 'waitlist_keep_auto_decline')`,
+        eq(schema.registrationSelections.selection_type, 'drop'),
       ),
     );
 }
@@ -2132,17 +1903,19 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
   }
   if (registration.curler_member_id) {
     const initialContext = await buildRegistrationContextForDraft(input.registrationId);
+    const initialEvaluation = evaluateLeaguePriorities(initialContext);
     await removeOrphanedRegistrationWaitlistEntries({
       registrationId: input.registrationId,
       curlerMemberId: registration.curler_member_id,
       actorMemberId: input.actor.id,
-      selections: initialContext.selections,
+      waitlistedLeagueIds: initialEvaluation.entries
+        .filter((entry) => entry.label === 'waitlisted')
+        .map((entry) => entry.leagueId),
     });
     await removeOrphanedRegistrationRosterPlacements({
       registrationId: input.registrationId,
       curlerMemberId: registration.curler_member_id,
-      selections: initialContext.selections,
-      excludeLeagueIds: guaranteedPlayInReplacedLeagueIds(initialContext),
+      placements: guaranteedPlacementsFromEvaluation(initialEvaluation),
     });
   }
   const context = await buildRegistrationContextForDraft(input.registrationId);
@@ -2239,34 +2012,35 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
     entryId: number;
     waitlistId: number;
     leagueId: number;
-    entryType: 'add' | 'replace';
-    replacesLeagueId: number | null;
+    priorityRank: number;
   }> = [];
   const membershipGrantRef: { value: { memberId: number; seasonId: number } | null } = { value: null };
   const invoiceId = await db.transaction(async (tx) => {
     if (!registration.curler_member_id) {
       throw new RegistrationMembershipPaymentValidationError({ curler: 'The curler is required.' });
     }
-    await removeExistingWaitlistsMarkedForRemoval({
+    await removeWaitlistEntriesNotOnPriorityList({
       tx,
       curlerMemberId: registration.curler_member_id,
       actorMemberId: input.actor.id,
-      selections: context.selections,
+      priorityLeagueIds: context.priorities.map((priority) => priority.leagueId),
     });
     await removeOrphanedRegistrationWaitlistEntries({
       tx,
       registrationId: input.registrationId,
       curlerMemberId: registration.curler_member_id,
       actorMemberId: input.actor.id,
-      selections: context.selections,
+      waitlistedLeagueIds: evaluation.priorityEvaluation.entries
+        .filter((entry) => entry.label === 'waitlisted')
+        .map((entry) => entry.leagueId),
     });
     await persistRegistrationWaitlists({
       tx,
       registrationId: input.registrationId,
       actorMemberId: input.actor.id,
       curlerMemberId: registration.curler_member_id,
-      selections: context.selections,
-      desiredAddWaitlistLeagueCount: context.desiredAddWaitlistLeagueCount ?? null,
+      context,
+      evaluation: evaluation.priorityEvaluation,
       notifications: waitlistNotifications,
     });
     {
@@ -2275,17 +2049,10 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
         tx,
         registrationId: input.registrationId,
         curlerMemberId: registration.curler_member_id,
-        selections: context.selections,
-        leagues: context.leagues,
+        context,
+        evaluation: evaluation.priorityEvaluation,
       });
     }
-    await persistWaitlistOfferPreferences({
-      tx,
-      registrationId: input.registrationId,
-      actorMemberId: input.actor.id,
-      curlerMemberId: registration.curler_member_id,
-      selections: context.selections,
-    });
     await persistSabbaticalDecisions({
       tx,
       curlerMemberId: registration.curler_member_id,
@@ -2298,9 +2065,7 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
       context,
       feePreview: evaluation.feePreview,
     });
-    await setSubmittedSelectionStatuses(tx, input.registrationId, {
-      droppedLeagueIds: guaranteedPlayInReplacedLeagueIds(context),
-    });
+    await setSubmittedSelectionStatuses(tx, input.registrationId);
     const snapshotId = await createInvoiceSnapshot({
       registrationId: input.registrationId,
       payerMemberId,
@@ -2347,8 +2112,7 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
       tx,
       registrationId: input.registrationId,
       curlerMemberId: registration.curler_member_id,
-      selections: context.selections,
-      excludeLeagueIds: guaranteedPlayInReplacedLeagueIds(context),
+      placements: guaranteedPlacementsFromEvaluation(evaluation.priorityEvaluation),
       registrationStatus: submittedStatus,
     });
     if (
@@ -2639,82 +2403,27 @@ export async function triggerDeferredRegistrationPayment(input: {
   if (!registration.curler_member_id) {
     throw new RegistrationMembershipPaymentValidationError({ curler: 'The curler is required.' });
   }
-  const context = await buildRegistrationContextForDraft(input.registrationId);
+  const paymentContext = await buildRegistrationContextForDraft(input.registrationId);
   const { db, schema } = getDrizzleDb();
-  const selectionRows = await db
-    .select({
-      selectionType: schema.registrationSelections.selection_type,
-      leagueId: schema.registrationSelections.league_id,
-      status: schema.registrationSelections.status,
-    })
-    .from(schema.registrationSelections)
-    .where(eq(schema.registrationSelections.registration_id, input.registrationId));
-  const placedWaitlistLeagues = new Set(
-    selectionRows
-      .filter(
-        (selection) =>
-          (selection.selectionType === 'waitlist_add' || selection.selectionType === 'waitlist_replace') &&
-          (selection.status === 'placed' || selection.status === 'accepted')
-      )
-      .map((selection) => selection.leagueId)
-      .filter((leagueId): leagueId is number => leagueId !== null && leagueId !== undefined)
-  );
-  // Play-in teams granted entry bill like placements; teams that lost playdowns drop off the invoice.
-  const placedPlayInLeagues = new Set(
-    selectionRows
-      .filter((selection) => selection.selectionType === 'play_in_request' && selection.status === 'placed')
-      .map((selection) => selection.leagueId)
-      .filter((leagueId): leagueId is number => leagueId !== null && leagueId !== undefined)
-  );
-  const notPlacedPlayInLeagues = new Set(
-    selectionRows
-      .filter((selection) => selection.selectionType === 'play_in_request' && selection.status === 'not_placed')
-      .map((selection) => selection.leagueId)
-      .filter((leagueId): leagueId is number => leagueId !== null && leagueId !== undefined)
-  );
-  // Successful play-in REPLACE releases the replaced league; do not bill it again.
-  const replacedByPlacedPlayIn = new Set(
-    context.selections
-      .filter(
-        (selection) =>
-          selection.selectionType === 'play_in_request' &&
-          selection.leagueId != null &&
-          placedPlayInLeagues.has(selection.leagueId) &&
-          selection.replacesLeagueId != null,
-      )
-      .map((selection) => selection.replacesLeagueId as number),
-  );
-  const paymentContext: RegistrationContext = {
-    ...context,
-    selections: context.selections
-      .filter((selection) => {
-        if (selection.leagueId != null && replacedByPlacedPlayIn.has(selection.leagueId)) {
-          return false;
-        }
-        if (selection.selectionType === 'waitlist_add' || selection.selectionType === 'waitlist_replace') {
-          return selection.leagueId != null && placedWaitlistLeagues.has(selection.leagueId);
-        }
-        if (selection.selectionType === 'play_in_request') {
-          return selection.leagueId == null || !notPlacedPlayInLeagues.has(selection.leagueId);
-        }
-        return true;
-      })
-      .map((selection) => {
-        if (selection.selectionType === 'waitlist_add' || selection.selectionType === 'waitlist_replace') {
-          return { ...selection, selectionType: 'guaranteed_return' as const };
-        }
-        if (
-          selection.selectionType === 'play_in_request' &&
-          selection.leagueId != null &&
-          placedPlayInLeagues.has(selection.leagueId)
-        ) {
-          return { ...selection, selectionType: 'guaranteed_return' as const };
-        }
-        return selection;
-      }),
-  };
-  const feePreview = calculateRegistrationFees(paymentContext);
-  const paymentDecision = decideRegistrationPayment({ context: paymentContext, feePreview });
+  // Placement is settled, so bill for the leagues the registrant actually holds
+  // rather than the guarantees their priority list promised.
+  const placedRows = await db
+    .select({ leagueId: schema.leagueRoster.league_id })
+    .from(schema.leagueRoster)
+    .where(
+      and(
+        eq(schema.leagueRoster.member_id, registration.curler_member_id),
+        eq(schema.leagueRoster.source_registration_id, input.registrationId),
+        eq(schema.leagueRoster.status, 'active'),
+      ),
+    );
+  const placedLeagueIds = [...new Set(placedRows.map((row) => row.leagueId))];
+  const feePreview = calculateRegistrationFees(paymentContext, { chargedLeagueIds: placedLeagueIds });
+  const paymentDecision = decideRegistrationPayment({
+    context: paymentContext,
+    feePreview,
+    placementSettled: true,
+  });
   if (paymentDecision.outcome !== 'immediate_payment') {
     const existingInvoice = await loadLatestRegistrationInvoice(input.registrationId);
     const invoiceId = await createInvoiceSnapshot({
@@ -2884,34 +2593,12 @@ async function applyConfirmedRegistrationEntitlementsInTx(input: {
     }
   }
 
-  const selectionRows = await input.tx
-    .select({
-      leagueId: schema.registrationSelections.league_id,
-      selectionType: schema.registrationSelections.selection_type,
-      status: schema.registrationSelections.status,
-    })
-    .from(schema.registrationSelections)
-    .where(eq(schema.registrationSelections.registration_id, input.registrationId));
-  const excludeLeagueIds = selectionRows
-    .filter(
-      (row: { leagueId: number | null; status: string }) =>
-        row.leagueId != null && registrationSelectionStatusIsPreserved(row.status),
-    )
-    .map((row: { leagueId: number | null }) => row.leagueId as number);
+  const entitlementContext = await buildRegistrationContextForDraft(input.registrationId);
   await syncRegistrationRosterPlacements({
     tx: input.tx,
     registrationId: input.registrationId,
     curlerMemberId: input.curlerMemberId,
-    selections: selectionRows
-      .filter(
-        (row: { leagueId: number | null; status: string }) =>
-          row.leagueId != null && !registrationSelectionStatusIsPreserved(row.status),
-      )
-      .map((row: { leagueId: number | null; selectionType: string }) => ({
-        leagueId: row.leagueId,
-        selectionType: row.selectionType,
-      })),
-    excludeLeagueIds,
+    placements: guaranteedPlacementsFromEvaluation(evaluateLeaguePriorities(entitlementContext)),
     registrationStatus: 'confirmed',
   });
 

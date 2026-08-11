@@ -14,13 +14,6 @@ export type ContinuingSabbaticalSummary = {
   sabbaticalFeeMinor: number;
 };
 
-const PRIOR_SESSION_DECISION_TYPES = new Set([
-  'guaranteed_return',
-  'sabbatical',
-  'drop',
-  'return_subject_to_availability',
-]);
-
 export function isActiveSabbaticalRecord(sabbatical: ExistingSabbatical): boolean {
   return sabbatical.status === 'active' || sabbatical.status === 'staff_overridden' || sabbatical.status === 'returning';
 }
@@ -95,12 +88,15 @@ export function canChooseNoMembership(context: RegistrationContext): boolean {
 export function validateContinuingSabbaticalDecisions(context: RegistrationContext): DecisionMessage[] {
   const blockingErrors: DecisionMessage[] = [];
   for (const summary of listContinuingSabbaticalSummaries(context)) {
+    // Returning is expressed by putting the league on the priority list; stepping
+    // away is expressed by a sabbatical or drop selection. Either resolves it.
+    const onPriorityList = context.priorities.some((priority) => priority.leagueId === summary.leagueId);
     const decision = context.selections.find(
       (selection) =>
         selection.leagueId === summary.leagueId &&
-        PRIOR_SESSION_DECISION_TYPES.has(selection.selectionType),
+        (selection.selectionType === 'sabbatical' || selection.selectionType === 'drop'),
     );
-    if (!decision) {
+    if (!onPriorityList && !decision) {
       blockingErrors.push(
         blockingError(
           'continuing_sabbatical_decision_required',
@@ -110,7 +106,7 @@ export function validateContinuingSabbaticalDecisions(context: RegistrationConte
       continue;
     }
 
-    if (decision.selectionType === 'sabbatical' && !summary.canExtend) {
+    if (decision?.selectionType === 'sabbatical' && !summary.canExtend) {
       blockingErrors.push(
         blockingError(
           'sabbatical_duration_limit_exceeded',

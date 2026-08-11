@@ -91,7 +91,7 @@ export const curlingRegistrationDDLBase = `
     shell_completed_at DATETIME,
     submitted_at DATETIME,
     cancelled_at DATETIME,
-    desired_add_waitlist_league_count INTEGER,
+    desired_league_count INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
@@ -186,6 +186,22 @@ export const curlingRegistrationExtendedDDL = `
   CREATE INDEX IF NOT EXISTS idx_registration_selections_league_id ON registration_selections(league_id);
   CREATE INDEX IF NOT EXISTS idx_registration_selections_selection_type ON registration_selections(selection_type);
   CREATE INDEX IF NOT EXISTS idx_registration_selections_status ON registration_selections(status);
+
+  CREATE TABLE IF NOT EXISTS registration_league_priorities (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    registration_id INTEGER NOT NULL REFERENCES curling_registrations(id) ON DELETE CASCADE,
+    league_id INTEGER NOT NULL REFERENCES leagues(id) ON DELETE CASCADE,
+    priority_rank INTEGER NOT NULL,
+    byot_teammate_text TEXT,
+    team_roster_placements TEXT,
+    fee_amount_minor_snapshot INTEGER NOT NULL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE INDEX IF NOT EXISTS idx_registration_league_priorities_registration_id ON registration_league_priorities(registration_id);
+  CREATE INDEX IF NOT EXISTS idx_registration_league_priorities_league_id ON registration_league_priorities(league_id);
+  CREATE UNIQUE INDEX IF NOT EXISTS registration_league_priorities_registration_league_unique ON registration_league_priorities(registration_id, league_id);
+  CREATE UNIQUE INDEX IF NOT EXISTS registration_league_priorities_registration_rank_unique ON registration_league_priorities(registration_id, priority_rank);
 
   CREATE TABLE IF NOT EXISTS curling_sabbatical_sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -302,15 +318,12 @@ export const curlingRegistrationExtendedDDL = `
     member_id INTEGER NOT NULL REFERENCES members(id) ON DELETE CASCADE,
     waitlist_id INTEGER NOT NULL REFERENCES league_waitlists(id) ON DELETE CASCADE,
     source_registration_id INTEGER REFERENCES curling_registrations(id) ON DELETE SET NULL,
-    entry_type TEXT NOT NULL,
-    replaces_lineage_start_league_id INTEGER REFERENCES leagues(id) ON DELETE SET NULL,
-    original_replaces_league_id INTEGER REFERENCES leagues(id) ON DELETE SET NULL,
     team_roster_text TEXT,
     position_sort_key TEXT NOT NULL,
     joined_at DATETIME NOT NULL,
     decline_count INTEGER NOT NULL DEFAULT 0,
-    desired_add_waitlist_league_count INTEGER,
-    add_waitlist_priority_rank INTEGER,
+    priority_rank INTEGER,
+    desired_league_count INTEGER,
     status TEXT NOT NULL DEFAULT 'active',
     rolled_over_from_waitlist_entry_id INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -319,11 +332,9 @@ export const curlingRegistrationExtendedDDL = `
   CREATE INDEX IF NOT EXISTS idx_waitlist_entries_waitlist_id ON waitlist_entries(waitlist_id);
   CREATE INDEX IF NOT EXISTS idx_waitlist_entries_member_id ON waitlist_entries(member_id);
   CREATE INDEX IF NOT EXISTS idx_waitlist_entries_status ON waitlist_entries(status);
-  CREATE INDEX IF NOT EXISTS idx_waitlist_entries_entry_type ON waitlist_entries(entry_type);
   CREATE INDEX IF NOT EXISTS idx_waitlist_entries_position_sort_key ON waitlist_entries(position_sort_key);
   CREATE INDEX IF NOT EXISTS idx_waitlist_entries_joined_at ON waitlist_entries(joined_at);
   CREATE INDEX IF NOT EXISTS idx_waitlist_entries_source_registration_id ON waitlist_entries(source_registration_id);
-  CREATE INDEX IF NOT EXISTS idx_waitlist_entries_replaces_lineage_start_league_id ON waitlist_entries(replaces_lineage_start_league_id);
   CREATE UNIQUE INDEX IF NOT EXISTS idx_waitlist_entries_active_member_waitlist ON waitlist_entries(member_id, waitlist_id) WHERE status = 'active';
 
   CREATE TABLE IF NOT EXISTS waitlist_offers (
@@ -466,8 +477,6 @@ const leagueEntryDDL = `
     entry_team_id INTEGER NOT NULL REFERENCES league_entry_teams(id) ON DELETE CASCADE,
     member_id INTEGER REFERENCES members(id) ON DELETE CASCADE,
     pending_name TEXT,
-    entry_type TEXT NOT NULL DEFAULT 'add',
-    replaces_league_id INTEGER REFERENCES leagues(id) ON DELETE SET NULL,
     source_registration_id INTEGER REFERENCES curling_registrations(id) ON DELETE SET NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -743,7 +752,7 @@ const registrationMembershipPaymentColumnsSQLite: { name: string; ddl: string }[
   { name: 'last_fee_preview_json', ddl: 'last_fee_preview_json TEXT' },
   { name: 'payment_decision_json', ddl: 'payment_decision_json TEXT' },
   { name: 'submitted_at', ddl: 'submitted_at DATETIME' },
-  { name: 'desired_add_waitlist_league_count', ddl: 'desired_add_waitlist_league_count INTEGER' },
+  { name: 'desired_league_count', ddl: 'desired_league_count INTEGER' },
   { name: 'basic_ice_fallback_interest', ddl: 'basic_ice_fallback_interest INTEGER CHECK(basic_ice_fallback_interest IN (0, 1))' },
   { name: 'membership_committee_comments', ddl: 'membership_committee_comments TEXT' },
 ];
@@ -763,19 +772,11 @@ const waitlistEntryColumnsSQLite: { name: string; ddl: string }[] = [
   { name: 'team_roster_placements', ddl: 'team_roster_placements TEXT' },
   { name: 'waitlist_id', ddl: 'waitlist_id INTEGER REFERENCES league_waitlists(id) ON DELETE CASCADE' },
   {
-    name: 'replaces_lineage_start_league_id',
-    ddl: 'replaces_lineage_start_league_id INTEGER REFERENCES leagues(id) ON DELETE SET NULL',
-  },
-  {
-    name: 'original_replaces_league_id',
-    ddl: 'original_replaces_league_id INTEGER REFERENCES leagues(id) ON DELETE SET NULL',
-  },
-  {
     name: 'offer_response_preference',
-    ddl: "offer_response_preference TEXT NOT NULL DEFAULT 'ask'",
+    ddl: "offer_response_preference TEXT NOT NULL DEFAULT 'auto_accept'",
   },
-  { name: 'desired_add_waitlist_league_count', ddl: 'desired_add_waitlist_league_count INTEGER' },
-  { name: 'add_waitlist_priority_rank', ddl: 'add_waitlist_priority_rank INTEGER' },
+  { name: 'priority_rank', ddl: 'priority_rank INTEGER' },
+  { name: 'desired_league_count', ddl: 'desired_league_count INTEGER' },
 ];
 
 async function ensureSQLiteColumn(
@@ -869,6 +870,7 @@ async function sqliteEnsureWaitlistEntryColumns(
   for (const col of waitlistEntryColumnsSQLite) {
     await ensureSQLiteColumn(db, 'waitlist_entries', col.name, col.ddl, execSQL);
   }
+  await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_waitlist_entries_priority_rank ON waitlist_entries(priority_rank)');
 }
 
 const leagueBootstrapColumnsPg: string[] = [
@@ -911,7 +913,7 @@ const registrationMembershipPaymentColumnsPg: string[] = [
   'ALTER TABLE curling_registrations ADD COLUMN IF NOT EXISTS last_fee_preview_json JSONB',
   'ALTER TABLE curling_registrations ADD COLUMN IF NOT EXISTS payment_decision_json JSONB',
   'ALTER TABLE curling_registrations ADD COLUMN IF NOT EXISTS submitted_at TIMESTAMP',
-  'ALTER TABLE curling_registrations ADD COLUMN IF NOT EXISTS desired_add_waitlist_league_count INTEGER',
+  'ALTER TABLE curling_registrations ADD COLUMN IF NOT EXISTS desired_league_count INTEGER',
   'ALTER TABLE curling_registrations ADD COLUMN IF NOT EXISTS basic_ice_fallback_interest INTEGER CHECK(basic_ice_fallback_interest IN (0, 1))',
   'ALTER TABLE curling_registrations ADD COLUMN IF NOT EXISTS membership_committee_comments TEXT',
 ];
@@ -931,12 +933,70 @@ const waitlistEntryColumnsPg: string[] = [
   'ALTER TABLE waitlist_entries ADD COLUMN IF NOT EXISTS team_roster_text TEXT',
   'ALTER TABLE waitlist_entries ADD COLUMN IF NOT EXISTS team_roster_placements TEXT',
   'ALTER TABLE waitlist_entries ADD COLUMN IF NOT EXISTS waitlist_id INTEGER REFERENCES league_waitlists(id) ON DELETE CASCADE',
-  'ALTER TABLE waitlist_entries ADD COLUMN IF NOT EXISTS replaces_lineage_start_league_id INTEGER REFERENCES leagues(id) ON DELETE SET NULL',
-  'ALTER TABLE waitlist_entries ADD COLUMN IF NOT EXISTS original_replaces_league_id INTEGER REFERENCES leagues(id) ON DELETE SET NULL',
-  "ALTER TABLE waitlist_entries ADD COLUMN IF NOT EXISTS offer_response_preference TEXT NOT NULL DEFAULT 'ask'",
-  'ALTER TABLE waitlist_entries ADD COLUMN IF NOT EXISTS desired_add_waitlist_league_count INTEGER',
-  'ALTER TABLE waitlist_entries ADD COLUMN IF NOT EXISTS add_waitlist_priority_rank INTEGER',
+  "ALTER TABLE waitlist_entries ADD COLUMN IF NOT EXISTS offer_response_preference TEXT NOT NULL DEFAULT 'auto_accept'",
+  'ALTER TABLE waitlist_entries ADD COLUMN IF NOT EXISTS priority_rank INTEGER',
+  'ALTER TABLE waitlist_entries ADD COLUMN IF NOT EXISTS desired_league_count INTEGER',
+  // Indexed here rather than in the CREATE TABLE block, which is skipped for an
+  // existing table and so would run before the column is added.
+  'CREATE INDEX IF NOT EXISTS idx_waitlist_entries_priority_rank ON waitlist_entries(priority_rank)',
 ];
+
+/**
+ * Columns retired by the league priority redesign. Dropped rather than left in
+ * place because `entry_type` is NOT NULL and would block inserts.
+ */
+const retiredColumns: Array<{ table: string; column: string; indexes?: string[] }> = [
+  {
+    table: 'waitlist_entries',
+    column: 'entry_type',
+    indexes: ['idx_waitlist_entries_entry_type'],
+  },
+  {
+    table: 'waitlist_entries',
+    column: 'replaces_lineage_start_league_id',
+    indexes: ['idx_waitlist_entries_replaces_lineage_start_league_id'],
+  },
+  { table: 'waitlist_entries', column: 'original_replaces_league_id' },
+  { table: 'waitlist_entries', column: 'desired_add_waitlist_league_count' },
+  { table: 'waitlist_entries', column: 'add_waitlist_priority_rank' },
+  { table: 'curling_registrations', column: 'desired_add_waitlist_league_count' },
+  { table: 'league_entry_team_members', column: 'entry_type' },
+  { table: 'league_entry_team_members', column: 'replaces_league_id' },
+];
+
+async function dropRetiredColumns(db: DatabaseAdapter, execSQL: (d: DatabaseAdapter, s: string) => Promise<void>) {
+  for (const retired of retiredColumns) {
+    for (const indexName of retired.indexes ?? []) {
+      try {
+        await execSQL(db, `DROP INDEX IF EXISTS ${indexName}`);
+      } catch {
+        /* index may not exist on fresh installs */
+      }
+    }
+    try {
+      await execSQL(db, `ALTER TABLE ${retired.table} DROP COLUMN IF EXISTS ${retired.column}`);
+    } catch {
+      /* column already absent on fresh installs */
+    }
+  }
+}
+
+function dropRetiredColumnsSync(db: DatabaseAdapter, execSQLSync: (d: DatabaseAdapter, s: string) => void) {
+  for (const retired of retiredColumns) {
+    for (const indexName of retired.indexes ?? []) {
+      try {
+        execSQLSync(db, `DROP INDEX IF EXISTS ${indexName}`);
+      } catch {
+        /* index may not exist on fresh installs */
+      }
+    }
+    try {
+      execSQLSync(db, `ALTER TABLE ${retired.table} DROP COLUMN IF EXISTS ${retired.column}`);
+    } catch {
+      /* column already absent on fresh installs */
+    }
+  }
+}
 
 async function ensureLeagueBootstrapPostgres(db: DatabaseAdapter, execSQL: (d: DatabaseAdapter, s: string) => Promise<void>) {
   for (const ddl of leagueBootstrapColumnsPg) {
@@ -1015,6 +1075,7 @@ export async function ensureCurlingRegistrationBootstrap(
     await ensureLeagueWaitlistSchema(db, execSQL);
     await execSQL(db, leagueEntryDDLForDialect(false));
   }
+  await dropRetiredColumns(db, execSQL);
 }
 
 export function ensureCurlingRegistrationBootstrapSync(
@@ -1051,6 +1112,7 @@ export function ensureCurlingRegistrationBootstrapSync(
       execSQLSync(db, `ALTER TABLE waitlist_entries ADD COLUMN ${col.ddl}`);
     }
   }
+  execSQLSync(db, 'CREATE INDEX IF NOT EXISTS idx_waitlist_entries_priority_rank ON waitlist_entries(priority_rank)');
 
   const leagueStmt = db.prepare<{ name?: string | null }>(`PRAGMA table_info(leagues)`);
   const leagueCols = leagueStmt.all() as { name?: string | null }[];
@@ -1076,4 +1138,5 @@ export function ensureCurlingRegistrationBootstrapSync(
     `
   );
   execSQLSync(db, leagueEntryDDLForDialect(false));
+  dropRetiredColumnsSync(db, execSQLSync);
 }

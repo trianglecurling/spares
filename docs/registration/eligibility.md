@@ -141,22 +141,34 @@ A JAC participant pays:
 
 JAC participants have regular-member ice privileges and may use the normal league registration process.
 
-## Guaranteed return eligibility
+## Return right eligibility
 
-A registrant is eligible for guaranteed return to a league only if:
+A registrant holds a return right for a league only if:
 
 - Registration is in priority state.
 - The registrant is a returning member.
 - The target league has a configured predecessor relationship where relevant.
 - The registrant participated in the predecessor league or has a qualifying sabbatical right.
-- The league type allows guaranteed return.
-- The registrant has not exceeded the protected-claim limit.
+- For a play-in based league, the declared entry team has a full roster and
+  clears the TLINE guarantee bar.
 
-A member may claim at most two protected claims.
+A return right is not itself a guarantee. It becomes a Guaranteed return or a
+Guaranteed fallback label depending on where the league sits on the registrant's
+priority list. See `league-priority.md`.
+
+## Protected-claim limit
+
+A member may hold at most two protected claims, and never more than their
+desired league count:
+
+```
+budget = min(2, desiredLeagueCount)
+```
 
 Protected claims are:
 
-- Guaranteed return selections.
+- Guaranteed return entries.
+- Guaranteed fallback entries.
 - Sabbatical selections.
 
 ## Sabbatical eligibility
@@ -164,7 +176,7 @@ Protected claims are:
 A registrant may request sabbatical only if:
 
 - Registration is in priority state.
-- The registrant is eligible for guaranteed return to that league.
+- The registrant holds a return right for that league.
 - The league allows sabbaticals.
 - The league is not BYOT.
 - The spot is not a temporary sabbatical-fill spot.
@@ -200,39 +212,23 @@ A registrant may join a waitlist if:
 
 A person does not need to be a paid member to join a waitlist.
 
-## ADD waitlist eligibility
+## Waitlist entry eligibility
 
-ADD means the registrant is trying to add the league as one of their first two leagues.
+A waitlist entry is created for every priority list entry labeled Waitlisted.
+There is no ADD or REPLACE type and no cap on how many waitlists a registrant
+may be on.
 
-ADD is allowed only when the registrant is currently in 0 or 1 leagues.
+Each entry stores the registrant's priority rank for that league and their
+desired league count. Displacement is decided at placement time. See
+`waitlists.md`.
 
-There is no limit to the number of ADD waitlists.
+## Priority list eligibility
 
-If the registrant later reaches two leagues, they must immediately remove ADD entries or convert up to two of them to REPLACE entries.
-
-## REPLACE waitlist eligibility
-
-REPLACE means the registrant is trying to replace an existing league with the waitlisted league.
-
-REPLACE requires identifying which league would be replaced.
-
-A registrant may have at most two active REPLACE waitlist entries.
-
-## Third-league interest eligibility
-
-A registrant may provide an ordered list of suitable third-league options.
-
-There is no limit to the number of third-league interest options.
-
-Third-league interest:
-
-- Is not a formal waitlist.
-- Is handled manually for V1.
-- Defers payment.
-- Is processed only after first/second league demand is satisfied.
-
-BYOT leagues may be selected as third-league interest with an optional team
-roster. Play-in based leagues cannot be selected as third-league interest.
+- The list must be at least as long as the desired league count.
+- The desired league count is between 1 and 5.
+- Every league on the list must pass the general league eligibility rules above.
+- Bring-your-own-team leagues must be ranked above every standard league.
+- A league may appear on the list at most once.
 
 ## BYOT eligibility
 
@@ -241,11 +237,8 @@ BYOT leagues:
 - May be requested by new members.
 - May be requested by returning members.
 - Require each curler to register individually.
-- Require teammate names in a text box for guaranteed BYOT requests.
-- Guaranteed BYOT requests must count as one of the registrant's first two
-  leagues.
-- May also be listed as third-league interest with an optional roster (deferred,
-  not a guaranteed BYOT request).
-- Do not use waitlists.
+- Require a full team roster on the priority entry: exactly 4 for team leagues,
+  2 for doubles.
+- Must be ranked above every standard league on the priority list.
 - Do not use sabbaticals.
 - Are treated as guaranteed for payment timing, subject to later manual staff correction if the coordinator does not place the registrant.

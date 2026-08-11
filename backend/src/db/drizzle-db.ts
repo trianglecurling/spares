@@ -22,6 +22,7 @@ type PgSchema = {
   curlingLeagueSabbaticals: typeof pgSchema.curlingLeagueSabbaticalsPg;
   registrationPolicyAcceptances: typeof pgSchema.registrationPolicyAcceptancesPg;
   registrationSelections: typeof pgSchema.registrationSelectionsPg;
+  registrationLeaguePriorities: typeof pgSchema.registrationLeaguePrioritiesPg;
   financialAssistanceRequests: typeof pgSchema.financialAssistanceRequestsPg;
   registrationInvoices: typeof pgSchema.registrationInvoicesPg;
   registrationInvoiceLineItems: typeof pgSchema.registrationInvoiceLineItemsPg;
@@ -164,6 +165,7 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       curlingLeagueSabbaticals: sqliteSchema.curlingLeagueSabbaticalsSqlite,
       registrationPolicyAcceptances: sqliteSchema.registrationPolicyAcceptancesSqlite,
       registrationSelections: sqliteSchema.registrationSelectionsSqlite,
+      registrationLeaguePriorities: sqliteSchema.registrationLeaguePrioritiesSqlite,
       financialAssistanceRequests: sqliteSchema.financialAssistanceRequestsSqlite,
       registrationInvoices: sqliteSchema.registrationInvoicesSqlite,
       registrationInvoiceLineItems: sqliteSchema.registrationInvoiceLineItemsSqlite,
@@ -297,6 +299,7 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       curlingLeagueSabbaticals: pgSchema.curlingLeagueSabbaticalsPg,
       registrationPolicyAcceptances: pgSchema.registrationPolicyAcceptancesPg,
       registrationSelections: pgSchema.registrationSelectionsPg,
+      registrationLeaguePriorities: pgSchema.registrationLeaguePrioritiesPg,
       financialAssistanceRequests: pgSchema.financialAssistanceRequestsPg,
       registrationInvoices: pgSchema.registrationInvoicesPg,
       registrationInvoiceLineItems: pgSchema.registrationInvoiceLineItemsPg,

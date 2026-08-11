@@ -15,13 +15,6 @@ function sabbaticalMatchesLeagueLineage(sabbatical: ExistingSabbatical, league: 
   );
 }
 
-export function protectedClaimCount(context: RegistrationContext): number {
-  return context.selections.filter(
-    (selection) =>
-      selection.selectionType === 'guaranteed_return' || selection.selectionType === 'sabbatical',
-  ).length;
-}
-
 export function activeSabbaticalCount(context: RegistrationContext): number {
   return context.existingSabbaticals.filter(isActiveSabbatical).length;
 }
@@ -35,20 +28,17 @@ export function findRelevantSabbatical(
   );
 }
 
+/**
+ * Whether the registrant holds a return right for this league, independent of
+ * where it sits on their priority list. The rank-and-budget half of the rule
+ * lives in `leaguePriorityEvaluation`.
+ */
 export function evaluateGuaranteedReturnEligibility(
   context: RegistrationContext,
   league: LeagueConfig
 ): BusinessDecision<'eligible' | 'ineligible'> {
   const blockingErrors: DecisionMessage[] = [];
 
-  if (league.isPlayInBased) {
-    blockingErrors.push(
-      blockingError(
-        'play_in_no_guaranteed_return',
-        'Play-in based leagues do not offer guaranteed returns. Request play-in entry instead.',
-      ),
-    );
-  }
   if (context.registrationState !== 'priority') {
     blockingErrors.push(blockingError('not_priority_registration', 'Guaranteed returns are available only during priority registration.'));
   }
@@ -72,10 +62,6 @@ export function evaluateGuaranteedReturnEligibility(
         )
       );
     }
-  }
-
-  if (protectedClaimCount(context) > 2) {
-    blockingErrors.push(blockingError('protected_claim_limit_exceeded', 'A registrant may protect at most two league claims.'));
   }
 
   return createDecision({
@@ -107,9 +93,6 @@ export function evaluateSabbaticalEligibility(
     blockingErrors.push(
       blockingError('sabbatical_not_for_temporary_fill', 'Temporary sabbatical-fill spots do not create sabbatical rights.')
     );
-  }
-  if (protectedClaimCount(context) > 2) {
-    blockingErrors.push(blockingError('protected_claim_limit_exceeded', 'A registrant may protect at most two league claims.'));
   }
   if (activeSabbaticalCount(context) > 2) {
     blockingErrors.push(blockingError('sabbatical_limit_exceeded', 'A registrant may be on sabbatical for at most two leagues.'));

@@ -382,10 +382,10 @@ Teams are formed by the league coordinator.
 Standard leagues may participate in:
 
 - Guaranteed returns
+- Guaranteed fallbacks
 - Sabbaticals
 - Waitlists
 - Temporary sabbatical-fill placements
-- Third-league interest
 
 ### Bring-your-own-team leagues
 
@@ -395,8 +395,9 @@ BYOT leagues have team capacity.
 
 Each curler still registers individually.
 
-When registering for a BYOT league, the registrant must list teammates in a
-simple text field.
+When adding a BYOT league to the priority list, the registrant declares the
+team roster on that entry: linked members plus free-text names for teammates who
+are not yet members.
 
 BYOT rules:
 
@@ -404,14 +405,11 @@ BYOT rules:
 - Returning members may request a BYOT league.
 - A returning individual may select a BYOT league even if their team is not
   returning.
-- Guaranteed BYOT requests (`byot_request`) must count as one of the
-  registrant's first two leagues.
-- BYOT leagues may be listed as third-league interest with an optional team
-  roster; that interest still defers payment and is not a guaranteed BYOT
-  request.
-- BYOT leagues do not use the waitlist system.
+- BYOT entries must be ranked above every standard league on the priority list.
+  See `league-priority.md`.
+- A BYOT entry requires a full roster: exactly 4 players for team leagues, 2 for
+  doubles.
 - BYOT leagues do not use the sabbatical system.
-- BYOT leagues are treated as guaranteed for payment purposes.
 - League coordinators manually fill rosters after registration.
 - Some registrants may not receive a spot.
 - If someone pays and later does not receive a spot, staff handles the refund or
@@ -433,11 +431,14 @@ Play-in rules:
   and deletes the declaration when no other teammate has registered onto it.
 - The top teams by combined TLINE points are granted automatic entry. The
   remaining `playInSpotCount` spots (default 2) are decided by playdowns.
-- A team evaluated as guaranteed at registration time pays immediately, like a
-  guaranteed return. All other play-in teams defer payment until staff record
-  the entry outcome.
-- ADD/REPLACE semantics follow the waitlist rules: a successful REPLACE entry
-  releases the replaced league spot.
+- A play-in league sits on the priority list like any other league. A complete
+  roster that clears the TLINE bar earns a Guaranteed return label and is billed
+  immediately; anything else is Subject to availability and defers payment.
+- A play-in entry never receives a Guaranteed fallback label, because a team
+  that misses the bar goes to playdowns rather than into a held spot.
+- Displacement follows the priority list: if a play-in placement puts the
+  registrant over their desired league count, their lowest-priority held league
+  is released.
 
 See `play-in-entry.md` for the full entry scheme, the returning-member rule,
 and the guarantee threshold calculation.
@@ -537,35 +538,44 @@ Experience accrual rule:
 
 Staff may manually override league placement in exceptional cases.
 
-## 13. Returning members and guaranteed returns
+## 13. Returning members, guaranteed returns, and guaranteed fallbacks
 
 A returning member may be eligible to return to leagues from the configured
 predecessor session.
 
-A member is eligible for a guaranteed return only if:
+A member holds a **return right** for a league only if:
 
-- They participated in the predecessor league, or
-- They hold a valid sabbatical right for that league lineage, and
+- They participated in the predecessor league, or they hold a valid sabbatical
+  right for that league lineage, and
 - They register during priority registration, and
 - The league permits the relevant return behavior.
+
+A return right becomes a guarantee only when the league sits high enough on the
+registrant's priority list. The full labeling algorithm is in
+`league-priority.md`. In summary:
+
+- A return-eligible league ranked 1st or 2nd is a **Guaranteed return**.
+- A return-eligible league ranked 3rd or lower is a **Guaranteed fallback**,
+  but only when fewer than two Guaranteed return labels were granted.
+- Guarantees are capped at `min(2, desiredLeagueCount)` in total.
+
+A guaranteed fallback is a real held spot: it is billed immediately and rostered
+at submit, exactly like a guaranteed return. The difference is intent — the
+registrant would rather have a higher-ranked league, and the fallback is what
+they keep if the higher choices do not come through.
 
 A returning member may protect at most two league spots total.
 
 Protected claims include:
 
 - Guaranteed return to a league
+- Guaranteed fallback to a league
 - Sabbatical for a league
 
-Play-in requests for a competitive league do **not** count as protected claims.
-
-Play-in based leagues do not offer guaranteed returns. A returning member who
-played a play-in league's predecessor chooses whether to join the competitive
-league again or not join. Joining does not use one of the two protected claims.
-Team roster details are collected with other league requests. Returning players
-on a TLINE-guaranteed team are automatic ADD unless they also selected two
-guaranteed-return leagues (in which case they must choose a REPLACE target).
-New players who already hold two leagues must choose a REPLACE target.
-Teammates choose their own ADD/REPLACE when they register.
+Play-in based leagues sit on the priority list like any other league. A
+registrant whose declared team has a full roster and clears the TLINE bar earns
+a Guaranteed return, which consumes one of the two protected claims. A play-in
+entry never receives a Guaranteed fallback.
 
 Example:
 
@@ -574,13 +584,10 @@ Example:
 - A member could return to one league and take sabbatical for one league.
 - A member could take sabbatical for two leagues.
 - A member could return to two leagues.
-- A member could join the competitive league and guarantee returning to one
-  regular league.
-- A member could join the competitive league and take sabbatical for one regular
-  league.
-- A member could join the competitive league and guarantee returning to two
-  regular leagues, but must choose which league to replace if they get into the
-  competitive league.
+- A member could rank two new leagues first and their two prior leagues third
+  and fourth, in which case both prior leagues are guaranteed fallbacks.
+- A member who wants only one league gets at most one guarantee, even if they
+  hold return rights for two leagues.
 
 If a member participated in Fall 2025, skipped Winter 2026 without an official
 sabbatical, and wants to return in Fall 2026, they are not guaranteed a spot
@@ -726,68 +733,51 @@ Waitlists are first-come, first-served.
 Waitlists may persist across seasons, so members who joined earlier retain
 priority by virtue of their earlier waitlist position.
 
-### Waitlist entry types
+### Waitlist entries and priority
 
-Each waitlist entry must specify whether the person is trying to:
+There is no ADD or REPLACE entry type. A waitlist entry carries two facts copied
+from the registrant's priority list at submit:
 
-1. ADD the league
-2. REPLACE an existing league with this league
+- `priority_rank` — where the league sits on their list
+- `desired_league_count` — how many leagues they want in total
 
-#### ADD waitlist entries
+Whether a placement displaces an existing league is decided at placement time,
+not at join time. See `league-priority.md`.
 
-A member may be on a waitlist as ADD only if they are currently in 0 or 1
-leagues.
+Every entry on the priority list labeled Waitlisted becomes a waitlist entry.
+There is no limit on how many waitlists a member may be on.
 
-This means that if the league is added, they will be in at most 2 leagues.
+### Displacement on placement
 
-There is no limit to the number of ADD waitlists a member may be on.
+When a waitlist offer is accepted:
 
-#### REPLACE waitlist entries
+1. The member is placed on the league roster.
+2. If they now hold more leagues than their desired league count, their
+   lowest-priority held league is released.
+3. Any of their remaining waitlist entries ranked below the leagues they now
+   hold are skipped, because those spots can no longer be used.
 
-A REPLACE waitlist entry means the member wants to join this league by giving up
-another league.
-
-A REPLACE entry must identify which existing league would be replaced.
-
-The REPLACE target cannot be a play-in league.
-
-A member may have at most two active REPLACE waitlist entries.
-
-### Cleanup when a member reaches two leagues
-
-Once a member gets into their second league by any mechanism, if they have ADD
-waitlist entries, they must immediately decide whether to:
-
-- Remove themselves from those ADD waitlists, or
-- Convert ADD entries to REPLACE entries and specify which league would be
-  replaced.
-
-If they are on more than two ADD waitlists and want to convert them, they must
-choose at most two to keep as REPLACE entries.
-
-The registration or placement flow should block completion until this cleanup is
-resolved.
+A guaranteed spot is never released by this rule; only non-guaranteed
+placements can be displaced.
 
 ### Waitlist offer response preferences
 
 Each active waitlist entry has an offer response preference for the current
 session:
 
-- `ask` — reach out when a spot opens and wait for a response (default)
-- `auto_accept` — accept automatically when a spot opens
+- `ask` — reach out when a spot opens and wait for a response
+- `auto_accept` — accept automatically when a spot opens (default)
 - `auto_decline` — decline automatically when a spot opens
 
-During priority registration, members confirm each waitlist they are keeping or
-joining and must choose either `auto_accept` or `auto_decline`. `ask` is not
-offered during priority registration because registration is close to league
-start and the goal is to avoid waiting on responses after priority registration
-closes.
+Entries created from registration default to `auto_accept`, because the priority
+list and desired count already state the registrant's intent: they asked for
+this league at this rank and said how many leagues they want. Asking again after
+priority registration closes only delays placement.
 
 The preference is stored on the waitlist entry itself, not on individual team
-members. For BYOT waitlist entries, any member on the entry may set the
-preference during registration and it applies to the whole entry.
+members. For BYOT waitlist entries the preference applies to the whole entry.
 
-Staff can see each entry's preference while processing waitlists.
+Staff can see and change each entry's preference while processing waitlists.
 
 ### Waitlist offers
 
@@ -834,11 +824,10 @@ All waitlist changes, manual or automatic, must be audited.
 
 For standard leagues, after priority registration closes, placement priority is:
 
-1. Guaranteed returns and sabbatical returns are resolved first.
-2. Remaining permanent spots are offered to the waitlist.
+1. Guaranteed returns, guaranteed fallbacks, and sabbatical returns are resolved
+   first. These are already rostered at submit.
+2. Remaining permanent spots are offered to the waitlist in queue order.
 3. Temporary sabbatical-fill spots are offered separately to the waitlist.
-4. Third-league requests are handled only after first/second league demand is
-   satisfied.
 
 Permanent vacancies are filled before temporary sabbatical-fill vacancies.
 
@@ -847,27 +836,24 @@ Staff should have oversight of this process.
 A staff member may view league vacancies and send offers to the top eligible
 waitlisted users.
 
-## 18. Third-league interest
+## 18. Demand beyond a registrant's first two leagues
 
-A member may express interest in joining a third league.
+A registrant's priority list may be longer than two, and their desired league
+count may be as high as 5. Entries beyond a registrant's first two leagues are
+handled the same way as any other non-guaranteed entry — they sit on the league
+waitlist in queue order — but staff satisfy first- and second-league demand
+before placing anyone into a third or later league.
 
-Third-league interest is not the same as joining a waitlist.
+Concretely, an offer is only sent for a waitlist entry when:
 
-Rules:
+- The member currently holds fewer leagues than their desired league count, and
+- No higher-ranked entry of theirs is still pending a response.
 
-- Third-league interest is collected during registration.
-- The registrant may provide an ordered list of suitable third-league options.
-- There is no limit to the number of third-league options they may list.
-- Third-league placement is handled after first/second league demand is
-  satisfied.
-- Third-league placement may be manual or outside the application.
-- The exact placement mechanism, such as lottery or staff decision, is not part
-  of V1 app automation.
-- BYOT leagues may be selected as third-league options with an optional team
-  roster.
-- Play-in based leagues cannot be selected as third-league options.
+Placement into a third or later league may still be manual or handled outside
+the application. The exact mechanism, such as lottery or staff decision, is not
+part of V1 app automation.
 
-Third-league interest defers payment.
+Non-guaranteed entries always defer payment.
 
 ## 19. Discounts
 
@@ -970,14 +956,19 @@ The app should avoid multiple payments per user/registration whenever possible.
 Payment may be immediate when all selected items are confirmed and there are no
 deferral reasons.
 
+For league selections specifically, payment is immediate when the number of
+guaranteed entries on the priority list equals the desired league count. The
+registrant is getting exactly what they asked for, so there is nothing left to
+estimate.
+
 Examples:
 
 - Social membership only
-- Regular membership plus guaranteed returning leagues
+- Regular membership plus a priority list whose guarantees fill the desired
+  league count
 - Regular membership plus spare-only
 - Sabbatical-only registration
 - Junior Recreational with no financial assistance request
-- BYOT request treated as guaranteed for payment purposes
 
 ### Deferred payment
 
@@ -986,12 +977,19 @@ placement.
 
 Deferral reasons include:
 
-- Non-guaranteed league request
+- Fewer guaranteed entries than the desired league count
 - Waitlist placement
-- Third-league interest
+- Play-in entry that has not cleared the TLINE bar
 - Junior Recreational financial assistance request
 - Staff placement required
 - Any other non-guaranteed item
+
+A deferred registration is quoted as an estimated range rather than a single
+total. The floor is the confirmed total (membership plus guaranteed league
+fees). The ceiling adds the most expensive remaining entries on the priority
+list, up to the desired league count. Because some leagues are configured at a
+zero fee, the range is computed by summing actual per-league fees rather than
+multiplying by a count.
 
 If payment is deferred, membership dues may also be deferred so that the
 registrant can make one payment later.
@@ -1032,12 +1030,12 @@ Avoid showing too many inputs or choices on one screen.
 8. Collect discount information.
 9. Collect curling experience where needed.
 10. Handle Junior Recreational special path if selected.
-11. Handle returning league guarantees and sabbaticals if applicable.
-12. Handle new league requests, ADD/REPLACE waitlists, BYOT, and third-league
-    interest.
-13. Show review screen.
-14. Submit registration.
-15. Collect payment immediately or defer payment.
+11. Collect the desired league count and the prioritized league list on a single
+    page, including team rosters, sabbatical/drop decisions for leagues left
+    off the list, and the basic ice fallback question. See `league-priority.md`.
+12. Show review screen.
+13. Submit registration.
+14. Collect payment immediately or defer payment.
 
 ### Review screen
 
@@ -1046,26 +1044,22 @@ The review screen must clearly show:
 - Membership choice
 - Program choice, if applicable
 - Ice privilege status
-- Guaranteed leagues
-- Sabbaticals
-- Waitlist ADD entries
-- Waitlist REPLACE entries
-- Third-league interest
-- BYOT requests
+- The desired league count
+- The priority list in rank order with each entry's guarantee label
+- Sabbaticals and drops
 - Discounts
-- Charges
+- Charges, as a single total or an estimated range
 - Whether payment is due now or deferred
 - Why payment is deferred, if applicable
 
 The UI should use clear labels such as:
 
-- Confirmed
-- On waitlist
+- Guaranteed return
+- Guaranteed fallback
+- Waitlisted
 - Subject to availability
 - Sabbatical
 - Temporary sabbatical-fill
-- Third-league interest
-- BYOT request
 - Payment deferred
 
 ## 23. Staff operations

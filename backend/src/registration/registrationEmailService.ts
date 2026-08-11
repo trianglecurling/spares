@@ -98,8 +98,7 @@ export interface RegistrationEmailPayload {
   seasonName?: string | null;
   sessionName?: string | null;
   leagueName?: string | null;
-  waitlistType?: 'ADD' | 'REPLACE' | string | null;
-  replacementLeagueName?: string | null;
+  priorityRank?: number | null;
   position?: number | null;
   waitlistSize?: number | null;
   updatedPosition?: number | null;
@@ -273,10 +272,8 @@ function receiptTableText(payload: RegistrationEmailPayload): string {
   return lines.join('\n');
 }
 
-function waitlistEntryTypeLabel(waitlistType?: string | null): string {
-  if (waitlistType === 'REPLACE') return 'REPLACE one of your leagues';
-  if (waitlistType === 'ADD') return 'ADD to this league';
-  return waitlistType?.trim() || 'ADD to this league';
+function waitlistPriorityLabel(priorityRank?: number | null): string | null {
+  return priorityRank != null && priorityRank > 0 ? `#${priorityRank} on your league priority list` : null;
 }
 
 function waitlistPositionLabel(position?: number | null, waitlistSize?: number | null): string {
@@ -415,12 +412,10 @@ export function renderRegistrationEmail(messageType: RegistrationMessageType, pa
         textBody: `Social membership confirmed\n\nYour social membership is active for ${season} after payment. Social membership does not include ice privileges. Social members cannot play in leagues or spare unless they later upgrade to regular membership and purchase applicable ice privileges. Upgrading later requires paying the full regular membership price with no social membership credit and no discounts.\n\n${membershipContactText}`,
       };
     case 'waitlist_joined': {
-      const entryTypeLabel = waitlistEntryTypeLabel(payload.waitlistType);
+      const priorityLabel = waitlistPriorityLabel(payload.priorityRank);
       const positionLabel = waitlistPositionLabel(payload.position, payload.waitlistSize);
-      const replacesLeagueHtml = payload.replacementLeagueName
-        ? `<p><strong>Replaces league:</strong> ${escapeHtml(payload.replacementLeagueName)}</p>`
-        : '';
-      const replacesLeagueText = payload.replacementLeagueName ? `Replaces league: ${payload.replacementLeagueName}\n` : '';
+      const priorityHtml = priorityLabel ? `<p><strong>Your priority:</strong> ${escapeHtml(priorityLabel)}</p>` : '';
+      const priorityText = priorityLabel ? `Your priority: ${priorityLabel}` : '';
       const viewWaitlistHtml = payload.dashboardUrl
         ? `<p><a href="${escapeHtml(payload.dashboardUrl)}">View waitlist</a></p>`
         : '';
@@ -433,8 +428,7 @@ export function renderRegistrationEmail(messageType: RegistrationMessageType, pa
           htmlBody: `
             <h2>You were added to the ${escapeHtml(leagueName)} waitlist</h2>
             <p><strong>${escapeHtml(payload.addedByName)}</strong> added you to this waitlist.</p>
-            <p><strong>Your waitlist entry type:</strong> ${escapeHtml(entryTypeLabel)}</p>
-            ${replacesLeagueHtml}
+            ${priorityHtml}
             <p><strong>Current position:</strong> ${escapeHtml(positionLabel)}</p>
             ${viewWaitlistHtml}
             ${mistakeHtml}
@@ -444,8 +438,7 @@ export function renderRegistrationEmail(messageType: RegistrationMessageType, pa
             `You were added to the ${leagueName} waitlist`,
             '',
             `${payload.addedByName} added you to this waitlist.`,
-            `Your waitlist entry type: ${entryTypeLabel}`,
-            replacesLeagueText.trim(),
+            priorityText,
             `Current position: ${positionLabel}`,
             viewWaitlistText,
             mistakeText,
@@ -457,8 +450,7 @@ export function renderRegistrationEmail(messageType: RegistrationMessageType, pa
         subject: `You have joined the ${leagueName} waitlist`,
         htmlBody: `
           <h2>You have joined the ${escapeHtml(leagueName)} waitlist</h2>
-          <p><strong>Waitlist entry type:</strong> ${escapeHtml(entryTypeLabel)}</p>
-          ${replacesLeagueHtml}
+          ${priorityHtml}
           <p><strong>Current position:</strong> ${escapeHtml(positionLabel)}</p>
           ${viewWaitlistHtml}
           ${membershipContactHtml}
@@ -466,8 +458,7 @@ export function renderRegistrationEmail(messageType: RegistrationMessageType, pa
         textBody: [
           `You have joined the ${leagueName} waitlist`,
           '',
-          `Waitlist entry type: ${entryTypeLabel}`,
-          replacesLeagueText.trim(),
+          priorityText,
           `Current position: ${positionLabel}`,
           viewWaitlistText,
           membershipContactText,

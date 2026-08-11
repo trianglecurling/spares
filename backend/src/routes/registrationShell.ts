@@ -6,12 +6,12 @@ import { PaymentServiceError } from '../services/paymentService.js';
 import { resolveFrontendBaseUrl } from '../utils/frontendUrl.js';
 import type { Member } from '../types.js';
 import { abuseRouteRateLimits } from '../plugins/abuseRateLimits.js';
+import { MAX_DESIRED_LEAGUE_COUNT } from '../db/drizzle-schema.js';
 import {
   RegistrationLeagueSelectionValidationError,
+  getRegistrationLeagueCatalog,
   getRegistrationLeagueSelectionEvaluation,
-  getRegistrationLeagueSelectionPayload,
-  putRegistrationLeagueSelections,
-  updateBasicIceFallbackInterest,
+  putRegistrationLeaguePriorities,
 } from '../registration/registrationLeagueSelectionService.js';
 import {
   RegistrationMembershipPaymentValidationError,
@@ -147,43 +147,6 @@ const experienceSchema = z.discriminatedUnion('experienceType', [
   z.object({ experienceType: z.literal('specified_years'), experienceSelfReportedYears: z.coerce.number().min(0) }),
   z.object({ experienceType: z.literal('known_existing'), experienceSelfReportedYears: z.null().optional() }),
 ]);
-const registrationSelectionSchema = z.object({
-  selectionType: z.enum([
-    'guaranteed_return',
-    'sabbatical',
-    'drop',
-    'return_subject_to_availability',
-    'waitlist_add',
-    'waitlist_replace',
-    'waitlist_add_auto_decline',
-    'waitlist_replace_auto_decline',
-    'waitlist_keep_auto_accept',
-    'waitlist_keep_auto_decline',
-    'waitlist_remove',
-    'third_league_interest',
-    'byot_request',
-    'play_in_request',
-    'instructional_join',
-    'junior_recreational',
-    'spare_only',
-  ]),
-  leagueId: z.number().int().positive().nullable().optional(),
-  rank: z.number().int().positive().nullable().optional(),
-  replacesLeagueId: z.number().int().positive().nullable().optional(),
-  byotTeammateText: z.string().nullable().optional(),
-  teamRosterText: z.string().nullable().optional(),
-  teamRosterPlacements: z
-    .array(
-      z.object({
-        memberId: z.number().int().positive(),
-        entryType: z.enum(['add', 'replace']),
-        replacesLeagueId: z.number().int().positive().nullable().optional(),
-      }),
-    )
-    .optional()
-    .nullable(),
-  isTemporarySabbaticalFill: z.boolean().optional(),
-});
 const teamMemberPlacementOptionsQuerySchema = z.object({
   memberIds: z
     .union([z.string(), z.array(z.coerce.number().int().positive())])
@@ -212,13 +175,28 @@ const playInEntryPreviewQuerySchema = z.object({
     }),
   pendingNames: z.string().max(2000).optional().nullable(),
 });
-const leagueSelectionsSchema = z.object({
-  selections: z.array(registrationSelectionSchema),
-  desiredAddWaitlistLeagueCount: z.number().int().min(1).max(2).nullable().optional(),
-  addWaitlistPriority: z.array(z.number().int().positive()).optional(),
+const leaguePrioritySchema = z.object({
+  leagueId: z.number().int().positive(),
+  priorityRank: z.number().int().positive(),
+  byotTeammateText: z.string().max(2000).nullable().optional(),
+  teamRosterPlacements: z
+    .array(z.object({ memberId: z.number().int().positive() }))
+    .nullable()
+    .optional(),
 });
-const basicIceFallbackSchema = z.object({
-  interested: z.boolean(),
+const leaguePrioritiesSchema = z.object({
+  desiredLeagueCount: z.number().int().min(1).max(MAX_DESIRED_LEAGUE_COUNT).nullable(),
+  priorities: z.array(leaguePrioritySchema),
+  priorLeagueDecisions: z
+    .array(
+      z.object({
+        leagueId: z.number().int().positive(),
+        decision: z.enum(['sabbatical', 'drop']),
+        isTemporarySabbaticalFill: z.boolean().optional(),
+      }),
+    )
+    .optional(),
+  basicIceFallbackInterest: z.boolean().nullable().optional(),
 });
 
 const guestPreviewSchema = z.object({
@@ -943,15 +921,15 @@ export async function protectedRegistrationShellRoutes(fastify: FastifyInstance)
     async (request, reply) => {
       try {
         const { id } = idParamsSchema.parse(request.params);
-        return await getRegistrationLeagueSelectionPayload(id, (request as AuthenticatedRequest).member);
+        return await getRegistrationLeagueCatalog(id, (request as AuthenticatedRequest).member);
       } catch (error) {
         return handleRegistrationError(reply, error);
       }
     }
   );
 
-  fastify.patch<{ Params: { id: number }; Body: z.infer<typeof basicIceFallbackSchema>; Reply: unknown | ApiErrorResponse }>(
-    '/registration/drafts/:id/basic-ice-fallback',
+  fastify.put<{ Params: { id: number }; Body: z.infer<typeof leaguePrioritiesSchema>; Reply: unknown | ApiErrorResponse }>(
+    '/registration/drafts/:id/league-priorities',
     {
       schema: {
         tags: ['registration'],
@@ -963,29 +941,8 @@ export async function protectedRegistrationShellRoutes(fastify: FastifyInstance)
     async (request, reply) => {
       try {
         const { id } = idParamsSchema.parse(request.params);
-        const body = basicIceFallbackSchema.parse(request.body);
-        return await updateBasicIceFallbackInterest(id, (request as AuthenticatedRequest).member, body);
-      } catch (error) {
-        return handleRegistrationError(reply, error);
-      }
-    }
-  );
-
-  fastify.put<{ Params: { id: number }; Body: z.infer<typeof leagueSelectionsSchema>; Reply: unknown | ApiErrorResponse }>(
-    '/registration/drafts/:id/league-selections',
-    {
-      schema: {
-        tags: ['registration'],
-        params: idParamsJsonSchema,
-        body: anyObjectSchema,
-        response: { 200: anyObjectSchema, 400: apiErrorResponseSchema, 403: apiErrorResponseSchema, 404: apiErrorResponseSchema },
-      },
-    },
-    async (request, reply) => {
-      try {
-        const { id } = idParamsSchema.parse(request.params);
-        const body = leagueSelectionsSchema.parse(request.body);
-        return await putRegistrationLeagueSelections(id, (request as AuthenticatedRequest).member, body);
+        const body = leaguePrioritiesSchema.parse(request.body);
+        return await putRegistrationLeaguePriorities(id, (request as AuthenticatedRequest).member, body);
       } catch (error) {
         return handleRegistrationError(reply, error);
       }

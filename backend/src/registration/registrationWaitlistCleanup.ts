@@ -1,6 +1,5 @@
 import { and, eq } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
-import type { RegistrationSelectionInput } from './registrationContext.js';
 import { recordAndDeleteWaitlistEntry } from './waitlistAudit.js';
 
 type WaitlistCleanupExecutor = Pick<
@@ -8,72 +7,22 @@ type WaitlistCleanupExecutor = Pick<
   'select' | 'delete' | 'insert'
 >;
 
-function selectedWaitlistLeagueIds(selections: RegistrationSelectionInput[]): Set<number> {
-  return new Set(
-    selections
-      .filter(
-        (selection) =>
-          selection.selectionType === 'waitlist_add' ||
-          selection.selectionType === 'waitlist_replace' ||
-          selection.selectionType === 'waitlist_add_auto_decline' ||
-          selection.selectionType === 'waitlist_replace_auto_decline' ||
-          selection.selectionType === 'waitlist_keep_auto_accept' ||
-          selection.selectionType === 'waitlist_keep_auto_decline',
-      )
-      .map((selection) => selection.leagueId)
-      .filter((leagueId): leagueId is number => leagueId != null)
-  );
-}
-
-export async function removeExistingWaitlistsMarkedForRemoval(input: {
-  curlerMemberId: number;
-  actorMemberId: number;
-  selections: RegistrationSelectionInput[];
-  tx?: WaitlistCleanupExecutor;
-}): Promise<void> {
-  const { db, schema } = getDrizzleDb();
-  const executor = input.tx ?? db;
-  const removeLeagueIds = new Set(
-    input.selections
-      .filter((selection) => selection.selectionType === 'waitlist_remove' && selection.leagueId != null)
-      .map((selection) => selection.leagueId as number),
-  );
-  if (removeLeagueIds.size === 0) return;
-
-  const entries = await executor
-    .select()
-    .from(schema.waitlistEntries)
-    .where(and(eq(schema.waitlistEntries.member_id, input.curlerMemberId), eq(schema.waitlistEntries.status, 'active')));
-
-  for (const entry of entries) {
-    const [league] = await executor
-      .select({ id: schema.leagues.id })
-      .from(schema.leagues)
-      .where(eq(schema.leagues.waitlist_id, entry.waitlist_id))
-      .limit(1);
-    if (!league || !removeLeagueIds.has(league.id)) continue;
-
-    await recordAndDeleteWaitlistEntry(executor, {
-      entry,
-      leagueId: league.id,
-      actorMemberId: input.actorMemberId,
-      source: 'registration_submission',
-      reason: 'WAITLIST_REMOVED_FROM_REGISTRATION',
-      metadata: { reason: 'REGISTRATION_WAITLIST_REMOVE' },
-    });
-  }
-}
-
+/**
+ * Drops waitlist entries this registration created for leagues the registrant
+ * has since removed from their priority list, or that are now guaranteed and so
+ * no longer need a queue spot.
+ */
 export async function removeOrphanedRegistrationWaitlistEntries(input: {
   registrationId: number;
   curlerMemberId: number;
   actorMemberId: number;
-  selections: RegistrationSelectionInput[];
+  /** Leagues that should keep an active waitlist entry. */
+  waitlistedLeagueIds: Iterable<number>;
   tx?: WaitlistCleanupExecutor;
 }): Promise<void> {
   const { db, schema } = getDrizzleDb();
   const executor = input.tx ?? db;
-  const keepLeagueIds = selectedWaitlistLeagueIds(input.selections);
+  const keepLeagueIds = new Set(input.waitlistedLeagueIds);
 
   const entries = await executor
     .select()
@@ -101,6 +50,44 @@ export async function removeOrphanedRegistrationWaitlistEntries(input: {
       source: 'registration_submission',
       reason: 'WAITLIST_REMOVED_FROM_REGISTRATION_EDIT',
       metadata: { sourceRegistrationId: input.registrationId, reason: 'REGISTRATION_EDIT' },
+    });
+  }
+}
+
+/**
+ * Drops waitlist entries the registrant holds from any source for leagues that
+ * are no longer on their priority list at all.
+ */
+export async function removeWaitlistEntriesNotOnPriorityList(input: {
+  curlerMemberId: number;
+  actorMemberId: number;
+  priorityLeagueIds: Iterable<number>;
+  tx?: WaitlistCleanupExecutor;
+}): Promise<void> {
+  const { db, schema } = getDrizzleDb();
+  const executor = input.tx ?? db;
+  const keepLeagueIds = new Set(input.priorityLeagueIds);
+
+  const entries = await executor
+    .select()
+    .from(schema.waitlistEntries)
+    .where(and(eq(schema.waitlistEntries.member_id, input.curlerMemberId), eq(schema.waitlistEntries.status, 'active')));
+
+  for (const entry of entries) {
+    const [league] = await executor
+      .select({ id: schema.leagues.id })
+      .from(schema.leagues)
+      .where(eq(schema.leagues.waitlist_id, entry.waitlist_id))
+      .limit(1);
+    if (!league || keepLeagueIds.has(league.id)) continue;
+
+    await recordAndDeleteWaitlistEntry(executor, {
+      entry,
+      leagueId: league.id,
+      actorMemberId: input.actorMemberId,
+      source: 'registration_submission',
+      reason: 'WAITLIST_REMOVED_FROM_REGISTRATION',
+      metadata: { reason: 'REGISTRATION_PRIORITY_LIST_REMOVAL' },
     });
   }
 }

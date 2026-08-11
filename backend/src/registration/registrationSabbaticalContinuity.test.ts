@@ -5,7 +5,7 @@ import {
   listLeaguesRequiringPriorSessionDecision,
   validateContinuingSabbaticalDecisions,
 } from './registrationSabbaticalContinuity.js';
-import { league, registrationContext, selection } from './registrationTestFixtures.js';
+import { league, priority, registrationContext, selection } from './registrationTestFixtures.js';
 
 describe('registrationSabbaticalContinuity', () => {
   test('lists continuing sabbaticals when the member did not play the predecessor league', () => {
@@ -115,10 +115,35 @@ describe('registrationSabbaticalContinuity', () => {
         100: league({ id: 100, predecessorLeagueId: 90, lastDayOfPlay: '2029-10-01' }),
       },
       selections: [],
+      priorities: [],
+      desiredLeagueCount: null,
     });
 
     const errors = validateContinuingSabbaticalDecisions(context);
     expect(errors.map((error) => error.code)).toContain('continuing_sabbatical_decision_required');
+  });
+
+  test('putting the league back on the priority list resolves a continuing sabbatical', () => {
+    const context = registrationContext({
+      registrationState: 'priority',
+      participatedLeagueIds: [],
+      existingSabbaticals: [
+        {
+          id: 7,
+          originalLeagueId: 90,
+          currentLeagueId: 90,
+          firstSabbaticalLeagueId: 90,
+          firstSabbaticalStartDate: '2026-10-01',
+          status: 'active',
+        },
+      ],
+      leagues: {
+        100: league({ id: 100, predecessorLeagueId: 90, lastDayOfPlay: '2029-10-01' }),
+      },
+      selections: [],
+    });
+
+    expect(validateContinuingSabbaticalDecisions(context)).toEqual([]);
   });
 
   test('blocks extending when the duration limit is exceeded', () => {
@@ -166,12 +191,17 @@ describe('registrationSabbaticalContinuity', () => {
 
     expect(
       validateContinuingSabbaticalDecisions(
-        registrationContext({ ...base, selections: [selection({ leagueId: 100, selectionType: 'drop' })] }),
+        registrationContext({
+          ...base,
+          selections: [selection({ leagueId: 100, selectionType: 'drop' })],
+          priorities: [],
+          desiredLeagueCount: null,
+        }),
       ),
     ).toEqual([]);
     expect(
       validateContinuingSabbaticalDecisions(
-        registrationContext({ ...base, selections: [selection({ leagueId: 100, selectionType: 'guaranteed_return' })] }),
+        registrationContext({ ...base, selections: [], priorities: [priority({ leagueId: 100 })] }),
       ),
     ).toEqual([]);
   });

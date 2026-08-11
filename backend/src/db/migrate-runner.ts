@@ -8,6 +8,7 @@ import { getDrizzleDb } from './drizzle-db.js';
 import { migrateTournamentTeamsToRegistrationsSqlite } from './tournamentTeamsToRegistrationsMigration.js';
 import { migrateEventCalendarTypesToMultiSelectSqlite } from './eventCalendarTypesMultiSelectMigration.js';
 import { migrateEventTransferGroupsSqlite } from './eventTransferGroupsMigration.js';
+import { cancelPrePriorityModelRegistrations } from './registrationPriorityInvalidationMigration.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const drizzleDir = path.join(__dirname, '../../drizzle');
@@ -249,9 +250,11 @@ export async function runDrizzleMigrations(config: DatabaseConfig): Promise<void
     await migrateEventTransferGroupsSqlite();
     await ensureSqliteVolunteerProgramSlugColumn();
     await spawnDrizzleKit(['push', '--force']);
+    await cancelPrePriorityModelRegistrations('sqlite');
     return;
   }
 
   await baselineExistingPostgresDatabaseIfNeeded();
   await applyPendingPostgresMigrations();
+  await cancelPrePriorityModelRegistrations('postgres');
 }

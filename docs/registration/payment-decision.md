@@ -20,20 +20,20 @@ Payment is immediate when:
 
 - Registration is otherwise valid.
 - There is an amount due.
-- All selected items are guaranteed or treated as guaranteed for payment timing.
+- The number of guaranteed entries on the priority list equals the desired
+  league count, so nothing about the league outcome is still unresolved.
 - No staff review is required.
-- No third-league interest exists.
-- No non-guaranteed league placement is pending.
 - No Junior Recreational financial assistance request is pending.
 
 Examples:
 
 - Social membership only.
-- Regular membership plus one or two guaranteed return leagues.
+- Regular membership, desired league count of 2, with two guaranteed entries.
+- Regular membership, desired league count of 1, with one guaranteed entry, even
+  if the priority list has four more leagues on it.
 - Regular membership plus spare-only fee.
 - Sabbatical-only registration.
 - Junior Recreational without financial assistance.
-- BYOT request, because BYOT is treated as guaranteed for payment timing.
 
 ## Deferred payment
 
@@ -41,12 +41,9 @@ Payment is deferred when any selected item requires later placement or review.
 
 Deferral reasons include:
 
-- Non-guaranteed league request.
+- Fewer guaranteed entries on the priority list than the desired league count.
 - Waitlist placement.
-- Return subject to availability.
-- ADD waitlist request that may result in placement.
-- REPLACE waitlist request that may result in placement.
-- Third-league interest.
+- Play-in entry that has not cleared the TLINE guarantee bar.
 - Junior Recreational financial assistance request.
 - Staff review required.
 - Any other non-guaranteed league outcome.
@@ -54,6 +51,22 @@ Deferral reasons include:
 If any deferral reason exists, payment for the entire registration is deferred whenever possible.
 
 The system should avoid multiple payments for the same registration when practical.
+
+## Estimated range for deferred registrations
+
+A deferred registration is quoted as a range, not a single total:
+
+- **Floor** — the confirmed total: membership and other fixed fees plus the
+  league fees for every guaranteed entry.
+- **Ceiling** — the floor plus the `desiredLeagueCount - guaranteedCount` most
+  expensive remaining entries on the priority list.
+
+The ceiling uses the most expensive remaining entries rather than the
+next-by-priority entries so the quoted maximum is a true upper bound. Fees are
+summed per league because leagues differ in price and some daytime leagues are
+configured at zero.
+
+When floor and ceiling are equal, show a single total instead of a range.
 
 ## No payment required
 
@@ -66,25 +79,18 @@ Examples:
 
 ## BYOT payment timing
 
-BYOT leagues are treated as guaranteed for payment timing.
-
-A registrant requesting BYOT may pay immediately if there are no other deferral reasons.
+A bring-your-own-team entry with a full roster is treated as guaranteed for
+payment timing, so it contributes to the confirmed total.
 
 If the coordinator later determines the registrant is not placed, staff handles refund/correction manually.
 
-Guaranteed BYOT requests cannot count as a third league. BYOT listed only as
-third-league interest remains deferred (same as other third-league interest).
+BYOT entries must be ranked above every standard league on the priority list.
 
-## Third-league interest
+## Entries below the desired count
 
-Third-league interest always defers payment.
-
-This applies even if the registrant also has one or two guaranteed leagues.
-
-Reason:
-
-- The final league placement and amount due may change.
-- The club wants to avoid multiple payments where possible.
+Entries ranked below a registrant's desired league count never affect the floor
+and never trigger a deferral on their own. They only widen the ceiling when the
+registrant has fewer guarantees than their desired count.
 
 ## Junior Recreational financial assistance
 
@@ -143,8 +149,7 @@ The payment decision service should return:
 
 - non_guaranteed_league
 - waitlist_placement_pending
-- return_subject_to_availability
-- third_league_interest
+- play_in_placement_pending
 - junior_financial_assistance_review
 - staff_review_required
 - registration_has_pending_placement

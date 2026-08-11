@@ -1,33 +1,32 @@
 import { describe, expect, test } from 'bun:test';
 import { evaluateRegistrationDraft } from './evaluateRegistrationDraft.js';
 import { resolveRegistrationPaymentStatus, shouldMarkCheckoutCancelled } from './registrationMembershipPaymentService.js';
-import { league, registrationContext, selection } from './registrationTestFixtures.js';
+import { league, priority, registrationContext, selection } from './registrationTestFixtures.js';
+
+/** Registration with no priority list, so nothing but membership is billable. */
+function membershipOnly(overrides: Parameters<typeof registrationContext>[0] = {}) {
+  return registrationContext({ selections: [], priorities: [], desiredLeagueCount: null, ...overrides });
+}
 
 describe('Phase 7 submission and checkout decisions', () => {
   test('immediate-payment registration types create checkout-eligible decisions', () => {
-    const byotLeague = league({ leagueType: 'bring_your_own_team', capacityType: 'team', allowsWaitlist: false, allowsSabbatical: false });
-
     const cases = [
-      registrationContext({ membershipOption: 'social', selections: [] }),
-      registrationContext({ membershipOption: 'regular_spare_only', selections: [] }),
-      registrationContext({ selections: [selection({ selectionType: 'guaranteed_return' })] }),
+      membershipOnly({ membershipOption: 'social' }),
+      membershipOnly({ membershipOption: 'regular_spare_only' }),
+      registrationContext(),
       registrationContext({
-        selections: [
-          selection({ leagueId: 101, selectionType: 'guaranteed_return' }),
-          selection({ leagueId: 102, selectionType: 'guaranteed_return' }),
-        ],
+        priorities: [priority({ leagueId: 101, priorityRank: 1 }), priority({ leagueId: 102, priorityRank: 2 })],
+        desiredLeagueCount: 2,
         leagues: {
           101: league({ id: 101, predecessorLeagueId: 91 }),
           102: league({ id: 102, predecessorLeagueId: 92 }),
+          91: league({ id: 91, predecessorLeagueId: null }),
+          92: league({ id: 92, predecessorLeagueId: null }),
         },
         participatedLeagueIds: [91, 92],
       }),
-      registrationContext({ membershipOption: 'none', selections: [selection({ selectionType: 'sabbatical' })] }),
-      registrationContext({ membershipOption: 'junior_recreational', selections: [] }),
-      registrationContext({
-        leagues: { [byotLeague.id]: byotLeague },
-        selections: [selection({ selectionType: 'byot_request', byotTeammateText: 'A, B, C' })],
-      }),
+      membershipOnly({ membershipOption: 'none', selections: [selection({ selectionType: 'sabbatical' })] }),
+      membershipOnly({ membershipOption: 'junior_recreational' }),
     ];
 
     for (const context of cases) {
@@ -38,24 +37,30 @@ describe('Phase 7 submission and checkout decisions', () => {
   });
 
   test('deferred and no-payment registration types do not create checkout-now decisions', () => {
+    const wantsAWaitlistedLeague = registrationContext({
+      leagues: { 100: league({ id: 100, predecessorLeagueId: null }) },
+      participatedLeagueIds: [],
+    });
+
     const deferredCases = [
-      registrationContext({ selections: [selection({ selectionType: 'waitlist_add' })] }),
+      wantsAWaitlistedLeague,
       registrationContext({
-        activeLeagueIds: [1],
-        selections: [selection({ leagueId: 100, selectionType: 'waitlist_replace', replacesLeagueId: 1 })],
+        priorities: [priority({ leagueId: 100, priorityRank: 1 }), priority({ leagueId: 101, priorityRank: 2 })],
+        desiredLeagueCount: 2,
         leagues: {
-          1: league({ id: 1, registrationFeeMinor: 30000 }),
-          100: league({ id: 100, registrationFeeMinor: 35000 }),
+          100: league({ id: 100, predecessorLeagueId: 90 }),
+          101: league({ id: 101, predecessorLeagueId: null }),
+          90: league({ id: 90, predecessorLeagueId: null }),
         },
       }),
-      registrationContext({ selections: [selection({ selectionType: 'third_league_interest' })] }),
-      registrationContext({
+      membershipOnly({
         membershipOption: 'junior_recreational',
-        selections: [],
         juniorAssistance: { requestedPercent: 50, status: 'pending' },
       }),
-      registrationContext({ selections: [selection({ selectionType: 'return_subject_to_availability' })] }),
-      registrationContext({ selections: [selection({ selectionType: 'sabbatical' }), selection({ selectionType: 'waitlist_add' })] }),
+      {
+        ...wantsAWaitlistedLeague,
+        selections: [selection({ selectionType: 'sabbatical', leagueId: 90 })],
+      },
     ];
 
     for (const context of deferredCases) {
@@ -64,44 +69,29 @@ describe('Phase 7 submission and checkout decisions', () => {
       expect(result.createStripeCheckoutNow).toBe(false);
     }
 
-    const waitlistOnly = evaluateRegistrationDraft(
-      registrationContext({ membershipOption: 'none', selections: [selection({ selectionType: 'waitlist_add' })] })
-    ).paymentDecision;
-    expect(waitlistOnly.outcome).toBe('no_payment_required');
-    expect(waitlistOnly.createStripeCheckoutNow).toBe(false);
+    const nothingBillable = evaluateRegistrationDraft(membershipOnly({ membershipOption: 'none' })).paymentDecision;
+    expect(nothingBillable.outcome).toBe('no_payment_required');
+    expect(nothingBillable.createStripeCheckoutNow).toBe(false);
   });
 
-  test('REPLACE waitlists allow immediate payment when replacement league fees match', () => {
-    const sameFeeCases = [
-      registrationContext({
-        activeLeagueIds: [1],
-        selections: [selection({ leagueId: 100, selectionType: 'waitlist_replace', replacesLeagueId: 1 })],
-        leagues: {
-          1: league({ id: 1, registrationFeeMinor: 30000 }),
-          100: league({ id: 100, registrationFeeMinor: 30000 }),
-        },
-      }),
-      registrationContext({
-        selections: [
-          selection({ leagueId: 101, selectionType: 'guaranteed_return' }),
-          selection({ leagueId: 102, selectionType: 'guaranteed_return' }),
-          selection({ leagueId: 103, selectionType: 'waitlist_replace', replacesLeagueId: 101 }),
-        ],
-        leagues: {
-          101: league({ id: 101, registrationFeeMinor: 30000, predecessorLeagueId: 91 }),
-          102: league({ id: 102, registrationFeeMinor: 30000, predecessorLeagueId: 92 }),
-          103: league({ id: 103, registrationFeeMinor: 30000 }),
-        },
-        participatedLeagueIds: [91, 92],
-      }),
-    ];
+  test('a fully guaranteed list bills now and quotes no range', () => {
+    const context = registrationContext({
+      priorities: [priority({ leagueId: 101, priorityRank: 1 }), priority({ leagueId: 102, priorityRank: 2 })],
+      desiredLeagueCount: 2,
+      leagues: {
+        101: league({ id: 101, registrationFeeMinor: 30000, predecessorLeagueId: 91 }),
+        102: league({ id: 102, registrationFeeMinor: 30000, predecessorLeagueId: 92 }),
+        91: league({ id: 91, predecessorLeagueId: null }),
+        92: league({ id: 92, predecessorLeagueId: null }),
+      },
+      participatedLeagueIds: [91, 92],
+    });
 
-    for (const context of sameFeeCases) {
-      const result = evaluateRegistrationDraft(context).paymentDecision;
-      expect(result.outcome).toBe('immediate_payment');
-      expect(result.createStripeCheckoutNow).toBe(true);
-      expect(result.deferralReasons).not.toContain('waitlist_placement_pending');
-    }
+    const result = evaluateRegistrationDraft(context).paymentDecision;
+    expect(result.outcome).toBe('immediate_payment');
+    expect(result.createStripeCheckoutNow).toBe(true);
+    expect(result.deferralReasons).not.toContain('waitlist_placement_pending');
+    expect(result.estimatedMaximumDueMinor).toBe(result.totalDueMinor);
   });
 
   test('client success redirect remains confirming until webhook-confirmed rows are paid', () => {
@@ -134,12 +124,14 @@ describe('Phase 7 submission and checkout decisions', () => {
   });
 
   test('deferred-to-immediate edit preview does not create checkout until confirmed', () => {
-    const waitlistContext = registrationContext({ selections: [selection({ selectionType: 'waitlist_add' })] });
+    const waitlistContext = registrationContext({
+      leagues: { 100: league({ id: 100, predecessorLeagueId: null }) },
+      participatedLeagueIds: [],
+    });
     const deferred = evaluateRegistrationDraft(waitlistContext).paymentDecision;
     expect(deferred.outcome).toBe('deferred_payment');
 
-    const guaranteedContext = registrationContext({ selections: [selection({ selectionType: 'guaranteed_return' })] });
-    const immediate = evaluateRegistrationDraft(guaranteedContext).paymentDecision;
+    const immediate = evaluateRegistrationDraft(registrationContext()).paymentDecision;
     expect(immediate.outcome).toBe('immediate_payment');
     expect(immediate.createStripeCheckoutNow).toBe(true);
   });

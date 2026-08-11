@@ -174,24 +174,21 @@ export type CurlingRegistrationPaymentStatusSqlite =
   | 'refunded';
 
 export type PolicyAcceptanceKindSqlite = 'code_of_conduct' | 'maapp' | 'privacy';
+/**
+ * Registration answers that are not "a league I want to play in". Leagues the
+ * registrant wants live in `registration_league_priorities`.
+ */
 export type CurlingRegistrationSelectionKindSqlite =
-  | 'guaranteed_return'
   | 'sabbatical'
   | 'drop'
-  | 'return_subject_to_availability'
-  | 'waitlist_add'
-  | 'waitlist_replace'
-  | 'waitlist_add_auto_decline'
-  | 'waitlist_replace_auto_decline'
-  | 'waitlist_keep_auto_accept'
-  | 'waitlist_keep_auto_decline'
-  | 'waitlist_remove'
-  | 'third_league_interest'
-  | 'byot_request'
-  | 'play_in_request'
-  | 'instructional_join'
   | 'junior_recreational'
   | 'spare_only';
+
+export {
+  MAX_DESIRED_LEAGUE_COUNT,
+  MAX_PROTECTED_CLAIMS,
+  type LeaguePriorityGuaranteeLabel,
+} from '../registration/leaguePriorityRules.js';
 export type CurlingRegistrationSelectionStatusSqlite =
   | 'draft'
   | 'pending'
@@ -212,9 +209,9 @@ export type IcePrivilegeSourceSqlite = 'league' | 'spare_only' | 'program' | 'st
 export type LeagueRosterPlacementStatusSqlite = 'pending' | 'active' | 'cancelled' | 'removed' | 'completed';
 export type LeagueRosterPlacementTypeSqlite =
   | 'guaranteed_return'
+  | 'guaranteed_fallback'
   | 'new_placement'
-  | 'waitlist_add'
-  | 'waitlist_replace'
+  | 'waitlist'
   | 'byot'
   | 'play_in'
   | 'staff_manual'
@@ -240,7 +237,6 @@ export type CurlingLeagueSabbaticalStatusSqlite =
 
 export type WaitlistOfferResponsePreferenceSqlite = 'ask' | 'auto_accept' | 'auto_decline';
 
-export type WaitlistEntryTypeSqlite = 'add' | 'replace';
 export type WaitlistEntryStatusSqlite =
   | 'active'
   | 'offered'
@@ -473,7 +469,7 @@ export const curlingRegistrationsSqlite = sqliteTable('curling_registrations', {
   reciprocal_club_name: text('reciprocal_club_name'),
   last_fee_preview_json: text('last_fee_preview_json'),
   payment_decision_json: text('payment_decision_json'),
-  desired_add_waitlist_league_count: integer('desired_add_waitlist_league_count'),
+  desired_league_count: integer('desired_league_count'),
   basic_ice_fallback_interest: integer('basic_ice_fallback_interest'),
   membership_committee_comments: text('membership_committee_comments'),
   status: text('status').notNull().default('identity_incomplete').$type<CurlingRegistrationStatusSqlite>(),
@@ -574,6 +570,41 @@ export const registrationSelectionsSqlite = sqliteTable('registration_selections
   leagueIdx: index('idx_registration_selections_league_id').on(table.league_id),
   typeIdx: index('idx_registration_selections_selection_type').on(table.selection_type),
   statusIdx: index('idx_registration_selections_status').on(table.status),
+}));
+
+/**
+ * The registrant's prioritized list of leagues they want to play in, most wanted
+ * first. Source of truth for league demand; guarantee labels are derived from
+ * rank plus return rights, never stored. See docs/registration/league-priority.md.
+ */
+export const registrationLeaguePrioritiesSqlite = sqliteTable('registration_league_priorities', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  registration_id: integer('registration_id')
+    .notNull()
+    .references(() => curlingRegistrationsSqlite.id, { onDelete: 'cascade' }),
+  league_id: integer('league_id')
+    .notNull()
+    .references(() => leaguesSqlite.id, { onDelete: 'cascade' }),
+  /** 1-based and contiguous within a registration. */
+  priority_rank: integer('priority_rank').notNull(),
+  /** Newline-separated names of teammates who do not yet have member accounts. */
+  byot_teammate_text: text('byot_teammate_text'),
+  /** JSON array of `{ memberId }` for teammates with member accounts. */
+  team_roster_placements: text('team_roster_placements'),
+  fee_amount_minor_snapshot: integer('fee_amount_minor_snapshot').default(0).notNull(),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  regIdx: index('idx_registration_league_priorities_registration_id').on(table.registration_id),
+  leagueIdx: index('idx_registration_league_priorities_league_id').on(table.league_id),
+  regLeagueUnique: uniqueIndex('registration_league_priorities_registration_league_unique').on(
+    table.registration_id,
+    table.league_id,
+  ),
+  regRankUnique: uniqueIndex('registration_league_priorities_registration_rank_unique').on(
+    table.registration_id,
+    table.priority_rank,
+  ),
 }));
 
 export const financialAssistanceRequestsSqlite = sqliteTable('financial_assistance_requests', {
@@ -795,13 +826,6 @@ export const waitlistEntriesSqlite = sqliteTable('waitlist_entries', {
   source_registration_id: integer('source_registration_id').references(() => curlingRegistrationsSqlite.id, {
     onDelete: 'set null',
   }),
-  entry_type: text('entry_type').notNull().$type<WaitlistEntryTypeSqlite>(),
-  replaces_lineage_start_league_id: integer('replaces_lineage_start_league_id').references(() => leaguesSqlite.id, {
-    onDelete: 'set null',
-  }),
-  original_replaces_league_id: integer('original_replaces_league_id').references(() => leaguesSqlite.id, {
-    onDelete: 'set null',
-  }),
   team_roster_text: text('team_roster_text'),
   team_roster_placements: text('team_roster_placements'),
   position_sort_key: text('position_sort_key').notNull(),
@@ -809,10 +833,12 @@ export const waitlistEntriesSqlite = sqliteTable('waitlist_entries', {
   decline_count: integer('decline_count').default(0).notNull(),
   offer_response_preference: text('offer_response_preference')
     .notNull()
-    .default('ask')
+    .default('auto_accept')
     .$type<WaitlistOfferResponsePreferenceSqlite>(),
-  desired_add_waitlist_league_count: integer('desired_add_waitlist_league_count'),
-  add_waitlist_priority_rank: integer('add_waitlist_priority_rank'),
+  /** Rank of this league on the registrant's priority list at submit. */
+  priority_rank: integer('priority_rank'),
+  /** How many leagues the registrant wants in total, snapshotted at submit. */
+  desired_league_count: integer('desired_league_count'),
   status: text('status').notNull().default('active').$type<WaitlistEntryStatusSqlite>(),
   rolled_over_from_waitlist_entry_id: integer('rolled_over_from_waitlist_entry_id'),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
@@ -821,13 +847,10 @@ export const waitlistEntriesSqlite = sqliteTable('waitlist_entries', {
   waitlistIdx: index('idx_waitlist_entries_waitlist_id').on(table.waitlist_id),
   memberIdx: index('idx_waitlist_entries_member_id').on(table.member_id),
   statusIdx: index('idx_waitlist_entries_status').on(table.status),
-  entryTypeIdx: index('idx_waitlist_entries_entry_type').on(table.entry_type),
   posIdx: index('idx_waitlist_entries_position_sort_key').on(table.position_sort_key),
   joinedIdx: index('idx_waitlist_entries_joined_at').on(table.joined_at),
   sourceRegIdx: index('idx_waitlist_entries_source_registration_id').on(table.source_registration_id),
-  replacesLineageIdx: index('idx_waitlist_entries_replaces_lineage_start_league_id').on(
-    table.replaces_lineage_start_league_id
-  ),
+  priorityRankIdx: index('idx_waitlist_entries_priority_rank').on(table.priority_rank),
   activeMemberWaitlistPartial: uniqueIndex('idx_waitlist_entries_active_member_waitlist').on(
     table.member_id,
     table.waitlist_id
@@ -1198,8 +1221,6 @@ export const leagueEntryTeamMembersSqlite = sqliteTable('league_entry_team_membe
   member_id: integer('member_id').references(() => membersSqlite.id, { onDelete: 'cascade' }),
   /** Free-text name for teammates without a member account yet (always 0 TLINE points). */
   pending_name: text('pending_name'),
-  entry_type: text('entry_type').notNull().default('add').$type<WaitlistEntryTypeSqlite>(),
-  replaces_league_id: integer('replaces_league_id').references(() => leaguesSqlite.id, { onDelete: 'set null' }),
   /** Set once this person submits their own registration naming this team. */
   source_registration_id: integer('source_registration_id').references(() => curlingRegistrationsSqlite.id, {
     onDelete: 'set null',
@@ -2601,7 +2622,7 @@ export const curlingRegistrationsPg = pgTable('curling_registrations', {
   reciprocal_club_name: textPg('reciprocal_club_name'),
   last_fee_preview_json: jsonb('last_fee_preview_json'),
   payment_decision_json: jsonb('payment_decision_json'),
-  desired_add_waitlist_league_count: integerPg('desired_add_waitlist_league_count'),
+  desired_league_count: integerPg('desired_league_count'),
   basic_ice_fallback_interest: integerPg('basic_ice_fallback_interest'),
   membership_committee_comments: textPg('membership_committee_comments'),
   status: textPg('status').notNull().default('identity_incomplete').$type<CurlingRegistrationStatusSqlite>(),
@@ -2702,6 +2723,33 @@ export const registrationSelectionsPg = pgTable('registration_selections', {
   leagueIdx: indexPg('idx_registration_selections_league_id').on(table.league_id),
   typeIdx: indexPg('idx_registration_selections_selection_type').on(table.selection_type),
   statusIdx: indexPg('idx_registration_selections_status').on(table.status),
+}));
+
+export const registrationLeaguePrioritiesPg = pgTable('registration_league_priorities', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  registration_id: integerPg('registration_id')
+    .notNull()
+    .references(() => curlingRegistrationsPg.id, { onDelete: 'cascade' }),
+  league_id: integerPg('league_id')
+    .notNull()
+    .references(() => leaguesPg.id, { onDelete: 'cascade' }),
+  priority_rank: integerPg('priority_rank').notNull(),
+  byot_teammate_text: textPg('byot_teammate_text'),
+  team_roster_placements: textPg('team_roster_placements'),
+  fee_amount_minor_snapshot: integerPg('fee_amount_minor_snapshot').default(0).notNull(),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  regIdx: indexPg('idx_registration_league_priorities_registration_id').on(table.registration_id),
+  leagueIdx: indexPg('idx_registration_league_priorities_league_id').on(table.league_id),
+  regLeagueUnique: uniqueIndexPg('registration_league_priorities_registration_league_unique').on(
+    table.registration_id,
+    table.league_id,
+  ),
+  regRankUnique: uniqueIndexPg('registration_league_priorities_registration_rank_unique').on(
+    table.registration_id,
+    table.priority_rank,
+  ),
 }));
 
 export const financialAssistanceRequestsPg = pgTable('financial_assistance_requests', {
@@ -2906,13 +2954,6 @@ export const waitlistEntriesPg = pgTable('waitlist_entries', {
   source_registration_id: integerPg('source_registration_id').references(() => curlingRegistrationsPg.id, {
     onDelete: 'set null',
   }),
-  entry_type: textPg('entry_type').notNull().$type<WaitlistEntryTypeSqlite>(),
-  replaces_lineage_start_league_id: integerPg('replaces_lineage_start_league_id').references(() => leaguesPg.id, {
-    onDelete: 'set null',
-  }),
-  original_replaces_league_id: integerPg('original_replaces_league_id').references(() => leaguesPg.id, {
-    onDelete: 'set null',
-  }),
   team_roster_text: textPg('team_roster_text'),
   team_roster_placements: textPg('team_roster_placements'),
   position_sort_key: textPg('position_sort_key').notNull(),
@@ -2920,10 +2961,12 @@ export const waitlistEntriesPg = pgTable('waitlist_entries', {
   decline_count: integerPg('decline_count').default(0).notNull(),
   offer_response_preference: textPg('offer_response_preference')
     .notNull()
-    .default('ask')
+    .default('auto_accept')
     .$type<WaitlistOfferResponsePreferenceSqlite>(),
-  desired_add_waitlist_league_count: integerPg('desired_add_waitlist_league_count'),
-  add_waitlist_priority_rank: integerPg('add_waitlist_priority_rank'),
+  /** Rank of this league on the registrant's priority list at submit. */
+  priority_rank: integerPg('priority_rank'),
+  /** How many leagues the registrant wants in total, snapshotted at submit. */
+  desired_league_count: integerPg('desired_league_count'),
   status: textPg('status').notNull().default('active').$type<WaitlistEntryStatusSqlite>(),
   rolled_over_from_waitlist_entry_id: integerPg('rolled_over_from_waitlist_entry_id'),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
@@ -2932,13 +2975,10 @@ export const waitlistEntriesPg = pgTable('waitlist_entries', {
   waitlistIdx: indexPg('idx_waitlist_entries_waitlist_id').on(table.waitlist_id),
   memberIdx: indexPg('idx_waitlist_entries_member_id').on(table.member_id),
   statusIdx: indexPg('idx_waitlist_entries_status').on(table.status),
-  entryTypeIdx: indexPg('idx_waitlist_entries_entry_type').on(table.entry_type),
   posIdx: indexPg('idx_waitlist_entries_position_sort_key').on(table.position_sort_key),
   joinedIdx: indexPg('idx_waitlist_entries_joined_at').on(table.joined_at),
   sourceRegIdx: indexPg('idx_waitlist_entries_source_registration_id').on(table.source_registration_id),
-  replacesLineageIdx: indexPg('idx_waitlist_entries_replaces_lineage_start_league_id').on(
-    table.replaces_lineage_start_league_id
-  ),
+  priorityRankIdx: indexPg('idx_waitlist_entries_priority_rank').on(table.priority_rank),
   activeMemberWaitlistPartial: uniqueIndexPg('idx_waitlist_entries_active_member_waitlist').on(
     table.member_id,
     table.waitlist_id
@@ -3309,8 +3349,6 @@ export const leagueEntryTeamMembersPg = pgTable('league_entry_team_members', {
   member_id: integerPg('member_id').references(() => membersPg.id, { onDelete: 'cascade' }),
   /** Free-text name for teammates without a member account yet (always 0 TLINE points). */
   pending_name: textPg('pending_name'),
-  entry_type: textPg('entry_type').notNull().default('add').$type<WaitlistEntryTypeSqlite>(),
-  replaces_league_id: integerPg('replaces_league_id').references(() => leaguesPg.id, { onDelete: 'set null' }),
   /** Set once this person submits their own registration naming this team. */
   source_registration_id: integerPg('source_registration_id').references(() => curlingRegistrationsPg.id, {
     onDelete: 'set null',
@@ -4451,6 +4489,7 @@ export const sqliteSchema = {
   curlingLeagueSabbaticals: curlingLeagueSabbaticalsSqlite,
   registrationPolicyAcceptances: registrationPolicyAcceptancesSqlite,
   registrationSelections: registrationSelectionsSqlite,
+  registrationLeaguePriorities: registrationLeaguePrioritiesSqlite,
   financialAssistanceRequests: financialAssistanceRequestsSqlite,
   registrationInvoices: registrationInvoicesSqlite,
   registrationInvoiceLineItems: registrationInvoiceLineItemsSqlite,
@@ -4567,6 +4606,7 @@ export const pgSchema = {
   curlingLeagueSabbaticals: curlingLeagueSabbaticalsPg,
   registrationPolicyAcceptances: registrationPolicyAcceptancesPg,
   registrationSelections: registrationSelectionsPg,
+  registrationLeaguePriorities: registrationLeaguePrioritiesPg,
   financialAssistanceRequests: financialAssistanceRequestsPg,
   registrationInvoices: registrationInvoicesPg,
   registrationInvoiceLineItems: registrationInvoiceLineItemsPg,

@@ -8,11 +8,12 @@ Related documents:
 
 - `rules.md` — league types and configuration
 - `data-model.md` — storage for the tables referenced here
-- `waitlists.md` — the ADD/REPLACE semantics that play-in requests reuse
+- `league-priority.md` — how a play-in league sits on the priority list
 
 ## 1. Overview
 
-Play-in based leagues have no guaranteed returns and no waitlist. Instead:
+Play-in based leagues have no waitlist. A play-in league appears on the priority
+list like any other league, but its guarantee is earned rather than inherited:
 
 1. Every curler carries a number of **TLINE points** earned from the prior
    season's sessions.
@@ -58,9 +59,8 @@ the playdown competition itself.
   declared roster (minimum two players). Teammates who register later are
   attached to the existing team. If the team is still incomplete, they can add
   more members; if it is already full, they see the team read-only with the
-  notice "Not your team? Contact membership@trianglecurling.com ASAP." and
-  confirm only their own ADD or REPLACE choice. If two people declare the same
-  account-linked roster in different orders, they share one entry team
+  notice "Not your team? Contact membership@trianglecurling.com ASAP." If two
+  people declare the same account-linked roster in different orders, they share one entry team
   (duplicates are merged). Canceling a registration removes that curler from the
   entry team; if nobody else has registered onto the team yet, the declaration
   is deleted (these entry declarations are separate from in-league game teams on
@@ -121,61 +121,56 @@ leave the uncommitted points pool used to stack hypothetical opposing teams.
 
 ## 6. Payment implications
 
-- Guaranteed teams pay immediately at registration, like guaranteed returns.
+- A play-in entry whose team is guaranteed earns a **Guaranteed return** label on
+  the priority list and pays immediately. It consumes one of the two protected
+  claims.
+- A play-in entry never earns a **Guaranteed fallback** label, no matter how low
+  it ranks: a team that misses the bar goes to playdowns rather than into a held
+  spot. Non-guaranteed play-in entries are labeled **Subject to availability**.
 - After registration, play-in leagues appear on the member's dashboard
   membership card before staff clicks Grant entry: guaranteed teams look like
   normal roster leagues (no badge); teams that may still need to play in show a
   Pending badge.
-- Guaranteed play-in selections skip the Basic ice fallback registration step
-  (same as guaranteed returns): the registrant already has a confirmed league
-  path for ice privileges.
+- A guaranteed play-in entry hides the basic ice fallback question, like any
+  other guarantee: the registrant already has a confirmed league path for ice
+  privileges.
 - BYOT and play-in teammate lists appear on the main registration confirmation
   emails (deferred submission and payment received). A separate BYOT
   registration confirmation email is not sent.
 - All other play-in registrations defer payment (`play_in_placement_pending`),
   like waitlisted registrations.
-- When a guaranteed play-in request uses REPLACE (for example two guaranteed
-  returns plus competitive), the replaced league is released immediately: it is
-  omitted from review, fees, and roster placement for that registration. Its
-  selection status is `dropped` and must stay dropped through payment
-  confirmation (payment must not re-confirm terminal selection statuses).
-- When staff record a "grant entry" outcome for a non-guaranteed REPLACE team,
-  deferred registrations are billed through the standard deferred-payment path,
-  the replaced league selection is dropped, and its roster placement is released.
+- Displacement follows the priority list rather than a named replacement league.
+  If a play-in placement puts the registrant over their desired league count,
+  their lowest-priority non-guaranteed held league is released.
+- When staff record a "grant entry" outcome for a team that was not guaranteed at
+  registration, deferred registrations are billed through the standard
+  deferred-payment path and displacement is applied as above.
 - Teams marked "not entered" have their play-in selections marked
   `not_placed` and are not billed for the league.
 
 ## 7. Registration flow
 
-1. If the registrant played the play-in league's predecessor, the Returning
-   leagues step shows that league with **Join competitive league** or **Not
-   joining** (not Return / Sabbatical). Joining does not use a protected claim.
-   If they also selected two guaranteed returns, show an inline notice that they
-   must choose a REPLACE target on the next page.
-2. On League requests, competitive (play-in) leagues are chosen from the league
-   picker (pre-selected when the registrant already chose the league on Returning
-   leagues or is on a declared entry team). Returning players with one guaranteed
-   return may choose ADD or REPLACE; with two guaranteed returns (or for new
-   players who already hold two leagues) they must REPLACE.
-3. The registrant declares at least two players (member autocomplete plus
-   "Manually add by name" for future members), or attaches to / extends an
-   existing incomplete declared team. Continuing with an incomplete roster shows
-   a confirmation that the coordinator will try to help fill the team with no
-   guarantee. Teammate ADD/REPLACE is **not** collected here — each teammate
-   chooses when they register.
-4. After a **full** team is known, the guarantee result is shown inline:
-   - Guaranteed entry — payment due now.
-   - Returning and not guaranteed — show the play-in event notice and point them
-     to waitlists on the next page as a back-up.
-   - Otherwise — payment deferred until placement.
+1. A play-in league is added to the priority list from the league picker, and is
+   seeded there when the registrant played its predecessor or is already on a
+   declared entry team.
+2. The entry expands to collect the team: at least two players (member
+   autocomplete plus "Manually add by name" for future members), or attaching to
+   and extending an existing incomplete declared team. Continuing with an
+   incomplete roster shows a confirmation that the coordinator will try to help
+   fill the team with no guarantee.
+3. Once a **full** team is known, the guarantee result is shown inline on the
+   entry:
+   - Guaranteed entry — the entry shows **Guaranteed return** and payment is due
+     now.
+   - Returning and not guaranteed — show the play-in event notice and suggest
+     adding a back-up league lower on the list.
+   - Otherwise — **Subject to availability**, payment deferred until placement.
    Incomplete teams are never guaranteed and always defer payment.
-5. On submit, the entry team is created or the registrant is attached to the
+4. On submit, the entry team is created or the registrant is attached to the
    existing team (`source_registration_id` recorded per member).
 
-A play-in request does not count as a protected claim. Guaranteed returns and
-sabbaticals still do. If a registrant selects two guaranteed returns and also
-joins the competitive league, they must choose which league to replace if they
-get into the play-in league.
+A guaranteed play-in entry consumes one of the two protected claims, alongside
+guaranteed returns, guaranteed fallbacks, and sabbaticals.
 
 ## 8. Staff operations (Play-in entry tab)
 
@@ -188,7 +183,7 @@ leagues. League managers can view; registration managers
 - **Entry teams report** — summary strip (guarantee threshold, auto-entry
   count, play-in spots, team counts by projected status, returning-rule waiver
   state) plus a table of teams with per-member points, registered indicators,
-  pending-name badges, and ADD/REPLACE details.
+  pending-name badges, and each member's priority rank and desired league count.
 - **Row actions:**
   - Link a pending name to a member account once they join (their points then
     count toward the team total).
@@ -196,8 +191,9 @@ leagues. League managers can view; registration managers
   - **Record outcome / withdraw:**
     - *Grant entry* — places all account-linked members on the league roster
       with `placement_type = 'play_in'`, creates a Teams-tab league team for
-      those members (provisional roles; staff can edit), releases REPLACE
-      members from the replaced league, and triggers deferred payments.
+      those members (provisional roles; staff can edit), releases each member's
+      lowest-priority held league when the placement puts them over their desired
+      league count, and triggers deferred payments.
     - *Withdraw* — removes the declaration from the entry pool (covers pulling
       out early, recording that the team did not get a spot, or reversing a
       mistaken Grant entry). Play-in registrations for this league are marked

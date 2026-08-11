@@ -6,13 +6,12 @@ import Button from '../components/Button';
 import RegistrationViewEditModals, {
   type RegistrationEditModalKind,
 } from '../components/registration/RegistrationViewEditModals';
+import type { RegistrationPlayInEntrySummary } from '../components/registration/registrationViewEditShared';
 import {
-  isConfirmedLeagueForStatusView,
-  isPendingPlayInForStatusView,
-  playInUnguaranteedStatusDetail,
-  rosterTextDisplay,
-  type RegistrationPlayInEntrySummary,
-} from '../components/registration/registrationViewEditShared';
+  guaranteeChipClassName,
+  guaranteeChipLabel,
+  type LeaguePriorityGuaranteeLabel,
+} from '../components/registration/leaguePriorityShared';
 import { playInEntryTeamMembersText } from '../components/registration/RegistrationPlayInEntryPanel';
 import { useAlert } from '../contexts/AlertContext';
 import { useConfirm } from '../contexts/ConfirmContext';
@@ -22,12 +21,16 @@ type Selection = {
   id: number;
   selectionType: string;
   status: string;
-  rank: number | null;
   leagueId: number | null;
   leagueName: string | null;
-  replacesLeagueId: number | null;
-  replacedLeagueName: string | null;
-  isTemporarySabbaticalFill: number;
+};
+
+type LeaguePriority = {
+  id: number;
+  leagueId: number;
+  leagueName: string;
+  priorityRank: number;
+  guaranteeLabel: LeaguePriorityGuaranteeLabel | null;
   byotTeammateText: string | null;
   teamRosterDisplay?: string | null;
 };
@@ -38,8 +41,8 @@ type WaitlistEntry = {
   waitlistName: string;
   leagueId: number;
   leagueName: string;
-  entryType: 'add' | 'replace';
-  replacesLeagueId: number | null;
+  priorityRank: number | null;
+  desiredLeagueCount: number | null;
   declineCount: number;
   position: number | null;
   rolledOverFromWaitlistEntryId: number | null;
@@ -75,6 +78,8 @@ type RegistrationDetail = {
     updatedAt: string | null;
   };
   selections: Selection[];
+  priorities: LeaguePriority[];
+  desiredLeagueCount: number | null;
   playInEntry?: Record<number, RegistrationPlayInEntrySummary>;
   waitlists: WaitlistEntry[];
   payment: {
@@ -163,11 +168,6 @@ export default function RegistrationStatusDetailPage() {
     void load();
   }, [load]);
 
-  const canEditPriorLeagueChoices =
-    detail?.selections.some((selection) =>
-      ['guaranteed_return', 'sabbatical', 'drop'].includes(selection.selectionType),
-    ) ?? false;
-
   async function handleEditSaved() {
     setActiveEditModal(null);
     showAlert('Your registration has been updated.', 'success', 'Changes saved');
@@ -224,19 +224,10 @@ export default function RegistrationStatusDetailPage() {
   }
 
   const isJuniorRecreational = detail?.registration.membershipOption === 'junior_recreational';
-  const confirmed =
-    detail?.selections.filter((selection) =>
-      isConfirmedLeagueForStatusView(selection, detail.playInEntry),
-    ) ?? [];
-  const playIns =
-    detail?.selections.filter((selection) =>
-      isPendingPlayInForStatusView(selection, detail.playInEntry),
-    ) ?? [];
-  const thirdLeague =
-    detail?.selections.filter((selection) =>
-      ['third_league_interest', 'return_subject_to_availability'].includes(selection.selectionType),
-    ) ?? [];
+  const priorities = detail?.priorities ?? [];
   const sabbaticals = detail?.selections.filter((selection) => selection.selectionType === 'sabbatical') ?? [];
+  const drops = detail?.selections.filter((selection) => selection.selectionType === 'drop') ?? [];
+  const waitlistByLeagueId = new Map((detail?.waitlists ?? []).map((entry) => [entry.leagueId, entry]));
   const canEdit = detail?.canEditDuringPriority ?? false;
   const canCancel = detail?.canCancelDuringPriority ?? false;
   const isPaidRegistration = ['paid', 'confirmed'].includes(detail?.registration.registrationStatus ?? '');
@@ -303,62 +294,61 @@ export default function RegistrationStatusDetailPage() {
             {isJuniorRecreational ? (
               <Section title="Junior Recreational program">
                 <p className="text-sm text-gray-600 dark:text-gray-300">
-                  Junior Recreational skips normal league selection, waitlists, sparing, and third-league interest.
+                  Junior Recreational skips league priorities, waitlists, and sparing.
                   Program placement and scheduling are handled separately from standard league registration.
                 </p>
               </Section>
             ) : (
               <>
                 <Section
-                  title="Confirmed leagues"
-                  onEdit={canEdit && canEditPriorLeagueChoices ? () => setActiveEditModal('confirmedLeagues') : undefined}
+                  title="League priorities"
+                  onEdit={canEdit ? () => setActiveEditModal('leaguePriority') : undefined}
                 >
-                  {confirmed.length === 0 ? <p>No confirmed league placements are listed yet.</p> : null}
-                  {confirmed.map((selection) => {
-                    const playInSummary =
-                      selection.selectionType === 'play_in_request' && selection.leagueId != null
-                        ? detail.playInEntry?.[selection.leagueId]
-                        : undefined;
+                  <p className="text-sm text-gray-600 dark:text-gray-300">
+                    {detail.desiredLeagueCount
+                      ? `You asked to play in ${detail.desiredLeagueCount} ${
+                          detail.desiredLeagueCount === 1 ? 'league' : 'leagues'
+                        }, listed here most wanted first.`
+                      : 'Your leagues are listed most wanted first.'}
+                  </p>
+                  {priorities.length === 0 ? <p>No leagues are on your list yet.</p> : null}
+                  {priorities.map((priority) => {
+                    const playInSummary = detail.playInEntry?.[priority.leagueId];
+                    const waitlistEntry = waitlistByLeagueId.get(priority.leagueId);
                     return (
-                      <div key={selection.id} className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
-                        <p className="font-medium">{selection.leagueName ?? label(selection.selectionType)}</p>
-                        <p className="text-sm text-gray-600 dark:text-gray-300">
-                          {selection.selectionType === 'play_in_request'
-                            ? selection.status === 'placed'
-                              ? 'Status: Placed · Play-in league'
-                              : 'Status: Guaranteed entry · Play-in league'
-                            : `Status: ${label(selection.status)}`}
-                          {selection.selectionType === 'byot_request' ? ' · Bring-your-own-team' : ''}
-                          {selection.isTemporarySabbaticalFill
-                            ? ' · Temporary sabbatical-fill spot. The original member may return in a future session.'
-                            : ''}
-                        </p>
-                        {selection.selectionType === 'play_in_request' && selection.replacesLeagueId ? (
-                          <p className="text-sm text-gray-600 dark:text-gray-300">
-                            REPLACE
-                            {selection.replacedLeagueName
-                              ? ` · Would replace ${selection.replacedLeagueName}`
-                              : ''}
+                      <div key={priority.id} className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-medium">
+                            {priority.priorityRank}. {priority.leagueName}
                           </p>
-                        ) : null}
-                        {selection.selectionType === 'byot_request' ? (
+                          {priority.guaranteeLabel ? (
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-xs font-medium ${guaranteeChipClassName(
+                                priority.guaranteeLabel,
+                              )}`}
+                            >
+                              {guaranteeChipLabel(priority.guaranteeLabel)}
+                            </span>
+                          ) : null}
+                        </div>
+                        {waitlistEntry ? (
                           <p className="text-sm text-gray-600 dark:text-gray-300">
-                            Teammates:{' '}
-                            {selection.byotTeammateText
-                              ? rosterTextDisplay(selection.byotTeammateText)
-                              : 'Not provided'}
+                            Waitlist position {waitlistEntry.position ?? 'not available'} · Declines{' '}
+                            {waitlistEntry.declineCount}
                           </p>
                         ) : null}
                         {playInSummary?.existingTeam ? (
                           <p className="text-sm text-gray-600 dark:text-gray-300">
                             Team: {playInEntryTeamMembersText(playInSummary.existingTeam)}
                           </p>
-                        ) : null}
-                        {selection.teamRosterDisplay &&
-                        selection.selectionType === 'play_in_request' &&
-                        !playInSummary?.existingTeam ? (
+                        ) : priority.teamRosterDisplay ? (
                           <p className="text-sm text-gray-600 dark:text-gray-300">
-                            Team roster: {selection.teamRosterDisplay}
+                            Team roster: {priority.teamRosterDisplay}
+                          </p>
+                        ) : null}
+                        {playInSummary && !playInSummary.guaranteed ? (
+                          <p className="text-sm text-gray-600 dark:text-gray-300">
+                            Play-in league. Your team plays for entry this session.
                           </p>
                         ) : null}
                       </div>
@@ -366,84 +356,37 @@ export default function RegistrationStatusDetailPage() {
                   })}
                 </Section>
 
-                <Section title="League play-ins">
-                  {playIns.length === 0 ? <p>No league play-ins are listed.</p> : null}
-                  {playIns.map((selection) => {
-                    const playInSummary =
-                      selection.leagueId != null ? detail.playInEntry?.[selection.leagueId] : undefined;
-                    return (
-                      <div key={selection.id} className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
-                        <p className="font-medium">{selection.leagueName ?? label(selection.selectionType)}</p>
-                        <p className="text-sm text-gray-600 dark:text-gray-300">
-                          {selection.replacesLeagueId
-                            ? `REPLACE${
-                                selection.replacedLeagueName ? ` · Would replace ${selection.replacedLeagueName}` : ''
-                              }`
-                            : 'ADD'}
-                          {' · '}
-                          {selection.status === 'not_placed'
-                            ? 'Your team did not win entry this session.'
-                            : playInUnguaranteedStatusDetail(playInSummary)}
-                        </p>
-                        {playInSummary?.existingTeam ? (
-                          <p className="text-sm text-gray-600 dark:text-gray-300">
-                            Team: {playInEntryTeamMembersText(playInSummary.existingTeam)}
-                          </p>
-                        ) : null}
-                        {playInSummary?.existingTeam ? (
-                          <p className="text-sm text-gray-600 dark:text-gray-300">
-                            Not your team? Contact{' '}
-                            <a className="underline" href="mailto:membership@trianglecurling.com">
-                              membership@trianglecurling.com
-                            </a>{' '}
-                            ASAP.
-                          </p>
-                        ) : null}
-                        {selection.byotTeammateText && !playInSummary?.existingTeam ? (
-                          <p className="text-sm text-gray-600 dark:text-gray-300">
-                            Pending teammates (not yet registered): {rosterTextDisplay(selection.byotTeammateText)}
-                          </p>
-                        ) : null}
-                        {selection.teamRosterDisplay && !playInSummary?.existingTeam && !selection.byotTeammateText ? (
-                          <p className="text-sm text-gray-600 dark:text-gray-300">
-                            Team roster: {selection.teamRosterDisplay}
-                          </p>
-                        ) : null}
-                      </div>
-                    );
-                  })}
-                </Section>
-
-                <Section
-                  title="Sabbaticals"
-                  onEdit={canEdit && sabbaticals.length > 0 ? () => setActiveEditModal('sabbaticals') : undefined}
-                >
-                  {sabbaticals.length === 0 ? <p>No sabbaticals are listed for this registration.</p> : null}
+                <Section title="Sabbaticals and drops">
+                  {sabbaticals.length === 0 && drops.length === 0 ? (
+                    <p>No sabbaticals or drops are listed for this registration.</p>
+                  ) : null}
                   {sabbaticals.map((selection) => (
                     <div key={selection.id} className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
                       <p className="font-medium">{selection.leagueName}</p>
                       <p className="text-sm text-gray-600 dark:text-gray-300">
-                        This preserves the curler’s return right under the sabbatical rules. Sabbaticals are time-limited.
+                        Sabbatical. This preserves the curler’s return right under the sabbatical rules.
+                        Sabbaticals are time-limited.
+                      </p>
+                    </div>
+                  ))}
+                  {drops.map((selection) => (
+                    <div key={selection.id} className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+                      <p className="font-medium">{selection.leagueName}</p>
+                      <p className="text-sm text-gray-600 dark:text-gray-300">
+                        Dropped. The return right for this league has been given up.
                       </p>
                     </div>
                   ))}
                 </Section>
 
-                <Section
-                  title="Waitlists"
-                  onEdit={canEdit ? () => setActiveEditModal('waitlists') : undefined}
-                >
+                <Section title="Waitlists">
                   {detail.waitlists.length === 0 ? <p>No active waitlist entries are listed.</p> : null}
                   {detail.waitlists.map((entry) => (
                     <div key={entry.id} className="flex flex-col gap-3 rounded-lg border border-gray-200 p-3 dark:border-gray-700 md:flex-row md:items-center md:justify-between">
                       <div>
                         <p className="font-medium">{entry.waitlistName || entry.leagueName}</p>
                         <p className="text-sm text-gray-600 dark:text-gray-300">
-                          {entry.entryType.toUpperCase()} waitlist
-                          {entry.entryType === 'replace' && entry.replacesLeagueId
-                            ? ` · Would replace league #${entry.replacesLeagueId} in this session`
-                            : ''}
-                          {' · '}
+                          {entry.priorityRank ? `Priority ${entry.priorityRank} · ` : ''}
                           Position {entry.position ?? 'not available'} · Declines {entry.declineCount}
                           {entry.rolledOverFromWaitlistEntryId ? ' · Carried from a prior session entry' : ''}
                         </p>
@@ -462,27 +405,6 @@ export default function RegistrationStatusDetailPage() {
                       ) : null}
                     </div>
                   ))}
-                </Section>
-
-                <Section
-                  title="Third-league interest"
-                  onEdit={canEdit ? () => setActiveEditModal('thirdLeague') : undefined}
-                >
-                  {thirdLeague.length === 0 ? <p>No third-league interest choices are listed.</p> : null}
-                  {thirdLeague.map((selection) => (
-                    <div key={selection.id} className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
-                      <p className="font-medium">
-                        {selection.rank ? `${selection.rank}. ` : ''}
-                        {selection.leagueName}
-                      </p>
-                      {selection.teamRosterDisplay ? (
-                        <p className="text-sm text-gray-600 dark:text-gray-300">
-                          Team roster: {selection.teamRosterDisplay}
-                        </p>
-                      ) : null}
-                    </div>
-                  ))}
-                  {thirdLeague.length > 0 ? <p className="text-sm text-gray-600 dark:text-gray-300">These are interest choices only. They are handled after first- and second-league demand is satisfied.</p> : null}
                 </Section>
               </>
             )}

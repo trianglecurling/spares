@@ -1,8 +1,10 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
-import type { LeagueEntryTeamStatusSqlite, WaitlistEntryTypeSqlite } from '../db/drizzle-schema.js';
-import type { LeagueConfig, PlayInEntryContext, RegistrationSelectionInput } from './registrationContext.js';
+import type { LeagueEntryTeamStatusSqlite } from '../db/drizzle-schema.js';
+import type { LeagueConfig, LeaguePriorityInput, PlayInEntryContext, RegistrationContext } from './registrationContext.js';
+import type { LeaguePriorityEvaluation } from './leaguePriorityEvaluation.js';
 import { waitlistRosterEntries } from './waitlistTeamRoster.js';
+import { releaseOverflowLeaguePlacements } from './leaguePlacementRelease.js';
 import {
   aggregateMemberPoints,
   entryTeamToEvaluationInput,
@@ -80,25 +82,18 @@ function findActiveTeamWithSameMembers<T extends { members: Array<{ member_id?: 
  */
 export async function loadPlayInEntryContextsForRegistration(input: {
   memberId: number | null;
-  selections: RegistrationSelectionInput[];
+  priorities: LeaguePriorityInput[];
   leagues: Record<number, LeagueConfig>;
 }): Promise<Record<number, PlayInEntryContext>> {
   const result: Record<number, PlayInEntryContext> = {};
-  const playInLeagueIds = new Set(
-    input.selections
-      .filter((selection) => selection.selectionType === 'play_in_request' && selection.leagueId != null)
-      .map((selection) => selection.leagueId as number)
-      .filter((leagueId) => input.leagues[leagueId]?.isPlayInBased)
-  );
-  for (const leagueId of playInLeagueIds) {
-    const selection = input.selections.find(
-      (item) => item.selectionType === 'play_in_request' && item.leagueId === leagueId
-    );
+  const playInPriorities = input.priorities.filter((priority) => input.leagues[priority.leagueId]?.isPlayInBased);
+  for (const priority of playInPriorities) {
+    const leagueId = priority.leagueId;
     const summary = await evaluateRegistrantPlayInEntry({
       leagueId,
       memberId: input.memberId,
-      teamRosterPlacements: selection?.teamRosterPlacements ?? null,
-      pendingTeammateText: selection?.byotTeammateText ?? null,
+      teamRosterPlacements: priority.teamRosterPlacements ?? null,
+      pendingTeammateText: priority.byotTeammateText ?? null,
     });
     result[leagueId] = {
       onExistingTeam: summary.onExistingTeam,
@@ -124,8 +119,6 @@ export type RegistrantPlayInEntrySummary = {
       memberId: number | null;
       memberName: string | null;
       pendingName: string | null;
-      entryType: WaitlistEntryTypeSqlite;
-      replacesLeagueId: number | null;
     }>;
   } | null;
   /** Members (other than the registrant) already committed to another active entry team. */
@@ -277,8 +270,6 @@ export async function evaluateRegistrantPlayInEntry(input: {
             memberId: member.memberId,
             memberName: member.memberName,
             pendingName: member.pendingName,
-            entryType: member.entryType,
-            replacesLeagueId: member.replacesLeagueId,
           })),
         }
       : null,
@@ -319,28 +310,25 @@ async function entryTeamCreatorName(team: LeagueEntryTeamRow): Promise<string | 
 // --- Submit-time persistence -------------------------------------------------
 
 /**
- * Creates or attaches declared entry teams from a registration's play-in selections.
- * The first teammate to register creates the team; later teammates attach to it and
- * confirm their own ADD/REPLACE choice. Declarations with the same account-linked
- * roster (any order) reuse one entry team instead of creating duplicates.
+ * Creates or attaches declared entry teams from a registration's play-in
+ * priority entries. The first teammate to register creates the team; later
+ * teammates attach to it. Declarations with the same account-linked roster (any
+ * order) reuse one entry team instead of creating duplicates.
  */
 export async function syncRegistrationEntryTeams(input: {
   tx?: DbExecutor;
   registrationId: number;
   curlerMemberId: number;
-  selections: RegistrationSelectionInput[];
-  leagues: Record<number, LeagueConfig>;
+  context: RegistrationContext;
+  evaluation: LeaguePriorityEvaluation;
 }): Promise<void> {
   const { db, schema } = getDrizzleDb();
   const executor = input.tx ?? db;
 
-  const playInSelections = input.selections.filter(
-    (selection) =>
-      selection.selectionType === 'play_in_request' &&
-      selection.leagueId != null &&
-      input.leagues[selection.leagueId]?.isPlayInBased
+  const playInPriorities = input.context.priorities.filter(
+    (priority) => input.context.leagues[priority.leagueId]?.isPlayInBased,
   );
-  const keepLeagueIds = new Set(playInSelections.map((selection) => selection.leagueId as number));
+  const keepLeagueIds = new Set(playInPriorities.map((priority) => priority.leagueId));
 
   await removeEntryTeamLinksForRegistration({
     tx: executor,
@@ -349,22 +337,19 @@ export async function syncRegistrationEntryTeams(input: {
     keepLeagueIds: [...keepLeagueIds],
   });
 
-  for (const selection of playInSelections) {
-    const leagueId = selection.leagueId as number;
+  for (const priority of playInPriorities) {
+    const leagueId = priority.leagueId;
     const teams = await loadEntryTeamsForLeague(executor, leagueId);
     const activeTeams = teams.filter((team) => isActiveEntryTeamStatus(team.status));
 
-    const placements = (selection.teamRosterPlacements ?? []).filter(
+    const placements = (priority.teamRosterPlacements ?? []).filter(
       (placement) => placement.memberId !== input.curlerMemberId
     );
-    const pendingNames = waitlistRosterEntries(selection.byotTeammateText);
+    const pendingNames = waitlistRosterEntries(priority.byotTeammateText);
     const draftMemberIds = entryTeamAccountMemberIdSet([
       { member_id: input.curlerMemberId },
       ...placements.map((placement) => ({ member_id: placement.memberId })),
     ]);
-
-    const curlerEntryType: WaitlistEntryTypeSqlite = selection.replacesLeagueId ? 'replace' : 'add';
-    const curlerReplacesLeagueId = selection.replacesLeagueId ?? null;
 
     const existingByMembership = activeTeams.find((team) =>
       team.members.some((member) => member.member_id === input.curlerMemberId)
@@ -379,10 +364,8 @@ export async function syncRegistrationEntryTeams(input: {
         members: existing.members,
         curlerMemberId: input.curlerMemberId,
         registrationId: input.registrationId,
-        entryType: curlerEntryType,
-        replacesLeagueId: curlerReplacesLeagueId,
       });
-      const leagueConfig = input.leagues[leagueId];
+      const leagueConfig = input.context.leagues[leagueId];
       await extendEntryTeamRoster({
         executor,
         teamId: existing.id,
@@ -415,10 +398,8 @@ export async function syncRegistrationEntryTeams(input: {
           members: sameRosterTeam.members,
           curlerMemberId: input.curlerMemberId,
           registrationId: input.registrationId,
-          entryType: curlerEntryType,
-          replacesLeagueId: curlerReplacesLeagueId,
         });
-        const leagueConfig = input.leagues[leagueId];
+        const leagueConfig = input.context.leagues[leagueId];
         await extendEntryTeamRoster({
           executor,
           teamId: sameRosterTeam.id,
@@ -433,7 +414,7 @@ export async function syncRegistrationEntryTeams(input: {
       const extendableTeam = findIncompleteEntryTeamCoveredByDraft({
         teams: overlappingTeams,
         draftMemberIds,
-        teamSize: playInTeamSize(input.leagues[leagueId]?.format ?? 'teams'),
+        teamSize: playInTeamSize(input.context.leagues[leagueId]?.format ?? 'teams'),
       });
       if (extendableTeam) {
         await attachCurlerToEntryTeam({
@@ -442,14 +423,12 @@ export async function syncRegistrationEntryTeams(input: {
           members: extendableTeam.members,
           curlerMemberId: input.curlerMemberId,
           registrationId: input.registrationId,
-          entryType: curlerEntryType,
-          replacesLeagueId: curlerReplacesLeagueId,
         });
         await extendEntryTeamRoster({
           executor,
           teamId: extendableTeam.id,
           existingMembers: extendableTeam.members,
-          teamSize: playInTeamSize(input.leagues[leagueId]?.format ?? 'teams'),
+          teamSize: playInTeamSize(input.context.leagues[leagueId]?.format ?? 'teams'),
           placements,
           pendingNames,
         });
@@ -474,20 +453,15 @@ export async function syncRegistrationEntryTeams(input: {
       {
         entry_team_id: team.id,
         member_id: input.curlerMemberId,
-        entry_type: curlerEntryType,
-        replaces_league_id: curlerReplacesLeagueId,
         source_registration_id: input.registrationId,
       },
       ...placements.map((placement) => ({
         entry_team_id: team.id,
         member_id: placement.memberId,
-        entry_type: placement.entryType,
-        replaces_league_id: placement.entryType === 'replace' ? placement.replacesLeagueId ?? null : null,
       })),
       ...pendingNames.map((pendingName) => ({
         entry_team_id: team.id,
         pending_name: pendingName,
-        entry_type: 'add' as const,
       })),
     ]);
 
@@ -499,8 +473,6 @@ export async function syncRegistrationEntryTeams(input: {
       memberIds: draftMemberIds,
       curlerMemberId: input.curlerMemberId,
       registrationId: input.registrationId,
-      entryType: curlerEntryType,
-      replacesLeagueId: curlerReplacesLeagueId,
     });
   }
 }
@@ -535,7 +507,7 @@ async function extendEntryTeamRoster(input: {
   teamId: number;
   existingMembers: Array<{ member_id?: number | null; memberId?: number | null; pending_name?: string | null; pendingName?: string | null }>;
   teamSize: number;
-  placements: Array<{ memberId: number; entryType: WaitlistEntryTypeSqlite; replacesLeagueId?: number | null }>;
+  placements: Array<{ memberId: number }>;
   pendingNames: string[];
 }): Promise<void> {
   const { schema } = getDrizzleDb();
@@ -558,8 +530,6 @@ async function extendEntryTeamRoster(input: {
     await input.executor.insert(schema.leagueEntryTeamMembers).values({
       entry_team_id: input.teamId,
       member_id: placement.memberId,
-      entry_type: placement.entryType,
-      replaces_league_id: placement.entryType === 'replace' ? placement.replacesLeagueId ?? null : null,
     });
     openSlots -= 1;
   }
@@ -571,7 +541,6 @@ async function extendEntryTeamRoster(input: {
     await input.executor.insert(schema.leagueEntryTeamMembers).values({
       entry_team_id: input.teamId,
       pending_name: pendingName.trim(),
-      entry_type: 'add',
     });
     existingPending.add(normalized);
     openSlots -= 1;
@@ -584,8 +553,6 @@ async function attachCurlerToEntryTeam(input: {
   members: Array<{ id: number; member_id: number | null; source_registration_id: number | null }>;
   curlerMemberId: number;
   registrationId: number;
-  entryType: WaitlistEntryTypeSqlite;
-  replacesLeagueId: number | null;
 }): Promise<void> {
   const { schema } = getDrizzleDb();
   const memberRow = input.members.find((member) => member.member_id === input.curlerMemberId);
@@ -593,8 +560,6 @@ async function attachCurlerToEntryTeam(input: {
     await input.executor
       .update(schema.leagueEntryTeamMembers)
       .set({
-        entry_type: input.entryType,
-        replaces_league_id: input.replacesLeagueId,
         source_registration_id: input.registrationId,
         updated_at: sql`CURRENT_TIMESTAMP`,
       })
@@ -604,8 +569,6 @@ async function attachCurlerToEntryTeam(input: {
   await input.executor.insert(schema.leagueEntryTeamMembers).values({
     entry_team_id: input.teamId,
     member_id: input.curlerMemberId,
-    entry_type: input.entryType,
-    replaces_league_id: input.replacesLeagueId,
     source_registration_id: input.registrationId,
   });
 }
@@ -617,8 +580,6 @@ async function mergeDuplicateEntryTeamIfNeeded(input: {
   memberIds: Set<number>;
   curlerMemberId: number;
   registrationId: number;
-  entryType: WaitlistEntryTypeSqlite;
-  replacesLeagueId: number | null;
 }): Promise<void> {
   const { schema } = getDrizzleDb();
   const teams = await loadEntryTeamsForLeague(input.executor, input.leagueId);
@@ -634,8 +595,6 @@ async function mergeDuplicateEntryTeamIfNeeded(input: {
     members: older.members,
     curlerMemberId: input.curlerMemberId,
     registrationId: input.registrationId,
-    entryType: input.entryType,
-    replacesLeagueId: input.replacesLeagueId,
   });
   await input.executor.delete(schema.leagueEntryTeams).where(eq(schema.leagueEntryTeams.id, input.newTeamId));
 }
@@ -942,9 +901,8 @@ export type LeagueEntryReport = {
       memberId: number | null;
       memberName: string | null;
       pendingName: string | null;
-      entryType: WaitlistEntryTypeSqlite;
-      replacesLeagueId: number | null;
-      replacesLeagueName: string | null;
+      /** Where this league sits on the member's priority list, when they registered for it. */
+      priorityRank: number | null;
       points: number;
       countsAsReturning: boolean;
       registered: boolean;
@@ -976,21 +934,27 @@ export async function getLeagueEntryReport(leagueId: number): Promise<LeagueEntr
       .map((team) => [team.entryTeamId as number, team])
   );
 
-  const replacesLeagueIds = [
+  const registrationIds = [
     ...new Set(
-      teams
-        .flatMap((team) => team.members.map((member) => member.replacesLeagueId))
-        .filter((id): id is number => id != null)
+      teams.flatMap((team) => team.members.map((member) => member.sourceRegistrationId)).filter((id): id is number => id != null),
     ),
   ];
-  const replacesLeagueNames = new Map<number, string>();
-  if (replacesLeagueIds.length > 0) {
+  const priorityRankByRegistrationId = new Map<number, number>();
+  if (registrationIds.length > 0) {
     const { db, schema } = getDrizzleDb();
     const rows = await db
-      .select({ id: schema.leagues.id, name: schema.leagues.name })
-      .from(schema.leagues)
-      .where(inArray(schema.leagues.id, replacesLeagueIds));
-    for (const row of rows) replacesLeagueNames.set(row.id, row.name);
+      .select({
+        registrationId: schema.registrationLeaguePriorities.registration_id,
+        priorityRank: schema.registrationLeaguePriorities.priority_rank,
+      })
+      .from(schema.registrationLeaguePriorities)
+      .where(
+        and(
+          inArray(schema.registrationLeaguePriorities.registration_id, registrationIds),
+          eq(schema.registrationLeaguePriorities.league_id, leagueId),
+        ),
+      );
+    for (const row of rows) priorityRankByRegistrationId.set(row.registrationId, row.priorityRank);
   }
 
   const reportTeams = teams.map((team) => {
@@ -1012,10 +976,10 @@ export async function getLeagueEntryReport(leagueId: number): Promise<LeagueEntr
           memberId: member.memberId,
           memberName: member.memberName,
           pendingName: member.pendingName,
-          entryType: member.entryType,
-          replacesLeagueId: member.replacesLeagueId,
-          replacesLeagueName:
-            member.replacesLeagueId != null ? replacesLeagueNames.get(member.replacesLeagueId) ?? null : null,
+          priorityRank:
+            member.sourceRegistrationId != null
+              ? priorityRankByRegistrationId.get(member.sourceRegistrationId) ?? null
+              : null,
           points: points ? pointsHalfToNumber(points.pointsHalf) : 0,
           countsAsReturning: points?.countsAsReturning ?? false,
           registered: member.sourceRegistrationId != null,
@@ -1163,8 +1127,6 @@ export async function deleteLeagueEntryPointsRow(input: { leagueId: number; poin
 export type EntryTeamMemberInput = {
   memberId?: number | null;
   pendingName?: string | null;
-  entryType?: WaitlistEntryTypeSqlite;
-  replacesLeagueId?: number | null;
 };
 
 function normalizeEntryTeamMemberInputs(members: EntryTeamMemberInput[], teamSize: number) {
@@ -1176,13 +1138,7 @@ function normalizeEntryTeamMemberInputs(members: EntryTeamMemberInput[], teamSiz
         members: 'Each teammate must be either a member or a pending name (not both).',
       });
     }
-    const entryType: WaitlistEntryTypeSqlite = member.entryType === 'replace' ? 'replace' : 'add';
-    return {
-      memberId,
-      pendingName,
-      entryType,
-      replacesLeagueId: entryType === 'replace' ? member.replacesLeagueId ?? null : null,
-    };
+    return { memberId, pendingName };
   });
   if (normalized.length === 0 || normalized.length > teamSize) {
     throw new LeagueEntryValidationError({ members: `Teams must have between 1 and ${teamSize} players.` });
@@ -1190,11 +1146,6 @@ function normalizeEntryTeamMemberInputs(members: EntryTeamMemberInput[], teamSiz
   const memberIds = normalized.map((member) => member.memberId).filter((id): id is number => id != null);
   if (new Set(memberIds).size !== memberIds.length) {
     throw new LeagueEntryValidationError({ members: 'Each member may appear only once on the team.' });
-  }
-  for (const member of normalized) {
-    if (member.entryType === 'replace' && !member.replacesLeagueId) {
-      throw new LeagueEntryValidationError({ members: 'REPLACE teammates must identify a league to replace.' });
-    }
   }
   return normalized;
 }
@@ -1265,8 +1216,6 @@ export async function createLeagueEntryTeamStaff(input: {
       entry_team_id: team.id,
       member_id: member.memberId,
       pending_name: member.pendingName,
-      entry_type: member.entryType,
-      replaces_league_id: member.replacesLeagueId,
     }))
   );
   return { id: team.id };
@@ -1345,8 +1294,6 @@ export async function updateLeagueEntryTeamStaff(input: {
         entry_team_id: input.teamId,
         member_id: member.memberId,
         pending_name: member.pendingName,
-        entry_type: member.entryType,
-        replaces_league_id: member.replacesLeagueId,
         source_registration_id: member.memberId != null ? registrationByMemberId.get(member.memberId) ?? null : null,
       }))
     );
@@ -1360,21 +1307,10 @@ export async function updateLeagueEntryTeamStaff(input: {
         leagueId: team.league_id,
       });
     }
-    await syncPlayInSelectionStatusesForEntryTeam({
+    await settlePaymentsForEntryTeam({
       teamId: input.teamId,
-      leagueId: team.league_id,
-      selectionStatus: 'not_placed',
       actorMemberId: input.actorMemberId,
       triggerDeferredPayments: true,
-    });
-  }
-  if (input.status === 'pending' && (previousStatus === 'withdrawn' || previousStatus === 'not_entered')) {
-    await syncPlayInSelectionStatusesForEntryTeam({
-      teamId: input.teamId,
-      leagueId: team.league_id,
-      selectionStatus: 'pending',
-      actorMemberId: input.actorMemberId,
-      triggerDeferredPayments: false,
     });
   }
 }
@@ -1437,10 +1373,12 @@ async function reverseGrantedEntryPlacements(input: {
   }
 }
 
-async function syncPlayInSelectionStatusesForEntryTeam(input: {
+/**
+ * A play-in outcome settles what the team's members owe. The priority list is
+ * unchanged by the outcome, so only deferred payment needs to move.
+ */
+async function settlePaymentsForEntryTeam(input: {
   teamId: number;
-  leagueId: number;
-  selectionStatus: 'pending' | 'not_placed' | 'placed';
   actorMemberId: number;
   triggerDeferredPayments: boolean;
 }): Promise<void> {
@@ -1457,17 +1395,6 @@ async function syncPlayInSelectionStatusesForEntryTeam(input: {
     ),
   ];
   if (registrationIds.length === 0) return;
-
-  await db
-    .update(schema.registrationSelections)
-    .set({ status: input.selectionStatus, updated_at: sql`CURRENT_TIMESTAMP` })
-    .where(
-      and(
-        inArray(schema.registrationSelections.registration_id, registrationIds),
-        eq(schema.registrationSelections.league_id, input.leagueId),
-        eq(schema.registrationSelections.selection_type, 'play_in_request'),
-      ),
-    );
 
   if (!input.triggerDeferredPayments) return;
 
@@ -1751,42 +1678,13 @@ export async function recordLeagueEntryTeamOutcome(input: {
       rosterPlacements += 1;
       rosteredMemberIds.push(member.member_id);
 
-      if (member.entry_type === 'replace' && member.replaces_league_id != null) {
-        await tx
-          .update(schema.leagueRoster)
-          .set({ status: 'removed', updated_at: sql`CURRENT_TIMESTAMP` })
-          .where(
-            and(
-              eq(schema.leagueRoster.league_id, member.replaces_league_id),
-              eq(schema.leagueRoster.member_id, member.member_id),
-              eq(schema.leagueRoster.status, 'active')
-            )
-          );
-        if (member.source_registration_id != null) {
-          await tx
-            .update(schema.registrationSelections)
-            .set({ status: 'dropped', updated_at: sql`CURRENT_TIMESTAMP` })
-            .where(
-              and(
-                eq(schema.registrationSelections.registration_id, member.source_registration_id),
-                eq(schema.registrationSelections.league_id, member.replaces_league_id),
-                sql`${schema.registrationSelections.selection_type} IN ('guaranteed_return', 'byot_request', 'instructional_join')`
-              )
-            );
-        }
-      }
-
-      if (member.source_registration_id != null) {
-        await tx
-          .update(schema.registrationSelections)
-          .set({ status: 'placed', updated_at: sql`CURRENT_TIMESTAMP` })
-          .where(
-            and(
-              eq(schema.registrationSelections.registration_id, member.source_registration_id),
-              eq(schema.registrationSelections.league_id, team.league_id),
-              eq(schema.registrationSelections.selection_type, 'play_in_request')
-            )
-          );
+      if (league.sessionId != null) {
+        await releaseOverflowLeaguePlacements({
+          tx,
+          memberId: member.member_id,
+          sessionId: league.sessionId,
+          keepLeagueId: team.league_id,
+        });
       }
     }
 

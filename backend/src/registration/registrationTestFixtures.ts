@@ -1,4 +1,9 @@
-import type { LeagueConfig, RegistrationContext, RegistrationSelectionInput } from './registrationContext.js';
+import type {
+  LeagueConfig,
+  LeaguePriorityInput,
+  RegistrationContext,
+  RegistrationSelectionInput,
+} from './registrationContext.js';
 import { defaultSabbaticalDurationLimitYears } from './sabbaticalDurationLimit.js';
 
 export function league(overrides: Partial<LeagueConfig> = {}): LeagueConfig {
@@ -31,8 +36,16 @@ export function league(overrides: Partial<LeagueConfig> = {}): LeagueConfig {
 
 export function selection(overrides: Partial<RegistrationSelectionInput> = {}): RegistrationSelectionInput {
   return {
-    selectionType: 'guaranteed_return',
+    selectionType: 'sabbatical',
     leagueId: 100,
+    ...overrides,
+  };
+}
+
+export function priority(overrides: Partial<LeaguePriorityInput> = {}): LeaguePriorityInput {
+  return {
+    leagueId: 100,
+    priorityRank: 1,
     ...overrides,
   };
 }
@@ -90,7 +103,9 @@ export function registrationContext(overrides: Partial<RegistrationContext> = {}
         lastDayOfPlay: '2026-05-15',
       }),
     },
-    selections: [selection()],
+    selections: [],
+    priorities: [priority()],
+    desiredLeagueCount: 1,
     discountClaims: {},
     priceConfig: {
       regularMembershipFeeMinor: 10000,

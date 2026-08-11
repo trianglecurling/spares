@@ -1,13 +1,21 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
-import type { RegistrationSelectionInput } from './registrationContext.js';
+import type { LeagueRosterPlacementTypeSqlite } from '../db/drizzle-schema.js';
 
 type DbExecutor = Pick<
   ReturnType<typeof getDrizzleDb>['db'],
   'select' | 'insert' | 'update' | 'delete'
 >;
 
-export const GUARANTEED_RETURN_ROSTER_SELECTION_TYPE = 'guaranteed_return' as const;
+/**
+ * A league spot committed at submit because the registrant's priority list
+ * guaranteed it. Carries the label so staff can tell a first-choice return from
+ * a fallback the registrant would happily trade up from.
+ */
+export type GuaranteedPlacement = {
+  leagueId: number;
+  placementType: Extract<LeagueRosterPlacementTypeSqlite, 'guaranteed_return' | 'guaranteed_fallback'>;
+};
 
 export const ROSTER_COMMIT_REGISTRATION_STATUSES = new Set([
   'confirmed',
@@ -25,19 +33,16 @@ export function registrationStatusCommitsRoster(status: string): boolean {
 }
 
 const UNPAID_ROSTER_REGISTRATION_STATUSES = ['awaiting_payment', 'payment_started'] as const;
-const TERMINAL_SELECTION_STATUSES_FOR_ROSTER = new Set([
-  'dropped',
-  'cancelled',
-  'not_placed',
-  'declined',
-]);
 
 /**
- * Idempotent repair: place guaranteed-return selections for unpaid registrations
- * that predate roster-on-awaiting-payment.
+ * Idempotent repair: re-place guaranteed leagues for unpaid registrations that
+ * predate roster-on-awaiting-payment.
  */
 export async function ensureRosterPlacementsForUnpaidRegistrations(memberId: number): Promise<void> {
   const { db, schema } = getDrizzleDb();
+  const { buildRegistrationContextForDraft } = await import('./registrationMembershipPaymentService.js');
+  const { evaluateLeaguePriorities } = await import('./leaguePriorityEvaluation.js');
+
   const unpaid = await db
     .select({
       id: schema.curlingRegistrations.id,
@@ -52,48 +57,25 @@ export async function ensureRosterPlacementsForUnpaidRegistrations(memberId: num
     );
 
   for (const registration of unpaid) {
-    const selectionRows = await db
-      .select({
-        leagueId: schema.registrationSelections.league_id,
-        selectionType: schema.registrationSelections.selection_type,
-        status: schema.registrationSelections.status,
-      })
-      .from(schema.registrationSelections)
-      .where(eq(schema.registrationSelections.registration_id, registration.id));
-
-    const excludeLeagueIds = selectionRows
-      .filter(
-        (row) => row.leagueId != null && TERMINAL_SELECTION_STATUSES_FOR_ROSTER.has(row.status),
-      )
-      .map((row) => row.leagueId as number);
-
+    const context = await buildRegistrationContextForDraft(registration.id);
     await syncRegistrationRosterPlacements({
       registrationId: registration.id,
       curlerMemberId: memberId,
-      selections: selectionRows
-        .filter(
-          (row) =>
-            row.leagueId != null && !TERMINAL_SELECTION_STATUSES_FOR_ROSTER.has(row.status),
-        )
-        .map((row) => ({
-          leagueId: row.leagueId,
-          selectionType: row.selectionType,
-        })),
-      excludeLeagueIds,
+      placements: guaranteedPlacementsFromEvaluation(evaluateLeaguePriorities(context)),
       registrationStatus: registration.status,
     });
   }
 }
 
-function selectedGuaranteedReturnLeagueIds(selections: RegistrationSelectionInput[]): Set<number> {
-  return new Set(
-    selections
-      .filter(
-        (selection) =>
-          selection.selectionType === GUARANTEED_RETURN_ROSTER_SELECTION_TYPE && selection.leagueId != null,
-      )
-      .map((selection) => selection.leagueId as number),
-  );
+export function guaranteedPlacementsFromEvaluation(evaluation: {
+  entries: Array<{ leagueId: number; guaranteed: boolean; label: string }>;
+}): GuaranteedPlacement[] {
+  return evaluation.entries
+    .filter((entry) => entry.guaranteed)
+    .map((entry) => ({
+      leagueId: entry.leagueId,
+      placementType: entry.label === 'guaranteed_fallback' ? ('guaranteed_fallback' as const) : ('guaranteed_return' as const),
+    }));
 }
 
 async function removeRegistrationRosterRows(
@@ -126,7 +108,7 @@ async function removeRegistrationRosterRows(
 export async function removeOrphanedRegistrationRosterPlacements(input: {
   registrationId: number;
   curlerMemberId: number;
-  selections: RegistrationSelectionInput[];
+  placements: GuaranteedPlacement[];
   /** League IDs that must not keep an active roster row from this registration. */
   excludeLeagueIds?: Iterable<number>;
   tx?: DbExecutor;
@@ -135,7 +117,7 @@ export async function removeOrphanedRegistrationRosterPlacements(input: {
   const executor = input.tx ?? db;
   const excluded = new Set(input.excludeLeagueIds ?? []);
   const keepLeagueIds = new Set(
-    [...selectedGuaranteedReturnLeagueIds(input.selections)].filter((leagueId) => !excluded.has(leagueId)),
+    input.placements.map((placement) => placement.leagueId).filter((leagueId) => !excluded.has(leagueId)),
   );
 
   const rosterRows = await executor
@@ -178,32 +160,33 @@ export async function removeAllRegistrationRosterPlacements(input: {
 export async function persistRegistrationRosterPlacements(input: {
   registrationId: number;
   curlerMemberId: number;
-  selections: RegistrationSelectionInput[];
-  /** League IDs that must not receive a guaranteed-return roster placement. */
+  placements: GuaranteedPlacement[];
+  /** League IDs that must not receive a roster placement. */
   excludeLeagueIds?: Iterable<number>;
   tx?: DbExecutor;
 }): Promise<void> {
   const { db, schema } = getDrizzleDb();
   const executor = input.tx ?? db;
   const excluded = new Set(input.excludeLeagueIds ?? []);
-  const leagueIds = [...selectedGuaranteedReturnLeagueIds(input.selections)].filter(
-    (leagueId) => !excluded.has(leagueId),
-  );
-  if (leagueIds.length === 0) return;
+  const placements = input.placements.filter((placement) => !excluded.has(placement.leagueId));
+  if (placements.length === 0) return;
 
-  for (const leagueId of leagueIds) {
+  for (const placement of placements) {
     const [existing] = await executor
       .select()
       .from(schema.leagueRoster)
       .where(
-        and(eq(schema.leagueRoster.league_id, leagueId), eq(schema.leagueRoster.member_id, input.curlerMemberId)),
+        and(
+          eq(schema.leagueRoster.league_id, placement.leagueId),
+          eq(schema.leagueRoster.member_id, input.curlerMemberId),
+        ),
       )
       .limit(1);
 
     const rosterValues = {
       source_registration_id: input.registrationId,
       status: 'active' as const,
-      placement_type: GUARANTEED_RETURN_ROSTER_SELECTION_TYPE,
+      placement_type: placement.placementType,
       is_temporary_sabbatical_fill: 0,
       related_sabbatical_id: null,
       updated_at: sql`CURRENT_TIMESTAMP`,
@@ -218,7 +201,7 @@ export async function persistRegistrationRosterPlacements(input: {
     }
 
     await executor.insert(schema.leagueRoster).values({
-      league_id: leagueId,
+      league_id: placement.leagueId,
       member_id: input.curlerMemberId,
       ...rosterValues,
     });
@@ -228,7 +211,7 @@ export async function persistRegistrationRosterPlacements(input: {
 export async function syncRegistrationRosterPlacements(input: {
   registrationId: number;
   curlerMemberId: number;
-  selections: RegistrationSelectionInput[];
+  placements: GuaranteedPlacement[];
   registrationStatus: string;
   excludeLeagueIds?: Iterable<number>;
   tx?: DbExecutor;

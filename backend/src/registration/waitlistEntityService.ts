@@ -1,7 +1,6 @@
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { RegistrationConfigValidationError } from './registrationConfigValidation.js';
-import { lineageRootLeagueId, loadLeagueContinuityMap } from './waitlistLineage.js';
 
 export class WaitlistEntityValidationError extends RegistrationConfigValidationError {}
 
@@ -179,17 +178,6 @@ export async function resolvePlacementLeagueForWaitlist(
   const match =
     sessionId != null ? leagues.find((league) => league.sessionId === sessionId) ?? leagues[leagues.length - 1] : leagues[leagues.length - 1];
   return { leagueId: match.id, leagueName: match.name };
-}
-
-export async function replacementLineageFromLeagueId(replacesLeagueId: number): Promise<{
-  lineageStartLeagueId: number;
-  originalReplacesLeagueId: number;
-}> {
-  const continuity = await loadLeagueContinuityMap();
-  return {
-    lineageStartLeagueId: lineageRootLeagueId(replacesLeagueId, continuity),
-    originalReplacesLeagueId: replacesLeagueId,
-  };
 }
 
 export async function loadActiveWaitlistEntryCountsByLeagueId(leagueIds: number[]): Promise<Map<number, number>> {

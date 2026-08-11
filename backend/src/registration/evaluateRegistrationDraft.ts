@@ -1,15 +1,16 @@
 import { calculateRegistrationFees } from './registrationFeeCalculator.js';
-import { validateRegistrationSelections } from './registrationLeagueSelections.js';
+import { validateLeaguePriorities } from './leaguePriorityEvaluation.js';
 import { decideRegistrationPayment } from './registrationPaymentDecision.js';
 import type { RegistrationContext } from './registrationContext.js';
 
 export function evaluateRegistrationDraft(context: RegistrationContext) {
-  const selectionValidation = validateRegistrationSelections(context);
+  const priorityValidation = validateLeaguePriorities(context);
   const feePreview = calculateRegistrationFees(context);
-  const paymentDecision = decideRegistrationPayment({ context, feePreview, selectionValidation });
+  const paymentDecision = decideRegistrationPayment({ context, feePreview, priorityValidation });
 
   return {
-    selectionValidation,
+    priorityValidation,
+    priorityEvaluation: priorityValidation.evaluation,
     feePreview,
     paymentDecision,
   };

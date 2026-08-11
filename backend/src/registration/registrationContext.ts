@@ -2,9 +2,9 @@ import type {
   CurlingExperienceTypeSqlite,
   CurlingMembershipOptionSqlite,
   CurlingRegistrationSelectionKindSqlite,
+  LeaguePriorityGuaranteeLabel,
   RegistrationInvoiceLineKindSqlite,
   RegistrationPeriodStateSqlite,
-  WaitlistEntryTypeSqlite,
 } from '../db/drizzle-schema.js';
 import type { PriceConfigInput, RegistrationDiscountSettingsStored } from './registrationConfigValidation.js';
 
@@ -12,6 +12,7 @@ export type RegistrationMembershipOption = CurlingMembershipOptionSqlite;
 export type RegistrationSelectionKind = CurlingRegistrationSelectionKindSqlite;
 export type RegistrationPeriodState = RegistrationPeriodStateSqlite;
 export type RegistrationInvoiceLineKind = RegistrationInvoiceLineKindSqlite;
+export type { LeaguePriorityGuaranteeLabel };
 
 export type LeagueConfig = {
   id: number;
@@ -42,19 +43,29 @@ export type LeagueConfig = {
   discountEligible?: boolean;
 };
 
+export type TeamRosterPlacement = {
+  memberId: number;
+};
+
+/**
+ * A non-league registration answer: what to do with a league the registrant is
+ * leaving behind, or a program choice. Leagues the registrant wants live in
+ * `priorities`.
+ */
 export type RegistrationSelectionInput = {
   selectionType: RegistrationSelectionKind;
   leagueId?: number | null;
-  rank?: number | null;
-  replacesLeagueId?: number | null;
-  byotTeammateText?: string | null;
-  teamRosterText?: string | null;
-  teamRosterPlacements?: Array<{
-    memberId: number;
-    entryType: 'add' | 'replace';
-    replacesLeagueId?: number | null;
-  }> | null;
   isTemporarySabbaticalFill?: boolean;
+};
+
+/** One league on the registrant's prioritized list, most wanted first. */
+export type LeaguePriorityInput = {
+  leagueId: number;
+  /** 1-based and contiguous across the list. */
+  priorityRank: number;
+  /** Newline-separated names of teammates without member accounts. */
+  byotTeammateText?: string | null;
+  teamRosterPlacements?: TeamRosterPlacement[] | null;
 };
 
 export type ExistingSabbatical = {
@@ -70,13 +81,12 @@ export type ExistingSabbatical = {
 export type ExistingWaitlistEntry = {
   waitlistId: number;
   leagueId: number;
-  entryType: WaitlistEntryTypeSqlite;
-  replacesLineageStartLeagueId?: number | null;
-  replacesLeagueId?: number | null;
   status: 'active' | 'offered' | 'accepted' | 'declined' | 'placed' | 'removed' | 'moved_to_bottom' | 'rolled_over' | 'cancelled';
   position?: number | null;
   queueTotal?: number | null;
   declineCount?: number | null;
+  priorityRank?: number | null;
+  desiredLeagueCount?: number | null;
 };
 
 export type CompletedLeagueSession = {
@@ -116,7 +126,8 @@ export type PlayInEntryContext = {
 };
 
 export type RegistrationContext = {
-  desiredAddWaitlistLeagueCount?: number | null;
+  /** How many leagues the registrant wants to play in, 1..MAX_DESIRED_LEAGUE_COUNT. */
+  desiredLeagueCount?: number | null;
   season: {
     id: number;
     name: string;
@@ -155,6 +166,9 @@ export type RegistrationContext = {
   existingSabbaticals: ExistingSabbatical[];
   existingWaitlistEntries: ExistingWaitlistEntry[];
   leagues: Record<number, LeagueConfig>;
+  /** Leagues the registrant wants, most wanted first. Source of truth for demand. */
+  priorities: LeaguePriorityInput[];
+  /** Sabbatical, drop, and program answers. Never leagues the registrant wants. */
   selections: RegistrationSelectionInput[];
   discountClaims: DiscountClaims;
   juniorAssistance?: JuniorAssistanceRequest;
@@ -178,6 +192,13 @@ export function getSelectionLeague(
   return getLeague(context, selection.leagueId);
 }
 
+export function getPriorityLeague(
+  context: RegistrationContext,
+  priority: LeaguePriorityInput
+): LeagueConfig | undefined {
+  return getLeague(context, priority.leagueId);
+}
+
 export function isActiveWaitlistEntry(entry: ExistingWaitlistEntry): boolean {
   return entry.status === 'active' || entry.status === 'offered';
 }
@@ -186,76 +207,7 @@ export function activeLeagueCount(context: RegistrationContext): number {
   return context.activeLeagueIds.length;
 }
 
-export function replaceWaitlistDefersPayment(
-  context: RegistrationContext,
-  selection: RegistrationSelectionInput
-): boolean {
-  if (selection.selectionType !== 'waitlist_replace') return false;
-  if (selection.leagueId == null || selection.replacesLeagueId == null) return true;
-
-  const targetLeague = getLeague(context, selection.leagueId);
-  const replacedLeague = getLeague(context, selection.replacesLeagueId);
-  if (!targetLeague || !replacedLeague) return true;
-
-  return targetLeague.registrationFeeMinor !== replacedLeague.registrationFeeMinor;
-}
-
-export function playInSelectionDefersPayment(
-  context: RegistrationContext,
-  selection: RegistrationSelectionInput,
-): boolean {
-  if (selection.selectionType !== 'play_in_request') return false;
-  // Teams evaluated as guaranteed auto entry pay immediately, like guaranteed returns.
-  if (selection.leagueId != null && context.playInEntry?.[selection.leagueId]?.guaranteed) {
-    return false;
-  }
-  if (!selection.replacesLeagueId) return true;
-  if (selection.leagueId == null) return true;
-
-  const playInLeague = getLeague(context, selection.leagueId);
-  const replacedLeague = getLeague(context, selection.replacesLeagueId);
-  if (!playInLeague || !replacedLeague) return true;
-
-  return playInLeague.registrationFeeMinor !== replacedLeague.registrationFeeMinor;
-}
-
-/**
- * Leagues released immediately when a guaranteed play-in REPLACE succeeds at
- * registration time. Those selections stay on the draft for validation/history,
- * but must not be billed or rostered.
- */
-export function guaranteedPlayInReplacedLeagueIds(context: RegistrationContext): Set<number> {
-  const ids = new Set<number>();
-  for (const selection of context.selections) {
-    if (selection.selectionType !== 'play_in_request') continue;
-    if (selection.leagueId == null || selection.replacesLeagueId == null) continue;
-    if (!context.playInEntry?.[selection.leagueId]?.guaranteed) continue;
-    ids.add(selection.replacesLeagueId);
-  }
-  return ids;
-}
-
-export function isSelectionReplacedByGuaranteedPlayIn(
-  context: RegistrationContext,
-  selection: RegistrationSelectionInput,
-): boolean {
-  return selection.leagueId != null && guaranteedPlayInReplacedLeagueIds(context).has(selection.leagueId);
-}
-
-export function waitlistSelectionDefersPayment(
-  context: RegistrationContext,
-  selection: RegistrationSelectionInput
-): boolean {
-  if (
-    selection.selectionType === 'waitlist_add' ||
-    selection.selectionType === 'waitlist_add_auto_decline' ||
-    selection.selectionType === 'waitlist_keep_auto_accept' ||
-    selection.selectionType === 'waitlist_keep_auto_decline'
-  ) {
-    return true;
-  }
-  if (selection.selectionType === 'waitlist_replace' || selection.selectionType === 'waitlist_replace_auto_decline') {
-    return replaceWaitlistDefersPayment(context, selection);
-  }
-  return false;
+/** Priority entries sorted by rank, most wanted first. */
+export function orderedPriorities(context: RegistrationContext): LeaguePriorityInput[] {
+  return [...context.priorities].sort((a, b) => a.priorityRank - b.priorityRank);
 }

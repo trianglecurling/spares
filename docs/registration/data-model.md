@@ -84,8 +84,15 @@ records use **`curler_member_id`** and **`submitted_by_member_id`**.
 | Registration window | `registration_periods` (stored **`current_state`** plus schedule timestamps) |
 | Aggregate registration row | **`curling_registrations`** |
 | Accepted policies | `registration_policy_acceptances` |
-| Normalized selections | `registration_selections` |
+| Prioritized league list | **`registration_league_priorities`** |
+| Non-league selections | `registration_selections` (`sabbatical`, `drop`, `junior_recreational`, `spare_only` only) |
 | Assistance workflow | **`financial_assistance_requests`** |
+
+**`registration_league_priorities`** is the source of truth for which leagues a
+registrant wants. One row per league, with `priority_rank` (1-based, contiguous),
+`byot_teammate_text`, and `team_roster_placements` JSON. The desired league count
+lives on **`curling_registrations.desired_league_count`**. Guarantee labels are
+derived, never stored. See `league-priority.md`.
 
 ### Placement, memberships, privileges
 
@@ -106,7 +113,7 @@ records use **`curler_member_id`** and **`submitted_by_member_id`**.
 
 | Concept | Tables |
 | --- | --- |
-| Queue entry | **`waitlist_entries`** (CHECK on `entry_type` vs `replaces_league_id`; partial unique index for active member + league) |
+| Queue entry | **`waitlist_entries`** (`priority_rank` + `desired_league_count` snapshots from the registrant's priority list; partial unique index for active member + league) |
 | Offers | **`waitlist_offers`** |
 | Audit | **`waitlist_audit_events`** |
 

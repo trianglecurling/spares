@@ -175,14 +175,11 @@ describe('registration resume targeting', () => {
     ).toBe('basic-ice');
 
     expect(
-      resolvePostShellResumeStepFromPayment(
-        {
-          selection: { membershipOption: 'regular', experienceType: null },
-          icePrivilegesChoice: 'league_play',
-        },
-        { hasPriorSeasonReturnLeagues: true },
-      ),
-    ).toBe('prior-league-selection');
+      resolvePostShellResumeStepFromPayment({
+        selection: { membershipOption: 'regular', experienceType: null },
+        icePrivilegesChoice: 'league_play',
+      }),
+    ).toBe('league-priority');
 
     expect(
       resolvePostShellResumeStepFromPayment({
