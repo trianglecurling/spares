@@ -19,7 +19,7 @@ export const teamByeRequestListResponseSchema = {
   items: teamByeRequestSchema,
 } as const;
 
-/** Response for GET league bye-requests: list of requests plus per-team prefer late draw */
+/** Response for GET league bye-requests: list of requests plus per-team draw preferences */
 export const leagueByeRequestsResponseSchema = {
   type: 'object',
   additionalProperties: false,
@@ -30,8 +30,13 @@ export const leagueByeRequestsResponseSchema = {
       additionalProperties: { type: 'boolean' },
       description: 'Map of team id to prefer late draw',
     },
+    preferEarlyDrawByTeam: {
+      type: 'object',
+      additionalProperties: { type: 'boolean' },
+      description: 'Map of team id to prefer early draw',
+    },
   },
-  required: ['requests', 'preferLateDrawByTeam'],
+  required: ['requests', 'preferLateDrawByTeam', 'preferEarlyDrawByTeam'],
 } as const;
 
 /** Response for GET team bye-requests: bye requests plus draw preference */
@@ -41,8 +46,9 @@ export const teamByeRequestsWithPreferenceResponseSchema = {
   properties: {
     byeRequests: teamByeRequestListResponseSchema,
     preferLateDraw: { type: 'boolean' },
+    preferEarlyDraw: { type: 'boolean' },
   },
-  required: ['byeRequests', 'preferLateDraw'],
+  required: ['byeRequests', 'preferLateDraw', 'preferEarlyDraw'],
 } as const;
 
 export const teamByeRequestCreateBodySchema = {
@@ -84,6 +90,7 @@ export const teamByeRequestsReplaceBodySchema = {
       },
     },
     preferLateDraw: { type: 'boolean' },
+    preferEarlyDraw: { type: 'boolean' },
   },
   required: ['requests'],
 } as const;

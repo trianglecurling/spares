@@ -179,7 +179,7 @@ describe('registration resume targeting', () => {
         selection: { membershipOption: 'regular', experienceType: null },
         icePrivilegesChoice: 'league_play',
       }),
-    ).toBe('league-priority');
+    ).toBe('league-priority-intro');
 
     expect(
       resolvePostShellResumeStepFromPayment({
@@ -198,5 +198,12 @@ describe('registration resume targeting', () => {
         knownExperienceYears: 0,
       }),
     ).toBe('experience');
+
+    expect(
+      resolvePostShellResumeStepFromPayment({
+        selection: { membershipOption: 'regular_spare_only', experienceType: null },
+        icePrivilegesChoice: 'basic_ice',
+      }),
+    ).toBe('league-priority-intro');
   });
 });

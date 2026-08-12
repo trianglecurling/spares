@@ -18,7 +18,12 @@ function generate(input: ScheduleInput) {
       message: 'Building round-robin pairings...',
     });
 
-    const rounds = generateAllMatchups(input.strategies, input.teams);
+    const rounds = generateAllMatchups(
+      input.strategies,
+      input.teams,
+      input.drawSlots,
+      input.byeRequests
+    );
 
     if (rounds.length === 0) {
       postMsg({
@@ -47,7 +52,10 @@ function generate(input: ScheduleInput) {
     });
 
     const teamIds = input.teams.map((t) => t.id);
+    const teamNamesById = new Map(input.teams.map((t) => [t.id, t.name?.trim() || `Team ${t.id}`]));
     const timeBudget = input.optimizationTimeBudgetMs ?? 30_000;
+    const earlyStop =
+      input.optimizationEarlyStopPatienceMs ?? Math.max(2_000, Math.round(timeBudget * 0.15));
     const result = assignAndOptimize(
       rounds,
       input.drawSlots,
@@ -56,7 +64,12 @@ function generate(input: ScheduleInput) {
       teamIds,
       input.seed,
       timeBudget,
-      reportProgress
+      reportProgress,
+      input.hardConstraints ?? [],
+      input.preferLateDrawTeamIds ?? [],
+      input.preferEarlyDrawTeamIds ?? [],
+      teamNamesById,
+      earlyStop
     );
 
     postMsg({ type: 'complete', payload: result });

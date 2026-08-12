@@ -325,7 +325,7 @@ export function renderRegistrationEmail(messageType: RegistrationMessageType, pa
           <p>Your registration for ${escapeHtml(season)} has been submitted. You chose to pay later, so your registration is not fully confirmed until payment is complete.</p>
           ${summaryHtml}
           <p><strong>Amount due:</strong> ${money(payload.amountDueMinor)}</p>
-          ${payload.deadlineText ? `<p><strong>Pay by:</strong> ${escapeHtml(payload.deadlineText)} to secure your league selections.</p>` : ''}
+          ${payload.deadlineText ? `<p><strong>Payment is due</strong> ${escapeHtml(payload.deadlineText)} to secure your league selections.</p>` : ''}
           ${paymentLinkHtml(payload)}
           ${paymentAndMembershipContactHtml}
         `,
@@ -337,7 +337,7 @@ export function renderRegistrationEmail(messageType: RegistrationMessageType, pa
           summaryText,
           '',
           `Amount due: ${money(payload.amountDueMinor)}`,
-          payload.deadlineText ? `Pay by: ${payload.deadlineText} to secure your league selections.` : null,
+          payload.deadlineText ? `Payment is due ${payload.deadlineText} to secure your league selections.` : null,
           `Payment link: ${payload.paymentUrl ?? 'Not available'}`,
           '',
           paymentAndMembershipContactText,

@@ -12785,11 +12785,19 @@
                         "type": "boolean"
                       },
                       "description": "Map of team id to prefer late draw"
+                    },
+                    "preferEarlyDrawByTeam": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "boolean"
+                      },
+                      "description": "Map of team id to prefer early draw"
                     }
                   },
                   "required": [
                     "requests",
-                    "preferLateDrawByTeam"
+                    "preferLateDrawByTeam",
+                    "preferEarlyDrawByTeam"
                   ]
                 }
               }
@@ -13061,11 +13069,15 @@
                     },
                     "preferLateDraw": {
                       "type": "boolean"
+                    },
+                    "preferEarlyDraw": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
                     "byeRequests",
-                    "preferLateDraw"
+                    "preferLateDraw",
+                    "preferEarlyDraw"
                   ]
                 }
               }
@@ -13105,6 +13117,9 @@
                     }
                   },
                   "preferLateDraw": {
+                    "type": "boolean"
+                  },
+                  "preferEarlyDraw": {
                     "type": "boolean"
                   }
                 },

@@ -21,8 +21,8 @@ import { effectiveLeagueRegistrationFeeMinor } from './registrationConfigValidat
 import { calculateRegistrationFees, type RegistrationFeeLineItem, type RegistrationFeePreview } from './registrationFeeCalculator.js';
 import { decideRegistrationPayment, type RegistrationPaymentDecision } from './registrationPaymentDecision.js';
 import {
-  formatRegistrationPaymentDeadline,
   getRegistrationPaymentDeadline,
+  registrationPayLaterDuePhrase,
 } from './registrationPaymentDeadline.js';
 import {
   type LeagueConfig,
@@ -467,11 +467,12 @@ async function paymentDeadlineFieldsForSeasonSession(
 ): Promise<Pick<RegistrationMembershipPaymentPayload, 'paymentDeadlineAt' | 'paymentDeadlineDisplay' | 'payLaterAvailable'>> {
   const deadline = await getRegistrationPaymentDeadline(seasonId, sessionId);
   const paymentDeadlineAt = deadline?.paymentDeadlineAt ?? null;
-  const paymentDeadlineDisplay = paymentDeadlineAt ? formatRegistrationPaymentDeadline(paymentDeadlineAt) : null;
   return {
     paymentDeadlineAt,
-    paymentDeadlineDisplay,
-    payLaterAvailable: paymentOutcome === 'immediate_payment' && Boolean(paymentDeadlineAt),
+    paymentDeadlineDisplay: registrationPayLaterDuePhrase(paymentDeadlineAt),
+    // Pay later is always offered when payment is due now; a configured deadline
+    // only changes the due-by copy (otherwise: before leagues begin).
+    payLaterAvailable: paymentOutcome === 'immediate_payment',
   };
 }
 
@@ -1993,12 +1994,6 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
         payment: 'Pay later is only available when payment is due now.',
       });
     }
-    const deadline = await getRegistrationPaymentDeadline(registration.season_id, registration.session_id);
-    if (!deadline?.paymentDeadlineAt) {
-      throw new RegistrationMembershipPaymentValidationError({
-        payment: 'Pay later is unavailable because no payment deadline is configured.',
-      });
-    }
   }
 
   const payerMemberId = registration.submitted_by_member_id ?? input.actor.id;
@@ -2042,9 +2037,7 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
           payload: {
             amountDueMinor: existingInvoice.total_minor,
             paymentUrl: hostedCheckoutUrl,
-            deadlineText: deadline?.paymentDeadlineAt
-              ? formatRegistrationPaymentDeadline(deadline.paymentDeadlineAt)
-              : null,
+            deadlineText: registrationPayLaterDuePhrase(deadline?.paymentDeadlineAt),
             summaryLines: await registrationSummaryLines(context),
           },
         });
@@ -2403,9 +2396,7 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
           payload: {
             amountDueMinor: evaluation.feePreview.totalDueMinor,
             paymentUrl: checkout.checkoutUrl,
-            deadlineText: deadline?.paymentDeadlineAt
-              ? formatRegistrationPaymentDeadline(deadline.paymentDeadlineAt)
-              : null,
+            deadlineText: registrationPayLaterDuePhrase(deadline?.paymentDeadlineAt),
             summaryLines: await registrationSummaryLines(context),
           },
         });

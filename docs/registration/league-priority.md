@@ -5,6 +5,18 @@ leagues they want to play in. It replaces the older multi-step model of
 returning-league decisions, direct league requests, ADD/REPLACE waitlist joins,
 and third-league interest.
 
+## Flow placement
+
+Registration shows a purely informational step (`league-priority-intro`)
+immediately before the interactive priority list. That screen explains:
+
+1. What the next screen asks for (desired count and ordered priority list).
+2. How league rosters use up to two protected spots from leagues the member
+   played last session — as a guaranteed return, or as a guaranteed fallback
+   when trying to switch into a higher-priority league.
+
+Continue advances to the priority list. No answers are saved on the intro step.
+
 ## The model
 
 A registrant provides exactly two things:

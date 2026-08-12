@@ -39,14 +39,31 @@ describe('Phase 9 registration email rendering', () => {
       seasonName: '2026-27',
       amountDueMinor: 12500,
       paymentUrl: 'https://example.test/pay',
-      deadlineText: 'Monday, September 1, 2026 at 11:59 PM EDT',
+      deadlineText: 'by Monday, September 1, 2026 at 11:59 PM EDT',
       summaryLines: ['Regular membership'],
     });
 
     expect(rendered.subject).toContain('Complete your registration payment');
     expect(rendered.textBody).toContain('chose to pay later');
-    expect(rendered.textBody).toContain('Pay by: Monday, September 1, 2026 at 11:59 PM EDT');
+    expect(rendered.textBody).toContain(
+      'Payment is due by Monday, September 1, 2026 at 11:59 PM EDT to secure your league selections.',
+    );
     expect(rendered.textBody).toContain('https://example.test/pay');
+  });
+
+  test('immediate payment email uses before-leagues-begin when no calendar deadline', () => {
+    const rendered = renderRegistrationEmail('registration_submitted_immediate_payment', {
+      curlerName: 'Alex Curler',
+      seasonName: '2026-27',
+      amountDueMinor: 12500,
+      paymentUrl: 'https://example.test/pay',
+      deadlineText: 'before leagues begin',
+      summaryLines: ['Regular membership'],
+    });
+
+    expect(rendered.textBody).toContain(
+      'Payment is due before leagues begin to secure your league selections.',
+    );
   });
 
   test('waitlist joined email explains when a teammate was added by someone else', () => {

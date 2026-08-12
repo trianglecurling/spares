@@ -346,7 +346,14 @@ export default function LeagueDetail() {
   const [byeRequestsTeamId, setByeRequestsTeamId] = useState<number | null>(null);
   const [byeDrawDates, setByeDrawDates] = useState<string[]>([]);
   const [byePriorities, setByePriorities] = useState<Record<string, number>>({});
-  const [preferLateDraw, setPreferLateDraw] = useState(false);
+  type DrawTimePreference = 'none' | 'early' | 'late';
+  const DRAW_TIME_PREFERENCE_OPTIONS: ChoiceOption<DrawTimePreference>[] = [
+    { value: 'none', label: 'No preference' },
+    { value: 'early', label: 'Prefer early draw' },
+    { value: 'late', label: 'Prefer late draw' },
+  ];
+  const byeDrawTimePreferenceFieldId = useId();
+  const [drawTimePreference, setDrawTimePreference] = useState<DrawTimePreference>('none');
   const [hasTwoDraws, setHasTwoDraws] = useState(false);
   const [byeRequestsLoading, setByeRequestsLoading] = useState(false);
   const [byeRequestsSaving, setByeRequestsSaving] = useState(false);
@@ -667,6 +674,7 @@ export default function LeagueDetail() {
       const data = byesRes as {
         byeRequests?: Array<{ drawDate: string; priority: number }>;
         preferLateDraw?: boolean;
+        preferEarlyDraw?: boolean;
       } | null;
       const byes = data?.byeRequests ?? [];
       const prio: Record<string, number> = {};
@@ -674,7 +682,9 @@ export default function LeagueDetail() {
         prio[b.drawDate] = b.priority;
       });
       setByePriorities(prio);
-      setPreferLateDraw(Boolean(data?.preferLateDraw));
+      if (data?.preferEarlyDraw) setDrawTimePreference('early');
+      else if (data?.preferLateDraw) setDrawTimePreference('late');
+      else setDrawTimePreference('none');
     } catch (error: unknown) {
       showAlert(formatApiError(error, 'Failed to load draw slots or bye requests'), 'error');
     } finally {
@@ -687,6 +697,7 @@ export default function LeagueDetail() {
     setByeRequestsTeamId(firstTeamId);
     setByeRequestsModalOpen(true);
     setByePriorities({});
+    setDrawTimePreference('none');
     if (firstTeamId != null) {
       await loadByeRequestsData(firstTeamId);
     } else {
@@ -699,7 +710,7 @@ export default function LeagueDetail() {
     setByeRequestsTeamId(null);
     setByeDrawDates([]);
     setByePriorities({});
-    setPreferLateDraw(false);
+    setDrawTimePreference('none');
     setHasTwoDraws(false);
   };
 
@@ -720,7 +731,13 @@ export default function LeagueDetail() {
         drawDate: date,
         priority: Number(byePriorities[date]),
       }));
-    const body = hasTwoDraws ? { requests, preferLateDraw } : { requests };
+    const body = hasTwoDraws
+      ? {
+          requests,
+          preferEarlyDraw: drawTimePreference === 'early',
+          preferLateDraw: drawTimePreference === 'late',
+        }
+      : { requests };
     setByeRequestsSaving(true);
     try {
       await putUntyped('/leagues/{leagueId}/teams/{teamId}/bye-requests', body, {
@@ -3522,15 +3539,23 @@ export default function LeagueDetail() {
           ) : (
             <div className="space-y-2 max-h-80 overflow-y-auto">
               {hasTwoDraws && !byeRequestsLoading && (
-                <label className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 pb-2 border-b border-gray-200 dark:border-gray-600">
-                  <input
-                    type="checkbox"
-                    checked={preferLateDraw}
-                    onChange={(e) => setPreferLateDraw(e.target.checked)}
-                    className="rounded border-gray-300 dark:border-gray-600 text-primary-teal focus:ring-primary-teal"
+                <FormField
+                  label="Draw time preference"
+                  labelId={byeDrawTimePreferenceFieldId}
+                  className="pb-2 border-b border-gray-200 dark:border-gray-600"
+                >
+                  <ChoiceInput<DrawTimePreference>
+                    layout="block"
+                    name="member-bye-draw-time-preference"
+                    ariaLabelledBy={byeDrawTimePreferenceFieldId}
+                    options={DRAW_TIME_PREFERENCE_OPTIONS}
+                    value={drawTimePreference}
+                    onChange={(next) => {
+                      if (next == null || Array.isArray(next)) return;
+                      setDrawTimePreference(next);
+                    }}
                   />
-                  Prefer late draw
-                </label>
+                </FormField>
               )}
               {byeDrawDates.map((date) => {
                 const value = byePriorities[date];

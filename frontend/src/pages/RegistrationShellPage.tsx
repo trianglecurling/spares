@@ -19,6 +19,7 @@ import RegistrationDemographicFields, {
   type RegistrationDemographicFieldsHandle,
 } from '../components/registration/RegistrationDemographicFields';
 import RegistrationDemographicsStep from '../components/registration/RegistrationDemographicsStep';
+import LeaguePriorityIntroStep from '../components/registration/LeaguePriorityIntroStep';
 import LeaguePriorityStep from '../components/registration/LeaguePriorityStep';
 import {
   evaluatePriorityList,
@@ -1198,7 +1199,15 @@ export default function RegistrationShellPage() {
         });
         if (canceled) return;
         await hydrateDraftFromServerById(current.registration.id);
-        const membershipSteps = new Set(['membership', 'discounts', 'experience', 'basic-ice', 'ice-privileges', 'review']);
+        const membershipSteps = new Set([
+          'membership',
+          'discounts',
+          'experience',
+          'basic-ice',
+          'ice-privileges',
+          'league-priority-intro',
+          'review',
+        ]);
         if (membershipSteps.has(currentStep)) {
           const response = await api.get(`/registration/drafts/${current.registration.id}/membership-payment`);
           if (!canceled) setMembershipPayment(response.data as RegistrationMembershipPaymentPayload);
@@ -1388,6 +1397,7 @@ export default function RegistrationShellPage() {
       'discounts',
       'experience',
       'basic-ice',
+      'league-priority-intro',
       'league-priority',
       'review',
     ];
@@ -1424,6 +1434,7 @@ export default function RegistrationShellPage() {
       'discounts',
       'experience',
       'basic-ice',
+      'league-priority-intro',
       'league-priority',
       'review',
     ];
@@ -2370,7 +2381,7 @@ export default function RegistrationShellPage() {
         const paymentPayload = response.data as RegistrationMembershipPaymentPayload;
         navigate(
           selectedMembership === 'none'
-            ? '/registration/league-priority'
+            ? '/registration/league-priority-intro'
             : selectedMembership === 'social' || selectedMembership === 'junior_recreational'
               ? '/registration/review'
               : `/registration/${stepAfterDiscounts(paymentPayload)}`,
@@ -2479,7 +2490,7 @@ export default function RegistrationShellPage() {
           await finishPriorityEdit();
           return;
         }
-        navigate('/registration/league-priority');
+        navigate('/registration/league-priority-intro');
       } else {
         persistGuestDraft('review');
         navigate('/registration/review');
@@ -2505,7 +2516,7 @@ export default function RegistrationShellPage() {
         navigate('/registration/review');
         return;
       }
-      navigate('/registration/league-priority');
+      navigate('/registration/league-priority-intro');
     } catch (err) {
       setError(errorMessage(err, 'Unable to save ice privileges.'));
     } finally {
@@ -2777,7 +2788,7 @@ export default function RegistrationShellPage() {
                 : '/registration/experience',
             ),
         };
-      case 'league-priority':
+      case 'league-priority-intro':
         return {
           label: 'Back',
           onClick: () => {
@@ -2785,6 +2796,17 @@ export default function RegistrationShellPage() {
               noMembershipPathActiveRef.current = true;
             }
             navigateRegistrationBack('/registration/basic-ice');
+          },
+        };
+      case 'league-priority':
+        return {
+          label: 'Back',
+          onClick: () => {
+            if (isPriorityEdit) {
+              navigateRegistrationBack(priorityEditReturnTo);
+              return;
+            }
+            navigateRegistrationBack('/registration/league-priority-intro');
           },
         };
       case 'review': {
@@ -3829,6 +3851,27 @@ export default function RegistrationShellPage() {
         </RegistrationCard>
       );
     }
+  } else if (currentStep === 'league-priority-intro') {
+    content = (
+      <RegistrationCard>
+        <RegistrationFlowHeader />
+        <h1 className="text-3xl font-bold text-[#121033]">How league selection works</h1>
+        <p className="mt-3 text-gray-600">
+          Before you build your list, here is what the next step asks for and how protected return spots work.
+        </p>
+        <div className="mt-6">
+          <LeaguePriorityIntroStep
+            onContinue={() => {
+              if (isPriorityEdit) {
+                navigate('/registration/league-priority', { state: location.state });
+                return;
+              }
+              navigate('/registration/league-priority');
+            }}
+          />
+        </div>
+      </RegistrationCard>
+    );
   } else if (currentStep === 'league-priority') {
     content = (
       <RegistrationCard>
@@ -3932,7 +3975,7 @@ export default function RegistrationShellPage() {
               : membershipPayment?.paymentDecision.outcome === 'no_payment_required'
                 ? 'No payment is required now.'
                 : membershipPayment?.payLaterAvailable
-                  ? 'Payment is due now to complete this registration. You can pay now or choose Pay later to receive an invoice by email.'
+                  ? 'You can pay now, or choose Pay later to receive an invoice by email.'
                   : 'Payment is due now to complete this registration.'}
           </p>
           {membershipPayment?.paymentDecision.outcome === 'deferred_payment' && membershipPayment.paymentDecision.deferralReasons.length > 0 ? (
@@ -4068,7 +4111,7 @@ export default function RegistrationShellPage() {
       <RegistrationPayLaterConfirmationModal
         isOpen={payLaterConfirmationOpen}
         saving={confirmingPayLater || loading}
-        paymentDeadlineDisplay={membershipPayment?.paymentDeadlineDisplay ?? 'the payment deadline'}
+        paymentDeadlineDisplay={membershipPayment?.paymentDeadlineDisplay ?? 'before leagues begin'}
         error={payLaterConfirmationOpen ? error || null : null}
         onClose={() => {
           if (confirmingPayLater || loading) return;

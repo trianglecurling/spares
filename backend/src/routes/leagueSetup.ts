@@ -41,10 +41,7 @@ import {
   hasLeagueAdministratorAccess,
   hasLeagueSetupAccess,
 } from '../utils/leagueAccess.js';
-import {
-  DROP_IN_LEAGUE_NO_TEAMS_MESSAGE,
-  leagueAllowsDropIns,
-} from '../utils/leagueDropIn.js';
+import { DROP_IN_LEAGUE_NO_TEAMS_MESSAGE, leagueAllowsDropIns } from '../utils/leagueDropIn.js';
 import { hasScope } from '../utils/rbac.js';
 import {
   getMemberMembershipStatus,
@@ -113,9 +110,8 @@ const sheetStoneColorSchema = z
       (SHEET_STONE_COLOR_PRESETS as readonly string[]).includes(value) ||
       sheetStoneColorHexRegex.test(value),
     {
-      message:
-        'Stone color must be red, yellow, dark_blue, blue, green, or a #RRGGBB hex value',
-    },
+      message: 'Stone color must be red, yellow, dark_blue, blue, green, or a #RRGGBB hex value',
+    }
   );
 
 const sheetCreateSchema = z.object({
@@ -222,7 +218,6 @@ const sabbaticalAddSchema = z.object({
 const sabbaticalRemoveSchema = z.object({
   reason: z.string().min(1),
 });
-
 
 const idParamsSchema = {
   type: 'object',
@@ -405,7 +400,12 @@ async function ensureRosterMembership(
   const rosterRows = await tx
     .select({ member_id: schema.leagueRoster.member_id })
     .from(schema.leagueRoster)
-    .where(and(eq(schema.leagueRoster.league_id, leagueId), inArray(schema.leagueRoster.member_id, memberIds)));
+    .where(
+      and(
+        eq(schema.leagueRoster.league_id, leagueId),
+        inArray(schema.leagueRoster.member_id, memberIds)
+      )
+    );
 
   if (rosterRows.length !== memberIds.length) {
     throw new Error('One or more roster members are not on the league roster.');
@@ -425,18 +425,18 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       },
     },
     async (request, reply) => {
-    const member = request.member;
-    if (!member) {
-      return reply.code(401).send({ error: 'Unauthorized' });
-    }
+      const member = request.member;
+      if (!member) {
+        return reply.code(401).send({ error: 'Unauthorized' });
+      }
 
-    const { db, schema } = getDrizzleDb();
-    const sheets = await db
-      .select()
-      .from(schema.sheets)
-      .orderBy(schema.sheets.sort_order, schema.sheets.name);
+      const { db, schema } = getDrizzleDb();
+      const sheets = await db
+        .select()
+        .from(schema.sheets)
+        .orderBy(schema.sheets.sort_order, schema.sheets.name);
 
-    return sheets.map((sheet: SheetRow) => mapSheetRow(sheet));
+      return sheets.map((sheet: SheetRow) => mapSheetRow(sheet));
     }
   );
 
@@ -452,26 +452,26 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       },
     },
     async (request, reply) => {
-    const member = request.member;
-    if (!member || !(await hasClubLeagueAdministratorAccess(member))) {
-      return reply.code(403).send({ error: 'Forbidden' });
-    }
+      const member = request.member;
+      if (!member || !(await hasClubLeagueAdministratorAccess(member))) {
+        return reply.code(403).send({ error: 'Forbidden' });
+      }
 
-    const body = sheetCreateSchema.parse(request.body);
-    const { db, schema } = getDrizzleDb();
+      const body = sheetCreateSchema.parse(request.body);
+      const { db, schema } = getDrizzleDb();
 
-    const result = await db
-      .insert(schema.sheets)
-      .values({
-        name: body.name.trim(),
-        sort_order: body.sortOrder ?? 0,
-        is_active: body.isActive === false ? 0 : 1,
-        stone_color_1: body.stoneColor1 ?? 'red',
-        stone_color_2: body.stoneColor2 ?? 'yellow',
-      })
-      .returning();
+      const result = await db
+        .insert(schema.sheets)
+        .values({
+          name: body.name.trim(),
+          sort_order: body.sortOrder ?? 0,
+          is_active: body.isActive === false ? 0 : 1,
+          stone_color_1: body.stoneColor1 ?? 'red',
+          stone_color_2: body.stoneColor2 ?? 'yellow',
+        })
+        .returning();
 
-    return mapSheetRow(result[0]);
+      return mapSheetRow(result[0]);
     }
   );
 
@@ -488,36 +488,40 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       },
     },
     async (request, reply) => {
-    const member = request.member;
-    if (!member || !(await hasClubLeagueAdministratorAccess(member))) {
-      return reply.code(403).send({ error: 'Forbidden' });
-    }
+      const member = request.member;
+      if (!member || !(await hasClubLeagueAdministratorAccess(member))) {
+        return reply.code(403).send({ error: 'Forbidden' });
+      }
 
-    const { id } = request.params as { id: string };
-    const sheetId = parseInt(id, 10);
-    const body = sheetUpdateSchema.parse(request.body);
-    const { db, schema } = getDrizzleDb();
+      const { id } = request.params as { id: string };
+      const sheetId = parseInt(id, 10);
+      const body = sheetUpdateSchema.parse(request.body);
+      const { db, schema } = getDrizzleDb();
 
-    const updateData: Record<string, unknown> = {};
-    if (body.name !== undefined) updateData.name = body.name.trim();
-    if (body.sortOrder !== undefined) updateData.sort_order = body.sortOrder;
-    if (body.isActive !== undefined) updateData.is_active = body.isActive ? 1 : 0;
-    if (body.stoneColor1 !== undefined) updateData.stone_color_1 = body.stoneColor1;
-    if (body.stoneColor2 !== undefined) updateData.stone_color_2 = body.stoneColor2;
+      const updateData: Record<string, unknown> = {};
+      if (body.name !== undefined) updateData.name = body.name.trim();
+      if (body.sortOrder !== undefined) updateData.sort_order = body.sortOrder;
+      if (body.isActive !== undefined) updateData.is_active = body.isActive ? 1 : 0;
+      if (body.stoneColor1 !== undefined) updateData.stone_color_1 = body.stoneColor1;
+      if (body.stoneColor2 !== undefined) updateData.stone_color_2 = body.stoneColor2;
 
-    if (Object.keys(updateData).length === 0) {
-      return reply.code(400).send({ error: 'No updates provided' });
-    }
+      if (Object.keys(updateData).length === 0) {
+        return reply.code(400).send({ error: 'No updates provided' });
+      }
 
-    updateData.updated_at = sql`CURRENT_TIMESTAMP`;
-    await db.update(schema.sheets).set(updateData).where(eq(schema.sheets.id, sheetId));
+      updateData.updated_at = sql`CURRENT_TIMESTAMP`;
+      await db.update(schema.sheets).set(updateData).where(eq(schema.sheets.id, sheetId));
 
-    const sheets = await db.select().from(schema.sheets).where(eq(schema.sheets.id, sheetId)).limit(1);
-    if (sheets.length === 0) {
-      return reply.code(404).send({ error: 'Sheet not found' });
-    }
+      const sheets = await db
+        .select()
+        .from(schema.sheets)
+        .where(eq(schema.sheets.id, sheetId))
+        .limit(1);
+      if (sheets.length === 0) {
+        return reply.code(404).send({ error: 'Sheet not found' });
+      }
 
-    return mapSheetRow(sheets[0]);
+      return mapSheetRow(sheets[0]);
     }
   );
 
@@ -533,17 +537,17 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       },
     },
     async (request, reply) => {
-    const member = request.member;
-    if (!member || !(await hasClubLeagueAdministratorAccess(member))) {
-      return reply.code(403).send({ error: 'Forbidden' });
-    }
+      const member = request.member;
+      if (!member || !(await hasClubLeagueAdministratorAccess(member))) {
+        return reply.code(403).send({ error: 'Forbidden' });
+      }
 
-    const { id } = request.params as { id: string };
-    const sheetId = parseInt(id, 10);
-    const { db, schema } = getDrizzleDb();
+      const { id } = request.params as { id: string };
+      const sheetId = parseInt(id, 10);
+      const { db, schema } = getDrizzleDb();
 
-    await db.delete(schema.sheets).where(eq(schema.sheets.id, sheetId));
-    return { success: true };
+      await db.delete(schema.sheets).where(eq(schema.sheets.id, sheetId));
+      return { success: true };
     }
   );
 
@@ -560,28 +564,28 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       },
     },
     async (request, reply) => {
-    const member = request.member;
-    if (!member) {
-      return reply.code(401).send({ error: 'Unauthorized' });
-    }
+      const member = request.member;
+      if (!member) {
+        return reply.code(401).send({ error: 'Unauthorized' });
+      }
 
-    const { id } = request.params as { id: string };
-    const leagueId = parseInt(id, 10);
-    const { db, schema } = getDrizzleDb();
+      const { id } = request.params as { id: string };
+      const leagueId = parseInt(id, 10);
+      const { db, schema } = getDrizzleDb();
 
-    const divisions = await db
-      .select()
-      .from(schema.leagueDivisions)
-      .where(eq(schema.leagueDivisions.league_id, leagueId))
-      .orderBy(schema.leagueDivisions.name);
+      const divisions = await db
+        .select()
+        .from(schema.leagueDivisions)
+        .where(eq(schema.leagueDivisions.league_id, leagueId))
+        .orderBy(schema.leagueDivisions.name);
 
-    return divisions.map((division: DivisionRow) => ({
-      id: division.id,
-      leagueId: division.league_id,
-      name: division.name,
-      sortOrder: division.sort_order,
-      isDefault: division.is_default === 1,
-    }));
+      return divisions.map((division: DivisionRow) => ({
+        id: division.id,
+        leagueId: division.league_id,
+        name: division.name,
+        sortOrder: division.sort_order,
+        isDefault: division.is_default === 1,
+      }));
     }
   );
 
@@ -598,35 +602,35 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       },
     },
     async (request, reply) => {
-    const member = request.member;
-    const { id } = request.params as { id: string };
-    const leagueId = parseInt(id, 10);
+      const member = request.member;
+      const { id } = request.params as { id: string };
+      const leagueId = parseInt(id, 10);
 
-    if (!member || !(await hasLeagueSetupAccess(member, leagueId))) {
-      return reply.code(403).send({ error: 'Forbidden' });
-    }
+      if (!member || !(await hasLeagueSetupAccess(member, leagueId))) {
+        return reply.code(403).send({ error: 'Forbidden' });
+      }
 
-    const body = divisionCreateSchema.parse(request.body);
-    const { db, schema } = getDrizzleDb();
+      const body = divisionCreateSchema.parse(request.body);
+      const { db, schema } = getDrizzleDb();
 
-    const result = await db
-      .insert(schema.leagueDivisions)
-      .values({
-        league_id: leagueId,
-        name: body.name.trim(),
-        sort_order: 0,
-        is_default: 0,
-      })
-      .returning();
-    const division = result[0];
+      const result = await db
+        .insert(schema.leagueDivisions)
+        .values({
+          league_id: leagueId,
+          name: body.name.trim(),
+          sort_order: 0,
+          is_default: 0,
+        })
+        .returning();
+      const division = result[0];
 
-    return {
-      id: division.id,
-      leagueId: division.league_id,
-      name: division.name,
-      sortOrder: division.sort_order,
-      isDefault: division.is_default === 1,
-    };
+      return {
+        id: division.id,
+        leagueId: division.league_id,
+        name: division.name,
+        sortOrder: division.sort_order,
+        isDefault: division.is_default === 1,
+      };
     }
   );
 
@@ -643,66 +647,69 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       },
     },
     async (request, reply) => {
-    const member = request.member;
-    const { leagueId: leagueIdRaw, divisionId: divisionIdRaw } = request.params as {
-      leagueId: string;
-      divisionId: string;
-    };
-    const leagueId = parseInt(leagueIdRaw, 10);
-    const divisionId = parseInt(divisionIdRaw, 10);
+      const member = request.member;
+      const { leagueId: leagueIdRaw, divisionId: divisionIdRaw } = request.params as {
+        leagueId: string;
+        divisionId: string;
+      };
+      const leagueId = parseInt(leagueIdRaw, 10);
+      const divisionId = parseInt(divisionIdRaw, 10);
 
-    if (!member || !(await hasLeagueSetupAccess(member, leagueId))) {
-      return reply.code(403).send({ error: 'Forbidden' });
-    }
+      if (!member || !(await hasLeagueSetupAccess(member, leagueId))) {
+        return reply.code(403).send({ error: 'Forbidden' });
+      }
 
-    const body = divisionUpdateSchema.parse(request.body);
-    const { db, schema } = getDrizzleDb();
+      const body = divisionUpdateSchema.parse(request.body);
+      const { db, schema } = getDrizzleDb();
 
-    const divisions = await db
-      .select()
-      .from(schema.leagueDivisions)
-      .where(eq(schema.leagueDivisions.id, divisionId))
-      .limit(1);
+      const divisions = await db
+        .select()
+        .from(schema.leagueDivisions)
+        .where(eq(schema.leagueDivisions.id, divisionId))
+        .limit(1);
 
-    const division = divisions[0];
-    if (!division || division.league_id !== leagueId) {
-      return reply.code(404).send({ error: 'Division not found' });
-    }
+      const division = divisions[0];
+      if (!division || division.league_id !== leagueId) {
+        return reply.code(404).send({ error: 'Division not found' });
+      }
 
-    const divisionCount = await db
-      .select({ count: sql<number>`COUNT(*)` })
-      .from(schema.leagueDivisions)
-      .where(eq(schema.leagueDivisions.league_id, leagueId));
+      const divisionCount = await db
+        .select({ count: sql<number>`COUNT(*)` })
+        .from(schema.leagueDivisions)
+        .where(eq(schema.leagueDivisions.league_id, leagueId));
 
-    if (Number(divisionCount[0]?.count || 0) <= 1) {
-      return reply.code(400).send({ error: 'A league must have at least one division.' });
-    }
+      if (Number(divisionCount[0]?.count || 0) <= 1) {
+        return reply.code(400).send({ error: 'A league must have at least one division.' });
+      }
 
-    const updateData: Record<string, unknown> = {};
-    if (body.name !== undefined) updateData.name = body.name.trim();
-    if (body.sortOrder !== undefined) updateData.sort_order = body.sortOrder;
+      const updateData: Record<string, unknown> = {};
+      if (body.name !== undefined) updateData.name = body.name.trim();
+      if (body.sortOrder !== undefined) updateData.sort_order = body.sortOrder;
 
-    if (Object.keys(updateData).length === 0) {
-      return reply.code(400).send({ error: 'No updates provided' });
-    }
+      if (Object.keys(updateData).length === 0) {
+        return reply.code(400).send({ error: 'No updates provided' });
+      }
 
-    updateData.updated_at = sql`CURRENT_TIMESTAMP`;
-    await db.update(schema.leagueDivisions).set(updateData).where(eq(schema.leagueDivisions.id, divisionId));
+      updateData.updated_at = sql`CURRENT_TIMESTAMP`;
+      await db
+        .update(schema.leagueDivisions)
+        .set(updateData)
+        .where(eq(schema.leagueDivisions.id, divisionId));
 
-    const updated = await db
-      .select()
-      .from(schema.leagueDivisions)
-      .where(eq(schema.leagueDivisions.id, divisionId))
-      .limit(1);
+      const updated = await db
+        .select()
+        .from(schema.leagueDivisions)
+        .where(eq(schema.leagueDivisions.id, divisionId))
+        .limit(1);
 
-    const updatedDivision = updated[0];
-    return {
-      id: updatedDivision.id,
-      leagueId: updatedDivision.league_id,
-      name: updatedDivision.name,
-      sortOrder: updatedDivision.sort_order,
-      isDefault: updatedDivision.is_default === 1,
-    };
+      const updatedDivision = updated[0];
+      return {
+        id: updatedDivision.id,
+        leagueId: updatedDivision.league_id,
+        name: updatedDivision.name,
+        sortOrder: updatedDivision.sort_order,
+        isDefault: updatedDivision.is_default === 1,
+      };
     }
   );
 
@@ -718,44 +725,44 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       },
     },
     async (request, reply) => {
-    const member = request.member;
-    const { leagueId: leagueIdRaw, divisionId: divisionIdRaw } = request.params as {
-      leagueId: string;
-      divisionId: string;
-    };
-    const leagueId = parseInt(leagueIdRaw, 10);
-    const divisionId = parseInt(divisionIdRaw, 10);
+      const member = request.member;
+      const { leagueId: leagueIdRaw, divisionId: divisionIdRaw } = request.params as {
+        leagueId: string;
+        divisionId: string;
+      };
+      const leagueId = parseInt(leagueIdRaw, 10);
+      const divisionId = parseInt(divisionIdRaw, 10);
 
-    if (!member || !(await hasLeagueSetupAccess(member, leagueId))) {
-      return reply.code(403).send({ error: 'Forbidden' });
-    }
+      if (!member || !(await hasLeagueSetupAccess(member, leagueId))) {
+        return reply.code(403).send({ error: 'Forbidden' });
+      }
 
-    const { db, schema } = getDrizzleDb();
+      const { db, schema } = getDrizzleDb();
 
-    const divisions = await db
-      .select()
-      .from(schema.leagueDivisions)
-      .where(eq(schema.leagueDivisions.id, divisionId))
-      .limit(1);
+      const divisions = await db
+        .select()
+        .from(schema.leagueDivisions)
+        .where(eq(schema.leagueDivisions.id, divisionId))
+        .limit(1);
 
-    const division = divisions[0];
-    if (!division || division.league_id !== leagueId) {
-      return reply.code(404).send({ error: 'Division not found' });
-    }
+      const division = divisions[0];
+      if (!division || division.league_id !== leagueId) {
+        return reply.code(404).send({ error: 'Division not found' });
+      }
 
-    const teams = await db
-      .select({ id: schema.leagueTeams.id })
-      .from(schema.leagueTeams)
-      .where(eq(schema.leagueTeams.division_id, divisionId))
-      .limit(1);
+      const teams = await db
+        .select({ id: schema.leagueTeams.id })
+        .from(schema.leagueTeams)
+        .where(eq(schema.leagueTeams.division_id, divisionId))
+        .limit(1);
 
-    if (teams.length > 0) {
-      return reply.code(400).send({ error: 'Cannot delete a division with teams.' });
-    }
+      if (teams.length > 0) {
+        return reply.code(400).send({ error: 'Cannot delete a division with teams.' });
+      }
 
-    await db.delete(schema.leagueDivisions).where(eq(schema.leagueDivisions.id, divisionId));
+      await db.delete(schema.leagueDivisions).where(eq(schema.leagueDivisions.id, divisionId));
 
-    return { success: true };
+      return { success: true };
     }
   );
 
@@ -772,56 +779,63 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       },
     },
     async (request, reply) => {
-    const member = request.member;
-    const { id } = request.params as { id: string };
-    const leagueId = parseInt(id, 10);
+      const member = request.member;
+      const { id } = request.params as { id: string };
+      const leagueId = parseInt(id, 10);
 
-    if (!member) {
-      return reply.code(401).send({ error: 'Unauthorized' });
-    }
+      if (!member) {
+        return reply.code(401).send({ error: 'Unauthorized' });
+      }
 
-    const { db, schema } = getDrizzleDb();
-    const rosterRows = (await db
-      .select({
-        member_id: schema.leagueRoster.member_id,
-        name: schema.members.name,
-        email: schema.members.email,
-      })
-      .from(schema.leagueRoster)
-      .innerJoin(schema.members, eq(schema.leagueRoster.member_id, schema.members.id))
-      .where(eq(schema.leagueRoster.league_id, leagueId))
-      .orderBy(schema.members.name)) as { member_id: number; name: string; email: string | null }[];
+      const { db, schema } = getDrizzleDb();
+      const rosterRows = (await db
+        .select({
+          member_id: schema.leagueRoster.member_id,
+          name: schema.members.name,
+          email: schema.members.email,
+        })
+        .from(schema.leagueRoster)
+        .innerJoin(schema.members, eq(schema.leagueRoster.member_id, schema.members.id))
+        .where(eq(schema.leagueRoster.league_id, leagueId))
+        .orderBy(schema.members.name)) as {
+        member_id: number;
+        name: string;
+        email: string | null;
+      }[];
 
-    const rosterMemberIds = rosterRows.map((row) => row.member_id);
-    const assignments = rosterMemberIds.length
-      ? ((await db
-          .select({
-            member_id: schema.teamMembers.member_id,
-            team_id: schema.leagueTeams.id,
-            team_name: schema.leagueTeams.name,
-          })
-          .from(schema.teamMembers)
-          .innerJoin(schema.leagueTeams, eq(schema.teamMembers.team_id, schema.leagueTeams.id))
-          .where(
-            and(eq(schema.leagueTeams.league_id, leagueId), inArray(schema.teamMembers.member_id, rosterMemberIds))
-          )) as { member_id: number; team_id: number; team_name: string | null }[])
-      : [];
+      const rosterMemberIds = rosterRows.map((row) => row.member_id);
+      const assignments = rosterMemberIds.length
+        ? ((await db
+            .select({
+              member_id: schema.teamMembers.member_id,
+              team_id: schema.leagueTeams.id,
+              team_name: schema.leagueTeams.name,
+            })
+            .from(schema.teamMembers)
+            .innerJoin(schema.leagueTeams, eq(schema.teamMembers.team_id, schema.leagueTeams.id))
+            .where(
+              and(
+                eq(schema.leagueTeams.league_id, leagueId),
+                inArray(schema.teamMembers.member_id, rosterMemberIds)
+              )
+            )) as { member_id: number; team_id: number; team_name: string | null }[])
+        : [];
 
-    const assignmentMap = new Map<number, { teamId: number; teamName: string | null }>();
-    for (const entry of assignments) {
-      assignmentMap.set(entry.member_id, { teamId: entry.team_id, teamName: entry.team_name });
-    }
+      const assignmentMap = new Map<number, { teamId: number; teamName: string | null }>();
+      for (const entry of assignments) {
+        assignmentMap.set(entry.member_id, { teamId: entry.team_id, teamName: entry.team_name });
+      }
 
-    return rosterRows.map((row) => {
-      const assignment = assignmentMap.get(row.member_id);
-      return {
-        memberId: row.member_id,
-        name: row.name,
-        email: row.email,
-        assignedTeamId: assignment?.teamId ?? null,
-        assignedTeamName: assignment?.teamName ?? null,
-      };
-    });
+      return rosterRows.map((row) => {
+        const assignment = assignmentMap.get(row.member_id);
+        return {
+          memberId: row.member_id,
+          name: row.name,
+          email: row.email,
+          assignedTeamId: assignment?.teamId ?? null,
+          assignedTeamName: assignment?.teamName ?? null,
+        };
+      });
     }
   );
 
@@ -837,43 +851,49 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       },
     },
     async (request, reply) => {
-    const member = request.member;
-    const { id } = request.params as { id: string };
-    const leagueId = parseInt(id, 10);
+      const member = request.member;
+      const { id } = request.params as { id: string };
+      const leagueId = parseInt(id, 10);
 
-    if (!member || !(await hasLeagueSetupAccess(member, leagueId))) {
-      return reply.code(403).send({ error: 'Forbidden' });
-    }
+      if (!member || !(await hasLeagueSetupAccess(member, leagueId))) {
+        return reply.code(403).send({ error: 'Forbidden' });
+      }
 
-    const { db, schema } = getDrizzleDb();
-    const assignedRows = (await db
-      .select({ member_id: schema.teamMembers.member_id })
-      .from(schema.teamMembers)
-      .innerJoin(schema.leagueTeams, eq(schema.teamMembers.team_id, schema.leagueTeams.id))
-      .where(eq(schema.leagueTeams.league_id, leagueId))) as { member_id: number }[];
+      const { db, schema } = getDrizzleDb();
+      const assignedRows = (await db
+        .select({ member_id: schema.teamMembers.member_id })
+        .from(schema.teamMembers)
+        .innerJoin(schema.leagueTeams, eq(schema.teamMembers.team_id, schema.leagueTeams.id))
+        .where(eq(schema.leagueTeams.league_id, leagueId))) as { member_id: number }[];
 
-    const assignedIds = assignedRows.map((row) => row.member_id);
-    const rosterRows = (await db
-      .select({
-        member_id: schema.leagueRoster.member_id,
-        name: schema.members.name,
-        email: schema.members.email,
-      })
-      .from(schema.leagueRoster)
-      .innerJoin(schema.members, eq(schema.leagueRoster.member_id, schema.members.id))
-      .where(
-        and(
-          eq(schema.leagueRoster.league_id, leagueId),
-          assignedIds.length > 0 ? notInArray(schema.leagueRoster.member_id, assignedIds) : sql`1=1`
+      const assignedIds = assignedRows.map((row) => row.member_id);
+      const rosterRows = (await db
+        .select({
+          member_id: schema.leagueRoster.member_id,
+          name: schema.members.name,
+          email: schema.members.email,
+        })
+        .from(schema.leagueRoster)
+        .innerJoin(schema.members, eq(schema.leagueRoster.member_id, schema.members.id))
+        .where(
+          and(
+            eq(schema.leagueRoster.league_id, leagueId),
+            assignedIds.length > 0
+              ? notInArray(schema.leagueRoster.member_id, assignedIds)
+              : sql`1=1`
+          )
         )
-      )
-      .orderBy(schema.members.name)) as { member_id: number; name: string; email: string | null }[];
+        .orderBy(schema.members.name)) as {
+        member_id: number;
+        name: string;
+        email: string | null;
+      }[];
 
-    return rosterRows.map((row) => ({
-      memberId: row.member_id,
-      name: row.name,
-      email: row.email,
-    }));
+      return rosterRows.map((row) => ({
+        memberId: row.member_id,
+        name: row.name,
+        email: row.email,
+      }));
     }
   );
 
@@ -890,35 +910,65 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       },
     },
     async (request, reply) => {
-    const member = request.member;
-    const { id } = request.params as { id: string };
-    const leagueId = parseInt(id, 10);
-    const { query, rosterOnly } = rosterSearchQuerySchema.parse(request.query ?? {});
+      const member = request.member;
+      const { id } = request.params as { id: string };
+      const leagueId = parseInt(id, 10);
+      const { query, rosterOnly } = rosterSearchQuerySchema.parse(request.query ?? {});
 
-    if (!member) {
-      return reply.code(401).send({ error: 'Unauthorized' });
-    }
+      if (!member) {
+        return reply.code(401).send({ error: 'Unauthorized' });
+      }
 
-    if (rosterOnly) {
-      if (!(await hasLeagueSetupAccess(member, leagueId))) {
+      if (rosterOnly) {
+        if (!(await hasLeagueSetupAccess(member, leagueId))) {
+          return reply.code(403).send({ error: 'Forbidden' });
+        }
+      } else if (!(await hasLeagueAdministratorAccess(member, leagueId))) {
         return reply.code(403).send({ error: 'Forbidden' });
       }
-    } else if (!(await hasLeagueAdministratorAccess(member, leagueId))) {
-      return reply.code(403).send({ error: 'Forbidden' });
-    }
 
-    const search = `%${query.toLowerCase()}%`;
-    const { db, schema } = getDrizzleDb();
-    const today = todayDateString();
+      const search = `%${query.toLowerCase()}%`;
+      const { db, schema } = getDrizzleDb();
+      const today = todayDateString();
 
-    if (rosterOnly) {
+      if (rosterOnly) {
+        const rows = (await db
+          .select({ id: schema.members.id, name: schema.members.name, email: schema.members.email })
+          .from(schema.leagueRoster)
+          .innerJoin(schema.members, eq(schema.leagueRoster.member_id, schema.members.id))
+          .where(
+            and(
+              eq(schema.leagueRoster.league_id, leagueId),
+              memberIsNotSocialCondition(schema, today),
+              memberHasActiveMembershipCondition(schema, today),
+              or(
+                sql`LOWER(${schema.members.name}) LIKE ${search}`,
+                sql`LOWER(COALESCE(${schema.members.email}, '')) LIKE ${search}`
+              )
+            )
+          )
+          .orderBy(schema.members.name, desc(schema.members.id))
+          .limit(20)) as { id: number; name: string; email: string | null }[];
+
+        return rows.map((row) => ({
+          id: row.id,
+          name: row.name,
+          email: row.email,
+        }));
+      }
+
+      const rosterIds = (await db
+        .select({ member_id: schema.leagueRoster.member_id })
+        .from(schema.leagueRoster)
+        .where(eq(schema.leagueRoster.league_id, leagueId))) as { member_id: number }[];
+
+      const rosterIdSet = rosterIds.map((row) => row.member_id);
       const rows = (await db
         .select({ id: schema.members.id, name: schema.members.name, email: schema.members.email })
-        .from(schema.leagueRoster)
-        .innerJoin(schema.members, eq(schema.leagueRoster.member_id, schema.members.id))
+        .from(schema.members)
         .where(
           and(
-            eq(schema.leagueRoster.league_id, leagueId),
+            rosterIdSet.length > 0 ? notInArray(schema.members.id, rosterIdSet) : sql`1=1`,
             memberIsNotSocialCondition(schema, today),
             memberHasActiveMembershipCondition(schema, today),
             or(
@@ -936,36 +986,6 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
         email: row.email,
       }));
     }
-
-    const rosterIds = (await db
-      .select({ member_id: schema.leagueRoster.member_id })
-      .from(schema.leagueRoster)
-      .where(eq(schema.leagueRoster.league_id, leagueId))) as { member_id: number }[];
-
-    const rosterIdSet = rosterIds.map((row) => row.member_id);
-    const rows = (await db
-      .select({ id: schema.members.id, name: schema.members.name, email: schema.members.email })
-      .from(schema.members)
-      .where(
-        and(
-          rosterIdSet.length > 0 ? notInArray(schema.members.id, rosterIdSet) : sql`1=1`,
-          memberIsNotSocialCondition(schema, today),
-          memberHasActiveMembershipCondition(schema, today),
-          or(
-            sql`LOWER(${schema.members.name}) LIKE ${search}`,
-            sql`LOWER(COALESCE(${schema.members.email}, '')) LIKE ${search}`
-          )
-        )
-      )
-      .orderBy(schema.members.name, desc(schema.members.id))
-      .limit(20)) as { id: number; name: string; email: string | null }[];
-
-    return rows.map((row) => ({
-      id: row.id,
-      name: row.name,
-      email: row.email,
-    }));
-    }
   );
 
   fastify.post<{ Reply: ApiReply<unknown> }>(
@@ -981,54 +1001,61 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       },
     },
     async (request, reply) => {
-    const member = request.member;
-    const { id } = request.params as { id: string };
-    const leagueId = parseInt(id, 10);
+      const member = request.member;
+      const { id } = request.params as { id: string };
+      const leagueId = parseInt(id, 10);
 
-    if (!member || !(await hasLeagueAdministratorAccess(member, leagueId))) {
-      return reply.code(403).send({ error: 'Forbidden' });
-    }
+      if (!member || !(await hasLeagueAdministratorAccess(member, leagueId))) {
+        return reply.code(403).send({ error: 'Forbidden' });
+      }
 
-    const body = rosterAddSchema.parse(request.body);
-    const { db, schema } = getDrizzleDb();
+      const body = rosterAddSchema.parse(request.body);
+      const { db, schema } = getDrizzleDb();
 
-    const existing = await db
-      .select({ id: schema.leagueRoster.id })
-      .from(schema.leagueRoster)
-      .where(and(eq(schema.leagueRoster.league_id, leagueId), eq(schema.leagueRoster.member_id, body.memberId)))
-      .limit(1);
+      const existing = await db
+        .select({ id: schema.leagueRoster.id })
+        .from(schema.leagueRoster)
+        .where(
+          and(
+            eq(schema.leagueRoster.league_id, leagueId),
+            eq(schema.leagueRoster.member_id, body.memberId)
+          )
+        )
+        .limit(1);
 
-    if (existing.length > 0) {
-      return reply.code(409).send({ error: 'Member is already on the league roster.' });
-    }
+      if (existing.length > 0) {
+        return reply.code(409).send({ error: 'Member is already on the league roster.' });
+      }
 
-    const memberRows = await db
-      .select({ id: schema.members.id, lifetime_member: schema.members.lifetime_member })
-      .from(schema.members)
-      .where(eq(schema.members.id, body.memberId))
-      .limit(1);
+      const memberRows = await db
+        .select({ id: schema.members.id, lifetime_member: schema.members.lifetime_member })
+        .from(schema.members)
+        .where(eq(schema.members.id, body.memberId))
+        .limit(1);
 
-    if (memberRows.length === 0) {
-      return reply.code(404).send({ error: 'Member not found.' });
-    }
+      if (memberRows.length === 0) {
+        return reply.code(404).send({ error: 'Member not found.' });
+      }
 
-    const membershipStatus = await getMemberMembershipStatus(body.memberId, {
-      isLifetimeMember: (memberRows[0].lifetime_member ?? 0) === 1,
-    });
-    if (membershipStatus.isSocialMember) {
-      return reply.code(400).send({ error: 'Social members cannot be added to a league roster.' });
-    }
+      const membershipStatus = await getMemberMembershipStatus(body.memberId, {
+        isLifetimeMember: (memberRows[0].lifetime_member ?? 0) === 1,
+      });
+      if (membershipStatus.isSocialMember) {
+        return reply
+          .code(400)
+          .send({ error: 'Social members cannot be added to a league roster.' });
+      }
 
-    if (await isMemberExpired(db, schema, body.memberId)) {
-      return reply.code(400).send({ error: 'Cannot add an expired member to the roster.' });
-    }
+      if (await isMemberExpired(db, schema, body.memberId)) {
+        return reply.code(400).send({ error: 'Cannot add an expired member to the roster.' });
+      }
 
-    const result = await db
-      .insert(schema.leagueRoster)
-      .values({ league_id: leagueId, member_id: body.memberId })
-      .returning();
+      const result = await db
+        .insert(schema.leagueRoster)
+        .values({ league_id: leagueId, member_id: body.memberId })
+        .returning();
 
-    return { id: result[0].id, leagueId, memberId: body.memberId };
+      return { id: result[0].id, leagueId, memberId: body.memberId };
     }
   );
 
@@ -1045,117 +1072,134 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       },
     },
     async (request, reply) => {
-    const member = request.member;
-    const { id } = request.params as { id: string };
-    const leagueId = parseInt(id, 10);
+      const member = request.member;
+      const { id } = request.params as { id: string };
+      const leagueId = parseInt(id, 10);
 
-    if (!member || !(await hasLeagueAdministratorAccess(member, leagueId))) {
-      return reply.code(403).send({ error: 'Forbidden' });
-    }
-
-    const body = rosterBulkAddSchema.parse(request.body);
-    const rawNames = body.names.map((name) => name.trim()).filter(Boolean);
-    if (rawNames.length === 0) {
-      return reply.code(400).send({ error: 'No names provided.' });
-    }
-
-    const normalizedNames = rawNames.map((name) => name.toLowerCase());
-    const uniqueNormalized = Array.from(new Set(normalizedNames));
-    const { db, schema } = getDrizzleDb();
-    const today = todayDateString();
-
-    const lowerName = sql<string>`LOWER(${schema.members.name})`;
-    const exactRows = (await db
-      .select({ id: schema.members.id, name: schema.members.name, email: schema.members.email, lowerName })
-      .from(schema.members)
-      .where(
-        and(
-          memberHasActiveMembershipCondition(schema, today),
-          memberIsNotSocialCondition(schema, today),
-          inArray(lowerName, uniqueNormalized)
-        )
-      )
-      .orderBy(schema.members.name)) as {
-      id: number;
-      name: string;
-      email: string | null;
-      lowerName: string;
-    }[];
-
-    const exactMap = new Map<string, { id: number; name: string; email: string | null }[]>();
-    for (const row of exactRows) {
-      const list = exactMap.get(row.lowerName) ?? [];
-      list.push({ id: row.id, name: row.name, email: row.email });
-      exactMap.set(row.lowerName, list);
-    }
-
-    const unmatched: { name: string; candidates: { id: number; name: string; email: string | null }[] }[] = [];
-    const matchedIds: number[] = [];
-    const matchedNames: string[] = [];
-
-    rawNames.forEach((name, index) => {
-      const normalized = normalizedNames[index];
-      const matches = exactMap.get(normalized) ?? [];
-      if (matches.length === 1) {
-        matchedIds.push(matches[0].id);
-        matchedNames.push(name);
-      } else {
-        unmatched.push({ name, candidates: matches });
+      if (!member || !(await hasLeagueAdministratorAccess(member, leagueId))) {
+        return reply.code(403).send({ error: 'Forbidden' });
       }
-    });
 
-    const uniqueMatchedIds = Array.from(new Set(matchedIds));
-    const existingRows = uniqueMatchedIds.length
-      ? ((await db
-          .select({ member_id: schema.leagueRoster.member_id })
-          .from(schema.leagueRoster)
-          .where(and(eq(schema.leagueRoster.league_id, leagueId), inArray(schema.leagueRoster.member_id, uniqueMatchedIds)))) as {
-          member_id: number;
-        }[])
-      : [];
-    const existingIds = new Set(existingRows.map((row) => row.member_id));
-
-    const toInsert = uniqueMatchedIds.filter((id) => !existingIds.has(id));
-    if (toInsert.length > 0) {
-      for (const memberId of toInsert) {
-        if (await isMemberExpired(db, schema, memberId, today)) {
-          return reply.code(400).send({ error: 'One or more matched members are expired and cannot be added to the roster.' });
-        }
+      const body = rosterBulkAddSchema.parse(request.body);
+      const rawNames = body.names.map((name) => name.trim()).filter(Boolean);
+      if (rawNames.length === 0) {
+        return reply.code(400).send({ error: 'No names provided.' });
       }
-      await db
-        .insert(schema.leagueRoster)
-        .values(toInsert.map((memberId) => ({ league_id: leagueId, member_id: memberId })))
-        .onConflictDoNothing();
-    }
 
-    for (const entry of unmatched) {
-      if (entry.candidates.length > 0) continue;
-      const search = `%${entry.name.toLowerCase()}%`;
-      const suggestions = (await db
-        .select({ id: schema.members.id, name: schema.members.name, email: schema.members.email })
+      const normalizedNames = rawNames.map((name) => name.toLowerCase());
+      const uniqueNormalized = Array.from(new Set(normalizedNames));
+      const { db, schema } = getDrizzleDb();
+      const today = todayDateString();
+
+      const lowerName = sql<string>`LOWER(${schema.members.name})`;
+      const exactRows = (await db
+        .select({
+          id: schema.members.id,
+          name: schema.members.name,
+          email: schema.members.email,
+          lowerName,
+        })
         .from(schema.members)
         .where(
           and(
             memberHasActiveMembershipCondition(schema, today),
             memberIsNotSocialCondition(schema, today),
-            or(
-              sql`LOWER(${schema.members.name}) LIKE ${search}`,
-              sql`LOWER(COALESCE(${schema.members.email}, '')) LIKE ${search}`
-            )
+            inArray(lowerName, uniqueNormalized)
           )
         )
-        .orderBy(schema.members.name)
-        .limit(5)) as { id: number; name: string; email: string | null }[];
-      entry.candidates = suggestions;
-    }
+        .orderBy(schema.members.name)) as {
+        id: number;
+        name: string;
+        email: string | null;
+        lowerName: string;
+      }[];
 
-    return {
-      addedCount: toInsert.length,
-      alreadyOnRosterCount: existingIds.size,
-      matchedCount: uniqueMatchedIds.length,
-      matchedNames,
-      unmatched,
-    };
+      const exactMap = new Map<string, { id: number; name: string; email: string | null }[]>();
+      for (const row of exactRows) {
+        const list = exactMap.get(row.lowerName) ?? [];
+        list.push({ id: row.id, name: row.name, email: row.email });
+        exactMap.set(row.lowerName, list);
+      }
+
+      const unmatched: {
+        name: string;
+        candidates: { id: number; name: string; email: string | null }[];
+      }[] = [];
+      const matchedIds: number[] = [];
+      const matchedNames: string[] = [];
+
+      rawNames.forEach((name, index) => {
+        const normalized = normalizedNames[index];
+        const matches = exactMap.get(normalized) ?? [];
+        if (matches.length === 1) {
+          matchedIds.push(matches[0].id);
+          matchedNames.push(name);
+        } else {
+          unmatched.push({ name, candidates: matches });
+        }
+      });
+
+      const uniqueMatchedIds = Array.from(new Set(matchedIds));
+      const existingRows = uniqueMatchedIds.length
+        ? ((await db
+            .select({ member_id: schema.leagueRoster.member_id })
+            .from(schema.leagueRoster)
+            .where(
+              and(
+                eq(schema.leagueRoster.league_id, leagueId),
+                inArray(schema.leagueRoster.member_id, uniqueMatchedIds)
+              )
+            )) as {
+            member_id: number;
+          }[])
+        : [];
+      const existingIds = new Set(existingRows.map((row) => row.member_id));
+
+      const toInsert = uniqueMatchedIds.filter((id) => !existingIds.has(id));
+      if (toInsert.length > 0) {
+        for (const memberId of toInsert) {
+          if (await isMemberExpired(db, schema, memberId, today)) {
+            return reply
+              .code(400)
+              .send({
+                error: 'One or more matched members are expired and cannot be added to the roster.',
+              });
+          }
+        }
+        await db
+          .insert(schema.leagueRoster)
+          .values(toInsert.map((memberId) => ({ league_id: leagueId, member_id: memberId })))
+          .onConflictDoNothing();
+      }
+
+      for (const entry of unmatched) {
+        if (entry.candidates.length > 0) continue;
+        const search = `%${entry.name.toLowerCase()}%`;
+        const suggestions = (await db
+          .select({ id: schema.members.id, name: schema.members.name, email: schema.members.email })
+          .from(schema.members)
+          .where(
+            and(
+              memberHasActiveMembershipCondition(schema, today),
+              memberIsNotSocialCondition(schema, today),
+              or(
+                sql`LOWER(${schema.members.name}) LIKE ${search}`,
+                sql`LOWER(COALESCE(${schema.members.email}, '')) LIKE ${search}`
+              )
+            )
+          )
+          .orderBy(schema.members.name)
+          .limit(5)) as { id: number; name: string; email: string | null }[];
+        entry.candidates = suggestions;
+      }
+
+      return {
+        addedCount: toInsert.length,
+        alreadyOnRosterCount: existingIds.size,
+        matchedCount: uniqueMatchedIds.length,
+        matchedNames,
+        unmatched,
+      };
     }
   );
 
@@ -1171,38 +1215,46 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       },
     },
     async (request, reply) => {
-    const member = request.member;
-    const { id, memberId } = request.params as { id: string; memberId: string };
-    const leagueId = parseInt(id, 10);
-    const memberIdNum = parseInt(memberId, 10);
+      const member = request.member;
+      const { id, memberId } = request.params as { id: string; memberId: string };
+      const leagueId = parseInt(id, 10);
+      const memberIdNum = parseInt(memberId, 10);
 
-    if (!member || !(await hasLeagueAdministratorAccess(member, leagueId))) {
-      return reply.code(403).send({ error: 'Forbidden' });
-    }
+      if (!member || !(await hasLeagueAdministratorAccess(member, leagueId))) {
+        return reply.code(403).send({ error: 'Forbidden' });
+      }
 
-    const { db, schema } = getDrizzleDb();
-    const assignments = await db
-      .select({ id: schema.teamMembers.id })
-      .from(schema.teamMembers)
-      .innerJoin(schema.leagueTeams, eq(schema.teamMembers.team_id, schema.leagueTeams.id))
-      .where(
-        and(eq(schema.leagueTeams.league_id, leagueId), eq(schema.teamMembers.member_id, memberIdNum))
-      )
-      .limit(1);
+      const { db, schema } = getDrizzleDb();
+      const assignments = await db
+        .select({ id: schema.teamMembers.id })
+        .from(schema.teamMembers)
+        .innerJoin(schema.leagueTeams, eq(schema.teamMembers.team_id, schema.leagueTeams.id))
+        .where(
+          and(
+            eq(schema.leagueTeams.league_id, leagueId),
+            eq(schema.teamMembers.member_id, memberIdNum)
+          )
+        )
+        .limit(1);
 
-    if (assignments.length > 0) {
-      return reply.code(400).send({ error: 'Member is assigned to a team in this league.' });
-    }
+      if (assignments.length > 0) {
+        return reply.code(400).send({ error: 'Member is assigned to a team in this league.' });
+      }
 
-    const result = await db
-      .delete(schema.leagueRoster)
-      .where(and(eq(schema.leagueRoster.league_id, leagueId), eq(schema.leagueRoster.member_id, memberIdNum)));
+      const result = await db
+        .delete(schema.leagueRoster)
+        .where(
+          and(
+            eq(schema.leagueRoster.league_id, leagueId),
+            eq(schema.leagueRoster.member_id, memberIdNum)
+          )
+        );
 
-    if (getAffectedRows(result) === 0) {
-      return reply.code(404).send({ error: 'Roster member not found.' });
-    }
+      if (getAffectedRows(result) === 0) {
+        return reply.code(404).send({ error: 'Roster member not found.' });
+      }
 
-    return { success: true };
+      return { success: true };
     }
   );
 
@@ -1219,36 +1271,40 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       },
     },
     async (request, reply) => {
-    const member = request.member;
-    const { id } = request.params as { id: string };
-    const leagueId = parseInt(id, 10);
+      const member = request.member;
+      const { id } = request.params as { id: string };
+      const leagueId = parseInt(id, 10);
 
-    if (!member) {
-      return reply.code(401).send({ error: 'Unauthorized' });
-    }
+      if (!member) {
+        return reply.code(401).send({ error: 'Unauthorized' });
+      }
 
-    const { db, schema } = getDrizzleDb();
-    const rows = (await db
-      .select({
-        member_id: schema.leagueMemberRoles.member_id,
-        name: schema.members.name,
-        email: schema.members.email,
-      })
-      .from(schema.leagueMemberRoles)
-      .innerJoin(schema.members, eq(schema.leagueMemberRoles.member_id, schema.members.id))
-      .where(
-        and(
-          eq(schema.leagueMemberRoles.league_id, leagueId),
-          eq(schema.leagueMemberRoles.role, 'league_manager')
+      const { db, schema } = getDrizzleDb();
+      const rows = (await db
+        .select({
+          member_id: schema.leagueMemberRoles.member_id,
+          name: schema.members.name,
+          email: schema.members.email,
+        })
+        .from(schema.leagueMemberRoles)
+        .innerJoin(schema.members, eq(schema.leagueMemberRoles.member_id, schema.members.id))
+        .where(
+          and(
+            eq(schema.leagueMemberRoles.league_id, leagueId),
+            eq(schema.leagueMemberRoles.role, 'league_manager')
+          )
         )
-      )
-      .orderBy(schema.members.name)) as { member_id: number; name: string; email: string | null }[];
+        .orderBy(schema.members.name)) as {
+        member_id: number;
+        name: string;
+        email: string | null;
+      }[];
 
-    return rows.map((row: { member_id: number; name: string; email: string | null }) => ({
-      memberId: row.member_id,
-      name: row.name,
-      email: row.email,
-    }));
+      return rows.map((row: { member_id: number; name: string; email: string | null }) => ({
+        memberId: row.member_id,
+        name: row.name,
+        email: row.email,
+      }));
     }
   );
 
@@ -1265,50 +1321,50 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       },
     },
     async (request, reply) => {
-    const member = request.member;
-    const { id } = request.params as { id: string };
-    const leagueId = parseInt(id, 10);
-    const { query } = rosterSearchQuerySchema.parse(request.query ?? {});
+      const member = request.member;
+      const { id } = request.params as { id: string };
+      const leagueId = parseInt(id, 10);
+      const { query } = rosterSearchQuerySchema.parse(request.query ?? {});
 
-    if (!member || !(await hasLeagueSetupAccess(member, leagueId))) {
-      return reply.code(403).send({ error: 'Forbidden' });
-    }
+      if (!member || !(await hasLeagueSetupAccess(member, leagueId))) {
+        return reply.code(403).send({ error: 'Forbidden' });
+      }
 
-    const search = `%${query.toLowerCase()}%`;
-    const { db, schema } = getDrizzleDb();
-    const today = todayDateString();
-    const existingManagerRows = (await db
-      .select({ member_id: schema.leagueMemberRoles.member_id })
-      .from(schema.leagueMemberRoles)
-      .where(
-        and(
-          eq(schema.leagueMemberRoles.league_id, leagueId),
-          eq(schema.leagueMemberRoles.role, 'league_manager')
-        )
-      )) as { member_id: number }[];
+      const search = `%${query.toLowerCase()}%`;
+      const { db, schema } = getDrizzleDb();
+      const today = todayDateString();
+      const existingManagerRows = (await db
+        .select({ member_id: schema.leagueMemberRoles.member_id })
+        .from(schema.leagueMemberRoles)
+        .where(
+          and(
+            eq(schema.leagueMemberRoles.league_id, leagueId),
+            eq(schema.leagueMemberRoles.role, 'league_manager')
+          )
+        )) as { member_id: number }[];
 
-    const existingIds = existingManagerRows.map((row) => row.member_id);
-    const rows = (await db
-      .select({ id: schema.members.id, name: schema.members.name, email: schema.members.email })
-      .from(schema.members)
-      .where(
-        and(
-          existingIds.length > 0 ? notInArray(schema.members.id, existingIds) : sql`1=1`,
-          memberHasActiveMembershipCondition(schema, today),
-          or(
-            sql`LOWER(${schema.members.name}) LIKE ${search}`,
-            sql`LOWER(COALESCE(${schema.members.email}, '')) LIKE ${search}`
+      const existingIds = existingManagerRows.map((row) => row.member_id);
+      const rows = (await db
+        .select({ id: schema.members.id, name: schema.members.name, email: schema.members.email })
+        .from(schema.members)
+        .where(
+          and(
+            existingIds.length > 0 ? notInArray(schema.members.id, existingIds) : sql`1=1`,
+            memberHasActiveMembershipCondition(schema, today),
+            or(
+              sql`LOWER(${schema.members.name}) LIKE ${search}`,
+              sql`LOWER(COALESCE(${schema.members.email}, '')) LIKE ${search}`
+            )
           )
         )
-      )
-      .orderBy(schema.members.name, desc(schema.members.id))
-      .limit(20)) as { id: number; name: string; email: string | null }[];
+        .orderBy(schema.members.name, desc(schema.members.id))
+        .limit(20)) as { id: number; name: string; email: string | null }[];
 
-    return rows.map((row: { id: number; name: string; email: string | null }) => ({
-      id: row.id,
-      name: row.name,
-      email: row.email,
-    }));
+      return rows.map((row: { id: number; name: string; email: string | null }) => ({
+        id: row.id,
+        name: row.name,
+        email: row.email,
+      }));
     }
   );
 
@@ -1325,42 +1381,42 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       },
     },
     async (request, reply) => {
-    const member = request.member;
-    const { id } = request.params as { id: string };
-    const leagueId = parseInt(id, 10);
+      const member = request.member;
+      const { id } = request.params as { id: string };
+      const leagueId = parseInt(id, 10);
 
-    if (!member || !(await hasLeagueSetupAccess(member, leagueId))) {
-      return reply.code(403).send({ error: 'Forbidden' });
-    }
+      if (!member || !(await hasLeagueSetupAccess(member, leagueId))) {
+        return reply.code(403).send({ error: 'Forbidden' });
+      }
 
-    const body = managerAddSchema.parse(request.body);
-    const { db, schema } = getDrizzleDb();
+      const body = managerAddSchema.parse(request.body);
+      const { db, schema } = getDrizzleDb();
 
-    const memberRows = await db
-      .select({ id: schema.members.id })
-      .from(schema.members)
-      .where(eq(schema.members.id, body.memberId))
-      .limit(1);
+      const memberRows = await db
+        .select({ id: schema.members.id })
+        .from(schema.members)
+        .where(eq(schema.members.id, body.memberId))
+        .limit(1);
 
-    if (memberRows.length === 0) {
-      return reply.code(404).send({ error: 'Member not found.' });
-    }
+      if (memberRows.length === 0) {
+        return reply.code(404).send({ error: 'Member not found.' });
+      }
 
-    if (await isMemberExpired(db, schema, body.memberId)) {
-      return reply.code(400).send({ error: 'Cannot add an expired member as a league manager.' });
-    }
+      if (await isMemberExpired(db, schema, body.memberId)) {
+        return reply.code(400).send({ error: 'Cannot add an expired member as a league manager.' });
+      }
 
-    const result = await db
-      .insert(schema.leagueMemberRoles)
-      .values({ member_id: body.memberId, league_id: leagueId, role: 'league_manager' })
-      .onConflictDoNothing()
-      .returning();
+      const result = await db
+        .insert(schema.leagueMemberRoles)
+        .values({ member_id: body.memberId, league_id: leagueId, role: 'league_manager' })
+        .onConflictDoNothing()
+        .returning();
 
-    return {
-      id: result[0]?.id,
-      leagueId,
-      memberId: body.memberId,
-    };
+      return {
+        id: result[0]?.id,
+        leagueId,
+        memberId: body.memberId,
+      };
     }
   );
 
@@ -1376,31 +1432,31 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       },
     },
     async (request, reply) => {
-    const member = request.member;
-    const { id, memberId } = request.params as { id: string; memberId: string };
-    const leagueId = parseInt(id, 10);
-    const memberIdNum = parseInt(memberId, 10);
+      const member = request.member;
+      const { id, memberId } = request.params as { id: string; memberId: string };
+      const leagueId = parseInt(id, 10);
+      const memberIdNum = parseInt(memberId, 10);
 
-    if (!member || !(await hasLeagueSetupAccess(member, leagueId))) {
-      return reply.code(403).send({ error: 'Forbidden' });
-    }
+      if (!member || !(await hasLeagueSetupAccess(member, leagueId))) {
+        return reply.code(403).send({ error: 'Forbidden' });
+      }
 
-    const { db, schema } = getDrizzleDb();
-    const result = await db
-      .delete(schema.leagueMemberRoles)
-      .where(
-        and(
-          eq(schema.leagueMemberRoles.member_id, memberIdNum),
-          eq(schema.leagueMemberRoles.league_id, leagueId),
-          eq(schema.leagueMemberRoles.role, 'league_manager')
-        )
-      );
+      const { db, schema } = getDrizzleDb();
+      const result = await db
+        .delete(schema.leagueMemberRoles)
+        .where(
+          and(
+            eq(schema.leagueMemberRoles.member_id, memberIdNum),
+            eq(schema.leagueMemberRoles.league_id, leagueId),
+            eq(schema.leagueMemberRoles.role, 'league_manager')
+          )
+        );
 
-    if (getAffectedRows(result) === 0) {
-      return reply.code(404).send({ error: 'Manager not found.' });
-    }
+      if (getAffectedRows(result) === 0) {
+        return reply.code(404).send({ error: 'Manager not found.' });
+      }
 
-    return { success: true };
+      return { success: true };
     }
   );
 
@@ -1526,27 +1582,30 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       },
     },
     async (request, reply) => {
-    const member = request.member;
-    if (!member) {
-      return reply.code(401).send({ error: 'Unauthorized' });
-    }
+      const member = request.member;
+      if (!member) {
+        return reply.code(401).send({ error: 'Unauthorized' });
+      }
 
-    const { id } = request.params as { id: string };
-    const leagueId = parseInt(id, 10);
-    const { db, schema } = getDrizzleDb();
+      const { id } = request.params as { id: string };
+      const leagueId = parseInt(id, 10);
+      const { db, schema } = getDrizzleDb();
 
-    const teams = (await db
-      .select({
-        id: schema.leagueTeams.id,
-        league_id: schema.leagueTeams.league_id,
-        division_id: schema.leagueTeams.division_id,
-        name: schema.leagueTeams.name,
-        division_name: schema.leagueDivisions.name,
-      })
-      .from(schema.leagueTeams)
-      .innerJoin(schema.leagueDivisions, eq(schema.leagueTeams.division_id, schema.leagueDivisions.id))
-      .where(eq(schema.leagueTeams.league_id, leagueId))
-      .orderBy(schema.leagueDivisions.sort_order, schema.leagueTeams.name)) as {
+      const teams = (await db
+        .select({
+          id: schema.leagueTeams.id,
+          league_id: schema.leagueTeams.league_id,
+          division_id: schema.leagueTeams.division_id,
+          name: schema.leagueTeams.name,
+          division_name: schema.leagueDivisions.name,
+        })
+        .from(schema.leagueTeams)
+        .innerJoin(
+          schema.leagueDivisions,
+          eq(schema.leagueTeams.division_id, schema.leagueDivisions.id)
+        )
+        .where(eq(schema.leagueTeams.league_id, leagueId))
+        .orderBy(schema.leagueDivisions.sort_order, schema.leagueTeams.name)) as {
         id: number;
         league_id: number;
         division_id: number;
@@ -1554,54 +1613,54 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
         division_name: string;
       }[];
 
-    const teamIds = teams.map((team) => team.id);
-    const rosterRows = teamIds.length
-      ? ((await db
-          .select({
-            team_id: schema.teamMembers.team_id,
-            member_id: schema.teamMembers.member_id,
-            member_name: schema.members.name,
-            role: schema.teamMembers.role,
-            is_skip: schema.teamMembers.is_skip,
-            is_vice: schema.teamMembers.is_vice,
-          })
-          .from(schema.teamMembers)
-          .innerJoin(schema.members, eq(schema.teamMembers.member_id, schema.members.id))
-          .where(inArray(schema.teamMembers.team_id, teamIds))
-          .orderBy(schema.teamMembers.team_id, schema.teamMembers.role)) as {
-          team_id: number;
-          member_id: number;
-          member_name: string;
-          role: string;
-          is_skip: number;
-          is_vice: number;
-        }[])
-      : [];
+      const teamIds = teams.map((team) => team.id);
+      const rosterRows = teamIds.length
+        ? ((await db
+            .select({
+              team_id: schema.teamMembers.team_id,
+              member_id: schema.teamMembers.member_id,
+              member_name: schema.members.name,
+              role: schema.teamMembers.role,
+              is_skip: schema.teamMembers.is_skip,
+              is_vice: schema.teamMembers.is_vice,
+            })
+            .from(schema.teamMembers)
+            .innerJoin(schema.members, eq(schema.teamMembers.member_id, schema.members.id))
+            .where(inArray(schema.teamMembers.team_id, teamIds))
+            .orderBy(schema.teamMembers.team_id, schema.teamMembers.role)) as {
+            team_id: number;
+            member_id: number;
+            member_name: string;
+            role: string;
+            is_skip: number;
+            is_vice: number;
+          }[])
+        : [];
 
-    const rosterByTeam = new Map<
-      number,
-      Array<{ memberId: number; name: string; role: string; isSkip: boolean; isVice: boolean }>
-    >();
-    for (const row of rosterRows) {
-      const list = rosterByTeam.get(row.team_id) ?? [];
-      list.push({
-        memberId: row.member_id,
-        name: row.member_name,
-        role: row.role,
-        isSkip: row.is_skip === 1,
-        isVice: row.is_vice === 1,
-      });
-      rosterByTeam.set(row.team_id, list);
-    }
+      const rosterByTeam = new Map<
+        number,
+        Array<{ memberId: number; name: string; role: string; isSkip: boolean; isVice: boolean }>
+      >();
+      for (const row of rosterRows) {
+        const list = rosterByTeam.get(row.team_id) ?? [];
+        list.push({
+          memberId: row.member_id,
+          name: row.member_name,
+          role: row.role,
+          isSkip: row.is_skip === 1,
+          isVice: row.is_vice === 1,
+        });
+        rosterByTeam.set(row.team_id, list);
+      }
 
-    return teams.map((team) => ({
-      id: team.id,
-      leagueId: team.league_id,
-      divisionId: team.division_id,
-      divisionName: team.division_name,
-      name: team.name,
-      roster: rosterByTeam.get(team.id) ?? [],
-    }));
+      return teams.map((team) => ({
+        id: team.id,
+        leagueId: team.league_id,
+        divisionId: team.division_id,
+        divisionName: team.division_name,
+        name: team.name,
+        roster: rosterByTeam.get(team.id) ?? [],
+      }));
     }
   );
 
@@ -1618,147 +1677,161 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       },
     },
     async (request, reply) => {
-    const member = request.member;
-    const { id } = request.params as { id: string };
-    const leagueId = parseInt(id, 10);
+      const member = request.member;
+      const { id } = request.params as { id: string };
+      const leagueId = parseInt(id, 10);
 
-    if (!member || !(await hasLeagueSetupAccess(member, leagueId))) {
-      return reply.code(403).send({ error: 'Forbidden' });
-    }
+      if (!member || !(await hasLeagueSetupAccess(member, leagueId))) {
+        return reply.code(403).send({ error: 'Forbidden' });
+      }
 
-    const body = teamCreateSchema.parse(request.body);
-    const { db, schema } = getDrizzleDb();
+      const body = teamCreateSchema.parse(request.body);
+      const { db, schema } = getDrizzleDb();
 
-    const leagues = await db
-      .select({ format: schema.leagues.format })
-      .from(schema.leagues)
-      .where(eq(schema.leagues.id, leagueId))
-      .limit(1);
-
-    if (leagues.length === 0) {
-      return reply.code(404).send({ error: 'League not found' });
-    }
-
-    if (await leagueAllowsDropIns(leagueId)) {
-      return reply.code(400).send({ error: DROP_IN_LEAGUE_NO_TEAMS_MESSAGE });
-    }
-
-    const format = leagues[0].format;
-
-    let divisionId = body.divisionId;
-    if (!divisionId) {
-      const defaultDivisions = await db
-        .select({ id: schema.leagueDivisions.id })
-        .from(schema.leagueDivisions)
-        .where(and(eq(schema.leagueDivisions.league_id, leagueId), eq(schema.leagueDivisions.is_default, 1)))
+      const leagues = await db
+        .select({ format: schema.leagues.format })
+        .from(schema.leagues)
+        .where(eq(schema.leagues.id, leagueId))
         .limit(1);
 
-      if (defaultDivisions.length === 0) {
-        return reply.code(400).send({ error: 'Default division not found for league.' });
+      if (leagues.length === 0) {
+        return reply.code(404).send({ error: 'League not found' });
       }
-      divisionId = defaultDivisions[0].id;
-    } else {
-      const divisions = await db
-        .select({ id: schema.leagueDivisions.id })
-        .from(schema.leagueDivisions)
-        .where(and(eq(schema.leagueDivisions.id, divisionId), eq(schema.leagueDivisions.league_id, leagueId)))
-        .limit(1);
-      if (divisions.length === 0) {
-        return reply.code(400).send({ error: 'Division does not belong to league.' });
+
+      if (await leagueAllowsDropIns(leagueId)) {
+        return reply.code(400).send({ error: DROP_IN_LEAGUE_NO_TEAMS_MESSAGE });
       }
-    }
 
-    const normalizedName = normalizeOptionalName(body.name);
+      const format = leagues[0].format;
 
-    const result = await db
-      .insert(schema.leagueTeams)
-      .values({
-        league_id: leagueId,
-        division_id: divisionId,
-        name: normalizedName,
-      })
-      .returning();
+      let divisionId = body.divisionId;
+      if (!divisionId) {
+        const defaultDivisions = await db
+          .select({ id: schema.leagueDivisions.id })
+          .from(schema.leagueDivisions)
+          .where(
+            and(
+              eq(schema.leagueDivisions.league_id, leagueId),
+              eq(schema.leagueDivisions.is_default, 1)
+            )
+          )
+          .limit(1);
 
-    const team = result[0];
-
-    if (body.members && body.members.length > 0) {
-      try {
-        const roster = validateRoster(format, body.members);
-        const memberIds = roster.map((entry) => entry.memberId);
-        for (const memberId of memberIds) {
-          if (await isMemberExpired(db, schema, memberId)) {
-            return reply.code(400).send({ error: 'One or more roster members are expired and cannot be added to a team.' });
-          }
+        if (defaultDivisions.length === 0) {
+          return reply.code(400).send({ error: 'Default division not found for league.' });
         }
-        await db.transaction(async (tx: DrizzleTx) => {
-          await tx
-            .delete(schema.teamMembers)
-            .where(eq(schema.teamMembers.team_id, team.id));
+        divisionId = defaultDivisions[0].id;
+      } else {
+        const divisions = await db
+          .select({ id: schema.leagueDivisions.id })
+          .from(schema.leagueDivisions)
+          .where(
+            and(
+              eq(schema.leagueDivisions.id, divisionId),
+              eq(schema.leagueDivisions.league_id, leagueId)
+            )
+          )
+          .limit(1);
+        if (divisions.length === 0) {
+          return reply.code(400).send({ error: 'Division does not belong to league.' });
+        }
+      }
 
-          const existingMembers = (await tx
-            .select({ id: schema.members.id, name: schema.members.name })
-            .from(schema.members)
-            .where(inArray(schema.members.id, memberIds))) as { id: number; name: string }[];
+      const normalizedName = normalizeOptionalName(body.name);
 
-          if (existingMembers.length !== memberIds.length) {
-            throw new Error('One or more roster members do not exist.');
-          }
+      const result = await db
+        .insert(schema.leagueTeams)
+        .values({
+          league_id: leagueId,
+          division_id: divisionId,
+          name: normalizedName,
+        })
+        .returning();
 
-          await ensureRosterMembership(tx, schema, leagueId, memberIds);
+      const team = result[0];
 
-          const memberNameMap = new Map<number, string>(existingMembers.map((entry) => [entry.id, entry.name]));
-
-          const conflicts = await tx
-            .select({
-              member_id: schema.teamMembers.member_id,
-              team_id: schema.teamMembers.team_id,
-            })
-            .from(schema.teamMembers)
-            .innerJoin(schema.leagueTeams, eq(schema.teamMembers.team_id, schema.leagueTeams.id))
-            .where(
-              and(
-                eq(schema.leagueTeams.league_id, leagueId),
-                inArray(schema.teamMembers.member_id, memberIds)
-              )
-            );
-
-          if (conflicts.length > 0) {
-            throw new Error('One or more members already belong to another team in this league.');
-          }
-
-          await tx.insert(schema.teamMembers).values(
-            roster.map((entry) => ({
-              team_id: team.id,
-              member_id: entry.memberId,
-              role: entry.role,
-              is_skip: entry.isSkip ? 1 : 0,
-              is_vice: entry.isVice ? 1 : 0,
-            }))
-          );
-
-          if (!normalizedName) {
-            const defaultName = computeDefaultTeamName(format, roster, memberNameMap);
-            if (defaultName) {
-              await tx
-                .update(schema.leagueTeams)
-                .set({ name: defaultName, updated_at: sql`CURRENT_TIMESTAMP` })
-                .where(eq(schema.leagueTeams.id, team.id));
-              team.name = defaultName;
+      if (body.members && body.members.length > 0) {
+        try {
+          const roster = validateRoster(format, body.members);
+          const memberIds = roster.map((entry) => entry.memberId);
+          for (const memberId of memberIds) {
+            if (await isMemberExpired(db, schema, memberId)) {
+              return reply
+                .code(400)
+                .send({
+                  error: 'One or more roster members are expired and cannot be added to a team.',
+                });
             }
           }
-        });
-      } catch (error: unknown) {
-        const message = error instanceof Error ? error.message : 'Invalid roster';
-        return reply.code(400).send({ error: message });
-      }
-    }
+          await db.transaction(async (tx: DrizzleTx) => {
+            await tx.delete(schema.teamMembers).where(eq(schema.teamMembers.team_id, team.id));
 
-    return {
-      id: team.id,
-      leagueId: team.league_id,
-      divisionId: team.division_id,
-      name: team.name,
-    };
+            const existingMembers = (await tx
+              .select({ id: schema.members.id, name: schema.members.name })
+              .from(schema.members)
+              .where(inArray(schema.members.id, memberIds))) as { id: number; name: string }[];
+
+            if (existingMembers.length !== memberIds.length) {
+              throw new Error('One or more roster members do not exist.');
+            }
+
+            await ensureRosterMembership(tx, schema, leagueId, memberIds);
+
+            const memberNameMap = new Map<number, string>(
+              existingMembers.map((entry) => [entry.id, entry.name])
+            );
+
+            const conflicts = await tx
+              .select({
+                member_id: schema.teamMembers.member_id,
+                team_id: schema.teamMembers.team_id,
+              })
+              .from(schema.teamMembers)
+              .innerJoin(schema.leagueTeams, eq(schema.teamMembers.team_id, schema.leagueTeams.id))
+              .where(
+                and(
+                  eq(schema.leagueTeams.league_id, leagueId),
+                  inArray(schema.teamMembers.member_id, memberIds)
+                )
+              );
+
+            if (conflicts.length > 0) {
+              throw new Error('One or more members already belong to another team in this league.');
+            }
+
+            await tx.insert(schema.teamMembers).values(
+              roster.map((entry) => ({
+                team_id: team.id,
+                member_id: entry.memberId,
+                role: entry.role,
+                is_skip: entry.isSkip ? 1 : 0,
+                is_vice: entry.isVice ? 1 : 0,
+              }))
+            );
+
+            if (!normalizedName) {
+              const defaultName = computeDefaultTeamName(format, roster, memberNameMap);
+              if (defaultName) {
+                await tx
+                  .update(schema.leagueTeams)
+                  .set({ name: defaultName, updated_at: sql`CURRENT_TIMESTAMP` })
+                  .where(eq(schema.leagueTeams.id, team.id));
+                team.name = defaultName;
+              }
+            }
+          });
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : 'Invalid roster';
+          return reply.code(400).send({ error: message });
+        }
+      }
+
+      return {
+        id: team.id,
+        leagueId: team.league_id,
+        divisionId: team.division_id,
+        name: team.name,
+      };
     }
   );
 
@@ -1775,71 +1848,76 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       },
     },
     async (request, reply) => {
-    const member = request.member;
-    const { teamId } = request.params as { teamId: string };
-    const id = parseInt(teamId, 10);
+      const member = request.member;
+      const { teamId } = request.params as { teamId: string };
+      const id = parseInt(teamId, 10);
 
-    const body = teamUpdateSchema.parse(request.body);
-    const { db, schema } = getDrizzleDb();
+      const body = teamUpdateSchema.parse(request.body);
+      const { db, schema } = getDrizzleDb();
 
-    const teams = await db
-      .select({
-        id: schema.leagueTeams.id,
-        league_id: schema.leagueTeams.league_id,
-        division_id: schema.leagueTeams.division_id,
-      })
-      .from(schema.leagueTeams)
-      .where(eq(schema.leagueTeams.id, id))
-      .limit(1);
-
-    const team = teams[0];
-    if (!team) {
-      return reply.code(404).send({ error: 'Team not found' });
-    }
-
-    if (!member || !(await hasLeagueSetupAccess(member, team.league_id))) {
-      return reply.code(403).send({ error: 'Forbidden' });
-    }
-
-    if (await leagueAllowsDropIns(team.league_id)) {
-      return reply.code(400).send({ error: DROP_IN_LEAGUE_NO_TEAMS_MESSAGE });
-    }
-
-    const updateData: Record<string, unknown> = {};
-    if (body.name !== undefined) updateData.name = normalizeOptionalName(body.name);
-
-    if (body.divisionId !== undefined) {
-      const divisions = await db
-        .select({ id: schema.leagueDivisions.id })
-        .from(schema.leagueDivisions)
-        .where(and(eq(schema.leagueDivisions.id, body.divisionId), eq(schema.leagueDivisions.league_id, team.league_id)))
+      const teams = await db
+        .select({
+          id: schema.leagueTeams.id,
+          league_id: schema.leagueTeams.league_id,
+          division_id: schema.leagueTeams.division_id,
+        })
+        .from(schema.leagueTeams)
+        .where(eq(schema.leagueTeams.id, id))
         .limit(1);
-      if (divisions.length === 0) {
-        return reply.code(400).send({ error: 'Division does not belong to league.' });
+
+      const team = teams[0];
+      if (!team) {
+        return reply.code(404).send({ error: 'Team not found' });
       }
-      updateData.division_id = body.divisionId;
-    }
 
-    if (Object.keys(updateData).length === 0) {
-      return reply.code(400).send({ error: 'No updates provided' });
-    }
+      if (!member || !(await hasLeagueSetupAccess(member, team.league_id))) {
+        return reply.code(403).send({ error: 'Forbidden' });
+      }
 
-    updateData.updated_at = sql`CURRENT_TIMESTAMP`;
-    await db.update(schema.leagueTeams).set(updateData).where(eq(schema.leagueTeams.id, id));
+      if (await leagueAllowsDropIns(team.league_id)) {
+        return reply.code(400).send({ error: DROP_IN_LEAGUE_NO_TEAMS_MESSAGE });
+      }
 
-    const updated = await db
-      .select()
-      .from(schema.leagueTeams)
-      .where(eq(schema.leagueTeams.id, id))
-      .limit(1);
+      const updateData: Record<string, unknown> = {};
+      if (body.name !== undefined) updateData.name = normalizeOptionalName(body.name);
 
-    const updatedTeam = updated[0];
-    return {
-      id: updatedTeam.id,
-      leagueId: updatedTeam.league_id,
-      divisionId: updatedTeam.division_id,
-      name: updatedTeam.name,
-    };
+      if (body.divisionId !== undefined) {
+        const divisions = await db
+          .select({ id: schema.leagueDivisions.id })
+          .from(schema.leagueDivisions)
+          .where(
+            and(
+              eq(schema.leagueDivisions.id, body.divisionId),
+              eq(schema.leagueDivisions.league_id, team.league_id)
+            )
+          )
+          .limit(1);
+        if (divisions.length === 0) {
+          return reply.code(400).send({ error: 'Division does not belong to league.' });
+        }
+        updateData.division_id = body.divisionId;
+      }
+
+      if (Object.keys(updateData).length === 0) {
+        return reply.code(400).send({ error: 'No updates provided' });
+      }
+
+      updateData.updated_at = sql`CURRENT_TIMESTAMP`;
+      await db.update(schema.leagueTeams).set(updateData).where(eq(schema.leagueTeams.id, id));
+
+      const updated = await db
+        .select()
+        .from(schema.leagueTeams)
+        .where(eq(schema.leagueTeams.id, id))
+        .limit(1);
+
+      const updatedTeam = updated[0];
+      return {
+        id: updatedTeam.id,
+        leagueId: updatedTeam.league_id,
+        divisionId: updatedTeam.division_id,
+        name: updatedTeam.name,
+      };
     }
   );
 
@@ -1855,37 +1933,34 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       },
     },
     async (request, reply) => {
-    const member = request.member;
-    const { teamId } = request.params as { teamId: string };
-    const id = parseInt(teamId, 10);
+      const member = request.member;
+      const { teamId } = request.params as { teamId: string };
+      const id = parseInt(teamId, 10);
 
-    const { db, schema } = getDrizzleDb();
-    const teams = await db
-      .select({ league_id: schema.leagueTeams.league_id })
-      .from(schema.leagueTeams)
-      .where(eq(schema.leagueTeams.id, id))
-      .limit(1);
+      const { db, schema } = getDrizzleDb();
+      const teams = await db
+        .select({ league_id: schema.leagueTeams.league_id })
+        .from(schema.leagueTeams)
+        .where(eq(schema.leagueTeams.id, id))
+        .limit(1);
 
-    const team = teams[0];
-    if (!team) {
-      return reply.code(404).send({ error: 'Team not found' });
-    }
+      const team = teams[0];
+      if (!team) {
+        return reply.code(404).send({ error: 'Team not found' });
+      }
 
-    if (!member || !(await hasLeagueSetupAccess(member, team.league_id))) {
-      return reply.code(403).send({ error: 'Forbidden' });
-    }
+      if (!member || !(await hasLeagueSetupAccess(member, team.league_id))) {
+        return reply.code(403).send({ error: 'Forbidden' });
+      }
 
-    await db.transaction(async (tx) => {
-      // Delete games that reference this team (foreign key is RESTRICT, not CASCADE)
-      await tx.delete(schema.games).where(
-        or(
-          eq(schema.games.team1_id, id),
-          eq(schema.games.team2_id, id),
-        ),
-      );
-      await tx.delete(schema.leagueTeams).where(eq(schema.leagueTeams.id, id));
-    });
-    return { success: true };
+      await db.transaction(async (tx) => {
+        // Delete games that reference this team (foreign key is RESTRICT, not CASCADE)
+        await tx
+          .delete(schema.games)
+          .where(or(eq(schema.games.team1_id, id), eq(schema.games.team2_id, id)));
+        await tx.delete(schema.leagueTeams).where(eq(schema.leagueTeams.id, id));
+      });
+      return { success: true };
     }
   );
 
@@ -1901,41 +1976,41 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       },
     },
     async (request, reply) => {
-    const member = request.member;
-    if (!member) {
-      return reply.code(401).send({ error: 'Unauthorized' });
-    }
+      const member = request.member;
+      if (!member) {
+        return reply.code(401).send({ error: 'Unauthorized' });
+      }
 
-    const { teamId } = request.params as { teamId: string };
-    const id = parseInt(teamId, 10);
-    const { db, schema } = getDrizzleDb();
+      const { teamId } = request.params as { teamId: string };
+      const id = parseInt(teamId, 10);
+      const { db, schema } = getDrizzleDb();
 
-    const roster = (await db
-      .select({
-        member_id: schema.teamMembers.member_id,
-        member_name: schema.members.name,
-        role: schema.teamMembers.role,
-        is_skip: schema.teamMembers.is_skip,
-        is_vice: schema.teamMembers.is_vice,
-      })
-      .from(schema.teamMembers)
-      .innerJoin(schema.members, eq(schema.teamMembers.member_id, schema.members.id))
-      .where(eq(schema.teamMembers.team_id, id))
-      .orderBy(schema.teamMembers.role)) as {
-      member_id: number;
-      member_name: string;
-      role: string;
-      is_skip: number;
-      is_vice: number;
-    }[];
+      const roster = (await db
+        .select({
+          member_id: schema.teamMembers.member_id,
+          member_name: schema.members.name,
+          role: schema.teamMembers.role,
+          is_skip: schema.teamMembers.is_skip,
+          is_vice: schema.teamMembers.is_vice,
+        })
+        .from(schema.teamMembers)
+        .innerJoin(schema.members, eq(schema.teamMembers.member_id, schema.members.id))
+        .where(eq(schema.teamMembers.team_id, id))
+        .orderBy(schema.teamMembers.role)) as {
+        member_id: number;
+        member_name: string;
+        role: string;
+        is_skip: number;
+        is_vice: number;
+      }[];
 
-    return roster.map((entry) => ({
-      memberId: entry.member_id,
-      name: entry.member_name,
-      role: entry.role,
-      isSkip: entry.is_skip === 1,
-      isVice: entry.is_vice === 1,
-    }));
+      return roster.map((entry) => ({
+        memberId: entry.member_id,
+        name: entry.member_name,
+        role: entry.role,
+        isSkip: entry.is_skip === 1,
+        isVice: entry.is_vice === 1,
+      }));
     }
   );
 
@@ -1952,112 +2027,116 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       },
     },
     async (request, reply) => {
-    const member = request.member;
-    const { teamId } = request.params as { teamId: string };
-    const id = parseInt(teamId, 10);
+      const member = request.member;
+      const { teamId } = request.params as { teamId: string };
+      const id = parseInt(teamId, 10);
 
-    const body = rosterUpdateSchema.parse(request.body);
-    const { db, schema } = getDrizzleDb();
+      const body = rosterUpdateSchema.parse(request.body);
+      const { db, schema } = getDrizzleDb();
 
-    const teams = await db
-      .select({
-        id: schema.leagueTeams.id,
-        league_id: schema.leagueTeams.league_id,
-        name: schema.leagueTeams.name,
-        format: schema.leagues.format,
-      })
-      .from(schema.leagueTeams)
-      .innerJoin(schema.leagues, eq(schema.leagueTeams.league_id, schema.leagues.id))
-      .where(eq(schema.leagueTeams.id, id))
-      .limit(1);
+      const teams = await db
+        .select({
+          id: schema.leagueTeams.id,
+          league_id: schema.leagueTeams.league_id,
+          name: schema.leagueTeams.name,
+          format: schema.leagues.format,
+        })
+        .from(schema.leagueTeams)
+        .innerJoin(schema.leagues, eq(schema.leagueTeams.league_id, schema.leagues.id))
+        .where(eq(schema.leagueTeams.id, id))
+        .limit(1);
 
-    const team = teams[0];
-    if (!team) {
-      return reply.code(404).send({ error: 'Team not found' });
-    }
-
-    if (!member || !(await hasLeagueSetupAccess(member, team.league_id))) {
-      return reply.code(403).send({ error: 'Forbidden' });
-    }
-
-    if (await leagueAllowsDropIns(team.league_id)) {
-      return reply.code(400).send({ error: DROP_IN_LEAGUE_NO_TEAMS_MESSAGE });
-    }
-
-    try {
-      const roster = validateRoster(team.format, body.members);
-      const memberIds = roster.map((entry) => entry.memberId);
-
-      for (const memberId of memberIds) {
-        if (await isMemberExpired(db, schema, memberId)) {
-          return reply.code(400).send({ error: 'One or more roster members are expired and cannot be added to a team.' });
-        }
+      const team = teams[0];
+      if (!team) {
+        return reply.code(404).send({ error: 'Team not found' });
       }
 
-      await db.transaction(async (tx: DrizzleTx) => {
-        const existingMembers = (await tx
-          .select({ id: schema.members.id, name: schema.members.name })
-          .from(schema.members)
-          .where(inArray(schema.members.id, memberIds))) as { id: number; name: string }[];
+      if (!member || !(await hasLeagueSetupAccess(member, team.league_id))) {
+        return reply.code(403).send({ error: 'Forbidden' });
+      }
 
-        if (existingMembers.length !== memberIds.length) {
-          throw new Error('One or more roster members do not exist.');
-        }
+      if (await leagueAllowsDropIns(team.league_id)) {
+        return reply.code(400).send({ error: DROP_IN_LEAGUE_NO_TEAMS_MESSAGE });
+      }
 
-        await ensureRosterMembership(tx, schema, team.league_id, memberIds);
+      try {
+        const roster = validateRoster(team.format, body.members);
+        const memberIds = roster.map((entry) => entry.memberId);
 
-        const conflicts = await tx
-          .select({
-            member_id: schema.teamMembers.member_id,
-            team_id: schema.teamMembers.team_id,
-          })
-          .from(schema.teamMembers)
-          .innerJoin(schema.leagueTeams, eq(schema.teamMembers.team_id, schema.leagueTeams.id))
-          .where(
-            and(
-              eq(schema.leagueTeams.league_id, team.league_id),
-              inArray(schema.teamMembers.member_id, memberIds),
-              ne(schema.teamMembers.team_id, id)
-            )
-          );
-
-        if (conflicts.length > 0) {
-          throw new Error('One or more members already belong to another team in this league.');
-        }
-
-        await tx
-          .delete(schema.teamMembers)
-          .where(eq(schema.teamMembers.team_id, id));
-
-        if (roster.length > 0) {
-          await tx.insert(schema.teamMembers).values(
-            roster.map((entry) => ({
-              team_id: id,
-              member_id: entry.memberId,
-              role: entry.role,
-              is_skip: entry.isSkip ? 1 : 0,
-              is_vice: entry.isVice ? 1 : 0,
-            }))
-          );
-        }
-
-        if (!team.name || team.name.trim().length === 0) {
-          const memberNameMap = new Map<number, string>(existingMembers.map((entry) => [entry.id, entry.name]));
-          const defaultName = computeDefaultTeamName(team.format, roster, memberNameMap);
-          if (defaultName) {
-            await tx
-              .update(schema.leagueTeams)
-              .set({ name: defaultName, updated_at: sql`CURRENT_TIMESTAMP` })
-              .where(eq(schema.leagueTeams.id, id));
+        for (const memberId of memberIds) {
+          if (await isMemberExpired(db, schema, memberId)) {
+            return reply
+              .code(400)
+              .send({
+                error: 'One or more roster members are expired and cannot be added to a team.',
+              });
           }
         }
-      });
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Invalid roster';
-      return reply.code(400).send({ error: message });
-    }
 
-    return { success: true };
+        await db.transaction(async (tx: DrizzleTx) => {
+          const existingMembers = (await tx
+            .select({ id: schema.members.id, name: schema.members.name })
+            .from(schema.members)
+            .where(inArray(schema.members.id, memberIds))) as { id: number; name: string }[];
+
+          if (existingMembers.length !== memberIds.length) {
+            throw new Error('One or more roster members do not exist.');
+          }
+
+          await ensureRosterMembership(tx, schema, team.league_id, memberIds);
+
+          const conflicts = await tx
+            .select({
+              member_id: schema.teamMembers.member_id,
+              team_id: schema.teamMembers.team_id,
+            })
+            .from(schema.teamMembers)
+            .innerJoin(schema.leagueTeams, eq(schema.teamMembers.team_id, schema.leagueTeams.id))
+            .where(
+              and(
+                eq(schema.leagueTeams.league_id, team.league_id),
+                inArray(schema.teamMembers.member_id, memberIds),
+                ne(schema.teamMembers.team_id, id)
+              )
+            );
+
+          if (conflicts.length > 0) {
+            throw new Error('One or more members already belong to another team in this league.');
+          }
+
+          await tx.delete(schema.teamMembers).where(eq(schema.teamMembers.team_id, id));
+
+          if (roster.length > 0) {
+            await tx.insert(schema.teamMembers).values(
+              roster.map((entry) => ({
+                team_id: id,
+                member_id: entry.memberId,
+                role: entry.role,
+                is_skip: entry.isSkip ? 1 : 0,
+                is_vice: entry.isVice ? 1 : 0,
+              }))
+            );
+          }
+
+          if (!team.name || team.name.trim().length === 0) {
+            const memberNameMap = new Map<number, string>(
+              existingMembers.map((entry) => [entry.id, entry.name])
+            );
+            const defaultName = computeDefaultTeamName(team.format, roster, memberNameMap);
+            if (defaultName) {
+              await tx
+                .update(schema.leagueTeams)
+                .set({ name: defaultName, updated_at: sql`CURRENT_TIMESTAMP` })
+                .where(eq(schema.leagueTeams.id, id));
+            }
+          }
+        });
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : 'Invalid roster';
+        return reply.code(400).send({ error: message });
+      }
+
+      return { success: true };
     }
   );
 
@@ -2074,45 +2153,45 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       },
     },
     async (request, reply) => {
-    const member = request.member;
-    if (!member) {
-      return reply.code(401).send({ error: 'Unauthorized' });
-    }
+      const member = request.member;
+      if (!member) {
+        return reply.code(401).send({ error: 'Unauthorized' });
+      }
 
-    const { query, leagueId } = memberSearchQuerySchema.parse(request.query ?? {});
+      const { query, leagueId } = memberSearchQuerySchema.parse(request.query ?? {});
 
-    if (leagueId) {
-      if (!(await hasLeagueSetupAccess(member, leagueId))) {
+      if (leagueId) {
+        if (!(await hasLeagueSetupAccess(member, leagueId))) {
+          return reply.code(403).send({ error: 'Forbidden' });
+        }
+      } else if (!(await hasClubLeagueAdministratorAccess(member))) {
         return reply.code(403).send({ error: 'Forbidden' });
       }
-    } else if (!(await hasClubLeagueAdministratorAccess(member))) {
-      return reply.code(403).send({ error: 'Forbidden' });
-    }
 
-    const search = `%${query.toLowerCase()}%`;
-    const { db, schema } = getDrizzleDb();
-    const today = todayDateString();
+      const search = `%${query.toLowerCase()}%`;
+      const { db, schema } = getDrizzleDb();
+      const today = todayDateString();
 
-    const rows = (await db
-      .select({ id: schema.members.id, name: schema.members.name, email: schema.members.email })
-      .from(schema.members)
-      .where(
-        and(
-          memberHasActiveMembershipCondition(schema, today),
-          or(
-            sql`LOWER(${schema.members.name}) LIKE ${search}`,
-            sql`LOWER(COALESCE(${schema.members.email}, '')) LIKE ${search}`
+      const rows = (await db
+        .select({ id: schema.members.id, name: schema.members.name, email: schema.members.email })
+        .from(schema.members)
+        .where(
+          and(
+            memberHasActiveMembershipCondition(schema, today),
+            or(
+              sql`LOWER(${schema.members.name}) LIKE ${search}`,
+              sql`LOWER(COALESCE(${schema.members.email}, '')) LIKE ${search}`
+            )
           )
         )
-      )
-      .orderBy(schema.members.name, desc(schema.members.id))
-      .limit(20)) as { id: number; name: string; email: string | null }[];
+        .orderBy(schema.members.name, desc(schema.members.id))
+        .limit(20)) as { id: number; name: string; email: string | null }[];
 
-    return rows.map((row) => ({
-      id: row.id,
-      name: row.name,
-      email: row.email,
-    }));
+      return rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        email: row.email,
+      }));
     }
   );
 
@@ -2145,7 +2224,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
         await tx.delete(schema.games).where(eq(schema.games.league_id, leagueId));
       });
       return { success: true };
-    },
+    }
   );
 
   // Clear teams (also clears games, team_members, bye requests via cascade)
@@ -2171,7 +2250,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
         await tx.delete(schema.leagueTeams).where(eq(schema.leagueTeams.league_id, leagueId));
       });
       return { success: true };
-    },
+    }
   );
 
   // Clear roster (also clears games, teams, team_members)
@@ -2197,7 +2276,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
         await tx.delete(schema.leagueRoster).where(eq(schema.leagueRoster.league_id, leagueId));
       });
       return { success: true };
-    },
+    }
   );
 
   // Clear bye requests
@@ -2222,13 +2301,22 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
         .from(schema.leagueTeams)
         .where(eq(schema.leagueTeams.league_id, leagueId));
 
-      if (teamIds.length > 0) {
-        await db.delete(schema.teamByeRequests).where(
-          inArray(schema.teamByeRequests.team_id, teamIds.map((t) => t.id)),
-        );
-      }
+      await db.transaction(async (tx) => {
+        if (teamIds.length > 0) {
+          await tx.delete(schema.teamByeRequests).where(
+            inArray(
+              schema.teamByeRequests.team_id,
+              teamIds.map((t) => t.id)
+            )
+          );
+        }
+        await tx
+          .update(schema.leagueTeams)
+          .set({ prefer_early_draw: 0, prefer_late_draw: 0 })
+          .where(eq(schema.leagueTeams.league_id, leagueId));
+      });
       return { success: true };
-    },
+    }
   );
 
   // Clear divisions (also clears games, teams)
@@ -2251,10 +2339,12 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       await db.transaction(async (tx) => {
         await tx.delete(schema.games).where(eq(schema.games.league_id, leagueId));
         await tx.delete(schema.leagueTeams).where(eq(schema.leagueTeams.league_id, leagueId));
-        await tx.delete(schema.leagueDivisions).where(eq(schema.leagueDivisions.league_id, leagueId));
+        await tx
+          .delete(schema.leagueDivisions)
+          .where(eq(schema.leagueDivisions.league_id, leagueId));
       });
       return { success: true };
-    },
+    }
   );
 
   // Clear sheet availability
@@ -2274,10 +2364,10 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
         return reply.code(403).send({ error: 'Forbidden' });
       }
       const { db, schema } = getDrizzleDb();
-      await db.delete(schema.drawSheetAvailability).where(
-        eq(schema.drawSheetAvailability.league_id, leagueId),
-      );
+      await db
+        .delete(schema.drawSheetAvailability)
+        .where(eq(schema.drawSheetAvailability.league_id, leagueId));
       return { success: true };
-    },
+    }
   );
 }

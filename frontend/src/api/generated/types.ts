@@ -7642,6 +7642,10 @@ export interface paths {
                             preferLateDrawByTeam: {
                                 [key: string]: boolean;
                             };
+                            /** @description Map of team id to prefer early draw */
+                            preferEarlyDrawByTeam: {
+                                [key: string]: boolean;
+                            };
                         };
                     };
                 };
@@ -7796,6 +7800,7 @@ export interface paths {
                                 updatedAt?: null | string;
                             }[];
                             preferLateDraw: boolean;
+                            preferEarlyDraw: boolean;
                         };
                     };
                 };
@@ -7819,6 +7824,7 @@ export interface paths {
                             priority: number;
                         }[];
                         preferLateDraw?: boolean;
+                        preferEarlyDraw?: boolean;
                     };
                 };
             };

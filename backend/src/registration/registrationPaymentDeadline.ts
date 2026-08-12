@@ -30,6 +30,14 @@ export function formatRegistrationPaymentDeadline(deadline: Date | string): stri
   }).format(date);
 }
 
+/** Phrase after “Payment is due …” for pay-later warnings and emails. */
+export function registrationPayLaterDuePhrase(deadlineAt: Date | string | null | undefined): string {
+  if (!deadlineAt) return 'before leagues begin';
+  const formatted = formatRegistrationPaymentDeadline(deadlineAt);
+  if (formatted === 'the payment deadline') return 'before leagues begin';
+  return `by ${formatted}`;
+}
+
 function mapPaymentDeadline(row: {
   id: number;
   season_id: number;

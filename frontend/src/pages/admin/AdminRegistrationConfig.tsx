@@ -483,7 +483,7 @@ export default function AdminRegistrationConfig() {
   const handleDeletePaymentDeadline = async (deadline: PaymentDeadline) => {
     const confirmed = await confirm({
       title: 'Remove payment deadline',
-      message: 'Remove this payment deadline? Registrants will no longer see Pay later for this season and session.',
+      message: 'Remove this payment deadline? Pay later will still be available; registrants will be told payment is due before leagues begin.',
       variant: 'danger',
       confirmText: 'Remove',
     });
@@ -839,7 +839,7 @@ export default function AdminRegistrationConfig() {
                   />
                   <ConfigTable
                     title="Payment deadlines"
-                    emptyText="No payment deadlines configured. Pay later stays hidden until a deadline is set."
+                    emptyText="No payment deadlines configured. Pay later still works; due-by copy falls back to before leagues begin."
                     headers={['Season', 'Session', 'Pay by', '']}
                     rows={paymentDeadlines.map((row) => ({
                       key: row.id,
@@ -970,8 +970,9 @@ export default function AdminRegistrationConfig() {
                   <form className="app-card space-y-4" onSubmit={handleSavePaymentDeadline}>
                     <h2 className="app-section-title">Payment deadline</h2>
                     <p className="text-sm text-gray-600 dark:text-gray-400">
-                      When payment is due now, registrants can choose Pay later. They must pay by this deadline to secure
-                      league selections, and they receive an invoice email with a payment link immediately.
+                      When payment is due now, registrants can choose Pay later. If you set a deadline here, they are told
+                      they must pay by that date to secure league selections. Without a deadline, they are told payment is
+                      due before leagues begin. They receive an invoice email with a payment link immediately.
                     </p>
                     <ChoiceField
                       id="payment-deadline-season"

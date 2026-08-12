@@ -72,7 +72,25 @@ function generatePriorities(n: number): number[] {
   return priorities;
 }
 
-async function seedByeRequests(leagueName: string): Promise<void> {
+async function seedByeRequestsByLeagueId(leagueId: number): Promise<void> {
+  const { db, schema } = getDrizzleDb();
+
+  const leagues = await db
+    .select()
+    .from(schema.leagues)
+    .where(eq(schema.leagues.id, leagueId))
+    .limit(1);
+
+  const league = leagues[0];
+  if (!league) {
+    console.error(`League not found: id=${leagueId}`);
+    process.exit(1);
+  }
+
+  await seedByeRequestsForLeague(league);
+}
+
+async function seedByeRequestsByName(leagueName: string): Promise<void> {
   const { db, schema } = getDrizzleDb();
 
   // 1. Look up the league
@@ -87,6 +105,18 @@ async function seedByeRequests(leagueName: string): Promise<void> {
     console.error(`League not found: "${leagueName}"`);
     process.exit(1);
   }
+
+  await seedByeRequestsForLeague(league);
+}
+
+async function seedByeRequestsForLeague(league: {
+  id: number;
+  name: string;
+  start_date: unknown;
+  end_date: unknown;
+  day_of_week: number;
+}): Promise<void> {
+  const { db, schema } = getDrizzleDb();
 
   const startDate = formatDateValue(league.start_date);
   const endDate = formatDateValue(league.end_date);
@@ -179,21 +209,79 @@ async function seedByeRequests(leagueName: string): Promise<void> {
   console.log(`\nDone. Seeded ${seeded} team(s), skipped ${skipped} team(s) with existing requests.`);
 }
 
+function printUsage(): void {
+  console.error(`Usage:
+  DB_CONFIG_PROFILE=preview bun run db:seed-bye-requests -- --league-id <id>
+  DB_CONFIG_PROFILE=preview bun run db:seed-bye-requests -- "<league name>"
+
+Examples:
+  DB_CONFIG_PROFILE=preview bun run db:seed-bye-requests -- --league-id 42
+  DB_CONFIG_PROFILE=preview bun run db:seed-bye-requests -- "Monday League"`);
+}
+
 async function main() {
-  const leagueName = process.argv[2];
-  if (!leagueName) {
-    console.error('Usage: tsx src/scripts/seed-bye-requests.ts "<league name>"');
+  const args = process.argv.slice(2);
+  let leagueId: number | null = null;
+  let leagueName: string | null = null;
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--league-id' || arg === '--id') {
+      const raw = args[i + 1];
+      const parsed = raw != null ? Number(raw) : NaN;
+      if (!Number.isInteger(parsed) || parsed <= 0) {
+        console.error(`Invalid league id: ${raw ?? '(missing)'}`);
+        printUsage();
+        process.exit(1);
+      }
+      leagueId = parsed;
+      i++;
+      continue;
+    }
+    if (arg.startsWith('--league-id=')) {
+      const parsed = Number(arg.slice('--league-id='.length));
+      if (!Number.isInteger(parsed) || parsed <= 0) {
+        console.error(`Invalid league id: ${arg}`);
+        printUsage();
+        process.exit(1);
+      }
+      leagueId = parsed;
+      continue;
+    }
+    if (arg === '--help' || arg === '-h') {
+      printUsage();
+      process.exit(0);
+    }
+    if (arg.startsWith('-')) {
+      console.error(`Unknown option: ${arg}`);
+      printUsage();
+      process.exit(1);
+    }
+    leagueName = arg;
+  }
+
+  if (leagueId == null && !leagueName) {
+    printUsage();
     process.exit(1);
   }
 
   const dbConfig = getDatabaseConfig();
   if (!dbConfig) {
-    console.error('Database config not found. Expected backend/data/db-config.json to exist.');
+    console.error(
+      'Database config not found. Expected backend/data/db-config.json (or DB_CONFIG_PROFILE).'
+    );
     process.exit(1);
   }
 
+  const profile = process.env.DB_CONFIG_PROFILE?.trim() || '(default)';
+  console.log(`Using DB_CONFIG_PROFILE=${profile}`);
+
   await initializeDatabase(dbConfig);
-  await seedByeRequests(leagueName);
+  if (leagueId != null) {
+    await seedByeRequestsByLeagueId(leagueId);
+  } else {
+    await seedByeRequestsByName(leagueName!);
+  }
 }
 
 main().catch((err) => {

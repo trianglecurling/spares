@@ -34,15 +34,26 @@ const byeRequestUpdateSchema = z.object({
   note: z.string().optional().nullable(),
 });
 
-const teamByeRequestsReplaceSchema = z.object({
-  requests: z.array(
-    z.object({
-      drawDate: z.string().min(1),
-      priority: z.number().int().min(1),
-    })
-  ),
-  preferLateDraw: z.boolean().optional(),
-});
+const teamByeRequestsReplaceSchema = z
+  .object({
+    requests: z.array(
+      z.object({
+        drawDate: z.string().min(1),
+        priority: z.number().int().min(1),
+      })
+    ),
+    preferLateDraw: z.boolean().optional(),
+    preferEarlyDraw: z.boolean().optional(),
+  })
+  .superRefine((body, ctx) => {
+    if (body.preferLateDraw && body.preferEarlyDraw) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Cannot prefer both early and late draw',
+        path: ['preferEarlyDraw'],
+      });
+    }
+  });
 
 async function isMemberOnTeam(
   db: ReturnType<typeof getDrizzleDb>['db'],
@@ -89,17 +100,23 @@ export async function schedulingRoutes(fastify: FastifyInstance) {
       }
 
       const teamRows = await db
-        .select({ id: schema.leagueTeams.id, prefer_late_draw: schema.leagueTeams.prefer_late_draw })
+        .select({
+          id: schema.leagueTeams.id,
+          prefer_late_draw: schema.leagueTeams.prefer_late_draw,
+          prefer_early_draw: schema.leagueTeams.prefer_early_draw,
+        })
         .from(schema.leagueTeams)
         .where(eq(schema.leagueTeams.league_id, leagueId));
       const ids = teamRows.map((r) => r.id);
       const preferLateDrawByTeam: Record<number, boolean> = {};
+      const preferEarlyDrawByTeam: Record<number, boolean> = {};
       for (const row of teamRows) {
         preferLateDrawByTeam[row.id] = Boolean(row.prefer_late_draw);
+        preferEarlyDrawByTeam[row.id] = Boolean(row.prefer_early_draw);
       }
 
       if (ids.length === 0) {
-        return { requests: [], preferLateDrawByTeam: {} };
+        return { requests: [], preferLateDrawByTeam: {}, preferEarlyDrawByTeam: {} };
       }
 
       const rows = await db
@@ -129,7 +146,7 @@ export async function schedulingRoutes(fastify: FastifyInstance) {
         updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : row.updated_at,
       }));
 
-      return { requests, preferLateDrawByTeam };
+      return { requests, preferLateDrawByTeam, preferEarlyDrawByTeam };
     }
   );
 
@@ -332,6 +349,7 @@ export async function schedulingRoutes(fastify: FastifyInstance) {
           league_id: schema.leagueTeams.league_id,
           name: schema.leagueTeams.name,
           prefer_late_draw: schema.leagueTeams.prefer_late_draw,
+          prefer_early_draw: schema.leagueTeams.prefer_early_draw,
         })
         .from(schema.leagueTeams)
         .where(eq(schema.leagueTeams.id, teamId))
@@ -374,7 +392,8 @@ export async function schedulingRoutes(fastify: FastifyInstance) {
       }));
 
       const preferLateDraw = Boolean(teamRow[0].prefer_late_draw);
-      return { byeRequests, preferLateDraw };
+      const preferEarlyDraw = Boolean(teamRow[0].prefer_early_draw);
+      return { byeRequests, preferLateDraw, preferEarlyDraw };
     }
   );
 
@@ -446,10 +465,24 @@ export async function schedulingRoutes(fastify: FastifyInstance) {
         });
       }
 
-      if (body.preferLateDraw !== undefined) {
+      if (body.preferLateDraw !== undefined || body.preferEarlyDraw !== undefined) {
+        const preferLate =
+          body.preferLateDraw !== undefined
+            ? body.preferLateDraw
+            : false;
+        const preferEarly =
+          body.preferEarlyDraw !== undefined
+            ? body.preferEarlyDraw
+            : false;
+        // Mutual exclusivity: if only one field is sent, clear the other.
+        const nextLate = preferLate && !preferEarly;
+        const nextEarly = preferEarly && !preferLate;
         await db
           .update(schema.leagueTeams)
-          .set({ prefer_late_draw: body.preferLateDraw ? 1 : 0 })
+          .set({
+            prefer_late_draw: nextLate ? 1 : 0,
+            prefer_early_draw: nextEarly ? 1 : 0,
+          })
           .where(eq(schema.leagueTeams.id, teamId));
       }
 

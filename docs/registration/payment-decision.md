@@ -109,17 +109,15 @@ If the registration includes sabbatical plus a non-guaranteed item, the entire p
 
 ## Voluntary pay later
 
-When payment would otherwise be immediate, registrants may choose **Pay later** if a payment deadline is configured for that season and session (Registration schedule admin page).
+When payment would otherwise be immediate, registrants may always choose **Pay later**.
 
 Pay later:
 
 - Does not change the payment decision outcome (`immediate_payment` still applies).
 - Creates a hosted checkout payment link via the configured payment provider and emails it immediately (`registration_submitted_immediate_payment`).
 - Does not redirect the browser to checkout; the registrant continues to the success page.
-- Warns that payment must be completed before the configured deadline to secure league selections.
+- Warns that payment must be completed by the configured payment deadline (Registration schedule admin), or **before leagues begin** when no deadline is set, to secure league selections.
 - Guaranteed league selections are placed on the roster while payment is outstanding (same as other submitted unpaid statuses). Staff removes non-payers and may promote from the waitlist.
-
-If no payment deadline is configured, Pay later is not offered.
 
 ## Failed or incomplete immediate payment
 

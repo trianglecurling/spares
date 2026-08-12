@@ -1041,6 +1041,7 @@ export const leagueTeamsSqlite = sqliteTable('league_teams', {
   division_id: integer('division_id').notNull().references(() => leagueDivisionsSqlite.id, { onDelete: 'cascade' }),
   name: text('name'),
   prefer_late_draw: integer('prefer_late_draw').default(0).notNull(),
+  prefer_early_draw: integer('prefer_early_draw').default(0).notNull(),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
 }, (table) => ({
@@ -3169,6 +3170,7 @@ export const leagueTeamsPg = pgTable('league_teams', {
   division_id: integerPg('division_id').notNull().references(() => leagueDivisionsPg.id, { onDelete: 'cascade' }),
   name: textPg('name'),
   prefer_late_draw: integerPg('prefer_late_draw').default(0).notNull(),
+  prefer_early_draw: integerPg('prefer_early_draw').default(0).notNull(),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
 }, (table) => ({

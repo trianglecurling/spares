@@ -30,10 +30,36 @@ export interface ScheduleByeRequest {
   priority: number;
 }
 
+/** Hard constraint: team must not play on this date (any draw that day). */
+export interface ScheduleHardConstraintBye {
+  type: 'bye';
+  teamId: number;
+  drawDate: string;
+}
+
+/**
+ * Hard constraint: pin a specific matchup to a draw (and optional sheet).
+ * Only applied when that pairing already exists in generated matchups.
+ */
+export interface ScheduleHardConstraintMatchup {
+  type: 'matchup';
+  team1Id: number;
+  team2Id: number;
+  drawDate: string;
+  drawTime: string;
+  sheetId: number | null;
+}
+
+export type ScheduleHardConstraint = ScheduleHardConstraintBye | ScheduleHardConstraintMatchup;
+
+/** How teams are paired within a schedule round. */
+export type SchedulePairingMode = 'intra' | 'cross' | 'any';
+
 export interface ScheduleStrategy {
   localId: string;
   priority: number;
-  isIntraDivision: boolean;
+  pairingMode: SchedulePairingMode;
+  /** Required when pairingMode is `intra`; ignored otherwise. */
   divisionId: number | null;
   gamesPerTeam: number;
   /** Draw slot keys ("date|time") this strategy may use. */
@@ -46,10 +72,21 @@ export interface ScheduleInput {
   divisions: ScheduleDivision[];
   drawSlots: ScheduleDrawSlot[];
   byeRequests: ScheduleByeRequest[];
+  /** Admin-imposed hard constraints for this generation run. */
+  hardConstraints?: ScheduleHardConstraint[];
+  /** Team IDs that prefer the later draw time when a date has multiple draws. */
+  preferLateDrawTeamIds?: number[];
+  /** Team IDs that prefer the earlier draw time when a date has multiple draws. */
+  preferEarlyDrawTeamIds?: number[];
   /** Seed for the PRNG used to break ties during assignment. Different seeds produce different schedules. */
   seed: number;
   /** Time budget for the SA optimization phase in ms. Defaults to 30 000. */
   optimizationTimeBudgetMs?: number;
+  /**
+   * Stop SA early when the best penalty has not improved for this many ms.
+   * Defaults to max(2000, 15% of the time budget).
+   */
+  optimizationEarlyStopPatienceMs?: number;
 }
 
 // ─── Algorithm output types ─────────────────────────────────────────────────
@@ -60,6 +97,8 @@ export interface Matchup {
   team2Id: number;
   /** Which strategy generated this matchup. */
   strategyLocalId: string;
+  /** Stable identity for the generated matchup round, used by structural optimization moves. */
+  roundLocalId?: string;
 }
 
 /** A game produced by the scheduler, ready to be committed. */
@@ -69,6 +108,10 @@ export interface GeneratedGame {
   gameDate: string;
   gameTime: string;
   sheetId: number;
+  /** Which strategy produced this matchup; used to enforce draw-slot restrictions. */
+  strategyLocalId: string;
+  /** Stable identity for the generated matchup round, used by structural optimization moves. */
+  roundLocalId?: string;
 }
 
 /** A matchup that could not be assigned to any available slot. */
@@ -76,6 +119,7 @@ export interface UnschedulableMatchup {
   team1Id: number;
   team2Id: number;
   strategyLocalId: string;
+  roundLocalId?: string;
   reason: string;
 }
 

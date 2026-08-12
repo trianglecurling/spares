@@ -55,6 +55,7 @@ export const REGISTRATION_FLOW_STEPS = new Set([
   'discounts',
   'experience',
   'basic-ice',
+  'league-priority-intro',
   'league-priority',
   'review',
 ]);
@@ -145,11 +146,11 @@ export function resolvePostShellResumeStepFromPayment(
   if (option === 'none') return 'discounts';
   if (option === 'social') return 'review';
   if (option === 'junior_recreational') return 'review';
-  if (option === 'regular_spare_only') return 'league-priority';
+  if (option === 'regular_spare_only') return 'league-priority-intro';
 
   const ice = payment.icePrivilegesChoice;
   if (ice && ice !== 'none') {
-    return 'league-priority';
+    return 'league-priority-intro';
   }
 
   if (payment.selection.experienceType) {
