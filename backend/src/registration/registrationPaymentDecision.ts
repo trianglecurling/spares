@@ -1,7 +1,7 @@
 import { createDecision, type BusinessDecision, type RegistrationReasonCode } from './registrationDecisionTypes.js';
 import type { RegistrationFeePreview } from './registrationFeeCalculator.js';
-import { evaluateLeaguePriorities, type PriorityValidationResult } from './leaguePriorityEvaluation.js';
-import { getLeague, type RegistrationContext } from './registrationContext.js';
+import { evaluateLeaguePriorities, leaguePlacementDeferralReasons, type PriorityValidationResult } from './leaguePriorityEvaluation.js';
+import type { RegistrationContext } from './registrationContext.js';
 
 export type RegistrationPaymentOutcome = 'immediate_payment' | 'deferred_payment' | 'no_payment_required';
 
@@ -20,28 +20,12 @@ export type RegistrationPaymentDecision = BusinessDecision<RegistrationPaymentOu
 };
 
 /**
- * Payment can be collected now only when the registrant's guaranteed entries
- * fill their desired league count. Anything short of that leaves the final
- * amount unresolved, so we quote a range and bill later.
+ * Payment can be collected now when billed-now leagues (guarantees plus
+ * subject-to-availability entries) fill the desired league count. Waitlists,
+ * incomplete rosters, and play-in misses still leave the amount unresolved.
  */
 function leagueDeferralReasons(context: RegistrationContext): RegistrationReasonCode[] {
-  const evaluation = evaluateLeaguePriorities(context);
-  if (evaluation.guaranteedCount >= evaluation.desiredLeagueCount) return [];
-
-  const reasons: RegistrationReasonCode[] = [];
-  for (const entry of evaluation.entries) {
-    if (entry.guaranteed) continue;
-    if (getLeague(context, entry.leagueId)?.isPlayInBased) {
-      reasons.push('play_in_placement_pending');
-    } else if (entry.label === 'waitlisted') {
-      reasons.push('waitlist_placement_pending');
-    } else {
-      reasons.push('non_guaranteed_league_defers_payment');
-    }
-  }
-  // The registrant wants more leagues than they listed reachable options for.
-  if (reasons.length === 0) reasons.push('non_guaranteed_league_defers_payment');
-  return reasons;
+  return leaguePlacementDeferralReasons(evaluateLeaguePriorities(context));
 }
 
 function assistanceDeferralReasons(context: RegistrationContext): RegistrationReasonCode[] {

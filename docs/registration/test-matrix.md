@@ -412,11 +412,20 @@ And no membership or fees are due
 When payment decision is evaluated  
 Then no payment is required
 
-### Non-guaranteed league defers payment
+### Non-guaranteed waitlist defers payment
 
-Given a registrant selects a league subject to availability  
-When payment decision is evaluated  
+Given a registrant selects a waitlisted league that is still needed to fill
+their desired league count
+When payment decision is evaluated
 Then payment is deferred
+
+### Subject-to-availability league pays immediately
+
+Given a registrant selects a league with no waitlist
+And that league fills their desired league count
+And no other deferral reasons exist
+When payment decision is evaluated
+Then payment is immediate
 
 ### Sabbatical-only pays immediately
 

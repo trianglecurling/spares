@@ -91,6 +91,9 @@ describe('guarantee labeling', () => {
       standard(1, { predecessorLeagueId: null, allowsWaitlist: false }),
     ]);
     expect(labelsFor(context)).toEqual(['subject_to_availability']);
+    expect(evaluateLeaguePriorities(context).guaranteedCount).toBe(0);
+    expect(evaluateLeaguePriorities(context).confirmedLeagueFeeMinor).toBe(30000);
+    expect(validateLeaguePriorities(context).deferralReasonCodes).toEqual([]);
   });
 
   test('a play-in league never receives a fallback guarantee', () => {
@@ -317,6 +320,30 @@ describe('fee range', () => {
     expect(evaluation.confirmedLeagueFeeMinor).toBe(60000);
     expect(evaluation.maximumLeagueFeeMinor).toBe(60000);
   });
+
+  test('a subject-to-availability league is on the floor, not the ceiling', () => {
+    const context = contextWithLeagues(
+      [standard(1, { predecessorLeagueId: null, allowsWaitlist: false })],
+      { desiredLeagueCount: 1 },
+    );
+    const evaluation = evaluateLeaguePriorities(context);
+    expect(evaluation.confirmedLeagueFeeMinor).toBe(30000);
+    expect(evaluation.maximumLeagueFeeMinor).toBe(30000);
+  });
+
+  test('a guaranteed league plus a subject-to-availability league quotes a single amount', () => {
+    const context = contextWithLeagues(
+      [
+        standard(1),
+        standard(2, { predecessorLeagueId: null, allowsWaitlist: false }),
+      ],
+      { desiredLeagueCount: 2 },
+    );
+    const evaluation = evaluateLeaguePriorities(context);
+    expect(labelsFor(context)).toEqual(['guaranteed_return', 'subject_to_availability']);
+    expect(evaluation.confirmedLeagueFeeMinor).toBe(60000);
+    expect(evaluation.maximumLeagueFeeMinor).toBe(60000);
+  });
 });
 
 describe('bring-your-own-team ordering', () => {
@@ -531,7 +558,7 @@ describe('derived downstream state', () => {
     expect(waitlistedPriorityEntries(evaluation).map((entry) => entry.leagueId)).toEqual([3]);
   });
 
-  test('every non-guaranteed entry defers payment', () => {
+  test('every waitlisted leftover defers payment', () => {
     const context = contextWithLeagues([standard(1), standard(2), standard(3)]);
     expect(validateLeaguePriorities(context).deferralReasonCodes).toContain('waitlist_placement_pending');
   });
@@ -541,8 +568,47 @@ describe('derived downstream state', () => {
     expect(validateLeaguePriorities(context).deferralReasonCodes).toEqual([]);
   });
 
-  test('the basic ice fallback question appears only when nothing is guaranteed', () => {
+  test('a subject-to-availability list defers nothing', () => {
+    const context = contextWithLeagues(
+      [
+        standard(1, { predecessorLeagueId: null, allowsWaitlist: false }),
+        standard(2, { predecessorLeagueId: null, allowsWaitlist: false }),
+      ],
+      { desiredLeagueCount: 2 },
+    );
+    expect(validateLeaguePriorities(context).deferralReasonCodes).toEqual([]);
+  });
+
+  test('a play-in miss still defers payment', () => {
+    const playIn = standard(1, {
+      isPlayInBased: true,
+      leagueType: 'bring_your_own_team',
+      format: 'doubles',
+      allowsWaitlist: false,
+    });
+    const context = contextWithLeagues([playIn], {
+      priorities: [
+        priority({
+          leagueId: 1,
+          priorityRank: 1,
+          teamRosterPlacements: [{ memberId: 20 }, { memberId: 21 }],
+        }),
+      ],
+      playInEntry: { 1: playInEntryContext(false) },
+      desiredLeagueCount: 1,
+    });
+    expect(labelsFor(context)).toEqual(['subject_to_availability']);
+    expect(validateLeaguePriorities(context).deferralReasonCodes).toContain('play_in_placement_pending');
+    expect(evaluateLeaguePriorities(context).confirmedLeagueFeeMinor).toBe(0);
+  });
+
+  test('the basic ice fallback question appears only when nothing is billed as a league today', () => {
     expect(shouldCollectBasicIceFallback(contextWithLeagues([standard(1)]))).toBe(false);
+    expect(
+      shouldCollectBasicIceFallback(
+        contextWithLeagues([standard(1, { predecessorLeagueId: null, allowsWaitlist: false })]),
+      ),
+    ).toBe(false);
     expect(
       shouldCollectBasicIceFallback(contextWithLeagues([standard(1, { predecessorLeagueId: null })])),
     ).toBe(true);

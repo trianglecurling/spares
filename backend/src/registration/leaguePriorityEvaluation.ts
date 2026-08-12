@@ -20,6 +20,7 @@ import {
   priorityRosterIsComplete,
   resolveDesiredLeagueCount,
   guaranteeBudgetFor,
+  immediateChargeEntries,
   isGuaranteedLabel,
   MAX_DESIRED_LEAGUE_COUNT,
   MAX_PROTECTED_CLAIMS,
@@ -449,17 +450,7 @@ export function validateLeaguePriorities(context: RegistrationContext): Priority
   validatePriorLeagueDecisions(context, blockingErrors);
   blockingErrors.push(...validateContinuingSabbaticalDecisions(context));
 
-  for (const entry of evaluation.entries) {
-    if (entry.guaranteed) continue;
-    const league = getLeague(context, entry.leagueId);
-    if (league?.isPlayInBased) {
-      deferralReasonCodes.push('play_in_placement_pending');
-    } else if (entry.label === 'waitlisted') {
-      deferralReasonCodes.push('waitlist_placement_pending');
-    } else {
-      deferralReasonCodes.push('non_guaranteed_league_defers_payment');
-    }
-  }
+  deferralReasonCodes.push(...leaguePlacementDeferralReasons(evaluation));
 
   const decision = createDecision({
     status: blockingErrors.length > 0 ? 'invalid' : 'valid',
@@ -478,11 +469,39 @@ export function validateLeaguePriorities(context: RegistrationContext): Priority
 }
 
 /**
+ * Waitlists, incomplete rosters, and play-in misses still leave the bill
+ * unresolved. Subject-to-availability leagues are assumed to have room, so they
+ * fill desired-count slots the same way guarantees do for payment timing.
+ */
+export function leaguePlacementDeferralReasons(evaluation: LeaguePriorityEvaluation): RegistrationReasonCode[] {
+  const billed = immediateChargeEntries(evaluation);
+  if (billed.length >= evaluation.desiredLeagueCount) return [];
+
+  const billedLeagueIds = new Set(billed.map((entry) => entry.leagueId));
+  const reasons: RegistrationReasonCode[] = [];
+  for (const entry of evaluation.entries) {
+    if (entry.priorityRank > evaluation.desiredLeagueCount) continue;
+    if (billedLeagueIds.has(entry.leagueId)) continue;
+    if (entry.isPlayInBased) {
+      reasons.push('play_in_placement_pending');
+    } else if (entry.label === 'waitlisted') {
+      reasons.push('waitlist_placement_pending');
+    } else {
+      reasons.push('non_guaranteed_league_defers_payment');
+    }
+  }
+  if (reasons.length === 0) reasons.push('non_guaranteed_league_defers_payment');
+  return reasons;
+}
+
+/**
  * The basic ice fallback question is asked only when nothing on the list is
- * guaranteed, so the registrant might end the session with no ice at all.
+ * billed as a league today, so the registrant might end the session with no ice
+ * at all. Subject-to-availability leagues count: we assume they have room.
  */
 export function shouldCollectBasicIceFallback(context: RegistrationContext): boolean {
   if (context.membershipOption === 'regular_spare_only') return false;
   if (context.membershipOption === 'junior_recreational') return false;
-  return evaluateLeaguePriorities(context).guaranteedCount === 0;
+  const evaluation = evaluateLeaguePriorities(context);
+  return immediateChargeEntries(evaluation).length === 0;
 }

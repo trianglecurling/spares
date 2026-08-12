@@ -22,15 +22,20 @@ import {
   evaluatePriorityList,
   defaultDesiredLeagueCount,
   expectedByotRosterSize,
+  filterPrioritiesToAllowedLeagues,
   guaranteeChipClassName,
   guaranteeChipLabel,
+  shouldShowGuaranteeChip,
   hydratePriorityList,
   incompletePlayInLeagueNames,
+  immediateChargeEntries,
+  isFreeLeague,
   mergeActiveWaitlistLeagues,
   MAX_DESIRED_LEAGUE_COUNT,
   MIN_PLAY_IN_ROSTER_SIZE,
   canReorderPriorityDrop,
   movePriorityInList,
+  paidPriorLeaguesOffList,
   removePriority,
   reorderPriorities,
   sabbaticalListEntries,
@@ -59,6 +64,8 @@ type Props = {
   registeringCurler: { id: number | null; name: string };
   saving: boolean;
   continueLabel: string;
+  /** Basic ice privileges: only free leagues may be listed or added. */
+  restrictToFreeLeagues?: boolean;
   onSave: (input: LeaguePrioritySavePayload) => Promise<void>;
 };
 
@@ -84,6 +91,7 @@ export default function LeaguePriorityStep({
   registeringCurler,
   saving,
   continueLabel,
+  restrictToFreeLeagues = false,
   onSave,
 }: Props) {
   const { showAlert } = useAlert();
@@ -93,6 +101,8 @@ export default function LeaguePriorityStep({
   const addLeagueInputId = useId();
   const listLabelId = useId();
   const sabbaticalsLabelId = useId();
+  const paidReturnLabelId = useId();
+  const restrictHydratedRef = useRef(restrictToFreeLeagues);
 
   const [priorities, setPriorities] = useState<LeaguePriorityInput[]>([]);
   const [desiredLeagueCount, setDesiredLeagueCount] = useState<number | null>(null);
@@ -111,10 +121,12 @@ export default function LeaguePriorityStep({
 
   useEffect(() => {
     if (!payload) return;
-    if (!hydratedRef.current) {
+    const turnedOnFreeOnly = restrictToFreeLeagues && !restrictHydratedRef.current;
+    restrictHydratedRef.current = restrictToFreeLeagues;
+    if (!hydratedRef.current || turnedOnFreeOnly) {
       hydratedRef.current = true;
-      setPriorities(hydratePriorityList(payload));
-      setDesiredLeagueCount(defaultDesiredLeagueCount(payload));
+      setPriorities(hydratePriorityList(payload, { freeLeaguesOnly: restrictToFreeLeagues }));
+      setDesiredLeagueCount(defaultDesiredLeagueCount(payload, { freeLeaguesOnly: restrictToFreeLeagues }));
       setPriorLeagueDecisions(payload.priorLeagueDecisions ?? []);
       setBasicIceFallbackInterest(payload.basicIceFallbackInterest === true);
       setPlayInEntry(payload.playInEntry ?? {});
@@ -122,9 +134,15 @@ export default function LeaguePriorityStep({
     }
     // Catalog may refresh after the registrant joins a waitlist elsewhere —
     // pull those leagues onto the list without resetting other edits.
-    setPriorities((current) => mergeActiveWaitlistLeagues(current, payload));
+    setPriorities((current) =>
+      filterPrioritiesToAllowedLeagues(
+        mergeActiveWaitlistLeagues(current, payload, { freeLeaguesOnly: restrictToFreeLeagues }),
+        payload.leagues,
+        restrictToFreeLeagues,
+      ),
+    );
     setPlayInEntry(payload.playInEntry ?? {});
-  }, [payload]);
+  }, [payload, restrictToFreeLeagues]);
 
   const memberNameById = useMemo(
     () => new Map(memberOptions.options.map((option) => [option.id, option.name])),
@@ -161,8 +179,13 @@ export default function LeaguePriorityStep({
   );
 
   const eligibleLeagues = useMemo(
-    () => leagues.filter((league) => isLeagueSelectionEligibleLeague(league, eligibility)),
-    [eligibility, leagues],
+    () =>
+      leagues.filter((league) => {
+        if (!isLeagueSelectionEligibleLeague(league, eligibility)) return false;
+        if (restrictToFreeLeagues && !isFreeLeague(league)) return false;
+        return true;
+      }),
+    [eligibility, leagues, restrictToFreeLeagues],
   );
 
   const addableLeagues = useMemo(
@@ -191,6 +214,31 @@ export default function LeaguePriorityStep({
       priorLeagueDecisions,
       priorities,
     ],
+  );
+
+  const paidReturnLeagues = useMemo(
+    () =>
+      restrictToFreeLeagues
+        ? paidPriorLeaguesOffList({
+            priorSeasonLeagueIds: payload?.priorSeasonLeagueIds ?? [],
+            priorities,
+            priorLeagueDecisions,
+            leagues,
+          })
+        : [],
+    [leagues, payload?.priorSeasonLeagueIds, priorLeagueDecisions, priorities, restrictToFreeLeagues],
+  );
+  const paidReturnLeaguesWithChoice = useMemo(
+    () => paidReturnLeagues.filter((league) => league.allowsSabbatical),
+    [paidReturnLeagues],
+  );
+  const lastSessionLeagueIds = useMemo(
+    () => new Set(paidReturnLeaguesWithChoice.map((league) => league.id)),
+    [paidReturnLeaguesWithChoice],
+  );
+  const sabbaticalsToShow = useMemo(
+    () => sabbaticals.filter((entry) => entry.kind === 'continuing' || !lastSessionLeagueIds.has(entry.leagueId)),
+    [lastSessionLeagueIds, sabbaticals],
   );
 
   const maxSelectableCount = Math.min(
@@ -250,8 +298,17 @@ export default function LeaguePriorityStep({
   };
 
   const requestRemoval = async (league: LeagueCatalogItem) => {
-    if (isPriorSeasonLeague(league.id)) {
+    if (isPriorSeasonLeague(league.id) && league.allowsSabbatical) {
       setRemovalPrompt({ league, decision: null });
+      return;
+    }
+    if (isPriorSeasonLeague(league.id)) {
+      const confirmed = await confirm({
+        title: 'Remove league',
+        message: `${league.name} does not offer sabbaticals. Removing it gives up your return right.`,
+        confirmText: 'Drop',
+      });
+      if (confirmed) applyRemoval(league.id, 'drop');
       return;
     }
     const confirmed = await confirm({
@@ -263,6 +320,8 @@ export default function LeaguePriorityStep({
   };
 
   const addLeague = (leagueId: number) => {
+    const league = leagueById.get(leagueId);
+    if (restrictToFreeLeagues && !isFreeLeague(league)) return;
     setPriorities((current) => addPriority(current, leagueId, leagues));
     setPriorLeagueDecisions((current) => current.filter((entry) => entry.leagueId !== leagueId));
     setValidationMessage(null);
@@ -273,6 +332,8 @@ export default function LeaguePriorityStep({
     choice: 'sabbatical' | 'return' | 'drop',
   ) => {
     if (choice === 'return') {
+      const league = leagueById.get(leagueId);
+      if (restrictToFreeLeagues && !isFreeLeague(league)) return;
       setPriorities((current) => addPriorityAtTop(current, leagueId, leagues));
       setPriorLeagueDecisions((current) => current.filter((entry) => entry.leagueId !== leagueId));
     } else {
@@ -293,6 +354,19 @@ export default function LeaguePriorityStep({
     setValidationMessage(null);
   };
 
+  useEffect(() => {
+    const autoDrops = paidReturnLeagues.filter((league) => !league.allowsSabbatical);
+    if (autoDrops.length === 0) return;
+    setPriorLeagueDecisions((current) => {
+      const decided = new Set(current.map((entry) => entry.leagueId));
+      const additions = autoDrops
+        .filter((league) => !decided.has(league.id))
+        .map((league) => ({ leagueId: league.id, decision: 'drop' as const }));
+      if (additions.length === 0) return current;
+      return [...current, ...additions];
+    });
+  }, [paidReturnLeagues]);
+
   const firstValidationMessage = (): string | null => {
     const count = desiredLeagueCount ?? 0;
     if (priorities.length === 0 && count > 0) {
@@ -300,6 +374,13 @@ export default function LeaguePriorityStep({
     }
     if (count > priorities.length) {
       return `You asked for ${count} leagues but listed only ${priorities.length}. Add more leagues or lower the count.`;
+    }
+    if (restrictToFreeLeagues) {
+      const paid = priorities.find((priority) => !isFreeLeague(leagueById.get(priority.leagueId)));
+      if (paid) {
+        const name = leagueById.get(paid.leagueId)?.name ?? 'a paid league';
+        return `Basic ice privileges only include free leagues. Remove ${name} or choose league play.`;
+      }
     }
     for (const priority of priorities) {
       const league = leagueById.get(priority.leagueId);
@@ -382,24 +463,36 @@ export default function LeaguePriorityStep({
     return <InlineStateMessage title="Loading leagues..." />;
   }
 
-  const showBasicIceFallback = payload.collectBasicIceFallback && evaluation.guaranteedCount === 0;
+  const showBasicIceFallback = payload.collectBasicIceFallback && immediateChargeEntries(evaluation).length === 0;
+  const showLeaguePicker = eligibleLeagues.length > 0;
+  const showEmptyEligible =
+    !showLeaguePicker && paidReturnLeaguesWithChoice.length === 0 && sabbaticalsToShow.length === 0;
 
   return (
     <div className="space-y-6">
-      {eligibleLeagues.length === 0 ? (
+      {showEmptyEligible ? (
         <PublicStateCard
           title="No eligible leagues"
-          description="There are no leagues available for this curler's age and experience path this session. You can continue to review your registration."
+          description={
+            restrictToFreeLeagues
+              ? 'There are no free leagues available for this curler this session. You can continue to review your registration.'
+              : 'There are no leagues available for this curler\'s age and experience path this session. You can continue to review your registration.'
+          }
           tone="warning"
         />
       ) : (
         <>
+          {showLeaguePicker ? (
           <FormField
             label="How many leagues do you want to play?"
             htmlFor={countInputId}
             tone="public"
             required
-            helperText="We will place you in up to this many leagues, working down your list."
+            helperText={
+              restrictToFreeLeagues
+                ? 'Only free leagues are included with basic ice privileges. We will place you in up to this many, working down your list.'
+                : 'We will place you in up to this many leagues, working down your list.'
+            }
             helperPlacement="after-label"
           >
             <ChoiceInput
@@ -410,13 +503,67 @@ export default function LeaguePriorityStep({
                 setDesiredLeagueCount(typeof next === 'number' ? next : null);
                 setValidationMessage(null);
               }}
-              options={Array.from({ length: maxSelectableCount }, (_, index) => ({
-                value: index + 1,
-                label: String(index + 1),
-              }))}
+              options={[
+                ...(restrictToFreeLeagues ? [{ value: 0, label: '0' }] : []),
+                ...Array.from({ length: maxSelectableCount }, (_, index) => ({
+                  value: index + 1,
+                  label: String(index + 1),
+                })),
+              ]}
             />
           </FormField>
+          ) : null}
 
+          {paidReturnLeaguesWithChoice.length > 0 ? (
+            <div role="group" aria-labelledby={paidReturnLabelId} className="space-y-3">
+              <div>
+                <h2 id={paidReturnLabelId} className="app-section-title">
+                  Last session leagues
+                </h2>
+                <p className="mt-1 text-sm text-gray-600">
+                  Basic ice privileges cannot keep a guaranteed return to a paid league. Take a sabbatical or drop each
+                  of these.
+                </p>
+              </div>
+              {paidReturnLeaguesWithChoice.map((league) => {
+                const schedule = leagueScheduleText(league);
+                const decision =
+                  priorLeagueDecisions.find((entry) => entry.leagueId === league.id)?.decision ?? null;
+                return (
+                <div key={league.id} className="app-card space-y-3 p-4">
+                  <div>
+                    <div className="font-medium text-gray-900">{league.name}</div>
+                    {schedule ? <p className="mt-1 text-sm text-gray-600">{schedule}</p> : null}
+                  </div>
+                  <ChoiceInput
+                    layout="block"
+                    ariaLabel={`Sabbatical or drop for ${league.name}`}
+                    value={decision}
+                    onChange={(next) => {
+                      if (next === 'sabbatical' || next === 'drop') {
+                        setSabbaticalDecision(league.id, next);
+                      }
+                    }}
+                    options={[
+                      {
+                        value: 'sabbatical',
+                        label: 'Take a sabbatical',
+                        description: `Hold your return right for a future session. A ${formatCurrency(payload.sabbaticalFeeMinor ?? 0)} sabbatical fee applies each session you maintain this sabbatical.`,
+                      },
+                      {
+                        value: 'drop',
+                        label: 'Drop the league',
+                        description: 'Give up your return right. You can rejoin later through the waitlist.',
+                      },
+                    ]}
+                  />
+                </div>
+                );
+              })}
+            </div>
+          ) : null}
+
+          {showLeaguePicker ? (
           <div role="group" aria-labelledby={listLabelId} className="space-y-3">
             <div>
               <h2 id={listLabelId} className="app-section-title">
@@ -427,7 +574,11 @@ export default function LeaguePriorityStep({
             {priorities.length === 0 ? (
               <InlineStateMessage
                 title="Your list is empty"
-                description="Add the leagues you want to play, most wanted first."
+                description={
+                  restrictToFreeLeagues
+                    ? 'Add any free leagues you want, most wanted first.'
+                    : 'Add the leagues you want to play, most wanted first.'
+                }
               />
             ) : (
               <SortableList
@@ -474,9 +625,11 @@ export default function LeaguePriorityStep({
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="text-sm font-semibold text-gray-500">{index + 1}.</span>
                             <span className="font-medium text-gray-900">{league.name}</span>
-                            <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${guaranteeChipClassName(label)}`}>
-                              {guaranteeChipLabel(label)}
-                            </span>
+                            {shouldShowGuaranteeChip(label) ? (
+                              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${guaranteeChipClassName(label)}`}>
+                                {guaranteeChipLabel(label)}
+                              </span>
+                            ) : null}
                           </div>
                           <p className="mt-1 text-sm text-gray-600">{leagueRowSubtitle(league)}</p>
                         </div>
@@ -563,7 +716,6 @@ export default function LeaguePriorityStep({
                       value: 'sabbatical',
                       label: 'Take a sabbatical',
                       description: `Hold your return right for a future session. A ${formatCurrency(payload?.sabbaticalFeeMinor ?? 0)} sabbatical fee applies each session you maintain this sabbatical.`,
-                      disabled: !removalPrompt.league.allowsSabbatical,
                     },
                     {
                       value: 'drop',
@@ -585,7 +737,7 @@ export default function LeaguePriorityStep({
                   inputId={addLeagueInputId}
                   layout="popover"
                   value={null}
-                  placeholder="Select a league"
+                  placeholder={restrictToFreeLeagues ? 'Select a free league' : 'Select a league'}
                   onChange={(next) => {
                     if (typeof next === 'number') addLeague(next);
                   }}
@@ -597,21 +749,27 @@ export default function LeaguePriorityStep({
                 />
               </FormField>
             ) : null}
+          </div>
+          ) : null}
 
-            {sabbaticals.length > 0 ? (
+            {sabbaticalsToShow.length > 0 ? (
               <div role="group" aria-labelledby={sabbaticalsLabelId} className="space-y-3">
                 <h3 id={sabbaticalsLabelId} className="app-section-title">
                   Sabbaticals
                 </h3>
-                {sabbaticals.map((entry) => {
+                {sabbaticalsToShow.map((entry) => {
                   const feeText = formatCurrency(entry.sabbaticalFeeMinor);
+                  const canReturnToList =
+                    !restrictToFreeLeagues || isFreeLeague(leagueById.get(entry.leagueId));
                   return (
                     <div key={entry.leagueId} className="app-card space-y-3 p-4">
                       <div>
                         <div className="font-medium text-gray-900">{entry.leagueName}</div>
                         <p className="mt-1 text-sm text-gray-600">
                           {entry.kind === 'continuing'
-                            ? `You held a sabbatical for this league last session. Extend it (${feeText} this session), return with guaranteed return, or drop it.`
+                            ? canReturnToList
+                              ? `You held a sabbatical for this league last session. Extend it (${feeText} this session), return with guaranteed return, or drop it.`
+                              : `You held a sabbatical for this league last session. Extend it (${feeText} this session) or drop it. Basic ice privileges cannot return you to a paid league.`
                             : `Holding a sabbatical for this league (${feeText} this session).`}
                         </p>
                         {entry.kind === 'continuing' &&
@@ -639,11 +797,15 @@ export default function LeaguePriorityStep({
                               description: `Keep your return right for a future session. A ${feeText} sabbatical fee applies this session.`,
                               disabled: !entry.canExtend,
                             },
-                            {
-                              value: 'return',
-                              label: 'Return to this league',
-                              description: 'Add it to your priority list with guaranteed return.',
-                            },
+                            ...(canReturnToList
+                              ? [
+                                  {
+                                    value: 'return' as const,
+                                    label: 'Return to this league',
+                                    description: 'Add it to your priority list with guaranteed return.',
+                                  },
+                                ]
+                              : []),
                             {
                               value: 'drop',
                               label: 'Drop',
@@ -653,9 +815,11 @@ export default function LeaguePriorityStep({
                         />
                       ) : (
                         <div className="flex flex-wrap gap-2">
-                          <Button type="button" variant="secondary" onClick={() => addLeague(entry.leagueId)}>
-                            Return to priority list
-                          </Button>
+                          {canReturnToList ? (
+                            <Button type="button" variant="secondary" onClick={() => addLeague(entry.leagueId)}>
+                              Return to priority list
+                            </Button>
+                          ) : null}
                           <Button
                             type="button"
                             variant="secondary"
@@ -678,7 +842,6 @@ export default function LeaguePriorityStep({
                 })}
               </div>
             ) : null}
-          </div>
 
           {showBasicIceFallback ? (
             <FormCheckbox

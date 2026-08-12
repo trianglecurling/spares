@@ -146,11 +146,14 @@ export function resolvePostShellResumeStepFromPayment(
   if (option === 'none') return 'discounts';
   if (option === 'social') return 'review';
   if (option === 'junior_recreational') return 'review';
-  if (option === 'regular_spare_only') return 'league-priority-intro';
+  if (option === 'regular_spare_only') return 'league-priority';
 
   const ice = payment.icePrivilegesChoice;
-  if (ice && ice !== 'none') {
+  if (ice === 'league_play') {
     return 'league-priority-intro';
+  }
+  if (ice === 'basic_ice') {
+    return 'league-priority';
   }
 
   if (payment.selection.experienceType) {

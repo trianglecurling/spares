@@ -211,6 +211,34 @@ export function isGuaranteedLabel(label: LeaguePriorityGuaranteeLabel): boolean 
   return label === 'guaranteed_return' || label === 'guaranteed_fallback';
 }
 
+/**
+ * Leagues billed today: protected guarantees, plus non-waitlist leagues we
+ * assume have room. Play-in entries that missed the bar stay unlabeled as
+ * subject to availability but are not charged until placement settles.
+ */
+export function isImmediateChargeEntry(entry: LabeledPriorityEntry): boolean {
+  if (entry.guaranteed) return true;
+  return entry.label === 'subject_to_availability' && !entry.isPlayInBased;
+}
+
+/**
+ * Guaranteed entries are always billed. Subject-to-availability entries fill
+ * remaining desired-count slots in rank order, and only among ranks at or
+ * above the desired count so backups below that line stay off the floor.
+ */
+export function immediateChargeEntries(
+  result: Pick<PriorityLabelResult, 'entries' | 'desiredLeagueCount'>,
+): LabeledPriorityEntry[] {
+  const guaranteed = result.entries.filter((entry) => entry.guaranteed);
+  const remaining = Math.max(0, result.desiredLeagueCount - guaranteed.length);
+  const subjectToAvailability = result.entries.filter(
+    (entry) => isImmediateChargeEntry(entry) && !entry.guaranteed && entry.priorityRank <= result.desiredLeagueCount,
+  );
+  return [...guaranteed, ...subjectToAvailability.slice(0, remaining)].sort(
+    (left, right) => left.priorityRank - right.priorityRank,
+  );
+}
+
 export function resolveDesiredLeagueCount(value: number | null | undefined): number {
   if (value == null) return 0;
   return Math.max(0, Math.min(MAX_DESIRED_LEAGUE_COUNT, Math.trunc(value)));
@@ -238,6 +266,8 @@ export function guaranteeBudgetFor(desiredLeagueCount: number): number {
  * — but never on a play-in league, which sends a team that misses the bar to
  * playdowns rather than into a held spot. Everything left over is waitlisted
  * where the league has a waitlist, and otherwise simply subject to availability.
+ * Subject-to-availability leagues (except play-in misses) are billed now and
+ * do not consume the guarantee budget.
  *
  * Sabbaticals do not consume this budget. A registrant may hold two guaranteed
  * priority spots and still take sabbatical from other prior leagues.
@@ -295,15 +325,15 @@ export function labelPriorityEntries(input: {
     entry.label = entry.allowsWaitlist ? 'waitlisted' : 'subject_to_availability';
   }
 
-  const confirmedLeagueFeeMinor = entries
-    .filter((entry) => entry.guaranteed)
-    .reduce((total, entry) => total + entry.feeMinor, 0);
+  const charged = immediateChargeEntries({ entries, desiredLeagueCount });
+  const chargedLeagueIds = new Set(charged.map((entry) => entry.leagueId));
+  const confirmedLeagueFeeMinor = charged.reduce((total, entry) => total + entry.feeMinor, 0);
 
-  const remainingSlots = Math.max(0, desiredLeagueCount - granted);
+  const remainingSlots = Math.max(0, desiredLeagueCount - charged.length);
   const maximumLeagueFeeMinor =
     confirmedLeagueFeeMinor +
     entries
-      .filter((entry) => !entry.guaranteed)
+      .filter((entry) => !chargedLeagueIds.has(entry.leagueId))
       .map((entry) => entry.feeMinor)
       .sort((a, b) => b - a)
       .slice(0, remainingSlots)

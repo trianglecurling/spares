@@ -431,6 +431,23 @@ describe('registration business logic', () => {
     expectReason(deferred.paymentDecision, 'waitlist_placement_pending');
   });
 
+  test('a subject-to-availability league is billed immediately', () => {
+    const context = registrationContext({
+      leagues: { 100: league({ id: 100, predecessorLeagueId: null, allowsWaitlist: false }) },
+      participatedLeagueIds: [],
+      priorities: [priority({ leagueId: 100 })],
+      desiredLeagueCount: 1,
+    });
+    const draft = evaluateRegistrationDraft(context);
+    expect(draft.paymentDecision.outcome).toBe('immediate_payment');
+    expect(draft.feePreview.lineItems.map((item) => item.lineType)).toEqual([
+      'regular_membership_fee',
+      'league_fee',
+    ]);
+    expect(draft.feePreview.totalDueMinor).toBe(40000);
+    expect(draft.feePreview.estimatedMaximumTotalDueMinor).toBe(40000);
+  });
+
   test('a waitlist-only registration owes nothing today but quotes what a placement would cost', () => {
     const context = registrationContext({
       membershipOption: 'none',

@@ -858,7 +858,8 @@ Placement into a third or later league may still be manual or handled outside
 the application. The exact mechanism, such as lottery or staff decision, is not
 part of V1 app automation.
 
-Non-guaranteed entries always defer payment.
+Non-guaranteed waitlist and play-in-pending entries defer payment.
+Subject-to-availability leagues (no waitlist) are billed immediately.
 
 ## 19. Discounts
 

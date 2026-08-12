@@ -9,14 +9,17 @@ import {
   guaranteeChipLabel,
   hydratePriorityList,
   incompletePlayInLeagueNames,
+  isFreeLeague,
   mergeActiveWaitlistLeagues,
   movePriorityInList,
   normalizePriorityOrder,
+  paidPriorLeaguesOffList,
   priorityMoveButtonTitle,
   removePriority,
   reorderPriorities,
   seedPriorityList,
   sabbaticalListEntries,
+  shouldShowGuaranteeChip,
   addPriorityAtTop,
   undecidedContinuingSabbaticalIds,
   undecidedPriorLeagueIds,
@@ -202,6 +205,44 @@ describe('seeding the priority list', () => {
     expect(mergeActiveWaitlistLeagues(current, payload)).toBe(current);
   });
 
+  test('basic ice hydrates only free leagues and leaves paid return rights off the list', () => {
+    const freeDaytime = catalogLeague({
+      id: 6,
+      name: 'Daytime',
+      registrationFeeMinor: 0,
+      allowsWaitlist: false,
+    });
+    const payload: RegistrationLeagueCatalogPayload = {
+      ...basePayload,
+      leagues: [...allLeagues, freeDaytime],
+      priorSeasonLeagueIds: [1, 6],
+      returnRightLeagueIds: [1, 6],
+      priorities: ranked(1, 6),
+      desiredLeagueCount: 2,
+      existingWaitlistEntries: [{ waitlistId: 8, leagueId: 2, status: 'active' }],
+    };
+    expect(hydratePriorityList(payload, { freeLeaguesOnly: true })).toEqual([{ leagueId: 6, priorityRank: 1 }]);
+    expect(defaultDesiredLeagueCount(payload, { freeLeaguesOnly: true })).toBe(1);
+    expect(
+      paidPriorLeaguesOffList({
+        priorSeasonLeagueIds: [1, 6],
+        priorities: [{ leagueId: 6, priorityRank: 1 }],
+        priorLeagueDecisions: [],
+        leagues: payload.leagues,
+      }).map((league) => league.id),
+    ).toEqual([1]);
+    expect(
+      paidPriorLeaguesOffList({
+        priorSeasonLeagueIds: [1, 6],
+        priorities: [{ leagueId: 6, priorityRank: 1 }],
+        priorLeagueDecisions: [{ leagueId: 1, decision: 'drop' }],
+        leagues: payload.leagues,
+      }).map((league) => league.id),
+    ).toEqual([1]);
+    expect(isFreeLeague(freeDaytime)).toBe(true);
+    expect(isFreeLeague(standardA)).toBe(false);
+  });
+
   test('drag drop targets stay within the BYOT or standard block', () => {
     expect(canReorderPriorityDrop({ leagueId: 4, priorityRank: 1 }, { leagueId: 5, priorityRank: 2 }, allLeagues)).toBe(
       true,
@@ -256,6 +297,9 @@ describe('guarantee labels shown while reordering', () => {
   test('a league with no waitlist and no return right is subject to availability', () => {
     const result = evaluate({ priorities: ranked(4), desiredLeagueCount: 1 });
     expect(result.entries[0]?.label).toBe('subject_to_availability');
+    expect(result.guaranteedCount).toBe(0);
+    expect(result.confirmedLeagueFeeMinor).toBe(result.entries[0]?.feeMinor);
+    expect(result.maximumLeagueFeeMinor).toBe(result.confirmedLeagueFeeMinor);
   });
 
   test('a play-in league is guaranteed only when its declared team clears the bar', () => {
@@ -331,6 +375,8 @@ describe('guarantee labels shown while reordering', () => {
     expect(guaranteeChipLabel('guaranteed_fallback')).toBe('Guaranteed fallback');
     expect(guaranteeChipLabel('waitlisted')).toBe('Waitlisted');
     expect(guaranteeChipLabel('subject_to_availability')).toBe('Subject to availability');
+    expect(shouldShowGuaranteeChip('subject_to_availability')).toBe(false);
+    expect(shouldShowGuaranteeChip('waitlisted')).toBe(true);
   });
 });
 

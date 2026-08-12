@@ -58,9 +58,8 @@ Payment is deferred when the registration includes items requiring placement, re
 
 Common deferral reasons include:
 
-- Non-guaranteed league requests.
-- Waitlist placement.
-- Third-league interest.
+- Waitlist placement still needed to fill the desired league count.
+- Play-in entry that has not cleared the TLINE guarantee bar.
 - Junior Recreational financial assistance review.
 - Other staff placement decisions.
 
@@ -273,7 +272,8 @@ Examples include:
 - Some BYOT placement outcomes, although BYOT is treated as guaranteed for payment purposes.
 - Junior Recreational assistance review.
 
-Non-guaranteed items generally cause payment to be deferred.
+Non-guaranteed waitlist and play-in-pending items cause payment to be deferred.
+Subject-to-availability leagues (no waitlist) are billed immediately.
 
 ## Open registration
 

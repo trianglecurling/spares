@@ -20,8 +20,9 @@ Payment is immediate when:
 
 - Registration is otherwise valid.
 - There is an amount due.
-- The number of guaranteed entries on the priority list equals the desired
-  league count, so nothing about the league outcome is still unresolved.
+- Billed-now leagues (guaranteed entries plus subject-to-availability entries)
+  fill the desired league count, so nothing about the league outcome is still
+  unresolved.
 - No staff review is required.
 - No Junior Recreational financial assistance request is pending.
 
@@ -31,6 +32,8 @@ Examples:
 - Regular membership, desired league count of 2, with two guaranteed entries.
 - Regular membership, desired league count of 1, with one guaranteed entry, even
   if the priority list has four more leagues on it.
+- Regular membership, desired league count of 1, with one subject-to-availability
+  league (no waitlist; assumed to have room).
 - Regular membership plus spare-only fee.
 - Sabbatical-only registration.
 - Junior Recreational without financial assistance.
@@ -41,12 +44,11 @@ Payment is deferred when any selected item requires later placement or review.
 
 Deferral reasons include:
 
-- Fewer guaranteed entries on the priority list than the desired league count.
-- Waitlist placement.
+- Fewer billed-now leagues on the priority list than the desired league count.
+- Waitlist placement still needed to fill the desired count.
 - Play-in entry that has not cleared the TLINE guarantee bar.
 - Junior Recreational financial assistance request.
 - Staff review required.
-- Any other non-guaranteed league outcome.
 
 If any deferral reason exists, payment for the entire registration is deferred whenever possible.
 
@@ -57,9 +59,10 @@ The system should avoid multiple payments for the same registration when practic
 A deferred registration is quoted as a range, not a single total:
 
 - **Floor** — the confirmed total: membership and other fixed fees plus the
-  league fees for every guaranteed entry.
-- **Ceiling** — the floor plus the `desiredLeagueCount - guaranteedCount` most
-  expensive remaining entries on the priority list.
+  league fees for every guaranteed entry and every subject-to-availability
+  entry filling a remaining desired-count slot.
+- **Ceiling** — the floor plus the remaining desired-count slots' most
+  expensive unbilled entries on the priority list.
 
 The ceiling uses the most expensive remaining entries rather than the
 next-by-priority entries so the quoted maximum is a true upper bound. Fees are
@@ -105,7 +108,8 @@ After the decision:
 
 If the registration is sabbatical-only and no deferral reason exists, payment is immediate.
 
-If the registration includes sabbatical plus a non-guaranteed item, the entire payment is deferred.
+If the registration includes sabbatical plus a waitlist, incomplete roster, or
+play-in miss, the entire payment is deferred.
 
 ## Voluntary pay later
 

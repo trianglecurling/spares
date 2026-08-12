@@ -8,7 +8,8 @@ and third-league interest.
 ## Flow placement
 
 Registration shows a purely informational step (`league-priority-intro`)
-immediately before the interactive priority list. That screen explains:
+immediately before the interactive priority list **when the registrant chose
+League play for ice privileges**. That screen explains:
 
 1. What the next screen asks for (desired count and ordered priority list).
 2. How league rosters use up to two protected spots from leagues the member
@@ -16,6 +17,21 @@ immediately before the interactive priority list. That screen explains:
    when trying to switch into a higher-priority league.
 
 Continue advances to the priority list. No answers are saved on the intro step.
+Registrants on basic ice privileges (or other non–league-play paths) skip this
+intro and go straight to the priority list.
+
+## Basic ice privileges
+
+When the registrant chose **basic ice privileges**, the priority list is limited
+to leagues listed as free (`registrationFeeMinor` of 0):
+
+- The add-a-league picker only offers free leagues.
+- Paid leagues are not seeded onto the list, including last-session leagues that
+  would otherwise be guaranteed returns.
+- Each paid last-session league must be answered with sabbatical or drop instead
+  of remaining on the list.
+
+The server rejects a save that includes a paid league on this path.
 
 ## The model
 
@@ -65,7 +81,7 @@ live as the registrant reorders, adds, or removes leagues.
 | Guaranteed return | The spot is held. Billed immediately. |
 | Guaranteed fallback | The spot is held as a backstop if higher choices do not come through. Billed immediately. |
 | Waitlisted | Queued on the league waitlist. Payment deferred. |
-| Subject to availability | Wanted, no waitlist on the league. Payment deferred. |
+| Subject to availability | Wanted, no waitlist on the league. Assumed to have room; billed immediately. **Not shown as a chip.** |
 
 ### Return eligibility
 
@@ -209,10 +225,11 @@ simultaneous sabbaticals).
 
 ## Basic ice fallback
 
-When the priority list produces zero guarantee labels, the registrant is offered
-basic ice as a fallback so they have something to skate on if no league spot
-materializes. The question appears inline on the priority page and disappears as
-soon as any guarantee label is present.
+When the priority list produces no leagues billed today (no guaranteed entries
+and no subject-to-availability entries), the registrant is offered basic ice as
+a fallback so they have something to skate on if no league spot materializes.
+The question appears inline on the priority page and disappears as soon as any
+billed-now league is present.
 
 ## Waitlist derivation
 
@@ -226,26 +243,32 @@ See `waitlists.md` for offer and placement behavior.
 
 ## Billing
 
-Guaranteed entries are billed. Non-guaranteed entries are not, because the
+Guaranteed entries and subject-to-availability entries are billed now.
+Waitlisted entries, incomplete rosters, and play-in misses are not, because the
 registrant may never be placed in them.
 
+Subject-to-availability means the league has no waitlist. We assume there will
+be room, take payment, and do not consume a protected guarantee spot.
+
 - **Confirmed total** = membership and other fixed fees, plus the sum of
-  `registrationFeeMinor` for every entry labeled `guaranteed_return` or
-  `guaranteed_fallback`.
-- **Immediate payment** when the number of guaranteed entries equals the desired
-  league count, and no unrelated deferral applies (for example a pending junior
-  financial assistance request).
+  `registrationFeeMinor` for every guaranteed entry and every
+  subject-to-availability entry that fills a remaining desired-count slot.
+- **Immediate payment** when billed-now leagues fill the desired league count,
+  and no unrelated deferral applies (for example a pending junior financial
+  assistance request, a waitlist still needed to fill the count, or a play-in
+  miss).
 - **Deferred payment** otherwise, quoted as a range. The floor is the confirmed
-  total. The ceiling adds the `desiredLeagueCount - guaranteedCount` most
-  expensive remaining entries in the list — most expensive rather than
-  next-by-priority, so the quoted maximum is never exceeded.
+  total. The ceiling adds the remaining desired-count slots' most expensive
+  unbilled entries — most expensive rather than next-by-priority, so the quoted
+  maximum is never exceeded.
 
 See `payment-decision.md` and `fee-calculation.md`.
 
 ## Placement
 
 Guaranteed returns and guaranteed fallbacks are placed on the league roster at
-submit. Everything else is resolved after priority registration closes, in the
-order described in `staff-operations.md`. Entries ranked below a registrant's
-desired count are only placed if room remains after everyone's higher-priority
-demand has been satisfied.
+submit. Subject-to-availability leagues are billed at submit but still placed
+after priority registration closes, in the order described in
+`staff-operations.md`. Waitlisted entries are resolved the same way. Entries
+ranked below a registrant's desired count are only placed if room remains after
+everyone's higher-priority demand has been satisfied.

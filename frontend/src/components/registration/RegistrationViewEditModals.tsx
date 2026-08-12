@@ -487,6 +487,10 @@ function LeaguePriorityEditModal({ registrationId, isOpen, onClose, onSaved, fin
             registeringCurler={{ id: curler?.id ?? null, name: curler?.name ?? 'Registering curler' }}
             saving={saving}
             continueLabel={saving ? 'Saving…' : 'Save changes'}
+            restrictToFreeLeagues={
+              membership?.icePrivilegesChoice === 'basic_ice' ||
+              membership?.selection.membershipOption === 'regular_spare_only'
+            }
             onSave={save}
           />
         )}

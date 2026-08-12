@@ -204,6 +204,6 @@ describe('registration resume targeting', () => {
         selection: { membershipOption: 'regular_spare_only', experienceType: null },
         icePrivilegesChoice: 'basic_ice',
       }),
-    ).toBe('league-priority-intro');
+    ).toBe('league-priority');
   });
 });

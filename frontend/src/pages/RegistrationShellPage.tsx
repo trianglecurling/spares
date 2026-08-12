@@ -25,6 +25,7 @@ import {
   evaluatePriorityList,
   guaranteeChipLabel,
   pendingRosterNames,
+  shouldShowGuaranteeChip,
   type LeaguePrioritySavePayload,
   type RegistrationLeagueCatalogPayload as RegistrationLeagueCatalogPayloadBase,
 } from '../components/registration/leaguePriorityShared';
@@ -1461,7 +1462,11 @@ export default function RegistrationShellPage() {
         setIcePrivilegesChoice((current) => {
           const onIcePrivilegesStep = currentStep === 'basic-ice';
           if (onIcePrivilegesStep && current !== null) return current;
-          return icePrivilegesChoiceForUi(data.icePrivilegesChoice);
+          // On the picker, schema default `none` must not look like a choice.
+          // Everywhere else, keep an explicit no-ice selection so Back/resume
+          // do not send the registrant into league selection.
+          if (onIcePrivilegesStep) return icePrivilegesChoiceForUi(data.icePrivilegesChoice);
+          return data.icePrivilegesChoice ?? null;
         });
         setStudentDiscountClaimed(data.selection.studentDiscountClaimed);
         setStudentInstitution(data.selection.studentInstitution || '');
@@ -2381,7 +2386,7 @@ export default function RegistrationShellPage() {
         const paymentPayload = response.data as RegistrationMembershipPaymentPayload;
         navigate(
           selectedMembership === 'none'
-            ? '/registration/league-priority-intro'
+            ? '/registration/league-priority'
             : selectedMembership === 'social' || selectedMembership === 'junior_recreational'
               ? '/registration/review'
               : `/registration/${stepAfterDiscounts(paymentPayload)}`,
@@ -2490,7 +2495,7 @@ export default function RegistrationShellPage() {
           await finishPriorityEdit();
           return;
         }
-        navigate('/registration/league-priority-intro');
+        navigate('/registration/league-priority');
       } else {
         persistGuestDraft('review');
         navigate('/registration/review');
@@ -2516,7 +2521,9 @@ export default function RegistrationShellPage() {
         navigate('/registration/review');
         return;
       }
-      navigate('/registration/league-priority-intro');
+      navigate(
+        choice === 'league_play' ? '/registration/league-priority-intro' : '/registration/league-priority',
+      );
     } catch (err) {
       setError(errorMessage(err, 'Unable to save ice privileges.'));
     } finally {
@@ -2791,12 +2798,7 @@ export default function RegistrationShellPage() {
       case 'league-priority-intro':
         return {
           label: 'Back',
-          onClick: () => {
-            if (membershipPayment?.selection.membershipOption === 'none' || membershipChoice === 'none') {
-              noMembershipPathActiveRef.current = true;
-            }
-            navigateRegistrationBack('/registration/basic-ice');
-          },
+          onClick: () => navigateRegistrationBack('/registration/basic-ice'),
         };
       case 'league-priority':
         return {
@@ -2806,7 +2808,14 @@ export default function RegistrationShellPage() {
               navigateRegistrationBack(priorityEditReturnTo);
               return;
             }
-            navigateRegistrationBack('/registration/league-priority-intro');
+            if (membershipPayment?.selection.membershipOption === 'none' || membershipChoice === 'none') {
+              noMembershipPathActiveRef.current = true;
+            }
+            navigateRegistrationBack(
+              icePrivilegesChoice === 'league_play'
+                ? '/registration/league-priority-intro'
+                : '/registration/basic-ice',
+            );
           },
         };
       case 'review': {
@@ -2822,12 +2831,13 @@ export default function RegistrationShellPage() {
         if (membershipOption === 'social' || membershipOption === 'junior_recreational') {
           return { label: 'Back', onClick: () => navigateRegistrationBack('/registration/membership') };
         }
+        const iceChoice = membershipPayment?.icePrivilegesChoice ?? icePrivilegesChoice;
+        if (iceChoice === 'none' && membershipOption !== 'none') {
+          return { label: 'Back', onClick: () => navigateRegistrationBack('/registration/basic-ice') };
+        }
         return {
           label: 'Back',
-          onClick: () =>
-            navigateRegistrationBack(
-              icePrivilegesChoice === 'none' ? '/registration/basic-ice' : '/registration/league-priority',
-            ),
+          onClick: () => navigateRegistrationBack('/registration/league-priority'),
         };
       }
       case 'success':
@@ -3878,8 +3888,9 @@ export default function RegistrationShellPage() {
         <RegistrationFlowHeader />
         <h1 className="text-3xl font-bold text-[#121033]">Leagues you want to play</h1>
         <p className="mt-3 text-gray-600">
-          Tell us how many leagues you want this session, then list them in the order you want them. We work down your
-          list, so put the league you want most at the top.
+          {(membershipPayment?.icePrivilegesChoice ?? icePrivilegesChoice) === 'basic_ice'
+            ? 'Basic ice privileges include sparing, practice, and free daytime leagues. List only those free leagues, and decide what to do with any paid leagues you played last session.'
+            : 'Tell us how many leagues you want this session, then list them in the order you want them. We work down your list, so put the league you want most at the top.'}
         </p>
         <div className="mt-6">
           <LeaguePriorityStep
@@ -3888,6 +3899,10 @@ export default function RegistrationShellPage() {
             registeringCurler={{ id: registeringCurlerMemberId, name: registeringCurlerName }}
             saving={loading}
             continueLabel={isPriorityEdit ? 'Save and return' : 'Continue'}
+            restrictToFreeLeagues={
+              (membershipPayment?.icePrivilegesChoice ?? icePrivilegesChoice) === 'basic_ice' ||
+              membershipPayment?.selection.membershipOption === 'regular_spare_only'
+            }
             onSave={(input) => saveLeaguePriorities(input, isPriorityEdit ? finishPriorityEdit : undefined)}
           />
         </div>
@@ -3941,9 +3956,11 @@ export default function RegistrationShellPage() {
                         <p className="font-medium text-gray-900">
                           {index + 1}. {leagueName(entry.leagueId)}
                         </p>
-                        <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-primary-teal shadow-sm">
-                          {guaranteeChipLabel(entry.label)}
-                        </span>
+                        {shouldShowGuaranteeChip(entry.label) ? (
+                          <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-primary-teal shadow-sm">
+                            {guaranteeChipLabel(entry.label)}
+                          </span>
+                        ) : null}
                       </div>
                       {rosterText ? <p className="mt-1 text-gray-600">Team roster: {rosterText}</p> : null}
                     </div>

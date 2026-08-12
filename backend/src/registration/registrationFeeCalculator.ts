@@ -1,6 +1,7 @@
 import { validateDiscountClaims } from './registrationEligibility.js';
 import type { DecisionMessage } from './registrationDecisionTypes.js';
 import { evaluateLeaguePriorities, type LeaguePriorityEvaluation } from './leaguePriorityEvaluation.js';
+import { immediateChargeEntries } from './leaguePriorityRules.js';
 import {
   getLeague,
   getSelectionLeague,
@@ -56,10 +57,11 @@ function qualifiesForSpareOnlyIce(context: RegistrationContext, chargedLeagueIds
  * registrant could still be placed into, up to their desired league count.
  * Most expensive rather than next-by-priority so the quote is a true maximum.
  */
-function ceilingLeagueIds(evaluation: LeaguePriorityEvaluation): number[] {
-  const remainingSlots = Math.max(0, evaluation.desiredLeagueCount - evaluation.guaranteedCount);
+function ceilingLeagueIds(evaluation: LeaguePriorityEvaluation, chargedLeagueIds: number[]): number[] {
+  const charged = new Set(chargedLeagueIds);
+  const remainingSlots = Math.max(0, evaluation.desiredLeagueCount - chargedLeagueIds.length);
   return evaluation.entries
-    .filter((entry) => !entry.guaranteed)
+    .filter((entry) => !charged.has(entry.leagueId))
     .sort((a, b) => b.feeMinor - a.feeMinor)
     .slice(0, remainingSlots)
     .map((entry) => entry.leagueId);
@@ -330,8 +332,8 @@ function computePreview(context: RegistrationContext, chargedLeagueIds: number[]
 
 /**
  * Fees for what the registrant is committed to today: membership, sabbaticals,
- * and every guaranteed league on their priority list. Non-guaranteed leagues are
- * not billed, because the registrant may never be placed in them; they only
+ * guaranteed leagues, and subject-to-availability leagues (assumed to have
+ * room). Waitlisted and play-in-pending leagues are not billed; they only
  * widen `estimatedMaximumTotalDueMinor`.
  */
 export function calculateRegistrationFees(
@@ -354,13 +356,13 @@ export function calculateRegistrationFees(
   }
 
   const evaluation = evaluateLeaguePriorities(context);
-  const guaranteedLeagueIds = evaluation.entries.filter((entry) => entry.guaranteed).map((entry) => entry.leagueId);
-  const confirmed = computePreview(context, guaranteedLeagueIds);
+  const billedLeagueIds = immediateChargeEntries(evaluation).map((entry) => entry.leagueId);
+  const confirmed = computePreview(context, billedLeagueIds);
 
-  const ceiling = ceilingLeagueIds(evaluation);
+  const ceiling = ceilingLeagueIds(evaluation, billedLeagueIds);
   if (ceiling.length === 0) return confirmed;
 
-  const maximum = computePreview(context, [...guaranteedLeagueIds, ...ceiling]);
+  const maximum = computePreview(context, [...billedLeagueIds, ...ceiling]);
   return {
     ...confirmed,
     estimatedMaximumTotalDueMinor: Math.max(confirmed.totalDueMinor, maximum.totalDueMinor),

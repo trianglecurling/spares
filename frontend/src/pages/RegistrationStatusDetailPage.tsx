@@ -10,6 +10,7 @@ import type { RegistrationPlayInEntrySummary } from '../components/registration/
 import {
   guaranteeChipClassName,
   guaranteeChipLabel,
+  shouldShowGuaranteeChip,
   type LeaguePriorityGuaranteeLabel,
 } from '../components/registration/leaguePriorityShared';
 import { playInEntryTeamMembersText } from '../components/registration/RegistrationPlayInEntryPanel';
@@ -321,7 +322,7 @@ export default function RegistrationStatusDetailPage() {
                           <p className="font-medium">
                             {priority.priorityRank}. {priority.leagueName}
                           </p>
-                          {priority.guaranteeLabel ? (
+                          {shouldShowGuaranteeChip(priority.guaranteeLabel) ? (
                             <span
                               className={`rounded-full px-2 py-0.5 text-xs font-medium ${guaranteeChipClassName(
                                 priority.guaranteeLabel,

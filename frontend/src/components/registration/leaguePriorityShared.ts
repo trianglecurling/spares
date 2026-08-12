@@ -10,6 +10,7 @@ import {
   expectedByotRosterSize,
   isGuaranteedLabel,
   labelPriorityEntries,
+  immediateChargeEntries,
   LEAGUE_PRIORITY_GUARANTEE_LABEL_TEXT,
   MAX_DESIRED_LEAGUE_COUNT,
   MAX_PROTECTED_CLAIMS,
@@ -35,6 +36,7 @@ export {
   expectedByotRosterSize,
   isGuaranteedLabel,
   labelPriorityEntries,
+  immediateChargeEntries,
   LEAGUE_PRIORITY_GUARANTEE_LABEL_TEXT,
   MAX_DESIRED_LEAGUE_COUNT,
   MAX_PROTECTED_CLAIMS,
@@ -101,6 +103,33 @@ export type LeaguePrioritySavePayload = {
 
 export function leagueById(leagues: LeagueCatalogItem[]): Record<number, LeagueCatalogItem | undefined> {
   return Object.fromEntries(leagues.map((league) => [league.id, league]));
+}
+
+/** Basic ice privileges only include leagues listed as free (no registration fee). */
+export function isFreeLeague(league: Pick<LeagueCatalogItem, 'registrationFeeMinor'> | undefined): boolean {
+  return (league?.registrationFeeMinor ?? 0) === 0;
+}
+
+export type PriorityListOptions = {
+  /** When true, paid leagues cannot be seeded, merged, or kept on the list. */
+  freeLeaguesOnly?: boolean;
+};
+
+function allowedLeagueIds(leagues: LeagueCatalogItem[], freeLeaguesOnly: boolean | undefined): Set<number> | null {
+  if (!freeLeaguesOnly) return null;
+  return new Set(leagues.filter(isFreeLeague).map((league) => league.id));
+}
+
+export function filterPrioritiesToAllowedLeagues(
+  priorities: LeaguePriorityInput[],
+  leagues: LeagueCatalogItem[],
+  freeLeaguesOnly: boolean | undefined,
+): LeaguePriorityInput[] {
+  const allowed = allowedLeagueIds(leagues, freeLeaguesOnly);
+  if (!allowed) return priorities;
+  const next = priorities.filter((priority) => allowed.has(priority.leagueId));
+  if (next.length === priorities.length) return priorities;
+  return normalizePriorityOrder(next, leagues);
 }
 
 /**
@@ -182,13 +211,20 @@ export function normalizePriorityOrder(
  * league they are already waitlisted for. Waitlisted leagues lead because the
  * registrant already told us they want in.
  */
-export function seedPriorityList(payload: RegistrationLeagueCatalogPayload): LeaguePriorityInput[] {
+export function seedPriorityList(
+  payload: RegistrationLeagueCatalogPayload,
+  options?: PriorityListOptions,
+): LeaguePriorityInput[] {
+  const priorSeasonLeagueIds = options?.freeLeaguesOnly
+    ? payload.priorSeasonLeagueIds.filter((leagueId) => isFreeLeague(leagueById(payload.leagues)[leagueId]))
+    : payload.priorSeasonLeagueIds;
   return mergeActiveWaitlistLeagues(
     normalizePriorityOrder(
-      payload.priorSeasonLeagueIds.map((leagueId, index) => ({ leagueId, priorityRank: index + 1 })),
+      priorSeasonLeagueIds.map((leagueId, index) => ({ leagueId, priorityRank: index + 1 })),
       payload.leagues,
     ),
     payload,
+    options,
   );
 }
 
@@ -197,15 +233,20 @@ export function seedPriorityList(payload: RegistrationLeagueCatalogPayload): Lea
  * prior-session seed. Active waitlist leagues are always merged in so joining
  * a waitlist outside registration still shows up after a refresh.
  */
-export function hydratePriorityList(payload: RegistrationLeagueCatalogPayload): LeaguePriorityInput[] {
-  const base =
+export function hydratePriorityList(
+  payload: RegistrationLeagueCatalogPayload,
+  options?: PriorityListOptions,
+): LeaguePriorityInput[] {
+  const allowed = allowedLeagueIds(payload.leagues, options?.freeLeaguesOnly);
+  const source =
     payload.priorities.length > 0
-      ? normalizePriorityOrder(payload.priorities, payload.leagues)
-      : normalizePriorityOrder(
-          payload.priorSeasonLeagueIds.map((leagueId, index) => ({ leagueId, priorityRank: index + 1 })),
-          payload.leagues,
-        );
-  return mergeActiveWaitlistLeagues(base, payload);
+      ? payload.priorities
+      : payload.priorSeasonLeagueIds.map((leagueId, index) => ({ leagueId, priorityRank: index + 1 }));
+  const base = normalizePriorityOrder(
+    allowed ? source.filter((priority) => allowed.has(priority.leagueId)) : source,
+    payload.leagues,
+  );
+  return mergeActiveWaitlistLeagues(base, payload, options);
 }
 
 function isSeedableWaitlistEntry(entry: { status: string }): boolean {
@@ -220,7 +261,9 @@ function isSeedableWaitlistEntry(entry: { status: string }): boolean {
 export function mergeActiveWaitlistLeagues(
   priorities: LeaguePriorityInput[],
   payload: RegistrationLeagueCatalogPayload,
+  options?: PriorityListOptions,
 ): LeaguePriorityInput[] {
+  const allowed = allowedLeagueIds(payload.leagues, options?.freeLeaguesOnly);
   const catalogIds = new Set(payload.leagues.map((league) => league.id));
   const listed = new Set(priorities.map((priority) => priority.leagueId));
   const missingWaitlistLeagueIds = [
@@ -228,15 +271,19 @@ export function mergeActiveWaitlistLeagues(
       (payload.existingWaitlistEntries ?? [])
         .filter(isSeedableWaitlistEntry)
         .map((entry) => entry.leagueId)
-        .filter((leagueId) => catalogIds.has(leagueId) && !listed.has(leagueId)),
+        .filter(
+          (leagueId) =>
+            catalogIds.has(leagueId) && !listed.has(leagueId) && (allowed == null || allowed.has(leagueId)),
+        ),
     ),
   ];
-  if (missingWaitlistLeagueIds.length === 0) return priorities;
+  const filtered = filterPrioritiesToAllowedLeagues(priorities, payload.leagues, options?.freeLeaguesOnly);
+  if (missingWaitlistLeagueIds.length === 0) return filtered;
   const additions = missingWaitlistLeagueIds.map((leagueId, index) => ({
     leagueId,
     priorityRank: index + 1,
   }));
-  const existing = priorities.map((priority, index) => ({
+  const existing = filtered.map((priority, index) => ({
     ...priority,
     priorityRank: additions.length + index + 1,
   }));
@@ -247,9 +294,22 @@ export function mergeActiveWaitlistLeagues(
  * Initial "how many leagues do you want" value. Uses a saved answer when
  * present; otherwise only last-session participation (not waitlist seeds).
  */
-export function defaultDesiredLeagueCount(payload: RegistrationLeagueCatalogPayload): number | null {
-  if (payload.desiredLeagueCount != null) return payload.desiredLeagueCount;
-  const priorSeasonCount = payload.priorSeasonLeagueIds.length;
+export function defaultDesiredLeagueCount(
+  payload: RegistrationLeagueCatalogPayload,
+  options?: PriorityListOptions,
+): number | null {
+  const leagues = leagueById(payload.leagues);
+  const priorSeasonLeagueIds = options?.freeLeaguesOnly
+    ? payload.priorSeasonLeagueIds.filter((leagueId) => isFreeLeague(leagues[leagueId]))
+    : payload.priorSeasonLeagueIds;
+  if (payload.desiredLeagueCount != null) {
+    if (!options?.freeLeaguesOnly) return payload.desiredLeagueCount;
+    const freeSavedCount = payload.priorities.filter((priority) => isFreeLeague(leagues[priority.leagueId])).length;
+    const cap = Math.max(priorSeasonLeagueIds.length, freeSavedCount);
+    if (cap <= 0) return null;
+    return Math.min(payload.desiredLeagueCount, cap, MAX_DESIRED_LEAGUE_COUNT);
+  }
+  const priorSeasonCount = priorSeasonLeagueIds.length;
   if (priorSeasonCount <= 0) return null;
   return Math.min(priorSeasonCount, MAX_DESIRED_LEAGUE_COUNT);
 }
@@ -328,6 +388,27 @@ export function undecidedPriorLeagueIds(input: {
     ...input.priorLeagueDecisions.map((decision) => decision.leagueId),
   ]);
   return input.priorSeasonLeagueIds.filter((leagueId) => !decided.has(leagueId));
+}
+
+/**
+ * Paid last-session leagues that cannot stay on a basic-ice priority list.
+ * The registrant must sabbatical or drop each one; decided rows stay so the
+ * choice can be changed.
+ */
+export function paidPriorLeaguesOffList(input: {
+  priorSeasonLeagueIds: number[];
+  priorities: LeaguePriorityInput[];
+  priorLeagueDecisions: PriorLeagueDecision[];
+  leagues: LeagueCatalogItem[];
+}): LeagueCatalogItem[] {
+  const onPriority = new Set(input.priorities.map((priority) => priority.leagueId));
+  const leagues = leagueById(input.leagues);
+  return input.priorSeasonLeagueIds.flatMap((leagueId) => {
+    if (onPriority.has(leagueId)) return [];
+    const league = leagues[leagueId];
+    if (!league || isFreeLeague(league)) return [];
+    return [league];
+  });
 }
 
 /**
@@ -528,6 +609,11 @@ export function movePriorityInList(
 
 export function guaranteeChipLabel(label: LeaguePriorityGuaranteeLabel): string {
   return LEAGUE_PRIORITY_GUARANTEE_LABEL_TEXT[label];
+}
+
+/** Non-waitlist leftover spots are unlabeled in the UI; the derived value still drives billing. */
+export function shouldShowGuaranteeChip(label: LeaguePriorityGuaranteeLabel | null | undefined): boolean {
+  return label != null && label !== 'subject_to_availability';
 }
 
 export function guaranteeChipClassName(label: LeaguePriorityGuaranteeLabel): string {

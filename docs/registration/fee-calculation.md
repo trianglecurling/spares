@@ -187,6 +187,16 @@ Discounts:
 
 Payment decision is separate, but this scenario is likely immediate payment if no other deferral reasons exist.
 
+### Subject-to-availability league
+
+Charges:
+
+- Regular membership
+- League fee for the subject-to-availability league
+
+Subject-to-availability leagues have no waitlist. They are billed immediately
+and do not consume a protected guarantee spot.
+
 ### Sabbatical-only
 
 Charges:
