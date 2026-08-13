@@ -7,6 +7,7 @@ import Modal from '../components/Modal';
 import PublicLayout from '../components/PublicLayout';
 import PublicStateCard from '../components/PublicStateCard';
 import SeoMeta from '../components/SeoMeta';
+import { ArticleMarkdown } from '../components/ArticleMarkdown';
 import { useAuth } from '../contexts/AuthContext';
 import { useAlert } from '../contexts/AlertContext';
 import api, { formatApiError } from '../utils/api';
@@ -207,9 +208,9 @@ export default function PublicVolunteerProgramPage() {
       <div className="mx-auto max-w-3xl space-y-6 px-4 py-8 sm:px-6">
         <header className="space-y-2">
           <h1 className="text-3xl font-semibold text-gray-900">{program.title}</h1>
-          <p className="text-gray-600">
-            {formatProgramShiftDateSpan(program.shifts) || 'Upcoming volunteer shifts'}
-          </p>
+          {hasShifts ? (
+            <p className="text-gray-600">{formatProgramShiftDateSpan(program.shifts)}</p>
+          ) : null}
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600">
             {program.location ? <span>{program.location}</span> : null}
             <span>Contact: {program.pointOfContact}</span>
@@ -227,75 +228,70 @@ export default function PublicVolunteerProgramPage() {
           </p>
         </div>
 
-        {program.description ? (
-          <p className="whitespace-pre-wrap text-sm text-gray-700">{program.description}</p>
-        ) : null}
+        {program.description ? <ArticleMarkdown markdown={program.description} /> : null}
 
-        {!hasShifts ? (
-          <PublicStateCard
-            title="No upcoming shifts"
-            description="There are no open upcoming shifts for this program right now."
-          />
-        ) : multiDay ? (
-          <div className="space-y-3">
-            {dayGroups.map(([dayKey, shifts]) => {
-              const expanded = expandedDays.has(dayKey);
-              const rolePreview = uniqueSorted(
-                shifts.flatMap((shift) => shift.roles.map((role) => role.roleName))
-              );
-              return (
-                <section
-                  key={dayKey}
-                  className="overflow-hidden rounded-lg border border-gray-200 bg-white"
-                >
-                  <button
-                    type="button"
-                    onClick={() => toggleDay(dayKey)}
-                    className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left hover:bg-gray-50"
-                    aria-expanded={expanded}
+        {hasShifts ? (
+          multiDay ? (
+            <div className="space-y-3">
+              {dayGroups.map(([dayKey, shifts]) => {
+                const expanded = expandedDays.has(dayKey);
+                const rolePreview = uniqueSorted(
+                  shifts.flatMap((shift) => shift.roles.map((role) => role.roleName))
+                );
+                return (
+                  <section
+                    key={dayKey}
+                    className="overflow-hidden rounded-lg border border-gray-200 bg-white"
                   >
-                    <div className="min-w-0">
-                      <h2 className="font-medium text-gray-900">
-                        {formatVolunteerDayHeading(dayKey)}
-                      </h2>
-                      {!expanded ? <AccordionPreview items={rolePreview} /> : null}
-                    </div>
-                    <HiChevronDown
-                      className={`mt-1 h-4 w-4 shrink-0 text-gray-500 transition-transform ${
-                        expanded ? 'rotate-180' : ''
-                      }`}
-                    />
-                  </button>
-                  {expanded ? (
-                    <div className="space-y-3 border-t border-gray-200 px-4 py-3">
-                      {shifts.map((shift) => (
-                        <PublicShiftBlock
-                          key={shift.id}
-                          shift={shift}
-                          headingMode="time"
-                          memberLoginHref={memberLoginHref}
-                          onSignUp={openSignup}
-                        />
-                      ))}
-                    </div>
-                  ) : null}
-                </section>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {shiftsWithRoles.map((shift) => (
-              <PublicShiftBlock
-                key={shift.id}
-                shift={shift}
-                headingMode="full"
-                memberLoginHref={memberLoginHref}
-                onSignUp={openSignup}
-              />
-            ))}
-          </div>
-        )}
+                    <button
+                      type="button"
+                      onClick={() => toggleDay(dayKey)}
+                      className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left hover:bg-gray-50"
+                      aria-expanded={expanded}
+                    >
+                      <div className="min-w-0">
+                        <h2 className="font-medium text-gray-900">
+                          {formatVolunteerDayHeading(dayKey)}
+                        </h2>
+                        {!expanded ? <AccordionPreview items={rolePreview} /> : null}
+                      </div>
+                      <HiChevronDown
+                        className={`mt-1 h-4 w-4 shrink-0 text-gray-500 transition-transform ${
+                          expanded ? 'rotate-180' : ''
+                        }`}
+                      />
+                    </button>
+                    {expanded ? (
+                      <div className="space-y-3 border-t border-gray-200 px-4 py-3">
+                        {shifts.map((shift) => (
+                          <PublicShiftBlock
+                            key={shift.id}
+                            shift={shift}
+                            headingMode="time"
+                            memberLoginHref={memberLoginHref}
+                            onSignUp={openSignup}
+                          />
+                        ))}
+                      </div>
+                    ) : null}
+                  </section>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {shiftsWithRoles.map((shift) => (
+                <PublicShiftBlock
+                  key={shift.id}
+                  shift={shift}
+                  headingMode="full"
+                  memberLoginHref={memberLoginHref}
+                  onSignUp={openSignup}
+                />
+              ))}
+            </div>
+          )
+        ) : null}
       </div>
 
       {signupTarget ? (

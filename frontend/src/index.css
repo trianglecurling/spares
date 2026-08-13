@@ -273,6 +273,64 @@ html.dark body {
   }
 
   /**
+   * Homepage sponsor logos: CSS-column masonry so mixed aspect ratios pack
+   * tightly without equal-height cells or grid lines. Vertical logos can grow
+   * with the image instead of being squeezed into a short row.
+   * `inline-block` + `break-inside: avoid` keeps a logo from splitting across columns.
+   */
+  .public-home-sponsors {
+    columns: 2;
+    column-gap: 2rem;
+    /* Offset last-in-column item margins so section padding stays even. */
+    margin-bottom: -2rem;
+  }
+
+  .public-home-sponsors > li {
+    display: inline-block;
+    width: 100%;
+    margin-bottom: 2rem;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  @media (min-width: 640px) {
+    .public-home-sponsors {
+      columns: 3;
+      column-gap: 2.5rem;
+      margin-bottom: -2.5rem;
+    }
+
+    .public-home-sponsors > li {
+      margin-bottom: 2.5rem;
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .public-home-sponsors {
+      columns: 4;
+      column-gap: 3rem;
+    }
+  }
+
+  /* Native masonry (Safari 26.4+): packs into the shortest lane, left-to-right. */
+  @supports (display: grid-lanes) {
+    .public-home-sponsors {
+      display: grid-lanes;
+      columns: unset;
+      column-gap: unset;
+      margin-bottom: 0;
+      grid-template-columns: repeat(auto-fill, minmax(10.5rem, 1fr));
+      gap: 2.5rem 3rem;
+    }
+
+    .public-home-sponsors > li {
+      display: block;
+      width: auto;
+      margin-bottom: 0;
+    }
+  }
+
+  /**
    * ReactMarkdown / article body: Tailwind preflight clears list markers and margins on ul/ol.
    * Use this wrapper anywhere markdown is rendered (public articles, event details, previews).
    */

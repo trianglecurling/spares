@@ -68,6 +68,7 @@ const programBodySchema = z.object({
   published: z.boolean().optional(),
   featureOnDashboard: z.boolean().optional(),
   publicSignups: z.boolean().optional(),
+  priority: z.number().int().nullable().optional(),
   managerIds: z.array(z.number().int().positive()).optional(),
 });
 
@@ -98,6 +99,12 @@ const shiftRoleSchema = z.object({
   volunteersNeeded: z.number().int().positive(),
 });
 
+const recurrenceSchema = z.object({
+  rrule: z.string().min(1),
+  endDate: z.string().optional(),
+  count: z.number().int().positive().optional(),
+});
+
 const shiftsBulkSchema = z.object({
   shifts: z
     .array(
@@ -108,12 +115,15 @@ const shiftsBulkSchema = z.object({
       })
     )
     .min(1),
+  recurrence: recurrenceSchema.optional(),
 });
 
 const shiftPatchSchema = z.object({
   startDt: z.string().min(1).optional(),
   endDt: z.string().min(1).optional(),
   roles: z.array(shiftRoleSchema).min(1).optional(),
+  scope: z.enum(['this', 'all']).optional(),
+  recurrence: recurrenceSchema.optional(),
 });
 
 const credentialBodySchema = z.object({
@@ -533,7 +543,11 @@ export async function volunteeringRoutes(fastify: FastifyInstance): Promise<void
       const parsed = shiftsBulkSchema.safeParse(request.body);
       if (!parsed.success) return sendValidationError(reply, 'Invalid shifts data', parsed.error.flatten());
       try {
-        const result = await createShiftsBulk({ programId, shifts: parsed.data.shifts });
+        const result = await createShiftsBulk({
+          programId,
+          shifts: parsed.data.shifts,
+          recurrence: parsed.data.recurrence,
+        });
         return reply.code(201).send(result);
       } catch (err) {
         return handleServiceError(reply, err);
@@ -572,7 +586,7 @@ export async function volunteeringRoutes(fastify: FastifyInstance): Promise<void
     }
   );
 
-  fastify.delete<{ Params: { id: string } }>(
+  fastify.delete<{ Params: { id: string }; Querystring: { scope?: string } }>(
     '/volunteering/admin/shifts/:id',
     { schema: { tags: ['volunteering'] } },
     async (request, reply) => {
@@ -580,6 +594,8 @@ export async function volunteeringRoutes(fastify: FastifyInstance): Promise<void
       if (!member) return sendApiError(reply, 401, 'Unauthorized');
       const shiftId = Number.parseInt(request.params.id, 10);
       if (!Number.isFinite(shiftId)) return sendApiError(reply, 400, 'Invalid shift id');
+      const scopeRaw = request.query?.scope;
+      const scope = scopeRaw === 'all' ? 'all' : 'this';
       try {
         const { getDrizzleDb } = await import('../db/drizzle-db.js');
         const { eq } = await import('drizzle-orm');
@@ -593,7 +609,7 @@ export async function volunteeringRoutes(fastify: FastifyInstance): Promise<void
         if (!(await canManageProgram(member, existing[0].programId))) {
           return sendApiError(reply, 403, 'Forbidden');
         }
-        await deleteShift(shiftId);
+        await deleteShift(shiftId, scope);
         return reply.code(204).send();
       } catch (err) {
         return handleServiceError(reply, err);

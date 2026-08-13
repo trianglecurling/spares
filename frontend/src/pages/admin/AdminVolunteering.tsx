@@ -56,7 +56,7 @@ export default function AdminVolunteering() {
         description={
           activeTab === 'credentials'
             ? 'Credentials required for some volunteer roles, and who holds them.'
-            : 'Volunteer programs, roles, shifts, and credentials.'
+            : 'Volunteer programs, descriptions, roles, shifts, and credentials.'
         }
         actions={
           activeTab === 'programs' && canCreate ? (
@@ -181,6 +181,11 @@ export function AdminVolunteeringPrograms() {
         ),
       },
       {
+        id: 'priority',
+        header: 'Priority',
+        renderCell: (row) => (row.priority == null ? '—' : String(row.priority)),
+      },
+      {
         id: 'roles',
         header: 'Roles',
         renderCell: (row) => String(row.roles.length),
@@ -244,7 +249,7 @@ export function AdminVolunteeringPrograms() {
           title={includeArchived ? 'No programs match these filters.' : 'No programs yet.'}
           description={
             canCreate
-              ? 'Create a volunteer program to start adding roles and shifts.'
+              ? 'Create a volunteer program to start adding a description, roles, and shifts.'
               : 'You are not a manager of any volunteer programs.'
           }
           action={

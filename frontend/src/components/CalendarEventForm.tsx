@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   differenceInDays,
   differenceInMinutes,
   format,
 } from 'date-fns';
-import { RRule } from 'rrule';
 import api from '../utils/api';
 import Button from './Button';
 import PageTabs from './PageTabs';
@@ -13,18 +12,11 @@ import FormField from './FormField';
 import FormSection from './FormSection';
 import ChoiceInput, { type ChoiceOption } from './ChoiceInput';
 import MarkdownDescriptionEditor, { type MarkdownDescriptionEditorRef } from './MarkdownDescriptionEditor';
+import RecurrenceFields, { useRecurrenceState } from './RecurrenceFields';
 import { useAlert } from '../contexts/AlertContext';
 import { useTheme } from '../contexts/ThemeContext';
 import type { CalendarEvent, CalendarEventType } from '../pages/Calendar';
-import {
-  LOCATION_OPTIONS,
-  RECURRENCE_PRESETS,
-  RRULE_DAYS,
-  RRULE_DAY_LABELS,
-  getWeekdayFromDate,
-  matchRecurrencePreset,
-  parseRecurrenceLimits,
-} from '../pages/calendarEventFormShared';
+import { LOCATION_OPTIONS } from '../pages/calendarEventFormShared';
 
 export interface CalendarEventFormProps {
   event: CalendarEvent | null;
@@ -77,106 +69,16 @@ export default function CalendarEventForm({
         )
         .map((l) => l.type) ?? []
   );
-  const initialRecurrence = matchRecurrencePreset(event?.recurrenceRrule ?? '');
-  const initialRecurrenceLimits = parseRecurrenceLimits(event?.recurrenceRrule ?? '');
-  const defaultWeeklyDays =
-    initialRecurrence.preset === 'weekly' && initialRecurrence.weeklyDays
-      ? initialRecurrence.weeklyDays
-      : [getWeekdayFromDate(base.start)];
-  const [recurrencePreset, setRecurrencePreset] = useState(initialRecurrence.preset);
-  const [recurrenceCustom, setRecurrenceCustom] = useState(initialRecurrence.custom);
-  const [selectedWeekdays, setSelectedWeekdays] = useState<(typeof RRULE_DAYS)[number][]>(
-    initialRecurrence.preset === 'weekly' ? defaultWeeklyDays : []
-  );
-  const [recurrenceEndDate, setRecurrenceEndDate] = useState(
-    initialRecurrence.preset === 'custom' ? '' : initialRecurrenceLimits.endDate
-  );
-  const [recurrenceCount, setRecurrenceCount] = useState<number | ''>(
-    initialRecurrence.preset === 'custom' ? '' : initialRecurrenceLimits.count
-  );
+  const recurrence = useRecurrenceState(event?.recurrenceRrule ?? '', startDate);
   const [editScope, setEditScope] = useState<'this' | 'all'>('this');
   const [linkedArticle, setLinkedArticle] = useState<ArticleOption | null>(event?.article ?? null);
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<'details' | 'description'>('details');
   const descriptionEditorRef = useRef<MarkdownDescriptionEditorRef>(null);
-  const lastEditedRecurrenceLimitRef = useRef<'endDate' | 'count' | null>(null);
-  const previousRecurrencePresetRef = useRef(initialRecurrence.preset);
   const { resolvedTheme } = useTheme();
 
   const isRecurringEdit = Boolean(event?.id && event.id.split(':').length === 3);
   const isEditingSingleInstance = isRecurringEdit && editScope === 'this';
-
-  useEffect(() => {
-    if (recurrencePreset === 'weekly' && selectedWeekdays.length === 0) {
-      const d = new Date(`${startDate}T12:00:00`);
-      setSelectedWeekdays([getWeekdayFromDate(d)]);
-    }
-  }, [recurrencePreset, startDate, selectedWeekdays.length]);
-
-  useEffect(() => {
-    if (previousRecurrencePresetRef.current === recurrencePreset) return;
-    previousRecurrencePresetRef.current = recurrencePreset;
-    setRecurrenceEndDate('');
-    setRecurrenceCount('');
-    lastEditedRecurrenceLimitRef.current = null;
-  }, [recurrencePreset]);
-
-  useEffect(() => {
-    if (recurrencePreset === 'custom') {
-      setRecurrenceEndDate('');
-      setRecurrenceCount('');
-      lastEditedRecurrenceLimitRef.current = null;
-    }
-  }, [recurrencePreset, recurrenceCustom]);
-
-  useEffect(() => {
-    if (recurrencePreset !== 'weekly' || selectedWeekdays.length === 0) return;
-    const lastEdited = lastEditedRecurrenceLimitRef.current;
-    const rruleStr = `FREQ=WEEKLY;BYDAY=${selectedWeekdays.join(',')}`;
-    const eventStart = new Date(`${startDate}T${allDay ? '00:00' : startTime}:00`);
-    try {
-      if (lastEdited === 'endDate' && recurrenceEndDate) {
-        const options = RRule.parseString(rruleStr) as {
-          dtstart?: Date;
-          until?: Date;
-          count?: number;
-        };
-        options.dtstart = eventStart;
-        options.until = new Date(`${recurrenceEndDate}T23:59:59`);
-        delete options.count;
-        const rule = new RRule(options);
-        const dates = rule.all();
-        setRecurrenceCount(dates.length);
-      } else if (
-        lastEdited === 'count' &&
-        recurrenceCount !== '' &&
-        typeof recurrenceCount === 'number' &&
-        recurrenceCount >= 1
-      ) {
-        const options = RRule.parseString(rruleStr) as { dtstart?: Date; count?: number };
-        options.dtstart = eventStart;
-        options.count = recurrenceCount;
-        const rule = new RRule(options);
-        const dates = rule.all();
-        if (dates.length > 0) {
-          const lastDate = dates[dates.length - 1]!;
-          setRecurrenceEndDate(format(lastDate, 'yyyy-MM-dd'));
-        }
-      }
-    } catch {
-      // ignore parse errors
-    }
-  }, [recurrencePreset, selectedWeekdays, startDate, startTime, allDay]);
-
-  const toggleWeekday = (day: (typeof RRULE_DAYS)[number]) => {
-    setSelectedWeekdays((prev) => {
-      if (prev.includes(day)) {
-        const next = prev.filter((d) => d !== day);
-        return next.length > 0 ? next : prev;
-      }
-      return [...prev, day];
-    });
-  };
 
   const handleStartDateChange = (v: string) => {
     setStartDate(v);
@@ -215,10 +117,6 @@ export default function CalendarEventForm({
     () => eventTypes.map((t) => ({ value: t.id, label: t.label })),
     [eventTypes]
   );
-  const recurrenceChoices = useMemo<ChoiceOption<string>[]>(
-    () => RECURRENCE_PRESETS.map((p) => ({ value: p.value, label: p.label })),
-    []
-  );
 
   const toggleSheet = (id: number) => {
     setSelectedSheets((prev) => (prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id]));
@@ -226,71 +124,6 @@ export default function CalendarEventForm({
   const toggleFixedLoc = (t: 'warm-room' | 'exterior' | 'offsite' | 'virtual') => {
     setSelectedFixedLocs((prev) => (prev.includes(t) ? prev.filter((l) => l !== t) : [...prev, t]));
   };
-
-  const getCurrentRrule = useCallback((): string => {
-    if (recurrencePreset === 'custom' && recurrenceCustom.trim()) return recurrenceCustom.trim();
-    if (recurrencePreset === 'weekly' && selectedWeekdays.length > 0) {
-      return `FREQ=WEEKLY;BYDAY=${selectedWeekdays.join(',')}`;
-    }
-    const preset = RECURRENCE_PRESETS.find((p) => p.value === recurrencePreset);
-    return preset?.rrule ?? '';
-  }, [recurrencePreset, recurrenceCustom, selectedWeekdays]);
-
-  const handleRecurrenceCountChange = useCallback(
-    (value: number | '') => {
-      lastEditedRecurrenceLimitRef.current = 'count';
-      setRecurrenceCount(value);
-      if (value === '' || typeof value !== 'number' || isNaN(value) || value < 1) {
-        setRecurrenceEndDate('');
-        return;
-      }
-      const rruleStr = getCurrentRrule();
-      if (!rruleStr) return;
-      try {
-        const options = RRule.parseString(rruleStr) as { dtstart?: Date; count?: number };
-        options.dtstart = new Date(`${startDate}T${allDay ? '00:00' : startTime}:00`);
-        options.count = value;
-        const rule = new RRule(options);
-        const dates = rule.all();
-        if (dates.length > 0) {
-          const lastDate = dates[dates.length - 1]!;
-          setRecurrenceEndDate(format(lastDate, 'yyyy-MM-dd'));
-        }
-      } catch {
-        // ignore parse errors
-      }
-    },
-    [getCurrentRrule, startDate, startTime, allDay]
-  );
-
-  const handleRecurrenceEndDateChange = useCallback(
-    (value: string) => {
-      lastEditedRecurrenceLimitRef.current = 'endDate';
-      setRecurrenceEndDate(value);
-      if (!value) {
-        setRecurrenceCount('');
-        return;
-      }
-      const rruleStr = getCurrentRrule();
-      if (!rruleStr) return;
-      try {
-        const options = RRule.parseString(rruleStr) as {
-          dtstart?: Date;
-          until?: Date;
-          count?: number;
-        };
-        options.dtstart = new Date(`${startDate}T${allDay ? '00:00' : startTime}:00`);
-        options.until = new Date(`${value}T23:59:59`);
-        delete options.count;
-        const rule = new RRule(options);
-        const dates = rule.all();
-        setRecurrenceCount(dates.length);
-      } catch {
-        // ignore parse errors
-      }
-    },
-    [getCurrentRrule, startDate, startTime, allDay]
-  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -309,18 +142,6 @@ export default function CalendarEventForm({
       ...selectedFixedLocs.map((type) => ({ type })),
     ];
 
-    let rrule: string | undefined;
-    if (!isEditingSingleInstance) {
-      if (recurrencePreset === 'custom' && recurrenceCustom.trim()) {
-        rrule = recurrenceCustom.trim();
-      } else if (recurrencePreset === 'weekly' && selectedWeekdays.length > 0) {
-        rrule = `FREQ=WEEKLY;BYDAY=${selectedWeekdays.join(',')}`;
-      } else if (recurrencePreset !== 'none') {
-        const preset = RECURRENCE_PRESETS.find((p) => p.value === recurrencePreset);
-        rrule = preset?.rrule;
-      }
-    }
-
     const description =
       descriptionEditorRef.current?.getMarkdown?.() ?? event?.description ?? '';
     const payload = {
@@ -332,14 +153,7 @@ export default function CalendarEventForm({
       description: description.trim() || undefined,
       articleId: linkedArticle?.id ?? null,
       locations: locations.length > 0 ? locations : undefined,
-      recurrence:
-        !isEditingSingleInstance && rrule
-          ? {
-              rrule,
-              endDate: recurrenceEndDate || undefined,
-              count: recurrenceCount !== '' ? recurrenceCount : undefined,
-            }
-          : undefined,
+      recurrence: !isEditingSingleInstance ? recurrence.payload ?? undefined : undefined,
     };
 
     try {
@@ -558,84 +372,13 @@ export default function CalendarEventForm({
               </div>
             )}
             {!isEditingSingleInstance && (
-              <div>
-                <label className="app-label" id="calendar-event-recurrence-label">
-                  Recurrence
-                </label>
-                <ChoiceInput<string>
-                  ariaLabelledBy="calendar-event-recurrence-label"
-                  options={recurrenceChoices}
-                  value={recurrencePreset}
-                  onChange={(next) => {
-                    if (next != null && !Array.isArray(next)) setRecurrencePreset(next);
-                  }}
-                  listboxLabel="Recurrence"
-                  inputClassName="app-input mb-2"
-                />
-                {recurrencePreset !== 'none' && (
-                  <div className="space-y-2 mt-2">
-                    {recurrencePreset === 'weekly' && (
-                      <div>
-                        <span className="text-sm text-gray-600 dark:text-gray-400 mr-2">Repeat on:</span>
-                        <div className="flex flex-wrap gap-2 mt-1">
-                          {(['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'] as const).map((day) => (
-                            <label
-                              key={day}
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-gray-300 dark:border-gray-600 cursor-pointer"
-                            >
-                              <input
-                                type="checkbox"
-                                checked={selectedWeekdays.includes(day)}
-                                onChange={() => toggleWeekday(day)}
-                                className="rounded border-gray-300 dark:border-gray-600"
-                              />
-                              <span className="text-sm">{RRULE_DAY_LABELS[day]}</span>
-                            </label>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {recurrencePreset === 'custom' && (
-                      <input
-                        type="text"
-                        placeholder="e.g. FREQ=WEEKLY;BYDAY=MO,WE,FR"
-                        value={recurrenceCustom}
-                        onChange={(e) => setRecurrenceCustom(e.target.value)}
-                        className="app-input text-sm"
-                      />
-                    )}
-                    <div className="flex flex-wrap items-center gap-2">
-                      <label className="flex items-center gap-2">
-                        <span className="text-sm text-gray-600 dark:text-gray-400">End date:</span>
-                        <input
-                          type="date"
-                          value={recurrenceEndDate}
-                          onChange={(e) => handleRecurrenceEndDateChange(e.target.value)}
-                          className="px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-sm"
-                        />
-                      </label>
-                      <span className="text-sm text-gray-500 dark:text-gray-400">or</span>
-                      <label className="flex items-center gap-2">
-                        <span className="text-sm text-gray-600 dark:text-gray-400">Count:</span>
-                        <input
-                          type="number"
-                          min={1}
-                          value={recurrenceCount}
-                          onChange={(e) => {
-                            const v = e.target.value;
-                            if (v === '') handleRecurrenceCountChange('');
-                            else {
-                              const n = parseInt(v, 10);
-                              if (!isNaN(n)) handleRecurrenceCountChange(n);
-                            }
-                          }}
-                          className="w-20 px-2 py-1 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-sm"
-                        />
-                      </label>
-                    </div>
-                  </div>
-                )}
-              </div>
+              <RecurrenceFields
+                idPrefix="calendar-event"
+                startDate={startDate}
+                startTime={startTime}
+                allDay={allDay}
+                state={recurrence}
+              />
             )}
           </div>
         )}

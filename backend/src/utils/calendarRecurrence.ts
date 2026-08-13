@@ -207,3 +207,75 @@ export function expandRecurrenceInTimeZone(
     return [];
   }
 }
+
+/** Safety cap when materializing recurrences (volunteer shifts) instead of expanding in a view range. */
+export const MAX_MATERIALIZED_RECURRENCE_INSTANCES = 366;
+
+/**
+ * Expand every occurrence of a bounded recurrence (UNTIL and/or COUNT).
+ * Callers must require an end date or count before invoking this.
+ */
+export function expandAllRecurrenceInstances(
+  startDt: string,
+  endDt: string,
+  recurrenceRule: string,
+  timeZone: string,
+  endDate?: string,
+  count?: number
+): ExpandedRecurrenceInstance[] {
+  const start = new Date(startDt);
+  if (Number.isNaN(start.getTime())) return [];
+  const rangeStart = new Date(start.getTime() - 24 * 60 * 60 * 1000);
+  let rangeEnd: Date;
+  const untilYmd = endDate?.trim();
+  if (untilYmd) {
+    rangeEnd = wallClockToFloatingUtc(addCalendarDays(untilYmd, 2), '23:59:59');
+  } else {
+    rangeEnd = new Date(start);
+    rangeEnd.setUTCFullYear(rangeEnd.getUTCFullYear() + 2);
+  }
+  return expandRecurrenceInTimeZone(
+    startDt,
+    endDt,
+    recurrenceRule,
+    rangeStart,
+    rangeEnd,
+    timeZone,
+    untilYmd,
+    count
+  );
+}
+
+/** Shift a stored RRULE's UNTIL by calendar days (COUNT is unchanged). */
+export function shiftRecurrenceRuleByDays(recurrenceRule: string, days: number): string {
+  const base = recurrenceRule.trim();
+  if (!base || !days) return recurrenceRule;
+  try {
+    const options = RRule.parseString(base) as {
+      until?: Date;
+      count?: number;
+      dtstart?: Date;
+    };
+    delete options.dtstart;
+    if (options.until) {
+      const floating = floatingUtcToWallClock(options.until);
+      options.until = floatingUntilEndOfDay(addCalendarDays(floating.dateStr, days));
+    }
+    const composed = RRule.optionsToString(options);
+    return composed.replace(/^RRULE:/i, '').trim();
+  } catch {
+    return recurrenceRule;
+  }
+}
+
+export function recurrenceRulesEquivalent(a: string, b: string): boolean {
+  try {
+    const left = RRule.parseString(a) as { dtstart?: Date };
+    const right = RRule.parseString(b) as { dtstart?: Date };
+    delete left.dtstart;
+    delete right.dtstart;
+    return RRule.optionsToString(left) === RRule.optionsToString(right);
+  } catch {
+    return a.trim() === b.trim();
+  }
+}

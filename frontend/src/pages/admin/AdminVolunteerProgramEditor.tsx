@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
 import AppStateCard from '../../components/AppStateCard';
@@ -9,16 +9,23 @@ import FormCheckbox from '../../components/FormCheckbox';
 import FormField from '../../components/FormField';
 import FormSection from '../../components/FormSection';
 import InlineStateMessage from '../../components/InlineStateMessage';
+import MarkdownDescriptionEditor, {
+  type MarkdownDescriptionEditorRef,
+} from '../../components/MarkdownDescriptionEditor';
 import MemberMultiSelect from '../../components/MemberMultiSelect';
+import Modal from '../../components/Modal';
 import PageTabs from '../../components/PageTabs';
+import RecurrenceFields, { useRecurrenceState } from '../../components/RecurrenceFields';
 import VolunteerProgramLocationField from '../../components/VolunteerProgramLocationField';
 import { resolveSiteName } from '../../components/SeoMeta';
 import { useAlert } from '../../contexts/AlertContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
+import { useTheme } from '../../contexts/ThemeContext';
 import { useSiteBranding } from '../../hooks/useSiteBranding';
 import api, { formatApiError } from '../../utils/api';
 import { memberHasScope } from '../../utils/permissions';
+import { getWeekdayFromDate } from '../calendarEventFormShared';
 import {
   addMinutesToDateTimeLocal,
   formatDurationMinutes,
@@ -36,8 +43,8 @@ import {
   type VolunteerShiftView,
 } from '../../utils/volunteering';
 
-type TabKey = 'settings' | 'roles' | 'shifts' | 'signups';
-const secondaryTabs = ['roles', 'shifts', 'signups'] as const;
+type TabKey = 'settings' | 'description' | 'roles' | 'shifts' | 'signups';
+const secondaryTabs = ['description', 'roles', 'shifts', 'signups'] as const;
 
 type DraftShiftRole = { roleId: number; volunteersNeeded: number };
 
@@ -47,6 +54,35 @@ type NewShiftTimeRow = {
   endLocal: string;
   endManuallyEdited: boolean;
 };
+
+type UploadedFile = { id: number; publicUrl: string };
+
+function extensionFromMimeType(mimeType: string): string {
+  if (mimeType === 'image/jpeg') return 'jpg';
+  if (mimeType === 'image/png') return 'png';
+  if (mimeType === 'image/gif') return 'gif';
+  if (mimeType === 'image/webp') return 'webp';
+  return 'png';
+}
+
+function nextVolunteerProgramImageFilename(programSlug: string, markdown: string, mimeType: string): string {
+  const safeSlug =
+    (programSlug || 'volunteer-program')
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '') || 'volunteer-program';
+  const pattern = new RegExp(`${safeSlug}-image-(\\d{3})\\.[a-z0-9]+`, 'gi');
+  let highest = 0;
+  let match = pattern.exec(markdown);
+  while (match) {
+    const current = Number.parseInt(match[1] ?? '0', 10);
+    if (Number.isFinite(current)) highest = Math.max(highest, current);
+    match = pattern.exec(markdown);
+  }
+  const next = String(highest + 1).padStart(3, '0');
+  return `${safeSlug}-image-${next}.${extensionFromMimeType(mimeType)}`;
+}
 
 function createEmptyTimeRow(
   programStartDate?: string | null,
@@ -73,8 +109,11 @@ export default function AdminVolunteerProgramEditor() {
   const { showAlert } = useAlert();
   const { confirm } = useConfirm();
   const { branding } = useSiteBranding();
+  const { resolvedTheme } = useTheme();
   const clubName = resolveSiteName(branding?.clubName);
   const baseId = useId();
+  const descriptionEditorRef = useRef<MarkdownDescriptionEditorRef>(null);
+  const descriptionLabelId = `${baseId}-description-label`;
   const canCreate =
     memberHasScope(member, 'volunteering.manage') || Boolean(member?.isServerAdmin);
 
@@ -89,13 +128,13 @@ export default function AdminVolunteerProgramEditor() {
   const [slug, setSlug] = useState('');
   /** Slug persisted in the database — used for public URLs, not the editable slug field. */
   const [savedSlug, setSavedSlug] = useState('');
-  const [description, setDescription] = useState('');
   const [pointOfContact, setPointOfContact] = useState('');
   const [locationChoice, setLocationChoice] = useState<VolunteerLocationChoice>(VOLUNTEER_LOCATION_CLUB);
   const [startDate, setStartDate] = useState('');
   const [published, setPublished] = useState(false);
   const [featureOnDashboard, setFeatureOnDashboard] = useState(true);
   const [publicSignups, setPublicSignups] = useState(false);
+  const [priority, setPriority] = useState('');
   const [managerIds, setManagerIds] = useState<number[]>([]);
 
   const [roleName, setRoleName] = useState('');
@@ -108,6 +147,9 @@ export default function AdminVolunteerProgramEditor() {
   const [newShiftTimes, setNewShiftTimes] = useState<NewShiftTimeRow[]>([createEmptyTimeRow()]);
   const [newShiftNeeded, setNewShiftNeeded] = useState(1);
   const [savingShift, setSavingShift] = useState(false);
+  const [recurringMode, setRecurringMode] = useState(false);
+  const [deleteShiftTarget, setDeleteShiftTarget] = useState<VolunteerShiftView | null>(null);
+  const [deletingShift, setDeletingShift] = useState(false);
 
   const loadProgram = useCallback(async () => {
     if (isNew || !id) return;
@@ -118,7 +160,6 @@ export default function AdminVolunteerProgramEditor() {
       setTitle(data.title);
       setSlug(data.slug || '');
       setSavedSlug(data.slug || '');
-      setDescription(data.description || '');
       setPointOfContact(data.pointOfContact);
       // API already nulls club-default locations; clubName only matters for legacy raw values.
       setLocationChoice(volunteerLocationChoiceFromStored(data.location, clubName));
@@ -126,6 +167,7 @@ export default function AdminVolunteerProgramEditor() {
       setPublished(Boolean(data.published));
       setFeatureOnDashboard(data.featureOnDashboard !== false);
       setPublicSignups(Boolean(data.publicSignups));
+      setPriority(data.priority == null ? '' : String(data.priority));
       setManagerIds(data.managers.map((m) => m.id));
       setNewShiftTimes((prev) => {
         const onlyEmpty =
@@ -184,6 +226,12 @@ export default function AdminVolunteerProgramEditor() {
     () => program?.roles.find((r) => r.id === newShiftRoleId) ?? null,
     [program, newShiftRoleId]
   );
+  const newShiftStartLocal = newShiftTimes[0]?.startLocal ?? '';
+  const newShiftRecurrence = useRecurrenceState(
+    '',
+    newShiftStartLocal.slice(0, 10),
+    { fallbackPreset: 'weekly' }
+  );
 
   const updateTimeRowEndFromRole = useCallback(
     (rowKey: string, startLocal: string, role: VolunteerRoleView | null | undefined) => {
@@ -230,24 +278,34 @@ export default function AdminVolunteerProgramEditor() {
       showAlert('Enter a custom location, or choose the club', 'error');
       return;
     }
+    let priorityValue: number | null = null;
+    const priorityTrimmed = priority.trim();
+    if (priorityTrimmed) {
+      const parsed = Number.parseInt(priorityTrimmed, 10);
+      if (!Number.isInteger(parsed) || String(parsed) !== priorityTrimmed) {
+        showAlert('Priority must be a whole number, or left blank.', 'warning');
+        return;
+      }
+      priorityValue = parsed;
+    }
     setSaving(true);
     try {
       const payload = {
         title: title.trim(),
         slug: slug.trim() || undefined,
-        description: description.trim() || null,
         pointOfContact: pointOfContact.trim(),
         location: volunteerLocationStoredFromChoice(locationChoice, clubName),
         startDate: startDate.trim() || null,
         published,
         featureOnDashboard,
         publicSignups,
+        priority: priorityValue,
         managerIds,
       };
       if (isNew) {
         const res = await api.post('/volunteering/admin/programs', payload);
         showAlert('Program created', 'success');
-        navigate(`/admin/volunteering/${res.data.id}/roles`);
+        navigate(`/admin/volunteering/${res.data.id}/description`);
       } else {
         const res = await api.patch(`/volunteering/admin/programs/${id}`, payload);
         const nextSlug = (res.data as VolunteerProgramView)?.slug || savedSlug;
@@ -260,6 +318,59 @@ export default function AdminVolunteerProgramEditor() {
       showAlert(formatApiError(err, 'Failed to save program'), 'error');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSaveDescription = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isNew || !id) return;
+    const markdown = descriptionEditorRef.current?.getMarkdown?.() ?? program?.description ?? '';
+    setSaving(true);
+    try {
+      const res = await api.patch(`/volunteering/admin/programs/${id}`, {
+        description: markdown.trim() || null,
+      });
+      setProgram(res.data as VolunteerProgramView);
+      showAlert('Description saved', 'success');
+    } catch (err) {
+      showAlert(formatApiError(err, 'Failed to save description'), 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleUploadMarkdownImage = async (
+    blob: Blob
+  ): Promise<{ url: string; altText?: string } | null> => {
+    const mimeType = blob.type || 'image/png';
+    if (!mimeType.startsWith('image/')) {
+      showAlert('Only image paste is supported', 'error');
+      return null;
+    }
+    const currentMarkdown = descriptionEditorRef.current?.getMarkdown?.() ?? program?.description ?? '';
+    const filename = nextVolunteerProgramImageFilename(
+      savedSlug || slug || program?.slug || 'volunteer-program',
+      currentMarkdown,
+      mimeType
+    );
+    const file = new File([blob], filename, { type: mimeType });
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('displayName', filename);
+    formData.append('visibility', 'public');
+    try {
+      const res = await api.post<UploadedFile[]>('/content/files', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      const uploaded = Array.isArray(res.data) ? res.data[0] : null;
+      if (!uploaded?.publicUrl) {
+        showAlert('Image uploaded, but URL was missing', 'error');
+        return null;
+      }
+      return { url: uploaded.publicUrl, altText: program?.title.trim() || 'Image' };
+    } catch (err) {
+      showAlert(formatApiError(err, 'Failed to upload image'), 'error');
+      return null;
     }
   };
 
@@ -337,6 +448,7 @@ export default function AdminVolunteerProgramEditor() {
       ),
     ]);
     setNewShiftNeeded(1);
+    setRecurringMode(false);
   };
 
   const addAdditionalShiftTime = () => {
@@ -375,16 +487,37 @@ export default function AdminVolunteerProgramEditor() {
       showAlert('Choose a start and end time for every shift.', 'warning');
       return;
     }
+    if (recurringMode) {
+      if (!newShiftRecurrence.payload) {
+        showAlert('Choose a recurrence pattern.', 'warning');
+        return;
+      }
+      if (!newShiftRecurrence.endDate && newShiftRecurrence.count === '') {
+        showAlert('Recurring shifts need an end date or a count.', 'warning');
+        return;
+      }
+    }
     setSavingShift(true);
     try {
-      await api.post(`/volunteering/admin/programs/${id}/shifts/bulk`, {
-        shifts: newShiftTimes.map((row) => ({
-          startDt: fromDateTimeLocal(row.startLocal),
-          endDt: fromDateTimeLocal(row.endLocal),
-          roles: [{ roleId: newShiftRoleId, volunteersNeeded: newShiftNeeded }],
-        })),
-      });
-      const count = newShiftTimes.length;
+      const template = {
+        startDt: fromDateTimeLocal(newShiftTimes[0].startLocal),
+        endDt: fromDateTimeLocal(newShiftTimes[0].endLocal),
+        roles: [{ roleId: newShiftRoleId, volunteersNeeded: newShiftNeeded }],
+      };
+      const result = await api.post(`/volunteering/admin/programs/${id}/shifts/bulk`, recurringMode
+        ? { shifts: [template], recurrence: newShiftRecurrence.payload }
+        : {
+            shifts: newShiftTimes.map((row) => ({
+              startDt: fromDateTimeLocal(row.startLocal),
+              endDt: fromDateTimeLocal(row.endLocal),
+              roles: [{ roleId: newShiftRoleId, volunteersNeeded: newShiftNeeded }],
+            })),
+          });
+      const count = Array.isArray(result.data?.shiftIds)
+        ? result.data.shiftIds.length
+        : recurringMode
+          ? (newShiftRecurrence.previewCount ?? 1)
+          : newShiftTimes.length;
       showAlert(
         count === 1 ? 'Shift created' : `${count} shifts created`,
         'success'
@@ -400,15 +533,31 @@ export default function AdminVolunteerProgramEditor() {
 
   const handleUpdateExistingShift = async (
     shift: VolunteerShiftView,
-    patch: { startLocal: string; endLocal: string; roles: DraftShiftRole[] }
+    patch: {
+      startLocal: string;
+      endLocal: string;
+      roles: DraftShiftRole[];
+      scope: 'this' | 'all';
+      recurrence?: { rrule: string; endDate?: string; count?: number } | null;
+    }
   ) => {
     try {
       await api.patch(`/volunteering/admin/shifts/${shift.id}`, {
         startDt: fromDateTimeLocal(patch.startLocal),
         endDt: fromDateTimeLocal(patch.endLocal),
         roles: patch.roles,
+        scope: shift.recurrenceSeriesId != null ? patch.scope : undefined,
+        recurrence:
+          shift.recurrenceSeriesId != null && patch.scope === 'all' && patch.recurrence
+            ? patch.recurrence
+            : undefined,
       });
-      showAlert('Shift updated', 'success');
+      showAlert(
+        shift.recurrenceSeriesId != null && patch.scope === 'all'
+          ? 'Recurring shifts updated'
+          : 'Shift updated',
+        'success'
+      );
       await loadProgram();
     } catch (err) {
       showAlert(formatApiError(err, 'Failed to update shift'), 'error');
@@ -416,6 +565,10 @@ export default function AdminVolunteerProgramEditor() {
   };
 
   const handleDeleteShift = async (shift: VolunteerShiftView) => {
+    if (shift.recurrenceSeriesId != null) {
+      setDeleteShiftTarget(shift);
+      return;
+    }
     const ok = await confirm({
       title: 'Delete shift',
       message: `Delete the shift on ${formatVolunteerRange(shift.startDt, shift.endDt)}? Signups for this shift will be removed.`,
@@ -428,6 +581,24 @@ export default function AdminVolunteerProgramEditor() {
       await loadProgram();
     } catch (err) {
       showAlert(formatApiError(err, 'Failed to delete shift'), 'error');
+    }
+  };
+
+  const confirmDeleteShift = async (scope: 'this' | 'all') => {
+    const shift = deleteShiftTarget;
+    if (!shift) return;
+    setDeletingShift(true);
+    try {
+      await api.delete(
+        `/volunteering/admin/shifts/${shift.id}${scope === 'all' ? '?scope=all' : '?scope=this'}`
+      );
+      showAlert(scope === 'all' ? 'Recurring shifts deleted' : 'Shift deleted', 'success');
+      setDeleteShiftTarget(null);
+      await loadProgram();
+    } catch (err) {
+      showAlert(formatApiError(err, 'Failed to delete shift'), 'error');
+    } finally {
+      setDeletingShift(false);
     }
   };
 
@@ -456,6 +627,12 @@ export default function AdminVolunteerProgramEditor() {
     },
     ...(!isNew
       ? [
+          {
+            key: 'description',
+            label: 'Description',
+            isActive: activeTab === 'description',
+            to: `/admin/volunteering/${id}/description`,
+          },
           {
             key: 'roles',
             label: 'Roles',
@@ -500,7 +677,7 @@ export default function AdminVolunteerProgramEditor() {
     <AppPage>
       <AppPageHeader
         title={isNew ? 'Create volunteer program' : program?.title || 'Edit program'}
-        description={isNew ? 'Add a program, then define roles and shifts.' : undefined}
+        description={isNew ? 'Add a program, then add a description. Roles and shifts are optional.' : undefined}
         actions={<BackButton label="Back to programs" to="/admin/volunteering" />}
       />
       <PageTabs items={tabItems} />
@@ -528,14 +705,6 @@ export default function AdminVolunteerProgramEditor() {
                 value={slug}
                 onChange={(e) => setSlug(e.target.value)}
                 placeholder="auto-generated-from-title"
-              />
-            </FormField>
-            <FormField label="Description" htmlFor={`${baseId}-description`}>
-              <textarea
-                id={`${baseId}-description`}
-                className="app-input min-h-[120px]"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
               />
             </FormField>
             <FormField label="Point of contact" htmlFor={`${baseId}-poc`} required>
@@ -571,6 +740,21 @@ export default function AdminVolunteerProgramEditor() {
                 selectedIds={managerIds}
                 onChange={setManagerIds}
                 placeholder="Search members to add as managers..."
+              />
+            </FormField>
+            <FormField
+              label="Priority"
+              htmlFor={`${baseId}-priority`}
+              optional
+              helperText="Lower numbers appear first on the volunteering hub and member dashboard. Leave blank to sort after programs that have a priority."
+            >
+              <input
+                id={`${baseId}-priority`}
+                type="number"
+                step={1}
+                className="app-input w-full max-w-xs"
+                value={priority}
+                onChange={(e) => setPriority(e.target.value)}
               />
             </FormField>
             <FormCheckbox
@@ -631,6 +815,42 @@ export default function AdminVolunteerProgramEditor() {
           <div className="flex gap-3">
             <Button type="submit" disabled={saving}>
               {saving ? 'Saving…' : isNew ? 'Create program' : 'Save settings'}
+            </Button>
+          </div>
+        </form>
+      ) : null}
+
+      {activeTab === 'description' && program ? (
+        <form onSubmit={handleSaveDescription} className="space-y-4">
+          <FormField
+            label="Description"
+            labelId={descriptionLabelId}
+            optional
+            helperPlacement="after-label"
+            helperText="Shown on the volunteering hub and program pages. If you do not add roles and shifts, the program still appears as an opportunity with this description."
+          >
+            {({ describedBy }) => (
+              <div
+                role="group"
+                aria-labelledby={descriptionLabelId}
+                aria-describedby={describedBy}
+                className="flex min-h-[460px] flex-col overflow-hidden rounded-lg border border-gray-300 dark:border-gray-600"
+              >
+                <MarkdownDescriptionEditor
+                  key={program.id}
+                  ref={descriptionEditorRef}
+                  initialValue={program.description ?? ''}
+                  dark={resolvedTheme === 'dark'}
+                  fill
+                  enableManagedFileImageEdit
+                  onUploadImage={handleUploadMarkdownImage}
+                />
+              </div>
+            )}
+          </FormField>
+          <div>
+            <Button type="submit" disabled={saving}>
+              {saving ? 'Saving…' : 'Save description'}
             </Button>
           </div>
         </form>
@@ -714,7 +934,7 @@ export default function AdminVolunteerProgramEditor() {
           <div className="space-y-3">
             <h2 className="app-section-title">Roles ({program.roles.length})</h2>
             {program.roles.length === 0 ? (
-              <InlineStateMessage title="No roles yet. Add the jobs volunteers can fill." />
+              <InlineStateMessage title="No roles yet. Add the jobs volunteers can fill, or skip this tab if the description is enough." />
             ) : (
               program.roles.map((role) => (
                 <div key={role.id} className="app-card p-4 space-y-2">
@@ -792,7 +1012,7 @@ export default function AdminVolunteerProgramEditor() {
                   ) : null}
 
                   <div className="space-y-4">
-                    {newShiftTimes.map((row) => (
+                    {(recurringMode ? newShiftTimes.slice(0, 1) : newShiftTimes).map((row) => (
                       <div
                         key={row.key}
                         className={
@@ -878,19 +1098,63 @@ export default function AdminVolunteerProgramEditor() {
                     ))}
                   </div>
 
-                  <div className="pt-1">
-                    <button
-                      type="button"
-                      className="text-sm font-medium text-primary-teal-link hover:underline"
-                      onClick={addAdditionalShiftTime}
-                    >
-                      Add additional shift
-                    </button>
+                  <div className="pt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+                    {!recurringMode ? (
+                      <>
+                        <button
+                          type="button"
+                          className="text-sm font-medium text-primary-teal-link hover:underline"
+                          onClick={addAdditionalShiftTime}
+                        >
+                          Add additional shift
+                        </button>
+                        {newShiftTimes.length === 1 ? (
+                          <>
+                            <span className="text-sm text-gray-500 dark:text-gray-400">or</span>
+                            <button
+                              type="button"
+                              className="text-sm font-medium text-primary-teal-link hover:underline"
+                              onClick={() => {
+                                setNewShiftTimes((prev) => prev.slice(0, 1));
+                                const start = newShiftTimes[0]?.startLocal?.slice(0, 10);
+                                const d = start ? new Date(`${start}T12:00:00`) : null;
+                                newShiftRecurrence.setPreset('weekly');
+                                if (d && !Number.isNaN(d.getTime())) {
+                                  newShiftRecurrence.setWeekdays([getWeekdayFromDate(d)]);
+                                }
+                                setRecurringMode(true);
+                              }}
+                            >
+                              Set up recurring shifts
+                            </button>
+                          </>
+                        ) : null}
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        className="text-sm font-medium text-primary-teal-link hover:underline"
+                        onClick={() => setRecurringMode(false)}
+                      >
+                        Cancel recurrence
+                      </button>
+                    )}
                   </div>
+
+                  {recurringMode ? (
+                    <RecurrenceFields
+                      idPrefix={`${baseId}-new-shift`}
+                      startDate={newShiftStartLocal.slice(0, 10)}
+                      startTime={newShiftStartLocal.slice(11, 16) || '09:00'}
+                      allowNone={false}
+                      requireLimit
+                      state={newShiftRecurrence}
+                    />
+                  ) : null}
 
                   <FormField
                     label={
-                      newShiftTimes.length > 1
+                      recurringMode || newShiftTimes.length > 1
                         ? 'Volunteers needed per shift'
                         : 'Volunteers needed'
                     }
@@ -914,7 +1178,7 @@ export default function AdminVolunteerProgramEditor() {
                     <Button type="submit" disabled={savingShift || !newShiftRoleId}>
                       {savingShift
                         ? 'Saving…'
-                        : newShiftTimes.length > 1
+                        : recurringMode || newShiftTimes.length > 1
                           ? 'Add shifts'
                           : 'Add shift'}
                     </Button>
@@ -1011,6 +1275,48 @@ export default function AdminVolunteerProgramEditor() {
           )}
         </div>
       ) : null}
+      <Modal
+        isOpen={!!deleteShiftTarget}
+        onClose={() => {
+          if (!deletingShift) setDeleteShiftTarget(null);
+        }}
+        title="Delete shift"
+      >
+        {deleteShiftTarget ? (
+          <div className="space-y-4">
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              This is a recurring shift. Delete this instance only, or all remaining instances in
+              the series? Signups for deleted shifts will be removed.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={deletingShift}
+                onClick={() => confirmDeleteShift('this')}
+              >
+                This instance only
+              </Button>
+              <Button
+                type="button"
+                variant="danger"
+                disabled={deletingShift}
+                onClick={() => confirmDeleteShift('all')}
+              >
+                All instances
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={deletingShift}
+                onClick={() => setDeleteShiftTarget(null)}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
     </AppPage>
   );
 }
@@ -1025,7 +1331,13 @@ function ExistingShiftEditor({
   baseId: string;
   shift: VolunteerShiftView;
   roles: VolunteerRoleView[];
-  onSave: (patch: { startLocal: string; endLocal: string; roles: DraftShiftRole[] }) => void;
+  onSave: (patch: {
+    startLocal: string;
+    endLocal: string;
+    roles: DraftShiftRole[];
+    scope: 'this' | 'all';
+    recurrence?: { rrule: string; endDate?: string; count?: number } | null;
+  }) => void;
   onDelete: () => void;
 }) {
   const [startLocal, setStartLocal] = useState(toDateTimeLocal(shift.startDt));
@@ -1034,6 +1346,11 @@ function ExistingShiftEditor({
     shift.roles.map((r) => ({ roleId: r.roleId, volunteersNeeded: r.volunteersNeeded }))
   );
   const [showAddRole, setShowAddRole] = useState(false);
+  const [editScope, setEditScope] = useState<'this' | 'all'>('this');
+  const isRecurring = shift.recurrenceSeriesId != null;
+  const recurrence = useRecurrenceState(shift.recurrenceRule ?? '', startLocal.slice(0, 10));
+  const scopeLabelId = `${baseId}-scope-label`;
+  const isEditingSingleInstance = isRecurring && editScope === 'this';
 
   useEffect(() => {
     setStartLocal(toDateTimeLocal(shift.startDt));
@@ -1058,6 +1375,9 @@ function ExistingShiftEditor({
 
   return (
     <div className="app-card p-4 space-y-3">
+      {isRecurring ? (
+        <p className="text-sm text-gray-600 dark:text-gray-400">Recurring shift</p>
+      ) : null}
       <div className="grid gap-3 md:grid-cols-2">
         <FormField label="Start" htmlFor={`${baseId}-start`} required>
           <input
@@ -1078,6 +1398,37 @@ function ExistingShiftEditor({
           />
         </FormField>
       </div>
+
+      {isRecurring ? (
+        <FormField
+          label="This is a recurring shift. Apply changes to:"
+          labelId={scopeLabelId}
+        >
+          <ChoiceInput<'this' | 'all'>
+            layout="inline"
+            ariaLabelledBy={scopeLabelId}
+            options={[
+              { value: 'this', label: 'This instance only' },
+              { value: 'all', label: 'All instances' },
+            ]}
+            value={editScope}
+            onChange={(next) => {
+              if (next === 'this' || next === 'all') setEditScope(next);
+            }}
+          />
+        </FormField>
+      ) : null}
+
+      {isRecurring && !isEditingSingleInstance ? (
+        <RecurrenceFields
+          idPrefix={`${baseId}-recurrence`}
+          startDate={startLocal.slice(0, 10)}
+          startTime={startLocal.slice(11, 16) || '09:00'}
+          allowNone={false}
+          requireLimit
+          state={recurrence}
+        />
+      ) : null}
 
       {!multiRole && shiftRoles[0] ? (
         <>
@@ -1173,7 +1524,26 @@ function ExistingShiftEditor({
       ) : null}
 
       <div className="flex flex-wrap gap-2">
-        <Button type="button" onClick={() => onSave({ startLocal, endLocal, roles: shiftRoles })}>
+        <Button
+          type="button"
+          onClick={() => {
+            if (isRecurring && editScope === 'all') {
+              if (!recurrence.payload) {
+                return;
+              }
+              if (!recurrence.endDate && recurrence.count === '' && !/UNTIL=|COUNT=/i.test(recurrence.rrule)) {
+                return;
+              }
+            }
+            onSave({
+              startLocal,
+              endLocal,
+              roles: shiftRoles,
+              scope: editScope,
+              recurrence: isRecurring && editScope === 'all' ? recurrence.payload : undefined,
+            });
+          }}
+        >
           Save shift
         </Button>
         <Button type="button" variant="secondary" onClick={onDelete}>

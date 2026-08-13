@@ -365,6 +365,20 @@
       "when": 1780352498493,
       "tag": "0052_add_leagues_is_junior_recreational",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1780352498494,
+      "tag": "0053_volunteer_shift_recurrence",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1780352498495,
+      "tag": "0054_volunteer_program_priority",
+      "breakpoints": true
     }
   ]
 }

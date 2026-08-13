@@ -122,6 +122,7 @@ type PgSchema = {
   volunteerRoleCredentials: typeof pgSchema.volunteerRoleCredentialsPg;
   memberVolunteerCredentials: typeof pgSchema.memberVolunteerCredentialsPg;
   volunteerShifts: typeof pgSchema.volunteerShiftsPg;
+  volunteerShiftExceptions: typeof pgSchema.volunteerShiftExceptionsPg;
   volunteerShiftRoles: typeof pgSchema.volunteerShiftRolesPg;
   volunteerSignups: typeof pgSchema.volunteerSignupsPg;
 };
@@ -265,6 +266,7 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       volunteerRoleCredentials: sqliteSchema.volunteerRoleCredentialsSqlite,
       memberVolunteerCredentials: sqliteSchema.memberVolunteerCredentialsSqlite,
       volunteerShifts: sqliteSchema.volunteerShiftsSqlite,
+      volunteerShiftExceptions: sqliteSchema.volunteerShiftExceptionsSqlite,
       volunteerShiftRoles: sqliteSchema.volunteerShiftRolesSqlite,
       volunteerSignups: sqliteSchema.volunteerSignupsSqlite,
     } as unknown as DrizzleSchema;
@@ -399,6 +401,7 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       volunteerRoleCredentials: pgSchema.volunteerRoleCredentialsPg,
       memberVolunteerCredentials: pgSchema.memberVolunteerCredentialsPg,
       volunteerShifts: pgSchema.volunteerShiftsPg,
+      volunteerShiftExceptions: pgSchema.volunteerShiftExceptionsPg,
       volunteerShiftRoles: pgSchema.volunteerShiftRolesPg,
       volunteerSignups: pgSchema.volunteerSignupsPg,
     } as DrizzleSchema;

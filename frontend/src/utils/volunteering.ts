@@ -47,6 +47,9 @@ export type VolunteerShiftView = {
   programId: number;
   startDt: string;
   endDt: string;
+  recurrenceSeriesId: number | null;
+  recurrenceRule: string | null;
+  recurrenceDate: string | null;
   roles: VolunteerShiftRoleView[];
 };
 
@@ -70,6 +73,7 @@ export type VolunteerProgramView = {
   published: boolean;
   featureOnDashboard: boolean;
   publicSignups: boolean;
+  priority: number | null;
   archivedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -225,6 +229,23 @@ export function formatVolunteerDuration(startDt: string, endDt: string): string 
   } catch {
     return '';
   }
+}
+
+export function volunteerProgramHasOpenShifts(program: {
+  shifts: Array<{ roles: unknown[] }>;
+}): boolean {
+  return program.shifts.some((shift) => shift.roles.length > 0);
+}
+
+/**
+ * Published programs with no roles are listed even without shifts.
+ * Shift-based programs stay hidden on the hub until they have an upcoming shift.
+ */
+export function volunteerProgramAppearsInDiscovery(program: {
+  roles: unknown[];
+  shifts: Array<{ roles: unknown[] }>;
+}): boolean {
+  return volunteerProgramHasOpenShifts(program) || program.roles.length === 0;
 }
 
 /** Format a program date span from its shifts (single day or inclusive range). */

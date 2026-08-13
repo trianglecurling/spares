@@ -11,8 +11,9 @@ function sharpSafe(input: Buffer): Sharp {
   return sharp(input, { limitInputPixels: SHARP_LIMIT_INPUT_PIXELS });
 }
 import type { Member } from '../types.js';
-import { isContentAdmin, isEventsAdmin } from '../utils/auth.js';
+import { isContentAdmin, isEventsAdmin, isVolunteerManager } from '../utils/auth.js';
 import { listOwnedEventIds } from '../services/eventService.js';
+import { listManagedProgramIds } from '../services/volunteeringService.js';
 import { getFileStorageAdapter } from '../utils/fileStorage.js';
 import {
   authFileUrl,
@@ -89,7 +90,7 @@ function requireContentAdmin(
   return true;
 }
 
-/** Content admins, events admins, or event owners may upload files (e.g. event details images). */
+/** Content admins, events admins, event owners, or volunteer program managers may upload files. */
 async function requireContentAdminOrEventManagerUpload(
   request: { member?: Member },
   reply: { code: (n: number) => { send: (o: object) => unknown } },
@@ -99,9 +100,11 @@ async function requireContentAdminOrEventManagerUpload(
     reply.code(403).send({ error: 'Forbidden' });
     return false;
   }
-  if (isContentAdmin(member) || isEventsAdmin(member)) return true;
+  if (isContentAdmin(member) || isEventsAdmin(member) || isVolunteerManager(member)) return true;
   const owned = await listOwnedEventIds(member.id);
   if (owned.length > 0) return true;
+  const managedPrograms = await listManagedProgramIds(member);
+  if (managedPrograms === 'all' || managedPrograms.length > 0) return true;
   reply.code(403).send({ error: 'Forbidden' });
   return false;
 }

@@ -851,7 +851,7 @@ export default function PublicHomePage() {
                   Triangle Curling extends its sincere gratitude to the local businesses that keep our nonprofit club
                   on the ice.
                 </p>
-                <ul className="mt-7 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-gray-200 bg-gray-200 sm:grid-cols-3 lg:grid-cols-5">
+                <ul className="public-home-sponsors mt-8">
                   {displayedSponsorships.map((sponsorship) => (
                     <li key={sponsorship.sponsorshipId}>
                       <a
@@ -859,13 +859,14 @@ export default function PublicHomePage() {
                         target="_blank"
                         rel="noreferrer"
                         title={sponsorship.sponsorName}
-                        className="flex h-24 items-center justify-center bg-white p-4 transition hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-teal/50 motion-reduce:transition-none"
+                        className="flex items-center justify-center rounded-lg p-1 transition hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/50 motion-reduce:transition-none"
                       >
                         <img
                           src={sponsorship.sponsorLogoUrl || ''}
                           alt={sponsorship.sponsorName}
-                          className="max-h-full max-w-full object-contain"
+                          className="mx-auto h-auto w-auto max-h-52 max-w-full object-contain sm:max-h-64"
                           loading="lazy"
+                          decoding="async"
                         />
                       </a>
                     </li>

@@ -5,10 +5,21 @@ import { isVolunteerManager } from '../utils/auth.js';
 import type { Member } from '../types.js';
 import { config } from '../config.js';
 import {
+  addCalendarDays,
   calendarDaysBetween,
   formatDateInTimeZone,
+  formatTimeInTimeZone,
+  localDateTimeToIso,
   shiftInstantByCalendarDays,
 } from '../utils/timeZone.js';
+import {
+  composeRecurrenceRule,
+  expandAllRecurrenceInstances,
+  MAX_MATERIALIZED_RECURRENCE_INSTANCES,
+  recurrenceRulesEquivalent,
+  shiftRecurrenceRuleByDays,
+  type CalendarRecurrenceInput,
+} from '../utils/calendarRecurrence.js';
 import { DEFAULT_SITE_NAME } from './spaDocumentMeta.js';
 import { VolunteeringServiceError } from './volunteeringServiceError.js';
 import {
@@ -16,6 +27,7 @@ import {
   sendVolunteerCancellationEmails,
 } from './email.js';
 import { ensureUniqueVolunteerProgramSlug } from './volunteerProgramSlugs.js';
+import { compareVolunteerProgramsForDiscovery } from '../utils/volunteerProgramSort.js';
 
 /**
  * Club is the default volunteer location and is not shown in UI/email.
@@ -77,6 +89,22 @@ function parseOptionalDateOnly(value: string | null | undefined, label: string):
   return trimmed;
 }
 
+/** Optional whole-number sort key. Null/empty means no priority (sorted last). */
+function parseOptionalPriority(value: number | null | undefined): number | null {
+  if (value == null) return null;
+  if (!Number.isInteger(value) || !Number.isFinite(value)) {
+    throw new VolunteeringServiceError('Priority must be a whole number');
+  }
+  return value;
+}
+
+function normalizePriority(value: unknown): number | null {
+  if (value == null || value === '') return null;
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(n)) return null;
+  return Math.trunc(n);
+}
+
 function normalizeDateOnly(value: unknown): string | null {
   if (value == null) return null;
   if (value instanceof Date) {
@@ -102,6 +130,200 @@ function normalizeDurationMinutes(value: number | undefined): number {
     throw new VolunteeringServiceError('Default duration cannot exceed 24 hours');
   }
   return minutes;
+}
+
+export type VolunteerShiftRecurrenceInput = CalendarRecurrenceInput;
+
+type ShiftRoleInput = { roleId: number; volunteersNeeded: number };
+
+function requireRecurrenceLimit(recurrence: VolunteerShiftRecurrenceInput): void {
+  const hasEnd = Boolean(recurrence.endDate?.trim());
+  const hasCount =
+    typeof recurrence.count === 'number' && Number.isFinite(recurrence.count) && recurrence.count > 0;
+  if (hasEnd || hasCount) return;
+  const rule = recurrence.rrule.toUpperCase();
+  if (/UNTIL=/.test(rule) || /COUNT=/.test(rule)) return;
+  throw new VolunteeringServiceError('Recurring shifts need an end date or a count');
+}
+
+function expandBoundedShiftRecurrence(
+  startDt: string,
+  endDt: string,
+  recurrence: VolunteerShiftRecurrenceInput
+) {
+  const rrule = recurrence.rrule.trim();
+  if (!rrule) throw new VolunteeringServiceError('Recurrence rule is required');
+  requireRecurrenceLimit(recurrence);
+  const composed = composeRecurrenceRule(recurrence);
+  const instances = expandAllRecurrenceInstances(
+    startDt,
+    endDt,
+    composed,
+    config.timeZone,
+    recurrence.endDate,
+    recurrence.count
+  );
+  if (instances.length === 0) {
+    throw new VolunteeringServiceError('Recurrence did not produce any shifts');
+  }
+  if (instances.length > MAX_MATERIALIZED_RECURRENCE_INSTANCES) {
+    throw new VolunteeringServiceError(
+      `Recurring shifts cannot create more than ${MAX_MATERIALIZED_RECURRENCE_INSTANCES} instances`
+    );
+  }
+  return { composed, instances };
+}
+
+function validateShiftRoles(
+  roles: ShiftRoleInput[],
+  validRoleIds: Set<number>
+): void {
+  if (!roles.length) {
+    throw new VolunteeringServiceError('Each shift needs at least one role');
+  }
+  const seenRoles = new Set<number>();
+  for (const role of roles) {
+    if (!validRoleIds.has(role.roleId)) {
+      throw new VolunteeringServiceError(`Role ${role.roleId} does not belong to this program`);
+    }
+    if (seenRoles.has(role.roleId)) {
+      throw new VolunteeringServiceError('Duplicate role on the same shift');
+    }
+    seenRoles.add(role.roleId);
+    if (!Number.isFinite(role.volunteersNeeded) || role.volunteersNeeded < 1) {
+      throw new VolunteeringServiceError('Volunteers needed must be at least 1');
+    }
+  }
+}
+
+async function insertShiftRow(input: {
+  programId: number;
+  startDt: string;
+  endDt: string;
+  roles: ShiftRoleInput[];
+  recurrenceSeriesId?: number | null;
+  recurrenceRule?: string | null;
+  recurrenceDate?: string | null;
+}): Promise<number> {
+  const { db, schema } = getDrizzleDb();
+  const [created] = await db
+    .insert(schema.volunteerShifts)
+    .values({
+      program_id: input.programId,
+      start_dt: input.startDt,
+      end_dt: input.endDt,
+      recurrence_series_id: input.recurrenceSeriesId ?? null,
+      recurrence_rule: input.recurrenceRule ?? null,
+      recurrence_date: input.recurrenceDate ?? null,
+    } as any)
+    .returning({ id: schema.volunteerShifts.id });
+  await db.insert(schema.volunteerShiftRoles).values(
+    input.roles.map((role) => ({
+      shift_id: created.id,
+      role_id: role.roleId,
+      volunteers_needed: role.volunteersNeeded,
+    }))
+  );
+  return created.id;
+}
+
+async function syncShiftRoles(
+  shiftId: number,
+  programId: number,
+  roles: ShiftRoleInput[]
+): Promise<void> {
+  const { db, schema } = getDrizzleDb();
+  const programRoles = await db
+    .select({ id: schema.volunteerRoles.id })
+    .from(schema.volunteerRoles)
+    .where(eq(schema.volunteerRoles.program_id, programId));
+  const validRoleIds = new Set(programRoles.map((r) => r.id));
+  validateShiftRoles(roles, validRoleIds);
+
+  const current = await db
+    .select()
+    .from(schema.volunteerShiftRoles)
+    .where(eq(schema.volunteerShiftRoles.shift_id, shiftId));
+  const currentByRole = new Map(current.map((r) => [r.role_id, r]));
+  const nextRoleIds = new Set(roles.map((r) => r.roleId));
+
+  for (const role of roles) {
+    const existingRole = currentByRole.get(role.roleId);
+    if (existingRole) {
+      await db
+        .update(schema.volunteerShiftRoles)
+        .set({
+          volunteers_needed: role.volunteersNeeded,
+          updated_at: new Date(),
+        } as any)
+        .where(eq(schema.volunteerShiftRoles.id, existingRole.id));
+    } else {
+      await db.insert(schema.volunteerShiftRoles).values({
+        shift_id: shiftId,
+        role_id: role.roleId,
+        volunteers_needed: role.volunteersNeeded,
+      });
+    }
+  }
+
+  for (const row of current) {
+    if (!nextRoleIds.has(row.role_id)) {
+      await db.delete(schema.volunteerShiftRoles).where(eq(schema.volunteerShiftRoles.id, row.id));
+    }
+  }
+}
+
+async function addShiftException(seriesId: number, exceptionDate: string): Promise<void> {
+  const { db, schema } = getDrizzleDb();
+  const existing = await db
+    .select({ id: schema.volunteerShiftExceptions.id })
+    .from(schema.volunteerShiftExceptions)
+    .where(
+      and(
+        eq(schema.volunteerShiftExceptions.recurrence_series_id, seriesId),
+        eq(schema.volunteerShiftExceptions.exception_date, exceptionDate)
+      )
+    )
+    .limit(1);
+  if (existing[0]) return;
+  await db.insert(schema.volunteerShiftExceptions).values({
+    recurrence_series_id: seriesId,
+    exception_date: exceptionDate,
+  });
+}
+
+async function listSeriesExceptionDates(seriesId: number): Promise<Set<string>> {
+  const { db, schema } = getDrizzleDb();
+  const rows = await db
+    .select({ exceptionDate: schema.volunteerShiftExceptions.exception_date })
+    .from(schema.volunteerShiftExceptions)
+    .where(eq(schema.volunteerShiftExceptions.recurrence_series_id, seriesId));
+  return new Set(rows.map((r) => r.exceptionDate));
+}
+
+async function detachShiftFromSeries(shift: {
+  id: number;
+  recurrence_series_id: number | null;
+  recurrence_date: string | null;
+}): Promise<void> {
+  const { db, schema } = getDrizzleDb();
+  if (shift.recurrence_series_id != null && shift.recurrence_date) {
+    await addShiftException(shift.recurrence_series_id, shift.recurrence_date);
+  }
+  await db
+    .update(schema.volunteerShifts)
+    .set({
+      recurrence_series_id: null,
+      recurrence_rule: null,
+      recurrence_date: null,
+      updated_at: new Date(),
+    } as any)
+    .where(eq(schema.volunteerShifts.id, shift.id));
+}
+
+async function deleteShiftRow(shiftId: number): Promise<void> {
+  const { db, schema } = getDrizzleDb();
+  await db.delete(schema.volunteerShifts).where(eq(schema.volunteerShifts.id, shiftId));
 }
 
 export type VolunteerMemberSummary = {
@@ -162,6 +384,9 @@ export type VolunteerShiftView = {
   programId: number;
   startDt: string;
   endDt: string;
+  recurrenceSeriesId: number | null;
+  recurrenceRule: string | null;
+  recurrenceDate: string | null;
   roles: VolunteerShiftRoleView[];
 };
 
@@ -176,6 +401,7 @@ export type VolunteerProgramView = {
   published: boolean;
   featureOnDashboard: boolean;
   publicSignups: boolean;
+  priority: number | null;
   archivedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -444,6 +670,7 @@ export async function createProgram(input: {
   published?: boolean;
   featureOnDashboard?: boolean;
   publicSignups?: boolean;
+  priority?: number | null;
   managerIds?: number[];
   createdByMemberId: number;
 }): Promise<{ id: number; slug: string }> {
@@ -453,6 +680,7 @@ export async function createProgram(input: {
   if (!title) throw new VolunteeringServiceError('Title is required');
   if (!pointOfContact) throw new VolunteeringServiceError('Point of contact is required');
   const startDate = parseOptionalDateOnly(input.startDate, 'start date');
+  const priority = parseOptionalPriority(input.priority);
   const clubName = await getConfiguredClubName();
   const slug = await ensureUniqueVolunteerProgramSlug(input.slug?.trim() || title);
 
@@ -469,6 +697,7 @@ export async function createProgram(input: {
       // Default on so programs surface on dashboards unless explicitly opted out.
       feature_on_dashboard: input.featureOnDashboard === false ? 0 : 1,
       public_signups: input.publicSignups ? 1 : 0,
+      priority,
       created_by_member_id: input.createdByMemberId,
     } as any)
     .returning({ id: schema.volunteerPrograms.id, slug: schema.volunteerPrograms.slug });
@@ -489,6 +718,7 @@ export async function updateProgram(
     published?: boolean;
     featureOnDashboard?: boolean;
     publicSignups?: boolean;
+    priority?: number | null;
     managerIds?: number[];
   }
 ): Promise<void> {
@@ -531,6 +761,9 @@ export async function updateProgram(
   }
   if (input.publicSignups !== undefined) {
     patch.public_signups = input.publicSignups ? 1 : 0;
+  }
+  if (input.priority !== undefined) {
+    patch.priority = parseOptionalPriority(input.priority);
   }
 
   await db.update(schema.volunteerPrograms).set(patch as any).where(eq(schema.volunteerPrograms.id, programId));
@@ -638,6 +871,7 @@ export async function duplicateProgram(
     startDate: newStartDate,
     featureOnDashboard: Number(source.feature_on_dashboard) === 1,
     publicSignups: Number(source.public_signups) === 1,
+    priority: normalizePriority(source.priority),
     managerIds: input.managerIds,
     createdByMemberId: input.createdByMemberId,
   });
@@ -671,19 +905,9 @@ export async function duplicateProgram(
       .from(schema.volunteerShiftRoles)
       .where(inArray(schema.volunteerShiftRoles.shift_id, sourceShiftIds));
 
-    const shiftsPayload = sourceShifts.map((shift) => {
-      const startDt = shiftInstantByCalendarDays(
-        requireIso(shift.start_dt as any, 'start datetime'),
-        dayDelta,
-        timeZone
-      );
-      const endDt = shiftInstantByCalendarDays(
-        requireIso(shift.end_dt as any, 'end datetime'),
-        dayDelta,
-        timeZone
-      );
+    const mappedRolesFor = (shiftId: number): ShiftRoleInput[] => {
       const roles = sourceShiftRoles
-        .filter((sr) => sr.shift_id === shift.id)
+        .filter((sr) => sr.shift_id === shiftId)
         .map((sr) => {
           const newRoleId = roleIdMap.get(sr.role_id);
           if (newRoleId == null) {
@@ -694,10 +918,93 @@ export async function duplicateProgram(
       if (roles.length === 0) {
         throw new VolunteeringServiceError('Each shift needs at least one role');
       }
-      return { startDt, endDt, roles };
-    });
+      return roles;
+    };
 
-    await createShiftsBulk({ programId: created.id, shifts: shiftsPayload });
+    const seriesIds = [
+      ...new Set(
+        sourceShifts
+          .map((s) => s.recurrence_series_id)
+          .filter((id): id is number => id != null)
+      ),
+    ];
+    const sourceExceptions =
+      seriesIds.length === 0
+        ? []
+        : await db
+            .select()
+            .from(schema.volunteerShiftExceptions)
+            .where(inArray(schema.volunteerShiftExceptions.recurrence_series_id, seriesIds));
+
+    const copiedSeries = new Set<number>();
+    for (const shift of sourceShifts) {
+      const seriesId = shift.recurrence_series_id;
+      if (seriesId != null) {
+        if (copiedSeries.has(seriesId)) continue;
+        copiedSeries.add(seriesId);
+        const members = sourceShifts.filter((s) => s.recurrence_series_id === seriesId);
+        let newSeriesId: number | null = null;
+        for (const memberShift of members) {
+          const startDt = shiftInstantByCalendarDays(
+            requireIso(memberShift.start_dt as any, 'start datetime'),
+            dayDelta,
+            timeZone
+          );
+          const endDt = shiftInstantByCalendarDays(
+            requireIso(memberShift.end_dt as any, 'end datetime'),
+            dayDelta,
+            timeZone
+          );
+          const recurrenceDate = memberShift.recurrence_date
+            ? addCalendarDays(memberShift.recurrence_date, dayDelta)
+            : formatDateInTimeZone(new Date(startDt), timeZone);
+          const recurrenceRule = memberShift.recurrence_rule
+            ? shiftRecurrenceRuleByDays(memberShift.recurrence_rule, dayDelta)
+            : null;
+          const createdId = await insertShiftRow({
+            programId: created.id,
+            startDt,
+            endDt,
+            roles: mappedRolesFor(memberShift.id),
+            recurrenceSeriesId: newSeriesId,
+            recurrenceRule,
+            recurrenceDate,
+          });
+          if (newSeriesId == null) {
+            newSeriesId = createdId;
+            await db
+              .update(schema.volunteerShifts)
+              .set({ recurrence_series_id: newSeriesId, updated_at: new Date() } as any)
+              .where(eq(schema.volunteerShifts.id, createdId));
+          }
+        }
+        if (newSeriesId != null) {
+          const exceptions = sourceExceptions.filter((ex) => ex.recurrence_series_id === seriesId);
+          for (const ex of exceptions) {
+            const shiftedDate = addCalendarDays(ex.exception_date, dayDelta);
+            await addShiftException(newSeriesId, shiftedDate);
+          }
+        }
+        continue;
+      }
+
+      const startDt = shiftInstantByCalendarDays(
+        requireIso(shift.start_dt as any, 'start datetime'),
+        dayDelta,
+        timeZone
+      );
+      const endDt = shiftInstantByCalendarDays(
+        requireIso(shift.end_dt as any, 'end datetime'),
+        dayDelta,
+        timeZone
+      );
+      await insertShiftRow({
+        programId: created.id,
+        startDt,
+        endDt,
+        roles: mappedRolesFor(shift.id),
+      });
+    }
   }
 
   return created;
@@ -790,9 +1097,13 @@ export async function createShiftsBulk(input: {
     endDt: string;
     roles: Array<{ roleId: number; volunteersNeeded: number }>;
   }>;
+  recurrence?: VolunteerShiftRecurrenceInput;
 }): Promise<{ shiftIds: number[] }> {
   const { db, schema } = getDrizzleDb();
   if (!input.shifts.length) throw new VolunteeringServiceError('At least one shift is required');
+  if (input.recurrence && input.shifts.length !== 1) {
+    throw new VolunteeringServiceError('Recurring shifts cannot be combined with additional shifts');
+  }
 
   const program = await db
     .select({ id: schema.volunteerPrograms.id })
@@ -807,52 +1118,158 @@ export async function createShiftsBulk(input: {
     .where(eq(schema.volunteerRoles.program_id, input.programId));
   const validRoleIds = new Set(programRoles.map((r) => r.id));
 
+  const templates = input.recurrence
+    ? (() => {
+        const shift = input.shifts[0];
+        const startDt = parseDateInput(shift.startDt, 'start datetime');
+        const endDt = parseDateInput(shift.endDt, 'end datetime');
+        if (new Date(endDt) <= new Date(startDt)) {
+          throw new VolunteeringServiceError('Shift end must be after start');
+        }
+        validateShiftRoles(shift.roles, validRoleIds);
+        const { composed, instances } = expandBoundedShiftRecurrence(startDt, endDt, input.recurrence!);
+        return instances.map((inst) => ({
+          startDt: inst.start,
+          endDt: inst.end,
+          roles: shift.roles,
+          recurrenceRule: composed,
+          recurrenceDate: inst.recurrenceDate,
+        }));
+      })()
+    : input.shifts.map((shift) => {
+        const startDt = parseDateInput(shift.startDt, 'start datetime');
+        const endDt = parseDateInput(shift.endDt, 'end datetime');
+        if (new Date(endDt) <= new Date(startDt)) {
+          throw new VolunteeringServiceError('Shift end must be after start');
+        }
+        validateShiftRoles(shift.roles, validRoleIds);
+        return { startDt, endDt, roles: shift.roles, recurrenceRule: null as string | null, recurrenceDate: null as string | null };
+      });
+
   const shiftIds: number[] = [];
-  for (const shift of input.shifts) {
-    const startDt = parseDateInput(shift.startDt, 'start datetime');
-    const endDt = parseDateInput(shift.endDt, 'end datetime');
-    if (new Date(endDt) <= new Date(startDt)) {
-      throw new VolunteeringServiceError('Shift end must be after start');
+  let seriesId: number | null = null;
+  for (const template of templates) {
+    const createdId = await insertShiftRow({
+      programId: input.programId,
+      startDt: template.startDt,
+      endDt: template.endDt,
+      roles: template.roles,
+      recurrenceSeriesId: seriesId,
+      recurrenceRule: template.recurrenceRule,
+      recurrenceDate: template.recurrenceDate,
+    });
+    shiftIds.push(createdId);
+    if (input.recurrence && seriesId == null) {
+      seriesId = createdId;
+      await db
+        .update(schema.volunteerShifts)
+        .set({ recurrence_series_id: seriesId, updated_at: new Date() } as any)
+        .where(eq(schema.volunteerShifts.id, createdId));
     }
-    if (!shift.roles.length) {
-      throw new VolunteeringServiceError('Each shift needs at least one role');
-    }
-
-    const [created] = await db
-      .insert(schema.volunteerShifts)
-      .values({
-        program_id: input.programId,
-        start_dt: startDt,
-        end_dt: endDt,
-      } as any)
-      .returning({ id: schema.volunteerShifts.id });
-
-    shiftIds.push(created.id);
-
-    const seenRoles = new Set<number>();
-    for (const role of shift.roles) {
-      if (!validRoleIds.has(role.roleId)) {
-        throw new VolunteeringServiceError(`Role ${role.roleId} does not belong to this program`);
-      }
-      if (seenRoles.has(role.roleId)) {
-        throw new VolunteeringServiceError('Duplicate role on the same shift');
-      }
-      seenRoles.add(role.roleId);
-      if (!Number.isFinite(role.volunteersNeeded) || role.volunteersNeeded < 1) {
-        throw new VolunteeringServiceError('Volunteers needed must be at least 1');
-      }
-    }
-
-    await db.insert(schema.volunteerShiftRoles).values(
-      shift.roles.map((role) => ({
-        shift_id: created.id,
-        role_id: role.roleId,
-        volunteers_needed: role.volunteersNeeded,
-      }))
-    );
   }
 
   return { shiftIds };
+}
+
+async function applyTimesToSeriesMember(input: {
+  shiftId: number;
+  recurrenceDate: string;
+  startTime: string;
+  endTime: string;
+  daySpan: number;
+  recurrenceRule: string;
+}): Promise<void> {
+  const { db, schema } = getDrizzleDb();
+  const timeZone = config.timeZone;
+  const startDt = localDateTimeToIso(input.recurrenceDate, input.startTime, timeZone);
+  const endDt = localDateTimeToIso(addCalendarDays(input.recurrenceDate, input.daySpan), input.endTime, timeZone);
+  if (new Date(endDt) <= new Date(startDt)) {
+    throw new VolunteeringServiceError('Shift end must be after start');
+  }
+  await db
+    .update(schema.volunteerShifts)
+    .set({
+      start_dt: startDt,
+      end_dt: endDt,
+      recurrence_rule: input.recurrenceRule,
+      recurrence_date: input.recurrenceDate,
+      updated_at: new Date(),
+    } as any)
+    .where(eq(schema.volunteerShifts.id, input.shiftId));
+}
+
+async function reconcileShiftSeries(input: {
+  seriesId: number;
+  programId: number;
+  startDt: string;
+  endDt: string;
+  roles?: ShiftRoleInput[];
+  recurrence: VolunteerShiftRecurrenceInput;
+}): Promise<void> {
+  const { db, schema } = getDrizzleDb();
+  const { composed, instances } = expandBoundedShiftRecurrence(input.startDt, input.endDt, input.recurrence);
+  const exceptions = await listSeriesExceptionDates(input.seriesId);
+  const kept = instances.filter((inst) => !exceptions.has(inst.recurrenceDate));
+  if (kept.length === 0) {
+    throw new VolunteeringServiceError('Recurrence did not produce any remaining shifts');
+  }
+
+  const existing = await db
+    .select()
+    .from(schema.volunteerShifts)
+    .where(eq(schema.volunteerShifts.recurrence_series_id, input.seriesId));
+  const byDate = new Map(
+    existing
+      .filter((row) => row.recurrence_date)
+      .map((row) => [row.recurrence_date as string, row])
+  );
+  const keepDates = new Set(kept.map((inst) => inst.recurrenceDate));
+
+  for (const inst of kept) {
+    const current = byDate.get(inst.recurrenceDate);
+    if (current) {
+      await db
+        .update(schema.volunteerShifts)
+        .set({
+          start_dt: inst.start,
+          end_dt: inst.end,
+          recurrence_rule: composed,
+          recurrence_date: inst.recurrenceDate,
+          updated_at: new Date(),
+        } as any)
+        .where(eq(schema.volunteerShifts.id, current.id));
+      if (input.roles) {
+        await syncShiftRoles(current.id, input.programId, input.roles);
+      }
+    } else {
+      const roles =
+        input.roles ??
+        (
+          await db
+            .select()
+            .from(schema.volunteerShiftRoles)
+            .where(eq(schema.volunteerShiftRoles.shift_id, existing[0]?.id ?? input.seriesId))
+        ).map((r) => ({ roleId: r.role_id, volunteersNeeded: r.volunteers_needed }));
+      if (!roles.length) {
+        throw new VolunteeringServiceError('Each shift needs at least one role');
+      }
+      await insertShiftRow({
+        programId: input.programId,
+        startDt: inst.start,
+        endDt: inst.end,
+        roles,
+        recurrenceSeriesId: input.seriesId,
+        recurrenceRule: composed,
+        recurrenceDate: inst.recurrenceDate,
+      });
+    }
+  }
+
+  for (const row of existing) {
+    if (!row.recurrence_date || !keepDates.has(row.recurrence_date)) {
+      await deleteShiftRow(row.id);
+    }
+  }
 }
 
 export async function updateShift(
@@ -861,6 +1278,8 @@ export async function updateShift(
     startDt?: string;
     endDt?: string;
     roles?: Array<{ roleId: number; volunteersNeeded: number }>;
+    scope?: 'this' | 'all';
+    recurrence?: VolunteerShiftRecurrenceInput;
   }
 ): Promise<{ programId: number }> {
   const { db, schema } = getDrizzleDb();
@@ -881,6 +1300,74 @@ export async function updateShift(
     throw new VolunteeringServiceError('Shift end must be after start');
   }
 
+  const seriesId = existing[0].recurrence_series_id;
+  const scope = input.scope ?? 'this';
+  const isSeriesEdit = seriesId != null && scope === 'all';
+
+  if (isSeriesEdit) {
+    const timeZone = config.timeZone;
+    const startDate = formatDateInTimeZone(new Date(startDt), timeZone);
+    const existingDate = existing[0].recurrence_date;
+    const dateChanged = Boolean(startDate && existingDate && startDate !== existingDate);
+    const nextRecurrence: VolunteerShiftRecurrenceInput | null = input.recurrence
+      ? {
+          rrule: input.recurrence.rrule,
+          endDate: input.recurrence.endDate,
+          count: input.recurrence.count,
+        }
+      : existing[0].recurrence_rule
+        ? { rrule: existing[0].recurrence_rule }
+        : null;
+    const composedNext = nextRecurrence ? composeRecurrenceRule(nextRecurrence) : null;
+    const storedComposed = existing[0].recurrence_rule ?? null;
+    const ruleChanged = Boolean(
+      composedNext && storedComposed && !recurrenceRulesEquivalent(composedNext, storedComposed)
+    );
+
+    if (nextRecurrence && (dateChanged || ruleChanged)) {
+      await reconcileShiftSeries({
+        seriesId,
+        programId: existing[0].program_id,
+        startDt,
+        endDt,
+        roles: input.roles,
+        recurrence: nextRecurrence,
+      });
+      return { programId: existing[0].program_id };
+    }
+
+    const startTime = formatTimeInTimeZone(new Date(startDt), timeZone);
+    const endTime = formatTimeInTimeZone(new Date(endDt), timeZone);
+    const startDateStr = formatDateInTimeZone(new Date(startDt), timeZone);
+    const endDateStr = formatDateInTimeZone(new Date(endDt), timeZone);
+    if (!startTime || !endTime || !startDateStr || !endDateStr) {
+      throw new VolunteeringServiceError('Invalid shift datetime');
+    }
+    const daySpan = calendarDaysBetween(startDateStr, endDateStr);
+    const members = await db
+      .select()
+      .from(schema.volunteerShifts)
+      .where(eq(schema.volunteerShifts.recurrence_series_id, seriesId));
+    const rule = composedNext ?? existing[0].recurrence_rule ?? '';
+    for (const member of members) {
+      const recurrenceDate =
+        member.recurrence_date || formatDateInTimeZone(new Date(requireIso(member.start_dt as any, 'start datetime')), timeZone);
+      if (!recurrenceDate) continue;
+      await applyTimesToSeriesMember({
+        shiftId: member.id,
+        recurrenceDate,
+        startTime,
+        endTime,
+        daySpan,
+        recurrenceRule: rule,
+      });
+      if (input.roles) {
+        await syncShiftRoles(member.id, existing[0].program_id, input.roles);
+      }
+    }
+    return { programId: existing[0].program_id };
+  }
+
   await db
     .update(schema.volunteerShifts)
     .set({
@@ -891,56 +1378,20 @@ export async function updateShift(
     .where(eq(schema.volunteerShifts.id, shiftId));
 
   if (input.roles !== undefined) {
-    if (!input.roles.length) throw new VolunteeringServiceError('Each shift needs at least one role');
-    const programRoles = await db
-      .select({ id: schema.volunteerRoles.id })
-      .from(schema.volunteerRoles)
-      .where(eq(schema.volunteerRoles.program_id, existing[0].program_id));
-    const validRoleIds = new Set(programRoles.map((r) => r.id));
+    await syncShiftRoles(shiftId, existing[0].program_id, input.roles);
+  }
 
-    const current = await db
-      .select()
-      .from(schema.volunteerShiftRoles)
-      .where(eq(schema.volunteerShiftRoles.shift_id, shiftId));
-    const currentByRole = new Map(current.map((r) => [r.role_id, r]));
-    const nextRoleIds = new Set(input.roles.map((r) => r.roleId));
-
-    for (const role of input.roles) {
-      if (!validRoleIds.has(role.roleId)) {
-        throw new VolunteeringServiceError(`Role ${role.roleId} does not belong to this program`);
-      }
-      if (!Number.isFinite(role.volunteersNeeded) || role.volunteersNeeded < 1) {
-        throw new VolunteeringServiceError('Volunteers needed must be at least 1');
-      }
-      const existingRole = currentByRole.get(role.roleId);
-      if (existingRole) {
-        await db
-          .update(schema.volunteerShiftRoles)
-          .set({
-            volunteers_needed: role.volunteersNeeded,
-            updated_at: new Date(),
-          } as any)
-          .where(eq(schema.volunteerShiftRoles.id, existingRole.id));
-      } else {
-        await db.insert(schema.volunteerShiftRoles).values({
-          shift_id: shiftId,
-          role_id: role.roleId,
-          volunteers_needed: role.volunteersNeeded,
-        });
-      }
-    }
-
-    for (const row of current) {
-      if (!nextRoleIds.has(row.role_id)) {
-        await db.delete(schema.volunteerShiftRoles).where(eq(schema.volunteerShiftRoles.id, row.id));
-      }
-    }
+  if (seriesId != null && scope === 'this') {
+    await detachShiftFromSeries(existing[0]);
   }
 
   return { programId: existing[0].program_id };
 }
 
-export async function deleteShift(shiftId: number): Promise<{ programId: number }> {
+export async function deleteShift(
+  shiftId: number,
+  scope: 'this' | 'all' = 'this'
+): Promise<{ programId: number }> {
   const { db, schema } = getDrizzleDb();
   const existing = await db
     .select()
@@ -948,7 +1399,20 @@ export async function deleteShift(shiftId: number): Promise<{ programId: number 
     .where(eq(schema.volunteerShifts.id, shiftId))
     .limit(1);
   if (!existing[0]) throw new VolunteeringServiceError('Shift not found', 404);
-  await db.delete(schema.volunteerShifts).where(eq(schema.volunteerShifts.id, shiftId));
+
+  const seriesId = existing[0].recurrence_series_id;
+  if (seriesId != null && scope === 'all') {
+    await db.delete(schema.volunteerShifts).where(eq(schema.volunteerShifts.recurrence_series_id, seriesId));
+    await db
+      .delete(schema.volunteerShiftExceptions)
+      .where(eq(schema.volunteerShiftExceptions.recurrence_series_id, seriesId));
+    return { programId: existing[0].program_id };
+  }
+
+  if (seriesId != null && existing[0].recurrence_date) {
+    await addShiftException(seriesId, existing[0].recurrence_date);
+  }
+  await deleteShiftRow(shiftId);
   return { programId: existing[0].program_id };
 }
 
@@ -1356,6 +1820,9 @@ async function buildProgramViews(options: {
           programId: shift.program_id,
           startDt: requireIso(shift.start_dt as any, 'startDt'),
           endDt: requireIso(shift.end_dt as any, 'endDt'),
+          recurrenceSeriesId: shift.recurrence_series_id ?? null,
+          recurrenceRule: shift.recurrence_rule ?? null,
+          recurrenceDate: shift.recurrence_date ?? null,
           roles: rolesForShift,
         };
       });
@@ -1371,6 +1838,7 @@ async function buildProgramViews(options: {
       published: Number(program.published) === 1,
       featureOnDashboard: Number(program.feature_on_dashboard) === 1,
       publicSignups: Number(program.public_signups) === 1,
+      priority: normalizePriority(program.priority),
       archivedAt: toIso(program.archived_at as any),
       createdAt: requireIso(program.created_at as any, 'createdAt'),
       updatedAt: requireIso(program.updated_at as any, 'updatedAt'),
@@ -1392,21 +1860,13 @@ export async function listHubPrograms(member: Member): Promise<{
     listMyCredentials(member.id),
     listHubCredentials(member.id),
   ]);
-  // Discover opportunities: chronological by earliest upcoming shift (title as tiebreaker).
-  // Shifts within each program are already ordered by start_dt ascending.
-  const sortedPrograms = [...programs].sort((a, b) => {
-    const aFirst = a.shifts[0]?.startDt ?? null;
-    const bFirst = b.shifts[0]?.startDt ?? null;
-    if (aFirst && bFirst) {
-      const byShift = aFirst.localeCompare(bFirst);
-      if (byShift !== 0) return byShift;
-    } else if (aFirst) {
-      return -1;
-    } else if (bFirst) {
-      return 1;
-    }
-    return a.title.localeCompare(b.title);
-  });
+  // Discover opportunities: priority (lower first; missing = last), then earliest upcoming shift, then title.
+  const sortedPrograms = [...programs].sort((a, b) =>
+    compareVolunteerProgramsForDiscovery(
+      { priority: a.priority, nextShiftStart: a.shifts[0]?.startDt ?? null, title: a.title },
+      { priority: b.priority, nextShiftStart: b.shifts[0]?.startDt ?? null, title: b.title }
+    )
+  );
   return { programs: sortedPrograms, myCredentials, credentials };
 }
 
@@ -1503,6 +1963,7 @@ export async function listDashboardOpportunities(memberId: number): Promise<Dash
       programSlug: schema.volunteerPrograms.slug,
       programTitle: schema.volunteerPrograms.title,
       location: schema.volunteerPrograms.location,
+      priority: schema.volunteerPrograms.priority,
       startDt: schema.volunteerShifts.start_dt,
       endDt: schema.volunteerShifts.end_dt,
       archivedAt: schema.volunteerPrograms.archived_at,
@@ -1580,6 +2041,7 @@ export async function listDashboardOpportunities(memberId: number): Promise<Dash
     programSlug: string;
     programTitle: string;
     location: string | null;
+    priority: number | null;
     shifts: Map<
       number,
       {
@@ -1607,6 +2069,7 @@ export async function listDashboardOpportunities(memberId: number): Promise<Dash
         programSlug: shift.programSlug,
         programTitle: shift.programTitle,
         location: normalizeVolunteerLocation(shift.location, clubName),
+        priority: normalizePriority(shift.priority),
         shifts: new Map(),
       };
       programsById.set(shift.programId, program);
@@ -1647,16 +2110,19 @@ export async function listDashboardOpportunities(memberId: number): Promise<Dash
         programSlug: program.programSlug,
         programTitle: program.programTitle,
         location: program.location,
+        priority: program.priority,
         totalShifts: sortedShifts.length,
         shifts: sortedShifts.slice(0, maxShiftsPerProgram),
       };
     })
-    .sort((a, b) => {
-      const aFirst = a.shifts[0]?.startDt ?? '';
-      const bFirst = b.shifts[0]?.startDt ?? '';
-      return aFirst.localeCompare(bFirst) || a.programTitle.localeCompare(b.programTitle);
-    })
-    .slice(0, maxPrograms);
+    .sort((a, b) =>
+      compareVolunteerProgramsForDiscovery(
+        { priority: a.priority, nextShiftStart: a.shifts[0]?.startDt ?? null, title: a.programTitle },
+        { priority: b.priority, nextShiftStart: b.shifts[0]?.startDt ?? null, title: b.programTitle }
+      )
+    )
+    .slice(0, maxPrograms)
+    .map(({ priority: _priority, ...program }) => program);
 
   return programs;
 }

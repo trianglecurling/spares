@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import rrule from 'rrule';
-import { composeRecurrenceRule, expandRecurrenceInTimeZone } from './calendarRecurrence.js';
+import { composeRecurrenceRule, expandAllRecurrenceInstances, expandRecurrenceInTimeZone, recurrenceRulesEquivalent, shiftRecurrenceRuleByDays } from './calendarRecurrence.js';
 import { formatTimeInTimeZone, localDateTimeToIso } from './timeZone.js';
 
 const { RRule } = rrule;
@@ -126,5 +126,55 @@ describe('expandRecurrenceInTimeZone', () => {
       '2026-07-13',
       '2026-07-20',
     ]);
+  });
+});
+
+describe('expandAllRecurrenceInstances', () => {
+  test('materializes weekly shifts from COUNT', () => {
+    const start = localDateTimeToIso('2026-08-17', '09:00:00', EASTERN);
+    const end = localDateTimeToIso('2026-08-17', '11:00:00', EASTERN);
+    const instances = expandAllRecurrenceInstances(
+      start,
+      end,
+      'FREQ=WEEKLY;BYDAY=MO',
+      EASTERN,
+      undefined,
+      4
+    );
+    expect(instances.map((i) => i.recurrenceDate)).toEqual([
+      '2026-08-17',
+      '2026-08-24',
+      '2026-08-31',
+      '2026-09-07',
+    ]);
+    for (const inst of instances) {
+      expect(formatTimeInTimeZone(new Date(inst.start), EASTERN)).toBe('09:00:00');
+      expect(formatTimeInTimeZone(new Date(inst.end), EASTERN)).toBe('11:00:00');
+    }
+  });
+});
+
+describe('shiftRecurrenceRuleByDays', () => {
+  test('shifts UNTIL by calendar days', () => {
+    const composed = composeRecurrenceRule({
+      rrule: 'FREQ=WEEKLY;BYDAY=MO',
+      endDate: '2026-09-01',
+    });
+    const shifted = shiftRecurrenceRuleByDays(composed, 7);
+    expect(shifted).toMatch(/UNTIL=20260908T235959Z/i);
+  });
+});
+
+describe('recurrenceRulesEquivalent', () => {
+  test('treats composed UNTIL as equivalent to the stored rule', () => {
+    const stored = composeRecurrenceRule({
+      rrule: 'FREQ=WEEKLY;BYDAY=MO',
+      endDate: '2026-12-31',
+    });
+    const fromForm = composeRecurrenceRule({
+      rrule: 'FREQ=WEEKLY;BYDAY=MO',
+      endDate: '2026-12-31',
+    });
+    expect(recurrenceRulesEquivalent(stored, fromForm)).toBe(true);
   });
 });

@@ -9,11 +9,13 @@ import FormField from '../components/FormField';
 import VolunteerProgramShiftsBody, {
   type VolunteerProgramGroupBy,
 } from '../components/volunteering/VolunteerProgramShiftsBody';
+import { ArticleMarkdown } from '../components/ArticleMarkdown';
 import { get } from '../api/client';
 import { useAlert } from '../contexts/AlertContext';
 import { formatApiError } from '../utils/api';
 import {
   formatProgramShiftDateSpan,
+  volunteerProgramHasOpenShifts,
   type VolunteerProgramView,
 } from '../utils/volunteering';
 
@@ -92,13 +94,14 @@ export default function VolunteerProgramPage() {
     return <Navigate to={`/volunteering/programs/${program.slug}`} replace />;
   }
 
-  const hasShifts = program.shifts.some((shift) => shift.roles.length > 0);
+  const hasShifts = volunteerProgramHasOpenShifts(program);
+  const shiftless = program.roles.length === 0 && !hasShifts;
 
   return (
     <AppPage>
       <AppPageHeader
         title={program.title}
-        description={formatProgramShiftDateSpan(program.shifts) || 'Upcoming volunteer shifts'}
+        description={hasShifts ? formatProgramShiftDateSpan(program.shifts) : undefined}
         actions={<BackButton label="Back to volunteering hub" to="/volunteering" />}
       />
 
@@ -108,19 +111,10 @@ export default function VolunteerProgramPage() {
             {program.location ? <span>{program.location}</span> : null}
             <span>Contact: {program.pointOfContact}</span>
           </div>
-          {program.description ? (
-            <p className="text-sm text-gray-600 dark:text-gray-400 whitespace-pre-wrap">
-              {program.description}
-            </p>
-          ) : null}
+          {program.description ? <ArticleMarkdown markdown={program.description} /> : null}
         </div>
 
-        {!hasShifts ? (
-          <AppStateCard
-            title="No upcoming shifts"
-            description="There are no upcoming shifts to sign up for in this program right now."
-          />
-        ) : (
+        {hasShifts ? (
           <>
             <AppPageControlsRow
               left={
@@ -146,6 +140,11 @@ export default function VolunteerProgramPage() {
               <VolunteerProgramShiftsBody program={program} groupBy={groupBy} onChanged={load} />
             </div>
           </>
+        ) : shiftless ? null : (
+          <AppStateCard
+            title="No upcoming shifts"
+            description="There are no upcoming shifts to sign up for in this program right now."
+          />
         )}
       </div>
     </AppPage>

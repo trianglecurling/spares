@@ -10,11 +10,14 @@ import PageTabs from '../components/PageTabs';
 import VolunteerProgramShiftsBody, {
   type VolunteerProgramGroupBy,
 } from '../components/volunteering/VolunteerProgramShiftsBody';
+import { ArticleMarkdown } from '../components/ArticleMarkdown';
 import { get } from '../api/client';
 import { useAlert } from '../contexts/AlertContext';
 import { formatApiError } from '../utils/api';
 import {
   formatProgramShiftDateSpan,
+  volunteerProgramAppearsInDiscovery,
+  volunteerProgramHasOpenShifts,
   type VolunteerHubCredential,
   type VolunteerProgramView,
 } from '../utils/volunteering';
@@ -74,9 +77,13 @@ export default function VolunteeringHub() {
     void load();
   }, [load]);
 
-  const programsWithShifts = useMemo(
-    () => programs.filter((p) => p.shifts.some((s) => s.roles.length > 0)),
+  const visiblePrograms = useMemo(
+    () => programs.filter(volunteerProgramAppearsInDiscovery),
     [programs]
+  );
+  const hasAnyOpenShifts = useMemo(
+    () => visiblePrograms.some(volunteerProgramHasOpenShifts),
+    [visiblePrograms]
   );
 
   const hasHeldCredentials = useMemo(
@@ -151,36 +158,54 @@ export default function VolunteeringHub() {
         <CredentialsTab credentials={credentials} />
       ) : (
         <div className="space-y-4">
-          {programsWithShifts.length === 0 ? (
+          {visiblePrograms.length === 0 ? (
             <AppStateCard
               title="No upcoming opportunities"
-              description="There are no upcoming volunteer shifts right now. Check back soon."
+              description="There are no volunteer opportunities right now. Check back soon."
             />
           ) : (
             <>
-              <AppPageControlsRow
-                left={
-                  <FormField label="Group by" htmlFor="volunteer-group-by" className="mb-0">
-                    <ChoiceInput<VolunteerProgramGroupBy>
-                      inputId="volunteer-group-by"
-                      listboxLabel="Group by"
-                      layout="inline"
-                      name="volunteer-group-by"
-                      options={[
-                        { value: 'shift', label: 'Shift time' },
-                        { value: 'role', label: 'Role' },
-                      ]}
-                      value={groupBy}
-                      onChange={(v) => {
-                        if (v === 'shift' || v === 'role') setGroupBy(v);
-                      }}
-                    />
-                  </FormField>
-                }
-              />
+              {hasAnyOpenShifts ? (
+                <AppPageControlsRow
+                  left={
+                    <FormField label="Group by" htmlFor="volunteer-group-by" className="mb-0">
+                      <ChoiceInput<VolunteerProgramGroupBy>
+                        inputId="volunteer-group-by"
+                        listboxLabel="Group by"
+                        layout="inline"
+                        name="volunteer-group-by"
+                        options={[
+                          { value: 'shift', label: 'Shift time' },
+                          { value: 'role', label: 'Role' },
+                        ]}
+                        value={groupBy}
+                        onChange={(v) => {
+                          if (v === 'shift' || v === 'role') setGroupBy(v);
+                        }}
+                      />
+                    </FormField>
+                  }
+                />
+              ) : null}
 
               <div className="space-y-3">
-                {programsWithShifts.map((program) => {
+                {visiblePrograms.map((program) => {
+                  const hasShifts = volunteerProgramHasOpenShifts(program);
+                  if (!hasShifts) {
+                    return (
+                      <div key={program.id} className="app-card space-y-3 p-5">
+                        <div className="font-medium text-gray-900 dark:text-gray-100">{program.title}</div>
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600 dark:text-gray-400">
+                          {program.location ? <span>{program.location}</span> : null}
+                          <span>Contact: {program.pointOfContact}</span>
+                        </div>
+                        {program.description ? (
+                          <ArticleMarkdown markdown={program.description} />
+                        ) : null}
+                      </div>
+                    );
+                  }
+
                   const expanded = expandedPrograms.has(program.id);
                   return (
                     <div key={program.id} className="app-card overflow-hidden p-0">
@@ -208,9 +233,7 @@ export default function VolunteeringHub() {
                       {expanded ? (
                         <div className="border-t border-gray-200 dark:border-gray-700 px-5 py-4 space-y-4">
                           {program.description ? (
-                            <p className="text-sm text-gray-600 dark:text-gray-400 whitespace-pre-wrap">
-                              {program.description}
-                            </p>
+                            <ArticleMarkdown markdown={program.description} />
                           ) : null}
                           <VolunteerProgramShiftsBody
                             program={program}

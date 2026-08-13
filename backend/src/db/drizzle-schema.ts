@@ -2232,6 +2232,7 @@ export const volunteerProgramsSqlite = sqliteTable('volunteer_programs', {
   published: integer('published').default(0).notNull(),
   feature_on_dashboard: integer('feature_on_dashboard').default(1).notNull(),
   public_signups: integer('public_signups').default(0).notNull(),
+  priority: integer('priority'),
   archived_at: text('archived_at'),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
@@ -2325,11 +2326,27 @@ export const volunteerShiftsSqlite = sqliteTable('volunteer_shifts', {
   program_id: integer('program_id').notNull().references(() => volunteerProgramsSqlite.id, { onDelete: 'cascade' }),
   start_dt: text('start_dt').notNull(),
   end_dt: text('end_dt').notNull(),
+  recurrence_series_id: integer('recurrence_series_id'),
+  recurrence_rule: text('recurrence_rule'),
+  recurrence_date: text('recurrence_date'),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
 }, (table) => ({
   programIdx: index('idx_volunteer_shifts_program_id').on(table.program_id),
   startDtIdx: index('idx_volunteer_shifts_start_dt').on(table.start_dt),
+  recurrenceSeriesIdx: index('idx_volunteer_shifts_recurrence_series_id').on(table.recurrence_series_id),
+}));
+
+export const volunteerShiftExceptionsSqlite = sqliteTable('volunteer_shift_exceptions', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  recurrence_series_id: integer('recurrence_series_id').notNull(),
+  exception_date: text('exception_date').notNull(),
+}, (table) => ({
+  seriesIdx: index('idx_volunteer_shift_exceptions_series_id').on(table.recurrence_series_id),
+  uniqueSeriesDate: uniqueIndex('volunteer_shift_exceptions_series_date_unique').on(
+    table.recurrence_series_id,
+    table.exception_date
+  ),
 }));
 
 export const volunteerShiftRolesSqlite = sqliteTable('volunteer_shift_roles', {
@@ -4327,6 +4344,7 @@ export const volunteerProgramsPg = pgTable('volunteer_programs', {
   published: integerPg('published').default(0).notNull(),
   feature_on_dashboard: integerPg('feature_on_dashboard').default(1).notNull(),
   public_signups: integerPg('public_signups').default(0).notNull(),
+  priority: integerPg('priority'),
   archived_at: timestamp('archived_at', { withTimezone: false }),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
@@ -4429,11 +4447,27 @@ export const volunteerShiftsPg = pgTable('volunteer_shifts', {
   program_id: integerPg('program_id').notNull().references(() => volunteerProgramsPg.id, { onDelete: 'cascade' }),
   start_dt: textPg('start_dt').notNull(),
   end_dt: textPg('end_dt').notNull(),
+  recurrence_series_id: integerPg('recurrence_series_id'),
+  recurrence_rule: textPg('recurrence_rule'),
+  recurrence_date: textPg('recurrence_date'),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
 }, (table) => ({
   programIdx: indexPg('idx_volunteer_shifts_program_id').on(table.program_id),
   startDtIdx: indexPg('idx_volunteer_shifts_start_dt').on(table.start_dt),
+  recurrenceSeriesIdx: indexPg('idx_volunteer_shifts_recurrence_series_id').on(table.recurrence_series_id),
+}));
+
+export const volunteerShiftExceptionsPg = pgTable('volunteer_shift_exceptions', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  recurrence_series_id: integerPg('recurrence_series_id').notNull(),
+  exception_date: textPg('exception_date').notNull(),
+}, (table) => ({
+  seriesIdx: indexPg('idx_volunteer_shift_exceptions_series_id').on(table.recurrence_series_id),
+  uniqueSeriesDate: uniqueIndexPg('volunteer_shift_exceptions_series_date_unique_pg').on(
+    table.recurrence_series_id,
+    table.exception_date
+  ),
 }));
 
 export const volunteerShiftRolesPg = pgTable('volunteer_shift_roles', {
@@ -4592,6 +4626,7 @@ export const sqliteSchema = {
   volunteerRoleCredentials: volunteerRoleCredentialsSqlite,
   memberVolunteerCredentials: memberVolunteerCredentialsSqlite,
   volunteerShifts: volunteerShiftsSqlite,
+  volunteerShiftExceptions: volunteerShiftExceptionsSqlite,
   volunteerShiftRoles: volunteerShiftRolesSqlite,
   volunteerSignups: volunteerSignupsSqlite,
 };
@@ -4709,6 +4744,7 @@ export const pgSchema = {
   volunteerRoleCredentials: volunteerRoleCredentialsPg,
   memberVolunteerCredentials: memberVolunteerCredentialsPg,
   volunteerShifts: volunteerShiftsPg,
+  volunteerShiftExceptions: volunteerShiftExceptionsPg,
   volunteerShiftRoles: volunteerShiftRolesPg,
   volunteerSignups: volunteerSignupsPg,
 };
