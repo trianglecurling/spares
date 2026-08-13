@@ -1,6 +1,6 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
-import type { LeagueRosterPlacementTypeSqlite } from '../db/drizzle-schema.js';
+import type { CurlingRegistrationStatusSqlite, LeagueRosterPlacementTypeSqlite } from '../db/drizzle-schema.js';
 import { immediateChargeEntries, type PriorityLabelResult } from './leaguePriorityRules.js';
 import type { LeagueConfig, RegistrationContext } from './registrationContext.js';
 
@@ -23,7 +23,7 @@ export type GuaranteedPlacement = {
   >;
 };
 
-export const ROSTER_COMMIT_REGISTRATION_STATUSES = new Set([
+const ROSTER_COMMIT_REGISTRATION_STATUS_LIST = [
   'confirmed',
   'paid',
   'awaiting_placement',
@@ -32,7 +32,9 @@ export const ROSTER_COMMIT_REGISTRATION_STATUSES = new Set([
   // Assume unpaid registrants will pay; staff handles the rare non-payers later.
   'awaiting_payment',
   'payment_started',
-]);
+] as const satisfies readonly CurlingRegistrationStatusSqlite[];
+
+export const ROSTER_COMMIT_REGISTRATION_STATUSES = new Set<string>(ROSTER_COMMIT_REGISTRATION_STATUS_LIST);
 
 export function registrationStatusCommitsRoster(status: string): boolean {
   return ROSTER_COMMIT_REGISTRATION_STATUSES.has(status);
@@ -94,7 +96,7 @@ export async function ensureJuniorRecreationalRosterForMember(memberId: number):
       and(
         eq(schema.curlingRegistrations.curler_member_id, memberId),
         eq(schema.curlingRegistrations.membership_option, 'junior_recreational'),
-        inArray(schema.curlingRegistrations.status, [...ROSTER_COMMIT_REGISTRATION_STATUSES]),
+        inArray(schema.curlingRegistrations.status, [...ROSTER_COMMIT_REGISTRATION_STATUS_LIST]),
       ),
     );
 
@@ -140,7 +142,7 @@ export async function ensureImmediateChargeRosterForLeague(leagueId: number): Pr
       and(
         eq(schema.curlingRegistrations.session_id, league.session_id),
         eq(schema.registrationLeaguePriorities.league_id, leagueId),
-        inArray(schema.curlingRegistrations.status, [...ROSTER_COMMIT_REGISTRATION_STATUSES]),
+        inArray(schema.curlingRegistrations.status, [...ROSTER_COMMIT_REGISTRATION_STATUS_LIST]),
       ),
     );
 
@@ -169,8 +171,7 @@ export async function ensureLeagueRosterFromRegistrations(leagueId: number): Pro
 export async function ensureJuniorRecreationalRosterForLeague(leagueId: number): Promise<void> {
   const { db, schema } = getDrizzleDb();
   const [league] = await db.select().from(schema.leagues).where(eq(schema.leagues.id, leagueId)).limit(1);
-  const isJuniorRecreational =
-    league.is_junior_recreational === 1 || league.is_junior_recreational === true;
+  const isJuniorRecreational = Number(league?.is_junior_recreational) === 1;
   if (!league?.session_id || !isJuniorRecreational) return;
 
   const registrations = await db
@@ -183,7 +184,7 @@ export async function ensureJuniorRecreationalRosterForLeague(leagueId: number):
       and(
         eq(schema.curlingRegistrations.session_id, league.session_id),
         eq(schema.curlingRegistrations.membership_option, 'junior_recreational'),
-        inArray(schema.curlingRegistrations.status, [...ROSTER_COMMIT_REGISTRATION_STATUSES]),
+        inArray(schema.curlingRegistrations.status, [...ROSTER_COMMIT_REGISTRATION_STATUS_LIST]),
       ),
     );
 

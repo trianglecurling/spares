@@ -638,7 +638,7 @@ export async function getMemberRegistrationDetail(registrationId: number, actor:
   const playInEntry: Record<number, Awaited<ReturnType<typeof evaluateRegistrantPlayInEntry>>> = {};
   for (const priorityRow of priorityRows) {
     if (playInEntry[priorityRow.leagueId]) continue;
-    if (priorityRow.isPlayInBased !== 1 && priorityRow.isPlayInBased !== true) continue;
+    if (Number(priorityRow.isPlayInBased) !== 1) continue;
     try {
       playInEntry[priorityRow.leagueId] = await evaluateRegistrantPlayInEntry({
         leagueId: priorityRow.leagueId,

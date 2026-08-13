@@ -612,7 +612,9 @@ export function guaranteeChipLabel(label: LeaguePriorityGuaranteeLabel): string 
 }
 
 /** Non-waitlist leftover spots are unlabeled in the UI; the derived value still drives billing. */
-export function shouldShowGuaranteeChip(label: LeaguePriorityGuaranteeLabel | null | undefined): boolean {
+export function shouldShowGuaranteeChip(
+  label: LeaguePriorityGuaranteeLabel | null | undefined,
+): label is LeaguePriorityGuaranteeLabel {
   return label != null && label !== 'subject_to_availability';
 }
 

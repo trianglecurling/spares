@@ -418,7 +418,7 @@ export async function loadLeagueEntryTeams(leagueId: number): Promise<LeagueEntr
     ...new Set(
       memberRows
         .map((row) => (row.memberId == null ? null : Number(row.memberId)))
-        .filter((id): id is number => Number.isInteger(id) && id > 0),
+        .filter((id): id is number => id != null && Number.isInteger(id) && id > 0),
     ),
   ];
   const names = new Map<number, string>();
@@ -505,7 +505,7 @@ export async function loadPlayInLeagueConfig(leagueId: number): Promise<PlayInLe
     capacityType: row.capacityType,
     capacityValue: Number(row.capacityValue) || 0,
     playInSpotCount: Number(row.playInSpotCount) || 0,
-    isPlayInBased: row.isPlayInBased === true || row.isPlayInBased === 1,
+    isPlayInBased: Number(row.isPlayInBased) === 1,
     sessionId: row.sessionId == null ? null : Number(row.sessionId),
   };
 }
