@@ -842,6 +842,7 @@ export default function AdminVolunteerProgramEditor() {
                   initialValue={program.description ?? ''}
                   dark={resolvedTheme === 'dark'}
                   fill
+                  includeHiddenContactRecipients
                   enableManagedFileImageEdit
                   onUploadImage={handleUploadMarkdownImage}
                 />

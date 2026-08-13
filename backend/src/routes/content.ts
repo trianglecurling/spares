@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { eq, and, asc, desc, inArray, notExists, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { isUniqueConstraintViolation } from '../api/errors.js';
-import { isContentAdmin, isEventsAdmin } from '../utils/auth.js';
+import { isContentAdmin, isEventsAdmin, isVolunteerManager } from '../utils/auth.js';
 import {
   articleMatchesContentSearch,
   type ArticleContentSearchMode,
@@ -23,7 +23,8 @@ import {
   updateDashboardSection,
   type DashboardSectionKey,
 } from '../domains/content/dashboardSections.js';
-import { isEventOwner } from '../services/eventService.js';
+import { isEventOwner, listOwnedEventIds } from '../services/eventService.js';
+import { listManagedProgramIds } from '../services/volunteeringService.js';
 
 async function ensureGeneratedCss(content: string, contentType: string): Promise<string> {
   if (contentType !== 'html') return content;
@@ -262,6 +263,25 @@ function requireContentAdmin(
     return false;
   }
   return true;
+}
+
+/** Content admins, plus editors who pick hidden contacts from the markdown link dialog. */
+async function requireContactRecipientListAccess(
+  request: { member?: Member },
+  reply: { code: (n: number) => { send: (o: object) => unknown } },
+): Promise<boolean> {
+  const member = request.member;
+  if (!member) {
+    reply.code(403).send({ error: 'Forbidden' });
+    return false;
+  }
+  if (isContentAdmin(member) || isEventsAdmin(member) || isVolunteerManager(member)) return true;
+  const owned = await listOwnedEventIds(member.id);
+  if (owned.length > 0) return true;
+  const managedPrograms = await listManagedProgramIds(member);
+  if (managedPrograms === 'all' || managedPrograms.length > 0) return true;
+  reply.code(403).send({ error: 'Forbidden' });
+  return false;
 }
 
 async function findEventIdForArticle(articleId: number): Promise<number | null> {
@@ -1483,7 +1503,7 @@ export async function contentRoutes(fastify: FastifyInstance) {
 
   // Public contact recipients (contact page + article link targets)
   fastify.get('/content/contact-recipients', async (request, reply) => {
-    if (!requireContentAdmin(request, reply)) return;
+    if (!(await requireContactRecipientListAccess(request, reply))) return;
     const { db, schema } = getDrizzleDb();
     const rows = await db
       .select()
