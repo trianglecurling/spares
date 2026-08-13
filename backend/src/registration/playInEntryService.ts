@@ -77,7 +77,8 @@ export type PlayInLeagueEvaluation = {
 };
 
 export function pointsHalfToNumber(pointsHalf: number): number {
-  return pointsHalf / 2;
+  const value = Number(pointsHalf) / 2;
+  return Number.isFinite(value) ? value : 0;
 }
 
 export function numberToPointsHalf(points: number): number {
@@ -278,8 +279,10 @@ export function playInAutoEntryCount(league: {
   capacity_value: number;
   play_in_spot_count: number;
 }): number {
-  const capacityTeams = league.capacity_type === 'team' ? league.capacity_value : 0;
-  return Math.max(0, capacityTeams - league.play_in_spot_count);
+  const capacityTeams = league.capacity_type === 'team' ? Number(league.capacity_value) || 0 : 0;
+  const playInSpots = Number(league.play_in_spot_count) || 0;
+  const autoEntryCount = capacityTeams - playInSpots;
+  return Number.isFinite(autoEntryCount) ? Math.max(0, autoEntryCount) : 0;
 }
 
 export function playInTeamSize(format: string): number {
@@ -347,16 +350,16 @@ export async function loadLeagueEntryPoints(leagueId: number): Promise<LeagueEnt
     .innerJoin(schema.members, eq(schema.leagueEntryPoints.member_id, schema.members.id))
     .where(eq(schema.leagueEntryPoints.league_id, leagueId));
   return rows.map((row) => ({
-    id: row.id,
-    leagueId: row.leagueId,
-    memberId: row.memberId,
+    id: Number(row.id),
+    leagueId: Number(row.leagueId),
+    memberId: Number(row.memberId),
     memberName: memberDisplayName({
       name: row.memberName,
       first_name: row.memberFirstName,
       last_name: row.memberLastName,
       email: row.memberEmail,
     }),
-    pointsHalf: row.pointsHalf,
+    pointsHalf: Number(row.pointsHalf) || 0,
     countsAsReturning: Boolean(row.countsAsReturning),
     source: row.source,
     notes: row.notes ?? null,
@@ -397,6 +400,9 @@ export async function loadLeagueEntryTeams(leagueId: number): Promise<LeagueEntr
     .where(eq(schema.leagueEntryTeams.league_id, leagueId));
   if (teams.length === 0) return [];
 
+  const teamIds = teams.map((team) => Number(team.id)).filter((id) => Number.isInteger(id) && id > 0);
+  if (teamIds.length === 0) return [];
+
   const memberRows = await db
     .select({
       id: schema.leagueEntryTeamMembers.id,
@@ -406,9 +412,15 @@ export async function loadLeagueEntryTeams(leagueId: number): Promise<LeagueEntr
       sourceRegistrationId: schema.leagueEntryTeamMembers.source_registration_id,
     })
     .from(schema.leagueEntryTeamMembers)
-    .where(inArray(schema.leagueEntryTeamMembers.entry_team_id, teams.map((team) => team.id)));
+    .where(inArray(schema.leagueEntryTeamMembers.entry_team_id, teamIds));
 
-  const memberIds = [...new Set(memberRows.map((row) => row.memberId).filter((id): id is number => id != null))];
+  const memberIds = [
+    ...new Set(
+      memberRows
+        .map((row) => (row.memberId == null ? null : Number(row.memberId)))
+        .filter((id): id is number => Number.isInteger(id) && id > 0),
+    ),
+  ];
   const names = new Map<number, string>();
   if (memberIds.length > 0) {
     const members = await db
@@ -422,25 +434,26 @@ export async function loadLeagueEntryTeams(leagueId: number): Promise<LeagueEntr
       .from(schema.members)
       .where(inArray(schema.members.id, memberIds));
     for (const member of members) {
-      names.set(member.id, memberDisplayName(member));
+      names.set(Number(member.id), memberDisplayName(member));
     }
   }
 
   return teams.map((team) => ({
-    id: team.id,
-    leagueId: team.leagueId,
+    id: Number(team.id),
+    leagueId: Number(team.leagueId),
     name: team.name ?? null,
     status: team.status,
-    createdFromRegistrationId: team.createdFromRegistrationId ?? null,
+    createdFromRegistrationId:
+      team.createdFromRegistrationId == null ? null : Number(team.createdFromRegistrationId),
     notes: team.notes ?? null,
     members: memberRows
-      .filter((row) => row.entryTeamId === team.id)
+      .filter((row) => Number(row.entryTeamId) === Number(team.id))
       .map((row) => ({
-        id: row.id,
-        memberId: row.memberId ?? null,
-        memberName: row.memberId != null ? names.get(row.memberId) ?? `Member #${row.memberId}` : null,
+        id: Number(row.id),
+        memberId: row.memberId == null ? null : Number(row.memberId),
+        memberName: row.memberId != null ? names.get(Number(row.memberId)) ?? `Member #${row.memberId}` : null,
         pendingName: row.pendingName ?? null,
-        sourceRegistrationId: row.sourceRegistrationId ?? null,
+        sourceRegistrationId: row.sourceRegistrationId == null ? null : Number(row.sourceRegistrationId),
       })),
   }));
 }
@@ -486,14 +499,14 @@ export async function loadPlayInLeagueConfig(leagueId: number): Promise<PlayInLe
   const row = rows[0];
   if (!row) return null;
   return {
-    id: row.id,
+    id: Number(row.id),
     name: row.name,
     format: row.format,
     capacityType: row.capacityType,
-    capacityValue: row.capacityValue,
-    playInSpotCount: row.playInSpotCount,
+    capacityValue: Number(row.capacityValue) || 0,
+    playInSpotCount: Number(row.playInSpotCount) || 0,
     isPlayInBased: row.isPlayInBased === true || row.isPlayInBased === 1,
-    sessionId: row.sessionId ?? null,
+    sessionId: row.sessionId == null ? null : Number(row.sessionId),
   };
 }
 

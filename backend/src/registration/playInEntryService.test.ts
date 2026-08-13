@@ -32,6 +32,12 @@ describe('play-in entry points math', () => {
     expect(numberToPointsHalf(20)).toBe(40);
   });
 
+  test('pointsHalfToNumber stays JSON-safe for non-numeric ledger values', () => {
+    expect(pointsHalfToNumber(Number.NaN)).toBe(0);
+    expect(pointsHalfToNumber(Number.POSITIVE_INFINITY)).toBe(0);
+    expect(pointsHalfToNumber(undefined as unknown as number)).toBe(0);
+  });
+
   test('team totals sum member points and treat unknown members as zero', () => {
     const map = new Map([
       [1, points(1, 20)],
@@ -216,5 +222,15 @@ describe('league config helpers', () => {
   test('auto entry count derives from team capacity minus play-in spots', () => {
     expect(playInAutoEntryCount({ capacity_type: 'team', capacity_value: 20, play_in_spot_count: 2 })).toBe(18);
     expect(playInAutoEntryCount({ capacity_type: 'individual', capacity_value: 80, play_in_spot_count: 2 })).toBe(0);
+  });
+
+  test('auto entry count stays finite when capacity fields are missing', () => {
+    expect(
+      playInAutoEntryCount({
+        capacity_type: 'team',
+        capacity_value: undefined as unknown as number,
+        play_in_spot_count: undefined as unknown as number,
+      }),
+    ).toBe(0);
   });
 });

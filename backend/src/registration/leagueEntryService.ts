@@ -863,6 +863,65 @@ async function loadEntryTeamsForLeague(
 
 // --- Staff report -------------------------------------------------------------
 
+function jsonSafeNumber(value: number, fallback = 0): number {
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function jsonSafeNumberOrNull(value: number | null): number | null {
+  return value != null && Number.isFinite(value) ? value : null;
+}
+
+function positiveIntIds(values: Array<number | null | undefined>): number[] {
+  const ids = new Set<number>();
+  for (const value of values) {
+    const id = Number(value);
+    if (Number.isInteger(id) && id > 0) ids.add(id);
+  }
+  return [...ids];
+}
+
+/**
+ * Priority ranks for declared entry-team members who registered through the
+ * league-priority model. Isolated so a missing table or query failure cannot
+ * 500 the play-in entry tab — the overhaul stores ranks in
+ * `registration_league_priorities`, which is created by bootstrap rather than a
+ * numbered drizzle migration.
+ */
+async function loadPlayInPriorityRanksByRegistrationId(
+  leagueId: number,
+  sourceRegistrationIds: Array<number | null | undefined>,
+): Promise<Map<number, number>> {
+  const ranks = new Map<number, number>();
+  const registrationIds = positiveIntIds(sourceRegistrationIds);
+  if (registrationIds.length === 0) return ranks;
+  try {
+    const { db, schema } = getDrizzleDb();
+    const rows = await db
+      .select({
+        registrationId: schema.registrationLeaguePriorities.registration_id,
+        priorityRank: schema.registrationLeaguePriorities.priority_rank,
+      })
+      .from(schema.registrationLeaguePriorities)
+      .where(
+        and(
+          inArray(schema.registrationLeaguePriorities.registration_id, registrationIds),
+          eq(schema.registrationLeaguePriorities.league_id, leagueId),
+        ),
+      );
+    const list = Array.isArray(rows) ? rows : [];
+    for (const row of list) {
+      const registrationId = Number(row.registrationId);
+      const priorityRank = Number(row.priorityRank);
+      if (Number.isInteger(registrationId) && Number.isInteger(priorityRank)) {
+        ranks.set(registrationId, priorityRank);
+      }
+    }
+  } catch (error) {
+    console.error('Failed to load play-in entry priority ranks', error);
+  }
+  return ranks;
+}
+
 export type LeagueEntryReport = {
   league: {
     id: number;
@@ -941,28 +1000,10 @@ export async function getLeagueEntryReport(leagueId: number): Promise<LeagueEntr
       .map((team) => [team.entryTeamId as number, team])
   );
 
-  const registrationIds = [
-    ...new Set(
-      teams.flatMap((team) => team.members.map((member) => member.sourceRegistrationId)).filter((id): id is number => id != null),
-    ),
-  ];
-  const priorityRankByRegistrationId = new Map<number, number>();
-  if (registrationIds.length > 0) {
-    const { db, schema } = getDrizzleDb();
-    const rows = await db
-      .select({
-        registrationId: schema.registrationLeaguePriorities.registration_id,
-        priorityRank: schema.registrationLeaguePriorities.priority_rank,
-      })
-      .from(schema.registrationLeaguePriorities)
-      .where(
-        and(
-          inArray(schema.registrationLeaguePriorities.registration_id, registrationIds),
-          eq(schema.registrationLeaguePriorities.league_id, leagueId),
-        ),
-      );
-    for (const row of rows) priorityRankByRegistrationId.set(row.registrationId, row.priorityRank);
-  }
+  const priorityRankByRegistrationId = await loadPlayInPriorityRanksByRegistrationId(
+    leagueId,
+    teams.flatMap((team) => team.members.map((member) => member.sourceRegistrationId)),
+  );
 
   const reportTeams = teams.map((team) => {
     const evaluated = evaluatedById.get(team.id);
@@ -971,7 +1012,7 @@ export async function getLeagueEntryReport(leagueId: number): Promise<LeagueEntr
       name: team.name,
       status: team.status,
       projectedStatus: evaluated?.projectedStatus ?? 'projected_playdown',
-      totalPoints: evaluated ? pointsHalfToNumber(evaluated.totalPointsHalf) : 0,
+      totalPoints: evaluated ? jsonSafeNumber(pointsHalfToNumber(evaluated.totalPointsHalf)) : 0,
       returningMemberCount: evaluated?.returningMemberCount ?? 0,
       meetsReturningRule: evaluated?.meetsReturningRule ?? false,
       guaranteed: evaluated?.guaranteed ?? false,
@@ -987,7 +1028,7 @@ export async function getLeagueEntryReport(leagueId: number): Promise<LeagueEntr
             member.sourceRegistrationId != null
               ? priorityRankByRegistrationId.get(member.sourceRegistrationId) ?? null
               : null,
-          points: points ? pointsHalfToNumber(points.pointsHalf) : 0,
+          points: points ? jsonSafeNumber(pointsHalfToNumber(points.pointsHalf)) : 0,
           countsAsReturning: points?.countsAsReturning ?? false,
           registered: member.sourceRegistrationId != null,
         };
@@ -1004,13 +1045,14 @@ export async function getLeagueEntryReport(leagueId: number): Promise<LeagueEntr
       isPlayInBased: league.isPlayInBased,
       capacityValue: league.capacityValue,
       capacityType: league.capacityType,
-      playInSpotCount: league.playInSpotCount,
-      autoEntryCount: config.autoEntryCount,
+      playInSpotCount: jsonSafeNumber(league.playInSpotCount),
+      autoEntryCount: jsonSafeNumber(config.autoEntryCount),
       teamSize: config.teamSize,
     },
     summary: {
-      guaranteeThresholdPoints:
+      guaranteeThresholdPoints: jsonSafeNumberOrNull(
         evaluation.guaranteeThresholdHalf != null ? pointsHalfToNumber(evaluation.guaranteeThresholdHalf) : null,
+      ),
       returningRuleWaiverActive: evaluation.returningRuleWaiverActive,
       activeTeamCount: activeReportTeams.length,
       guaranteedTeamCount: activeReportTeams.filter((team) => team.projectedStatus === 'guaranteed').length,
@@ -1026,12 +1068,15 @@ export async function getLeagueEntryReport(leagueId: number): Promise<LeagueEntr
         id: row.id,
         memberId: row.memberId,
         memberName: row.memberName,
-        points: pointsHalfToNumber(row.pointsHalf),
+        points: jsonSafeNumber(pointsHalfToNumber(row.pointsHalf)),
         countsAsReturning: row.countsAsReturning,
         source: row.source,
         notes: row.notes,
       }))
-      .sort((left, right) => right.points - left.points || left.memberName.localeCompare(right.memberName)),
+      .sort(
+        (left, right) =>
+          right.points - left.points || String(left.memberName ?? '').localeCompare(String(right.memberName ?? '')),
+      ),
     teams: reportTeams.sort((left, right) => right.totalPoints - left.totalPoints),
   };
 }
