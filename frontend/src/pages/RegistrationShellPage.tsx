@@ -954,7 +954,7 @@ export default function RegistrationShellPage() {
       'Choose this if the individual wants to be a member but will not curl this session. All social members will have association dues paid on their behalf.';
     const noMembershipDescription =
       'Register or extend a sabbatical from the previous session without purchasing membership for this session.';
-    const juniorDescription = 'Choose this special junior program. It skips normal league selection.';
+    const juniorDescription = 'Choose this special junior program. It skips normal league selection. For Junior Advanced Commitment, please select "Regular membership".';
     const options: Array<{
       value: 'regular' | 'social' | 'junior_recreational' | 'none';
       label: string;
@@ -3820,8 +3820,8 @@ export default function RegistrationShellPage() {
                 options={[
                   {
                     value: 'league_play',
-                    label: 'League play',
-                    description: 'Evening and weekend leagues.',
+                    label: 'League play or instructional programs',
+                    description: 'Evening and weekend leagues. Includes Saturday Instructional and Junior Advanced Commitment programs.',
                   },
                   {
                     value: 'basic_ice',

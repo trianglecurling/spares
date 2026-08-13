@@ -160,7 +160,7 @@ function MembershipEditModal({ registrationId, isOpen, onClose, onSaved, finaliz
       options.push({
         value: 'junior_recreational' as const,
         label: 'Junior Recreational',
-        description: 'Choose this special junior program. It skips normal league selection.',
+        description: 'Choose this special junior program. It skips normal league selection. For Junior Advanced Commitment, please select "Regular membership".',
       });
     }
     return options;
@@ -393,8 +393,8 @@ function MembershipEditModal({ registrationId, isOpen, onClose, onSaved, finaliz
                   options={[
                     {
                       value: 'league_play',
-                      label: 'League play',
-                      description: 'Evening and weekend leagues.',
+                      label: 'League play or instructional programs',
+                      description: 'Evening and weekend leagues. Includes Saturday Instructional and Junior Advanced Commitment programs.',
                     },
                     {
                       value: 'basic_ice',

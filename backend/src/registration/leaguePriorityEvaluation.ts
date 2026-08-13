@@ -312,6 +312,15 @@ function validatePriority(
     );
     return;
   }
+  if (league.isJuniorRecreational === true) {
+    blockingErrors.push(
+      blockingError(
+        'junior_recreational_exclusive',
+        'Junior Recreational is a membership choice. It cannot be added to the priority list.',
+      ),
+    );
+    return;
+  }
   if (league.sessionId != null && league.sessionId !== context.session.id) {
     blockingErrors.push(
       blockingError(

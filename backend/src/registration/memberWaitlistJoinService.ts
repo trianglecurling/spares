@@ -110,6 +110,7 @@ function mapLeagueRowToConfig(
     allows_waitlist: number;
     waitlist_id: number | null;
     is_play_in_based?: number;
+    is_junior_recreational?: number;
     allows_sabbatical: number;
     predecessor_league_id: number | null;
     successor_league_id: number | null;
@@ -140,6 +141,7 @@ function mapLeagueRowToConfig(
     allowsWaitlist: row.waitlist_id != null,
     waitlistId: row.waitlist_id,
     isPlayInBased: row.is_play_in_based === 1,
+    isJuniorRecreational: row.is_junior_recreational === 1,
     allowsSabbatical: row.allows_sabbatical === 1,
     predecessorLeagueId: row.predecessor_league_id,
     successorLeagueId: row.successor_league_id,

@@ -266,9 +266,9 @@ See `payment-decision.md` and `fee-calculation.md`.
 
 ## Placement
 
-Guaranteed returns and guaranteed fallbacks are placed on the league roster at
-submit. Subject-to-availability leagues are billed at submit but still placed
-after priority registration closes, in the order described in
-`staff-operations.md`. Waitlisted entries are resolved the same way. Entries
-ranked below a registrant's desired count are only placed if room remains after
-everyone's higher-priority demand has been satisfied.
+Guaranteed returns, guaranteed fallbacks, and billed subject-to-availability
+entries are placed on the league roster at submit. Waitlisted entries and
+play-in misses are resolved after priority registration closes, in the order
+described in `staff-operations.md`. Entries ranked below a registrant's desired
+count are only placed if room remains after everyone's higher-priority demand
+has been satisfied.

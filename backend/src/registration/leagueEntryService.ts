@@ -31,6 +31,12 @@ export class LeagueEntryValidationError extends Error {
   }
 }
 
+function requirePlayInBasedLeague(league: { isPlayInBased: boolean }): void {
+  if (!league.isPlayInBased) {
+    throw new LeagueEntryValidationError({ league: 'League is not play-in based.' });
+  }
+}
+
 type DbExecutor = Pick<ReturnType<typeof getDrizzleDb>['db'], 'select' | 'insert' | 'update' | 'delete'>;
 
 const ACTIVE_ENTRY_TEAM_STATUSES: LeagueEntryTeamStatusSqlite[] = ['pending', 'guaranteed', 'playdown', 'entered'];
@@ -166,6 +172,7 @@ export async function evaluateRegistrantPlayInEntry(input: {
   if (!league) {
     throw new LeagueEntryValidationError({ league: 'League was not found.' });
   }
+  requirePlayInBasedLeague(league);
   const config = {
     autoEntryCount: playInAutoEntryCount({
       capacity_type: league.capacityType,

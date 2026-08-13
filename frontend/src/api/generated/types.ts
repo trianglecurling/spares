@@ -4544,6 +4544,7 @@ export interface paths {
                             allowsWaitlist: boolean;
                             waitlistId: null | number;
                             isPlayInBased: boolean;
+                            isJuniorRecreational: boolean;
                             playInSpotCount?: number;
                             allowsSabbatical: boolean;
                             allowsDropIns: boolean;
@@ -4645,6 +4646,7 @@ export interface paths {
                             allowsWaitlist: boolean;
                             waitlistId: null | number;
                             isPlayInBased: boolean;
+                            isJuniorRecreational: boolean;
                             playInSpotCount?: number;
                             allowsSabbatical: boolean;
                             allowsDropIns: boolean;
@@ -4773,6 +4775,7 @@ export interface paths {
                                 allowsWaitlist: boolean;
                                 waitlistId: null | number;
                                 isPlayInBased: boolean;
+                                isJuniorRecreational: boolean;
                                 playInSpotCount?: number;
                                 allowsSabbatical: boolean;
                                 allowsDropIns: boolean;
@@ -4878,6 +4881,7 @@ export interface paths {
                         lastDayOfPlay?: string | null;
                         allowsWaitlist?: boolean;
                         isPlayInBased?: boolean;
+                        isJuniorRecreational?: boolean;
                         playInSpotCount?: number;
                         allowsSabbatical?: boolean;
                         allowsDropIns?: boolean;
@@ -4930,6 +4934,7 @@ export interface paths {
                             allowsWaitlist: boolean;
                             waitlistId: null | number;
                             isPlayInBased: boolean;
+                            isJuniorRecreational: boolean;
                             playInSpotCount?: number;
                             allowsSabbatical: boolean;
                             allowsDropIns: boolean;
@@ -5077,6 +5082,7 @@ export interface paths {
                                 allowsWaitlist: boolean;
                                 waitlistId: null | number;
                                 isPlayInBased: boolean;
+                                isJuniorRecreational: boolean;
                                 playInSpotCount?: number;
                                 allowsSabbatical: boolean;
                                 allowsDropIns: boolean;

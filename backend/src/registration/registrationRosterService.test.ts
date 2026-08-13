@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { guaranteedPlacementsFromEvaluation, registrationStatusCommitsRoster } from './registrationRosterService.js';
+import {
+  guaranteedPlacementsFromEvaluation,
+  juniorRecreationalLeagueIdFromLeagues,
+  registrationStatusCommitsRoster,
+  rosterPlacementsForRegistration,
+} from './registrationRosterService.js';
 import { evaluateLeaguePriorities } from './leaguePriorityEvaluation.js';
 import { league, priority, registrationContext } from './registrationTestFixtures.js';
 
@@ -52,5 +57,94 @@ describe('roster placements derived from the priority list', () => {
       participatedLeagueIds: [],
     });
     expect(guaranteedPlacementsFromEvaluation(evaluateLeaguePriorities(context))).toEqual([]);
+  });
+
+  test('a billed subject-to-availability league is rostered as a new placement', () => {
+    const context = registrationContext({
+      desiredLeagueCount: 1,
+      participatedLeagueIds: [],
+      priorities: [priority({ leagueId: 50, priorityRank: 1 })],
+      leagues: {
+        50: league({ id: 50, predecessorLeagueId: null, allowsWaitlist: false, name: 'Junior Advanced Commitment' }),
+      },
+    });
+    expect(rosterPlacementsForRegistration(context, evaluateLeaguePriorities(context))).toEqual([
+      { leagueId: 50, placementType: 'new_placement' },
+    ]);
+  });
+
+  test('a waitlisted leftover is not rostered', () => {
+    const context = registrationContext({
+      desiredLeagueCount: 1,
+      participatedLeagueIds: [],
+      priorities: [priority({ leagueId: 50, priorityRank: 1 })],
+      leagues: {
+        50: league({ id: 50, predecessorLeagueId: null, allowsWaitlist: true }),
+      },
+    });
+    expect(rosterPlacementsForRegistration(context, evaluateLeaguePriorities(context))).toEqual([]);
+  });
+
+  test('a subject-to-availability backup below the desired count is not rostered', () => {
+    const context = registrationContext({
+      desiredLeagueCount: 1,
+      participatedLeagueIds: [],
+      priorities: [
+        priority({ leagueId: 50, priorityRank: 1 }),
+        priority({ leagueId: 51, priorityRank: 2 }),
+      ],
+      leagues: {
+        50: league({ id: 50, predecessorLeagueId: null, allowsWaitlist: false }),
+        51: league({ id: 51, predecessorLeagueId: null, allowsWaitlist: false }),
+      },
+    });
+    expect(rosterPlacementsForRegistration(context, evaluateLeaguePriorities(context))).toEqual([
+      { leagueId: 50, placementType: 'new_placement' },
+    ]);
+  });
+});
+
+describe('Junior Recreational roster placement', () => {
+  test('uses the league marked as the Junior Recreational program', () => {
+    expect(
+      juniorRecreationalLeagueIdFromLeagues({
+        1: league({ id: 1, name: 'Tuesday Evening' }),
+        2: league({ id: 2, name: 'Youth program', isJuniorRecreational: true }),
+      }),
+    ).toBe(2);
+    expect(juniorRecreationalLeagueIdFromLeagues({ 1: league({ id: 1 }) })).toBeNull();
+  });
+
+  test('a Junior Recreational registration is placed on the flagged program league', () => {
+    const juniorLeague = league({
+      id: 200,
+      name: 'Youth program',
+      isJuniorRecreational: true,
+      predecessorLeagueId: null,
+      registrationFeeMinor: 0,
+    });
+    const context = registrationContext({
+      membershipOption: 'junior_recreational',
+      priorities: [],
+      desiredLeagueCount: null,
+      selections: [],
+      participatedLeagueIds: [],
+      leagues: { 200: juniorLeague },
+    });
+    expect(rosterPlacementsForRegistration(context, evaluateLeaguePriorities(context))).toEqual([
+      { leagueId: 200, placementType: 'new_placement' },
+    ]);
+  });
+
+  test('regular membership does not place onto a Junior Recreational league', () => {
+    const context = registrationContext({
+      leagues: {
+        200: league({ id: 200, name: 'Youth program', isJuniorRecreational: true, predecessorLeagueId: null }),
+      },
+      participatedLeagueIds: [],
+      priorities: [],
+      desiredLeagueCount: null,
+    });
+    expect(rosterPlacementsForRegistration(context, evaluateLeaguePriorities(context))).toEqual([]);
   });
 });

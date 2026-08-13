@@ -492,7 +492,7 @@ export async function loadPlayInLeagueConfig(leagueId: number): Promise<PlayInLe
     capacityType: row.capacityType,
     capacityValue: row.capacityValue,
     playInSpotCount: row.playInSpotCount,
-    isPlayInBased: Boolean(row.isPlayInBased),
+    isPlayInBased: row.isPlayInBased === true || row.isPlayInBased === 1,
     sessionId: row.sessionId ?? null,
   };
 }

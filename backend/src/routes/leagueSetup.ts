@@ -55,6 +55,7 @@ import {
   removeLeagueSabbatical,
   SabbaticalStaffValidationError,
 } from '../registration/sabbaticalStaffService.js';
+import { ensureLeagueRosterFromRegistrations } from '../registration/registrationRosterService.js';
 import type { Member } from '../types.js';
 
 type DrizzleDb = ReturnType<typeof getDrizzleDb>['db'];
@@ -788,6 +789,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       }
 
       const { db, schema } = getDrizzleDb();
+      await ensureLeagueRosterFromRegistrations(leagueId);
       const rosterRows = (await db
         .select({
           member_id: schema.leagueRoster.member_id,
@@ -860,6 +862,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       }
 
       const { db, schema } = getDrizzleDb();
+      await ensureLeagueRosterFromRegistrations(leagueId);
       const assignedRows = (await db
         .select({ member_id: schema.teamMembers.member_id })
         .from(schema.teamMembers)

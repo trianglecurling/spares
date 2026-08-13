@@ -27,7 +27,11 @@ import {
   type LeaguePriorityInput,
   type RegistrationLeagueCatalogPayload,
 } from './leaguePriorityShared';
-import type { ContinuingSabbaticalSummary, LeagueCatalogItem } from './registrationViewEditShared';
+import {
+  isLeagueSelectionEligibleLeague,
+  type ContinuingSabbaticalSummary,
+  type LeagueCatalogItem,
+} from './registrationViewEditShared';
 
 function catalogLeague(overrides: Partial<LeagueCatalogItem> & Pick<LeagueCatalogItem, 'id'>): LeagueCatalogItem {
   return {
@@ -576,5 +580,18 @@ describe('incomplete play-in roster confirmation', () => {
         100,
       ),
     ).toEqual([]);
+  });
+});
+
+describe('Junior Recreational program league', () => {
+  test('is not eligible for the regular priority list', () => {
+    const juniorLeague = catalogLeague({ id: 9, name: 'Junior Recreational', isJuniorRecreational: true });
+    expect(
+      isLeagueSelectionEligibleLeague(juniorLeague, {
+        dateOfBirth: '2014-01-01',
+        experienceType: 'none_or_minimal',
+        membershipOption: 'regular',
+      }),
+    ).toBe(false);
   });
 });

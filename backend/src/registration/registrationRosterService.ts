@@ -1,6 +1,8 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import type { LeagueRosterPlacementTypeSqlite } from '../db/drizzle-schema.js';
+import { immediateChargeEntries, type PriorityLabelResult } from './leaguePriorityRules.js';
+import type { LeagueConfig, RegistrationContext } from './registrationContext.js';
 
 type DbExecutor = Pick<
   ReturnType<typeof getDrizzleDb>['db'],
@@ -8,13 +10,17 @@ type DbExecutor = Pick<
 >;
 
 /**
- * A league spot committed at submit because the registrant's priority list
- * guaranteed it. Carries the label so staff can tell a first-choice return from
- * a fallback the registrant would happily trade up from.
+ * A league spot committed at submit. Guaranteed returns/fallbacks and billed
+ * subject-to-availability entries come from the priority list. Junior
+ * Recreational uses `new_placement` because that program never goes through
+ * the priority list.
  */
 export type GuaranteedPlacement = {
   leagueId: number;
-  placementType: Extract<LeagueRosterPlacementTypeSqlite, 'guaranteed_return' | 'guaranteed_fallback'>;
+  placementType: Extract<
+    LeagueRosterPlacementTypeSqlite,
+    'guaranteed_return' | 'guaranteed_fallback' | 'new_placement'
+  >;
 };
 
 export const ROSTER_COMMIT_REGISTRATION_STATUSES = new Set([
@@ -36,7 +42,8 @@ const UNPAID_ROSTER_REGISTRATION_STATUSES = ['awaiting_payment', 'payment_starte
 
 /**
  * Idempotent repair: re-place guaranteed leagues for unpaid registrations that
- * predate roster-on-awaiting-payment.
+ * predate roster-on-awaiting-payment, and place Junior Recreational registrants
+ * who paid but were never added to that program's roster.
  */
 export async function ensureRosterPlacementsForUnpaidRegistrations(memberId: number): Promise<void> {
   const { db, schema } = getDrizzleDb();
@@ -61,8 +68,131 @@ export async function ensureRosterPlacementsForUnpaidRegistrations(memberId: num
     await syncRegistrationRosterPlacements({
       registrationId: registration.id,
       curlerMemberId: memberId,
-      placements: guaranteedPlacementsFromEvaluation(evaluateLeaguePriorities(context)),
+      placements: rosterPlacementsForRegistration(context, evaluateLeaguePriorities(context)),
       registrationStatus: registration.status,
+    });
+  }
+
+  await ensureJuniorRecreationalRosterForMember(memberId);
+}
+
+/**
+ * Places paid/submitted Junior Recreational registrants onto the session league
+ * that staff use as that program's roster.
+ */
+export async function ensureJuniorRecreationalRosterForMember(memberId: number): Promise<void> {
+  const { db, schema } = getDrizzleDb();
+  const { buildRegistrationContextForDraft } = await import('./registrationMembershipPaymentService.js');
+
+  const registrations = await db
+    .select({
+      id: schema.curlingRegistrations.id,
+      status: schema.curlingRegistrations.status,
+    })
+    .from(schema.curlingRegistrations)
+    .where(
+      and(
+        eq(schema.curlingRegistrations.curler_member_id, memberId),
+        eq(schema.curlingRegistrations.membership_option, 'junior_recreational'),
+        inArray(schema.curlingRegistrations.status, [...ROSTER_COMMIT_REGISTRATION_STATUSES]),
+      ),
+    );
+
+  for (const registration of registrations) {
+    const context = await buildRegistrationContextForDraft(registration.id);
+    await persistRegistrationRosterPlacements({
+      registrationId: registration.id,
+      curlerMemberId: memberId,
+      placements: juniorRecreationalPlacements(context),
+    });
+  }
+}
+
+/**
+ * Places billed subject-to-availability registrants onto this league when they
+ * were charged at submit but never rostered. Waitlisted and play-in-miss
+ * entries are left off until staff place them.
+ */
+export async function ensureImmediateChargeRosterForLeague(leagueId: number): Promise<void> {
+  const { db, schema } = getDrizzleDb();
+  const { buildRegistrationContextForDraft } = await import('./registrationMembershipPaymentService.js');
+  const { evaluateLeaguePriorities } = await import('./leaguePriorityEvaluation.js');
+  const [league] = await db.select().from(schema.leagues).where(eq(schema.leagues.id, leagueId)).limit(1);
+  if (!league?.session_id) return;
+
+  const alreadyOnRoster = await db
+    .select({ memberId: schema.leagueRoster.member_id })
+    .from(schema.leagueRoster)
+    .where(and(eq(schema.leagueRoster.league_id, leagueId), eq(schema.leagueRoster.status, 'active')));
+  const alreadyOnRosterIds = new Set(alreadyOnRoster.map((row) => row.memberId));
+
+  const registrations = await db
+    .select({
+      id: schema.curlingRegistrations.id,
+      curlerMemberId: schema.curlingRegistrations.curler_member_id,
+    })
+    .from(schema.curlingRegistrations)
+    .innerJoin(
+      schema.registrationLeaguePriorities,
+      eq(schema.registrationLeaguePriorities.registration_id, schema.curlingRegistrations.id),
+    )
+    .where(
+      and(
+        eq(schema.curlingRegistrations.session_id, league.session_id),
+        eq(schema.registrationLeaguePriorities.league_id, leagueId),
+        inArray(schema.curlingRegistrations.status, [...ROSTER_COMMIT_REGISTRATION_STATUSES]),
+      ),
+    );
+
+  for (const registration of registrations) {
+    if (registration.curlerMemberId == null) continue;
+    if (alreadyOnRosterIds.has(registration.curlerMemberId)) continue;
+    const context = await buildRegistrationContextForDraft(registration.id);
+    const placements = rosterPlacementsForRegistration(context, evaluateLeaguePriorities(context)).filter(
+      (placement) => placement.leagueId === leagueId,
+    );
+    if (placements.length === 0) continue;
+    await persistRegistrationRosterPlacements({
+      registrationId: registration.id,
+      curlerMemberId: registration.curlerMemberId,
+      placements,
+    });
+    alreadyOnRosterIds.add(registration.curlerMemberId);
+  }
+}
+
+export async function ensureLeagueRosterFromRegistrations(leagueId: number): Promise<void> {
+  await ensureJuniorRecreationalRosterForLeague(leagueId);
+  await ensureImmediateChargeRosterForLeague(leagueId);
+}
+
+export async function ensureJuniorRecreationalRosterForLeague(leagueId: number): Promise<void> {
+  const { db, schema } = getDrizzleDb();
+  const [league] = await db.select().from(schema.leagues).where(eq(schema.leagues.id, leagueId)).limit(1);
+  const isJuniorRecreational =
+    league.is_junior_recreational === 1 || league.is_junior_recreational === true;
+  if (!league?.session_id || !isJuniorRecreational) return;
+
+  const registrations = await db
+    .select({
+      id: schema.curlingRegistrations.id,
+      curlerMemberId: schema.curlingRegistrations.curler_member_id,
+    })
+    .from(schema.curlingRegistrations)
+    .where(
+      and(
+        eq(schema.curlingRegistrations.session_id, league.session_id),
+        eq(schema.curlingRegistrations.membership_option, 'junior_recreational'),
+        inArray(schema.curlingRegistrations.status, [...ROSTER_COMMIT_REGISTRATION_STATUSES]),
+      ),
+    );
+
+  for (const registration of registrations) {
+    if (registration.curlerMemberId == null) continue;
+    await persistRegistrationRosterPlacements({
+      registrationId: registration.id,
+      curlerMemberId: registration.curlerMemberId,
+      placements: [{ leagueId, placementType: 'new_placement' }],
     });
   }
 }
@@ -76,6 +206,43 @@ export function guaranteedPlacementsFromEvaluation(evaluation: {
       leagueId: entry.leagueId,
       placementType: entry.label === 'guaranteed_fallback' ? ('guaranteed_fallback' as const) : ('guaranteed_return' as const),
     }));
+}
+
+export function juniorRecreationalLeagueIdFromLeagues(
+  leagues: Record<number, Pick<LeagueConfig, 'id' | 'isJuniorRecreational'>>,
+): number | null {
+  const matches = Object.values(leagues)
+    .filter((league) => league.isJuniorRecreational === true)
+    .sort((left, right) => left.id - right.id);
+  return matches[0]?.id ?? null;
+}
+
+export function juniorRecreationalPlacements(
+  context: Pick<RegistrationContext, 'membershipOption' | 'leagues'>,
+): GuaranteedPlacement[] {
+  if (context.membershipOption !== 'junior_recreational') return [];
+  const leagueId = juniorRecreationalLeagueIdFromLeagues(context.leagues);
+  if (leagueId == null) return [];
+  return [{ leagueId, placementType: 'new_placement' }];
+}
+
+function billedSubjectToAvailabilityPlacements(
+  evaluation: Pick<PriorityLabelResult, 'entries' | 'desiredLeagueCount'>,
+): GuaranteedPlacement[] {
+  return immediateChargeEntries(evaluation)
+    .filter((entry) => !entry.guaranteed)
+    .map((entry) => ({ leagueId: entry.leagueId, placementType: 'new_placement' as const }));
+}
+
+export function rosterPlacementsForRegistration(
+  context: Pick<RegistrationContext, 'membershipOption' | 'leagues'>,
+  evaluation: Pick<PriorityLabelResult, 'entries' | 'desiredLeagueCount'>,
+): GuaranteedPlacement[] {
+  return [
+    ...guaranteedPlacementsFromEvaluation(evaluation),
+    ...billedSubjectToAvailabilityPlacements(evaluation),
+    ...juniorRecreationalPlacements(context),
+  ];
 }
 
 async function removeRegistrationRosterRows(

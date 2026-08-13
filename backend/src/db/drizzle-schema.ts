@@ -393,6 +393,8 @@ export const leaguesSqlite = sqliteTable('leagues', {
   allows_waitlist: integer('allows_waitlist').default(1).notNull(),
   waitlist_id: integer('waitlist_id'),
   is_play_in_based: integer('is_play_in_based').default(0).notNull(),
+  /** When set, Junior Recreational membership places registrants on this league's roster. */
+  is_junior_recreational: integer('is_junior_recreational').default(0).notNull(),
   /** Number of roster spots decided by playdowns for play-in based leagues (auto-entry spots = capacity_value - play_in_spot_count). */
   play_in_spot_count: integer('play_in_spot_count').default(2).notNull(),
   allows_sabbatical: integer('allows_sabbatical').default(1).notNull(),
@@ -2549,6 +2551,8 @@ export const leaguesPg = pgTable('leagues', {
   allows_waitlist: integerPg('allows_waitlist').default(1).notNull(),
   waitlist_id: integerPg('waitlist_id'),
   is_play_in_based: integerPg('is_play_in_based').default(0).notNull(),
+  /** When set, Junior Recreational membership places registrants on this league's roster. */
+  is_junior_recreational: integerPg('is_junior_recreational').default(0).notNull(),
   /** Number of roster spots decided by playdowns for play-in based leagues (auto-entry spots = capacity_value - play_in_spot_count). */
   play_in_spot_count: integerPg('play_in_spot_count').default(2).notNull(),
   allows_sabbatical: integerPg('allows_sabbatical').default(1).notNull(),

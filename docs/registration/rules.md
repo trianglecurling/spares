@@ -310,6 +310,9 @@ Rules:
 - Junior Recreational participants cannot spare.
 - Junior Recreational participants do not proceed through normal league
   selection.
+- On submit, the curler is placed on the session league marked as the Junior
+  Recreational program league (league configuration). Payment is collected
+  immediately unless financial assistance is pending.
 
 Junior Recreational participants may request financial assistance.
 
@@ -829,8 +832,9 @@ All waitlist changes, manual or automatic, must be audited.
 
 For standard leagues, after priority registration closes, placement priority is:
 
-1. Guaranteed returns, guaranteed fallbacks, and sabbatical returns are resolved
-   first. These are already rostered at submit.
+1. Guaranteed returns, guaranteed fallbacks, sabbatical returns, and billed
+   subject-to-availability entries are resolved first. These are already
+   rostered at submit.
 2. Remaining permanent spots are offered to the waitlist in queue order.
 3. Temporary sabbatical-fill spots are offered separately to the waitlist.
 

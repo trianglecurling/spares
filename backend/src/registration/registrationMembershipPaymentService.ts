@@ -39,8 +39,8 @@ import {
 } from './registrationPriorityEdit.js';
 import { canViewOrEditRegistration, getEffectiveRegistrationWindow, getRegistrationById, getRegistrationShellPayload } from './registrationShellService.js';
 import {
-  guaranteedPlacementsFromEvaluation,
   removeOrphanedRegistrationRosterPlacements,
+  rosterPlacementsForRegistration,
   syncRegistrationRosterPlacements,
 } from './registrationRosterService.js';
 import {
@@ -304,6 +304,7 @@ function mapLeagueConfig(
     allows_waitlist: number;
     waitlist_id: number | null;
     is_play_in_based?: number;
+    is_junior_recreational?: number;
     allows_sabbatical: number;
     predecessor_league_id: number | null;
     successor_league_id: number | null;
@@ -332,6 +333,7 @@ function mapLeagueConfig(
     allowsWaitlist: row.waitlist_id != null,
     waitlistId: row.waitlist_id,
     isPlayInBased: row.is_play_in_based === 1,
+    isJuniorRecreational: row.is_junior_recreational === 1,
     allowsSabbatical: row.allows_sabbatical === 1,
     predecessorLeagueId: row.predecessor_league_id,
     successorLeagueId: row.successor_league_id,
@@ -1980,7 +1982,7 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
     await removeOrphanedRegistrationRosterPlacements({
       registrationId: input.registrationId,
       curlerMemberId: registration.curler_member_id,
-      placements: guaranteedPlacementsFromEvaluation(initialEvaluation),
+      placements: rosterPlacementsForRegistration(initialContext, initialEvaluation),
     });
   }
   const context = await buildRegistrationContextForDraft(input.registrationId);
@@ -2169,7 +2171,7 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
       tx,
       registrationId: input.registrationId,
       curlerMemberId: registration.curler_member_id,
-      placements: guaranteedPlacementsFromEvaluation(evaluation.priorityEvaluation),
+      placements: rosterPlacementsForRegistration(context, evaluation.priorityEvaluation),
       registrationStatus: submittedStatus,
     });
     if (
@@ -2604,7 +2606,12 @@ async function applyConfirmedRegistrationEntitlementsInTx(input: {
     .where(eq(schema.seasonMemberships.source_registration_id, input.registration.id))
     .limit(1);
   if (!existingMembership && input.registration.membership_option !== 'none') {
-    const membershipType = input.registration.membership_option === 'social' ? 'social' : 'regular';
+    const membershipType =
+      input.registration.membership_option === 'social'
+        ? 'social'
+        : input.registration.membership_option === 'junior_recreational'
+          ? 'junior_recreational'
+          : 'regular';
     await input.tx.insert(schema.seasonMemberships).values({
       member_id: input.curlerMemberId,
       season_id: input.registration.season_id,
@@ -2653,7 +2660,7 @@ async function applyConfirmedRegistrationEntitlementsInTx(input: {
     tx: input.tx,
     registrationId: input.registrationId,
     curlerMemberId: input.curlerMemberId,
-    placements: guaranteedPlacementsFromEvaluation(evaluateLeaguePriorities(entitlementContext)),
+    placements: rosterPlacementsForRegistration(entitlementContext, evaluateLeaguePriorities(entitlementContext)),
     registrationStatus: 'confirmed',
   });
 

@@ -37,6 +37,8 @@ export type LeagueConfig = {
   waitlistId?: number | null;
   activeWaitlistEntryCount?: number;
   isPlayInBased: boolean;
+  /** When true, Junior Recreational membership places registrants on this roster. */
+  isJuniorRecreational?: boolean;
   allowsSabbatical: boolean;
   predecessorLeagueId?: number | null;
   successorLeagueId?: number | null;

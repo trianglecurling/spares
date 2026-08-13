@@ -26,6 +26,7 @@ export function league(overrides: Partial<LeagueConfig> = {}): LeagueConfig {
     lastDayOfPlay: '2026-12-15',
     allowsWaitlist: true,
     isPlayInBased: false,
+    isJuniorRecreational: false,
     allowsSabbatical: true,
     predecessorLeagueId: 90,
     successorLeagueId: null,

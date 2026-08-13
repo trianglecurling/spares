@@ -6413,6 +6413,9 @@
                       "isPlayInBased": {
                         "type": "boolean"
                       },
+                      "isJuniorRecreational": {
+                        "type": "boolean"
+                      },
                       "playInSpotCount": {
                         "type": "number"
                       },
@@ -6511,6 +6514,7 @@
                       "allowsWaitlist",
                       "waitlistId",
                       "isPlayInBased",
+                      "isJuniorRecreational",
                       "allowsSabbatical",
                       "allowsDropIns",
                       "dropInFeeMinor",
@@ -6817,6 +6821,9 @@
                     "isPlayInBased": {
                       "type": "boolean"
                     },
+                    "isJuniorRecreational": {
+                      "type": "boolean"
+                    },
                     "playInSpotCount": {
                       "type": "number"
                     },
@@ -6915,6 +6922,7 @@
                     "allowsWaitlist",
                     "waitlistId",
                     "isPlayInBased",
+                    "isJuniorRecreational",
                     "allowsSabbatical",
                     "allowsDropIns",
                     "dropInFeeMinor",
@@ -7144,6 +7152,9 @@
                           "isPlayInBased": {
                             "type": "boolean"
                           },
+                          "isJuniorRecreational": {
+                            "type": "boolean"
+                          },
                           "playInSpotCount": {
                             "type": "number"
                           },
@@ -7242,6 +7253,7 @@
                           "allowsWaitlist",
                           "waitlistId",
                           "isPlayInBased",
+                          "isJuniorRecreational",
                           "allowsSabbatical",
                           "allowsDropIns",
                           "dropInFeeMinor",
@@ -7376,6 +7388,9 @@
                     "type": "boolean"
                   },
                   "isPlayInBased": {
+                    "type": "boolean"
+                  },
+                  "isJuniorRecreational": {
                     "type": "boolean"
                   },
                   "playInSpotCount": {
@@ -7582,6 +7597,9 @@
                     "isPlayInBased": {
                       "type": "boolean"
                     },
+                    "isJuniorRecreational": {
+                      "type": "boolean"
+                    },
                     "playInSpotCount": {
                       "type": "number"
                     },
@@ -7680,6 +7698,7 @@
                     "allowsWaitlist",
                     "waitlistId",
                     "isPlayInBased",
+                    "isJuniorRecreational",
                     "allowsSabbatical",
                     "allowsDropIns",
                     "dropInFeeMinor",
@@ -8074,6 +8093,9 @@
                           "isPlayInBased": {
                             "type": "boolean"
                           },
+                          "isJuniorRecreational": {
+                            "type": "boolean"
+                          },
                           "playInSpotCount": {
                             "type": "number"
                           },
@@ -8172,6 +8194,7 @@
                           "allowsWaitlist",
                           "waitlistId",
                           "isPlayInBased",
+                          "isJuniorRecreational",
                           "allowsSabbatical",
                           "allowsDropIns",
                           "dropInFeeMinor",

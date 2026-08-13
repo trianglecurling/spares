@@ -127,6 +127,7 @@ interface League {
   allowsWaitlist: boolean;
   waitlistId?: number | null;
   isPlayInBased?: boolean;
+  isJuniorRecreational?: boolean;
   playInSpotCount?: number;
   allowsSabbatical: boolean;
   allowsDropIns?: boolean;
@@ -383,6 +384,7 @@ export default function LeagueDetail() {
     allowsDropIns: false,
     dropInFeeDollars: '' as number | '',
     isPlayInBased: false,
+    isJuniorRecreational: false,
     playInSpotCount: 2 as number | '',
     predecessorLeagueId: 0,
     teamFormation: 'coordinator' as 'coordinator' | 'skips_draft',
@@ -993,7 +995,8 @@ export default function LeagueDetail() {
         league.dropInFeeMinor != null && league.dropInFeeMinor !== undefined
           ? league.dropInFeeMinor / 100
           : '',
-      isPlayInBased: league.isPlayInBased ?? false,
+      isPlayInBased: league.format === 'instructional' ? false : (league.isPlayInBased ?? false),
+      isJuniorRecreational: league.isJuniorRecreational ?? false,
       playInSpotCount: league.playInSpotCount ?? 2,
       predecessorLeagueId: league.predecessorLeagueId ?? 0,
       teamFormation: league.teamFormation ?? 'coordinator',
@@ -1209,7 +1212,8 @@ export default function LeagueDetail() {
         dropInFeeMinor: leagueForm.allowsDropIns
           ? Math.round(Number(leagueForm.dropInFeeDollars) * 100)
           : null,
-        isPlayInBased: leagueForm.isPlayInBased,
+        isPlayInBased: leagueForm.format === 'instructional' ? false : leagueForm.isPlayInBased,
+        isJuniorRecreational: leagueForm.isJuniorRecreational,
         playInSpotCount:
           leagueForm.playInSpotCount === '' ? 2 : Math.max(0, Math.round(Number(leagueForm.playInSpotCount))),
         predecessorLeagueId: leagueForm.predecessorLeagueId || null,
@@ -2450,6 +2454,18 @@ export default function LeagueDetail() {
                       listboxLabel="League registration options"
                     />
                   </fieldset>
+
+                  <FormCheckbox
+                    label="Junior Recreational program league"
+                    helperText="Junior Recreational membership places paid registrants on this roster. Only one league per session can have this setting."
+                    checked={leagueForm.isJuniorRecreational}
+                    onChange={(checked) =>
+                      setLeagueForm((prev) => ({
+                        ...prev,
+                        isJuniorRecreational: checked,
+                      }))
+                    }
+                  />
 
                   {leagueForm.format !== 'instructional' ? (
                     <div className="space-y-4 rounded-lg border border-gray-200 p-4 dark:border-gray-700">

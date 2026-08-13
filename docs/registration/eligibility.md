@@ -130,6 +130,9 @@ A Junior Recreational registrant cannot:
 
 Junior Recreational uses a flat program fee and may include financial assistance.
 
+On submit, the curler is placed on the session league marked as the Junior
+Recreational program league in league configuration.
+
 ## Junior Advanced Commitment
 
 Junior Advanced Commitment is treated like a normal league.

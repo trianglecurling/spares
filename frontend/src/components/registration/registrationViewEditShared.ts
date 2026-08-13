@@ -31,6 +31,7 @@ export type LeagueCatalogItem = {
   waitlistId?: number | null;
   activeWaitlistEntryCount?: number;
   isPlayInBased?: boolean;
+  isJuniorRecreational?: boolean;
   allowsSabbatical: boolean;
   discountEligible?: boolean;
 };
@@ -366,6 +367,9 @@ function effectiveExperienceYears(input: LeagueEligibilityInput): number {
 }
 
 export function isLeagueSelectionEligibleLeague(league: LeagueCatalogItem, input: LeagueEligibilityInput): boolean {
+  if (league.isJuniorRecreational === true) {
+    return false;
+  }
   if (input.membershipOption === 'junior_recreational' || input.membershipOption === 'social') {
     return false;
   }

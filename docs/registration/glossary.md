@@ -179,6 +179,8 @@ Junior Recreational participants:
 - May not join other leagues.
 - May not spare.
 - Do not participate in normal league selection.
+- Are placed on the session league marked as the Junior Recreational program
+  league at submit.
 
 Financial assistance is subject to staff review and budget availability. Payment is deferred until the assistance decision is made.
 

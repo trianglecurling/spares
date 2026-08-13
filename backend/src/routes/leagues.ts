@@ -1,6 +1,6 @@
 import { FastifyInstance, type FastifyReply } from 'fastify';
 import { z } from 'zod';
-import { and, eq, sql, asc, inArray, type SQL } from 'drizzle-orm';
+import { and, eq, sql, asc, inArray, ne, isNull, type SQL } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { isAdmin, isServerAdmin } from '../utils/auth.js';
 import { Member, League } from '../types.js';
@@ -17,6 +17,7 @@ import {
 } from '../api/schemas.js';
 import type { ApiReply } from '../api/types.js';
 import { hasClubLeagueAdministratorAccess } from '../utils/leagueAccess.js';
+import { ensureJuniorRecreationalRosterForLeague } from '../registration/registrationRosterService.js';
 import {
   leagueTeamCount,
   sendDropInLeagueTeamsValidationError,
@@ -162,6 +163,7 @@ const updateLeagueSchema = z.object({
   lastDayOfPlay: z.string().nullable().optional(),
   allowsWaitlist: z.boolean().optional(),
   isPlayInBased: z.boolean().optional(),
+  isJuniorRecreational: z.boolean().optional(),
   playInSpotCount: z.preprocess(preprocessRoundFiniteInt, z.number().int().min(0).max(100).optional()),
   allowsSabbatical: z.boolean().optional(),
   allowsDropIns: z.boolean().optional(),
@@ -277,6 +279,21 @@ function getTimePartsInTimeZone(timeZone: string) {
 
 function toBool(value: number | boolean): boolean {
   return value === true || value === 1;
+}
+
+/** Only one league per session may receive Junior Recreational membership placements. */
+async function makeExclusiveJuniorRecreationalLeague(leagueId: number, sessionId: number | null): Promise<void> {
+  const { db, schema } = getDrizzleDb();
+  await db
+    .update(schema.leagues)
+    .set({ is_junior_recreational: 0, updated_at: sql`CURRENT_TIMESTAMP` })
+    .where(
+      and(
+        sessionId == null ? isNull(schema.leagues.session_id) : eq(schema.leagues.session_id, sessionId),
+        ne(schema.leagues.id, leagueId),
+        eq(schema.leagues.is_junior_recreational, 1),
+      ),
+    );
 }
 
 async function loadDefaultLeagueFeeMinor(): Promise<number> {
@@ -452,6 +469,7 @@ function mapLeagueResponse(
     allows_waitlist?: number | boolean;
     waitlist_id?: number | null;
     is_play_in_based?: number | boolean;
+    is_junior_recreational?: number | boolean;
     play_in_spot_count?: number | null;
     allows_sabbatical?: number | boolean;
     allows_drop_ins?: number | boolean;
@@ -489,6 +507,7 @@ function mapLeagueResponse(
     allowsWaitlist: row.waitlist_id != null,
     waitlistId: row.waitlist_id ?? null,
     isPlayInBased: toBool(row.is_play_in_based ?? 0),
+    isJuniorRecreational: toBool(row.is_junior_recreational ?? 0),
     playInSpotCount: row.play_in_spot_count ?? 2,
     allowsSabbatical: toBool(row.allows_sabbatical ?? 1),
     allowsDropIns: toBool(row.allows_drop_ins ?? 0),
@@ -1068,6 +1087,11 @@ export async function leagueRoutes(fastify: FastifyInstance) {
                 allows_sabbatical: src.allows_sabbatical,
                 allows_drop_ins: (src as { allows_drop_ins?: number }).allows_drop_ins ?? 0,
                 drop_in_fee_minor: (src as { drop_in_fee_minor?: number | null }).drop_in_fee_minor ?? null,
+                is_play_in_based:
+                  src.format === 'instructional'
+                    ? 0
+                    : ((src as { is_play_in_based?: number }).is_play_in_based ?? 0),
+                is_junior_recreational: (src as { is_junior_recreational?: number }).is_junior_recreational ?? 0,
                 public_notes: (src as { public_notes?: string | null }).public_notes ?? null,
                 team_formation: (src as { team_formation?: 'coordinator' | 'skips_draft' }).team_formation ?? 'coordinator',
                 predecessor_league_id: src.id,
@@ -1077,6 +1101,19 @@ export async function leagueRoutes(fastify: FastifyInstance) {
 
             const newLeagueId = created.id;
             newLeagueIds.push(newLeagueId);
+
+            if (((src as { is_junior_recreational?: number }).is_junior_recreational ?? 0) === 1) {
+              await tx
+                .update(schema.leagues)
+                .set({ is_junior_recreational: 0, updated_at: sql`CURRENT_TIMESTAMP` })
+                .where(
+                  and(
+                    eq(schema.leagues.session_id, body.targetSessionId),
+                    ne(schema.leagues.id, newLeagueId),
+                    eq(schema.leagues.is_junior_recreational, 1),
+                  ),
+                );
+            }
 
             const divisions = await tx
               .select()
@@ -1269,6 +1306,7 @@ export async function leagueRoutes(fastify: FastifyInstance) {
             lastDayOfPlay: { type: ['string', 'null'] },
             allowsWaitlist: { type: 'boolean' },
             isPlayInBased: { type: 'boolean' },
+            isJuniorRecreational: { type: 'boolean' },
             playInSpotCount: { type: 'number' },
             allowsSabbatical: { type: 'boolean' },
             allowsDropIns: { type: 'boolean' },
@@ -1375,9 +1413,11 @@ export async function leagueRoutes(fastify: FastifyInstance) {
         ? null
         : existingLeague.waitlist_id;
     const nextIsPlayInBased =
-      body.isPlayInBased !== undefined
-        ? body.isPlayInBased
-        : toBool((existingLeague as { is_play_in_based?: number }).is_play_in_based ?? 0);
+      nextFormat === 'instructional'
+        ? false
+        : body.isPlayInBased !== undefined
+          ? body.isPlayInBased
+          : toBool((existingLeague as { is_play_in_based?: number }).is_play_in_based ?? 0);
 
     const nextLeagueRegistrationSettings = {
       id: leagueId,
@@ -1453,6 +1493,7 @@ export async function leagueRoutes(fastify: FastifyInstance) {
       allows_waitlist: number;
       waitlist_id: number | null;
       is_play_in_based: number;
+      is_junior_recreational: number;
       play_in_spot_count: number;
       allows_sabbatical: number;
       allows_drop_ins: number;
@@ -1519,12 +1560,15 @@ export async function leagueRoutes(fastify: FastifyInstance) {
     if (body.allowsWaitlist !== undefined) {
       updateData.allows_waitlist = body.allowsWaitlist ? 1 : 0;
     }
-    if (body.isPlayInBased !== undefined) {
-      updateData.is_play_in_based = body.isPlayInBased ? 1 : 0;
-      if (body.isPlayInBased) {
+    if (body.isPlayInBased !== undefined || nextFormat === 'instructional') {
+      updateData.is_play_in_based = nextIsPlayInBased ? 1 : 0;
+      if (nextIsPlayInBased) {
         updateData.waitlist_id = null;
         updateData.allows_waitlist = 0;
       }
+    }
+    if (body.isJuniorRecreational !== undefined) {
+      updateData.is_junior_recreational = body.isJuniorRecreational ? 1 : 0;
     }
     if (body.playInSpotCount !== undefined) {
       updateData.play_in_spot_count = body.playInSpotCount;
@@ -1572,6 +1616,16 @@ export async function leagueRoutes(fastify: FastifyInstance) {
         .update(schema.leagues)
         .set(updateData)
         .where(eq(schema.leagues.id, leagueId));
+    }
+
+    const nextIsJuniorRecreational =
+      body.isJuniorRecreational !== undefined
+        ? body.isJuniorRecreational
+        : toBool((existingLeague as { is_junior_recreational?: number }).is_junior_recreational ?? 0);
+    if (nextIsJuniorRecreational) {
+      const sessionId = body.sessionId !== undefined ? body.sessionId : (existingLeague.session_id ?? null);
+      await makeExclusiveJuniorRecreationalLeague(leagueId, sessionId);
+      await ensureJuniorRecreationalRosterForLeague(leagueId);
     }
 
     // Update draw times if provided

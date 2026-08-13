@@ -526,6 +526,7 @@ export async function getMemberRegistrationDetail(registrationId: number, actor:
       byotTeammateText: schema.registrationLeaguePriorities.byot_teammate_text,
       teamRosterPlacementsJson: schema.registrationLeaguePriorities.team_roster_placements,
       leagueName: schema.leagues.name,
+      isPlayInBased: schema.leagues.is_play_in_based,
     })
     .from(schema.registrationLeaguePriorities)
     .innerJoin(schema.leagues, eq(schema.registrationLeaguePriorities.league_id, schema.leagues.id))
@@ -533,7 +534,7 @@ export async function getMemberRegistrationDetail(registrationId: number, actor:
     .orderBy(asc(schema.registrationLeaguePriorities.priority_rank));
   const guaranteeLabels = await loadPriorityGuaranteeLabels(registrationId);
   const priorities = await Promise.all(
-    priorityRows.map(async ({ teamRosterPlacementsJson, ...rest }) => ({
+    priorityRows.map(async ({ teamRosterPlacementsJson, isPlayInBased: _isPlayInBased, ...rest }) => ({
       ...rest,
       guaranteeLabel: guaranteeLabels.get(rest.leagueId) ?? null,
       teamRosterDisplay: await selectionTeamRosterDisplay({
@@ -637,6 +638,7 @@ export async function getMemberRegistrationDetail(registrationId: number, actor:
   const playInEntry: Record<number, Awaited<ReturnType<typeof evaluateRegistrantPlayInEntry>>> = {};
   for (const priorityRow of priorityRows) {
     if (playInEntry[priorityRow.leagueId]) continue;
+    if (priorityRow.isPlayInBased !== 1 && priorityRow.isPlayInBased !== true) continue;
     try {
       playInEntry[priorityRow.leagueId] = await evaluateRegistrantPlayInEntry({
         leagueId: priorityRow.leagueId,
@@ -645,7 +647,7 @@ export async function getMemberRegistrationDetail(registrationId: number, actor:
         pendingTeammateText: priorityRow.byotTeammateText,
       });
     } catch {
-      // Leagues that are not play-in based, or cannot be evaluated, are omitted.
+      // Leagues that cannot be evaluated are omitted.
     }
   }
   return {

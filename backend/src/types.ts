@@ -103,6 +103,7 @@ export interface League {
   last_day_of_play: DbDate | null;
   allows_waitlist: number;
   is_play_in_based?: number;
+  is_junior_recreational?: number;
   allows_sabbatical: number;
   allows_drop_ins?: number;
   drop_in_fee_minor?: number | null;

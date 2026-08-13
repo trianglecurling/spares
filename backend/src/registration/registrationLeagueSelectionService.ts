@@ -17,7 +17,7 @@ import {
   RegistrationPriorityEditValidationError,
 } from './registrationPriorityEdit.js';
 import { getRegistrationById } from './registrationShellService.js';
-import { guaranteedPlacementsFromEvaluation, removeOrphanedRegistrationRosterPlacements } from './registrationRosterService.js';
+import { rosterPlacementsForRegistration, removeOrphanedRegistrationRosterPlacements } from './registrationRosterService.js';
 import {
   removeOrphanedRegistrationWaitlistEntries,
   removeWaitlistEntriesNotOnPriorityList,
@@ -230,7 +230,9 @@ function priorSeasonLeagueIds(context: RegistrationContext): number[] {
   return Object.values(context.leagues)
     .filter(
       (league) =>
-        league.predecessorLeagueId != null && context.participatedLeagueIds.includes(league.predecessorLeagueId),
+        league.predecessorLeagueId != null &&
+        league.isJuniorRecreational !== true &&
+        context.participatedLeagueIds.includes(league.predecessorLeagueId),
     )
     .map((league) => league.id);
 }
@@ -411,7 +413,7 @@ export async function putRegistrationLeaguePriorities(
     await removeOrphanedRegistrationRosterPlacements({
       registrationId,
       curlerMemberId: registration.curler_member_id,
-      placements: guaranteedPlacementsFromEvaluation(evaluation),
+      placements: rosterPlacementsForRegistration(currentContext, evaluation),
     });
   }
 
