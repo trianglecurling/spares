@@ -36,4 +36,13 @@ describe('waitlist audit summaries', () => {
       'John Smith (position #2 of 5) added to waitlist · Team: John Smith, Jane Doe, Bob Jones, Sue Lee'
     );
   });
+
+  test('offer_preference_changed names the member', () => {
+    expect(
+      formatWaitlistAuditSummary({
+        action: 'offer_preference_changed',
+        memberName: 'John Smith',
+      })
+    ).toBe("John Smith's waitlist offer preference changed");
+  });
 });

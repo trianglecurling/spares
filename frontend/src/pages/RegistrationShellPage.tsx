@@ -889,7 +889,10 @@ export default function RegistrationShellPage() {
 
   /**
    * Server-truth priority list re-labeled locally so the review screen shows the
-   * same guarantee chips the priority page did.
+   * same guarantee chips the priority page did. Teammate return rights must be
+   * included: a BYOT doubles team is guaranteed only when every declared player
+   * is returning, and omitting that map waitlists a team the priority page
+   * already labeled guaranteed return.
    */
   const priorityEvaluation = useMemo(
     () =>
@@ -898,6 +901,7 @@ export default function RegistrationShellPage() {
         leagues: leaguePayload?.leagues ?? [],
         desiredLeagueCount: leaguePayload?.desiredLeagueCount ?? null,
         returnRightLeagueIds: leaguePayload?.returnRightLeagueIds ?? [],
+        returnEligibleMemberIdsByLeagueId: leaguePayload?.returnEligibleMemberIdsByLeagueId ?? {},
         playInEntry: leaguePayload?.playInEntry,
         priorLeagueDecisions: leaguePayload?.priorLeagueDecisions ?? [],
         registrantMemberId: registeringCurlerMemberId,
@@ -1441,9 +1445,11 @@ export default function RegistrationShellPage() {
     ];
     if (!member || !registrationId || !membershipPaymentFlowSteps.includes(currentStep)) return;
     if (payload && payload.registration.status !== 'shell_complete' && !isPriorityEdit) return;
+    let canceled = false;
     api
       .get(`/registration/drafts/${registrationId}/membership-payment`)
       .then((response) => {
+        if (canceled) return;
         const data = response.data as RegistrationMembershipPaymentPayload;
         setMembershipPayment(data);
         const membershipOption = data.selection.membershipOption;
@@ -1461,12 +1467,13 @@ export default function RegistrationShellPage() {
         setBasicIcePrivileges(membershipOption === 'regular_spare_only');
         setIcePrivilegesChoice((current) => {
           const onIcePrivilegesStep = currentStep === 'basic-ice';
+          // Keep a pick the registrant already made on this screen, including
+          // an in-progress "no ice privileges" click, across a refetch.
           if (onIcePrivilegesStep && current !== null) return current;
-          // On the picker, schema default `none` must not look like a choice.
-          // Everywhere else, keep an explicit no-ice selection so Back/resume
-          // do not send the registrant into league selection.
-          if (onIcePrivilegesStep) return icePrivilegesChoiceForUi(data.icePrivilegesChoice);
-          return data.icePrivilegesChoice ?? null;
+          // Schema default `none` means "not chosen yet". Do not treat it as a
+          // selected option on this step or earlier ones, or it arrives
+          // pre-selected when the registrant first reaches ice privileges.
+          return icePrivilegesChoiceForUi(data.icePrivilegesChoice);
         });
         setStudentDiscountClaimed(data.selection.studentDiscountClaimed);
         setStudentInstitution(data.selection.studentInstitution || '');
@@ -1475,7 +1482,12 @@ export default function RegistrationShellPage() {
         setExperienceChoice(data.selection.experienceType || (data.knownExperienceYears > 0 ? 'known_existing' : 'none_or_minimal'));
         setExperienceYears(data.selection.experienceSelfReportedYears?.toString() || '');
       })
-      .catch((err) => setError(errorMessage(err, 'Unable to load membership details.')));
+      .catch((err) => {
+        if (!canceled) setError(errorMessage(err, 'Unable to load membership details.'));
+      });
+    return () => {
+      canceled = true;
+    };
   }, [registrationId, member, currentStep, payload?.registration.status, isPriorityEdit]);
 
   useEffect(() => {

@@ -1,6 +1,7 @@
-import { eq, sql } from 'drizzle-orm';
+import { asc, eq, inArray, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { MAX_DESIRED_LEAGUE_COUNT } from '../db/drizzle-schema.js';
+import { normalizeDrawTimeString } from '../utils/leagueSchedule.js';
 import type { Member } from '../types.js';
 import { evaluateRegistrationDraft } from './evaluateRegistrationDraft.js';
 import {
@@ -19,8 +20,8 @@ import {
 import { getRegistrationById } from './registrationShellService.js';
 import { rosterPlacementsForRegistration, removeOrphanedRegistrationRosterPlacements } from './registrationRosterService.js';
 import {
+  applyRegistrationWaitlistOfferPreferences,
   removeOrphanedRegistrationWaitlistEntries,
-  removeWaitlistEntriesNotOnPriorityList,
 } from './registrationWaitlistCleanup.js';
 import type {
   LeagueConfig,
@@ -123,37 +124,55 @@ function selectionsFromPriorLeagueDecisions(decisions: PriorLeagueDecisionInput[
 
 function normalizeDrawTimeForSort(value: unknown): string {
   if (value == null) return '';
-  if (value instanceof Date) return value.toISOString().slice(11, 19);
-  if (typeof value === 'string') return value;
-  return String(value);
+  if (value instanceof Date && Number.isFinite(value.getTime())) {
+    const hours = String(value.getUTCHours()).padStart(2, '0');
+    const minutes = String(value.getUTCMinutes()).padStart(2, '0');
+    return `${hours}:${minutes}`;
+  }
+  if (typeof value === 'string') return normalizeDrawTimeString(value);
+  return normalizeDrawTimeString(String(value));
+}
+
+async function loadDrawTimesByLeagueId(leagueIds: number[]): Promise<Map<number, string[]>> {
+  const byLeagueId = new Map<number, string[]>();
+  if (leagueIds.length === 0) return byLeagueId;
+  const { db, schema } = getDrizzleDb();
+  const rows = await db
+    .select({
+      leagueId: schema.leagueDrawTimes.league_id,
+      drawTime: schema.leagueDrawTimes.draw_time,
+    })
+    .from(schema.leagueDrawTimes)
+    .where(inArray(schema.leagueDrawTimes.league_id, leagueIds))
+    .orderBy(asc(schema.leagueDrawTimes.league_id), asc(schema.leagueDrawTimes.draw_time));
+  for (const row of rows) {
+    const time = normalizeDrawTimeForSort(row.drawTime);
+    if (!time) continue;
+    const list = byLeagueId.get(row.leagueId) ?? [];
+    list.push(time);
+    byLeagueId.set(row.leagueId, list);
+  }
+  return byLeagueId;
 }
 
 /** Match /leagues ordering: day of week, then earliest draw time, then name. */
 async function sortLeaguesByDayThenFirstDraw(leagues: LeagueConfig[]): Promise<LeagueConfig[]> {
   if (leagues.length === 0) return leagues;
 
-  const { db, schema } = getDrizzleDb();
-  const minDrawRows = await db
-    .select({
-      league_id: schema.leagueDrawTimes.league_id,
-      first_draw: sql<string>`min(${schema.leagueDrawTimes.draw_time})`,
-    })
-    .from(schema.leagueDrawTimes)
-    .groupBy(schema.leagueDrawTimes.league_id);
+  const drawTimesByLeagueId = await loadDrawTimesByLeagueId(leagues.map((league) => league.id));
+  const withTimes = leagues.map((league) => ({
+    ...league,
+    drawTimes: drawTimesByLeagueId.get(league.id) ?? [],
+  }));
 
-  const firstDrawByLeagueId = new Map<number, string>();
-  for (const row of minDrawRows) {
-    firstDrawByLeagueId.set(row.league_id, normalizeDrawTimeForSort(row.first_draw));
-  }
-
-  return [...leagues].sort((a, b) => {
+  return [...withTimes].sort((a, b) => {
     const dowDiff = (a.dayOfWeek ?? Number.MAX_SAFE_INTEGER) - (b.dayOfWeek ?? Number.MAX_SAFE_INTEGER);
     if (dowDiff !== 0) return dowDiff;
 
-    const ta = firstDrawByLeagueId.get(a.id);
-    const tb = firstDrawByLeagueId.get(b.id);
-    const hasA = ta !== undefined && ta !== '';
-    const hasB = tb !== undefined && tb !== '';
+    const ta = a.drawTimes?.[0] ?? '';
+    const tb = b.drawTimes?.[0] ?? '';
+    const hasA = ta !== '';
+    const hasB = tb !== '';
     if (hasA && hasB && ta !== tb) {
       return ta.localeCompare(tb);
     }
@@ -399,9 +418,10 @@ export async function putRegistrationLeaguePriorities(
     const waitlistedLeagueIds = evaluation.entries
       .filter((entry) => entry.label === 'waitlisted')
       .map((entry) => entry.leagueId);
-    await removeWaitlistEntriesNotOnPriorityList({
+    await applyRegistrationWaitlistOfferPreferences({
       curlerMemberId: registration.curler_member_id,
       actorMemberId: actor.id,
+      sessionId: registration.session_id,
       priorityLeagueIds: priorities.map((priority) => priority.leagueId),
     });
     await removeOrphanedRegistrationWaitlistEntries({
@@ -409,6 +429,7 @@ export async function putRegistrationLeaguePriorities(
       curlerMemberId: registration.curler_member_id,
       actorMemberId: actor.id,
       waitlistedLeagueIds,
+      priorityLeagueIds: priorities.map((priority) => priority.leagueId),
     });
     await removeOrphanedRegistrationRosterPlacements({
       registrationId,

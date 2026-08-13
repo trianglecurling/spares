@@ -81,7 +81,8 @@ live as the registrant reorders, adds, or removes leagues.
 | Guaranteed return | The spot is held. Billed immediately. |
 | Guaranteed fallback | The spot is held as a backstop if higher choices do not come through. Billed immediately. |
 | Waitlisted | Queued on the league waitlist. Payment deferred. |
-| Subject to availability | Wanted, no waitlist on the league. Assumed to have room; billed immediately. **Not shown as a chip.** |
+| Subject to availability | Wanted, not waitlisted. Assumed to have room; billed immediately. |
+| Superfluous | Below leagues that already fill the desired count. Not waitlisted or billed. Must be removed or moved higher before continuing. |
 
 ### Return eligibility
 
@@ -134,9 +135,27 @@ if returnCount < 2:
 for entry with no label:
     if play-in and roster incomplete:
         entry.label = awaiting_roster_entry
+    else if league.allowsWaitlist and (granted < 2 or rank <= 2):
+        entry.label = waitlisted
     else:
-        entry.label = league.allowsWaitlist ? waitlisted : subject_to_availability
+        entry.label = subject_to_availability
+
+# Pass 4: superfluous leftovers below an already-filled desired count
+secured = 0
+for entry in rank order:
+    if secured >= desiredLeagueCount:
+        entry.label = superfluous
+    else if entry is guaranteed, awaiting roster, or billed subject-to-availability:
+        secured += 1
 ```
+
+Waitlists fill protected spots. A leftover in ranks 1–2 can still waitlist when
+the registrant is trying to switch into a higher league while holding a
+fallback. Once two spots are already guaranteed, further leftovers are subject
+to availability only while they still fill a remaining desired-count slot.
+Anything below an already-filled desired count is superfluous: the registrant
+may add a league in order to move it higher (switch with fallback), but cannot
+continue until those extra rows are removed or reordered.
 
 A bring-your-own-team entry that still has a return right but an incomplete
 all-returning declared team, or a play-in entry whose team is not yet fully
@@ -163,9 +182,12 @@ Registrant played Tuesday and Thursday last session.
 | 2 | Monday, Wednesday, Tuesday, Thursday | Waitlisted, Waitlisted, Guaranteed fallback, Guaranteed fallback |
 | 1 | Monday, Tuesday, Thursday | Waitlisted, Guaranteed return, (none — budget spent) |
 | 3 | Monday, Tuesday, Thursday | Waitlisted, Guaranteed return, Guaranteed fallback |
+| 3 | Tuesday, Thursday, Monday, Wednesday | Guaranteed return, Guaranteed return, Subject to availability, Superfluous |
 
 In the fourth row the budget is `min(2, 1) = 1`, so Thursday gets no guarantee
-even though the registrant has a return right for it.
+even though the registrant has a return right for it. In the last row both
+protected spots are already guaranteed, Monday fills the third wanted league
+as subject to availability, and Wednesday is superfluous.
 
 ## Bring-your-own-team ordering
 
@@ -244,11 +266,13 @@ See `waitlists.md` for offer and placement behavior.
 ## Billing
 
 Guaranteed entries and subject-to-availability entries are billed now.
-Waitlisted entries, incomplete rosters, and play-in misses are not, because the
-registrant may never be placed in them.
+Waitlisted entries, incomplete rosters, play-in misses, and superfluous entries
+are not. Superfluous entries also cannot be submitted.
 
-Subject-to-availability means the league has no waitlist. We assume there will
-be room, take payment, and do not consume a protected guarantee spot.
+Subject-to-availability means the leftover is not joining a waitlist. That
+includes leagues with no waitlist, and extra leagues below two already-granted
+protected spots. We assume there will be room, take payment, and do not consume
+a protected guarantee spot.
 
 - **Confirmed total** = membership and other fixed fees, plus the sum of
   `registrationFeeMinor` for every guaranteed entry and every

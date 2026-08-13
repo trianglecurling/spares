@@ -1,16 +1,20 @@
 import { and, eq } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
-import { recordAndDeleteWaitlistEntry } from './waitlistAudit.js';
+import { recordAndDeleteWaitlistEntry, updateWaitlistOfferPreference } from './waitlistAudit.js';
+import {
+  WAITLIST_OFFER_RESPONSE_PREFERENCE_LABELS,
+  waitlistOfferPreferenceAfterRegistration,
+} from './waitlistOfferPreference.js';
 
 type WaitlistCleanupExecutor = Pick<
   ReturnType<typeof getDrizzleDb>['db'],
-  'select' | 'delete' | 'insert'
+  'select' | 'delete' | 'insert' | 'update'
 >;
 
 /**
- * Drops waitlist entries this registration created for leagues the registrant
- * has since removed from their priority list, or that are now guaranteed and so
- * no longer need a queue spot.
+ * Drops waitlist entries this registration created for leagues that are still
+ * on the priority list but are no longer waitlisted (for example a guaranteed
+ * return). Leagues left off the list stay queued with auto-decline.
  */
 export async function removeOrphanedRegistrationWaitlistEntries(input: {
   registrationId: number;
@@ -18,11 +22,14 @@ export async function removeOrphanedRegistrationWaitlistEntries(input: {
   actorMemberId: number;
   /** Leagues that should keep an active waitlist entry. */
   waitlistedLeagueIds: Iterable<number>;
+  /** Leagues currently on the registrant's priority list. */
+  priorityLeagueIds?: Iterable<number>;
   tx?: WaitlistCleanupExecutor;
 }): Promise<void> {
   const { db, schema } = getDrizzleDb();
   const executor = input.tx ?? db;
   const keepLeagueIds = new Set(input.waitlistedLeagueIds);
+  const priorityLeagueIds = input.priorityLeagueIds != null ? new Set(input.priorityLeagueIds) : null;
 
   const entries = await executor
     .select()
@@ -42,6 +49,7 @@ export async function removeOrphanedRegistrationWaitlistEntries(input: {
       .where(eq(schema.leagues.waitlist_id, entry.waitlist_id))
       .limit(1);
     if (!league || keepLeagueIds.has(league.id)) continue;
+    if (priorityLeagueIds && !priorityLeagueIds.has(league.id)) continue;
 
     await recordAndDeleteWaitlistEntry(executor, {
       entry,
@@ -55,18 +63,20 @@ export async function removeOrphanedRegistrationWaitlistEntries(input: {
 }
 
 /**
- * Drops waitlist entries the registrant holds from any source for leagues that
- * are no longer on their priority list at all.
+ * Confirms waitlist offer preferences from a submitted priority list.
+ * Leagues on the list auto-accept; session waitlists left off the list
+ * auto-decline and stay in the queue. Other sessions are left alone.
  */
-export async function removeWaitlistEntriesNotOnPriorityList(input: {
+export async function applyRegistrationWaitlistOfferPreferences(input: {
   curlerMemberId: number;
   actorMemberId: number;
+  sessionId: number;
   priorityLeagueIds: Iterable<number>;
   tx?: WaitlistCleanupExecutor;
 }): Promise<void> {
   const { db, schema } = getDrizzleDb();
   const executor = input.tx ?? db;
-  const keepLeagueIds = new Set(input.priorityLeagueIds);
+  const priorityLeagueIds = [...input.priorityLeagueIds];
 
   const entries = await executor
     .select()
@@ -75,19 +85,29 @@ export async function removeWaitlistEntriesNotOnPriorityList(input: {
 
   for (const entry of entries) {
     const [league] = await executor
-      .select({ id: schema.leagues.id })
+      .select({ id: schema.leagues.id, sessionId: schema.leagues.session_id })
       .from(schema.leagues)
       .where(eq(schema.leagues.waitlist_id, entry.waitlist_id))
       .limit(1);
-    if (!league || keepLeagueIds.has(league.id)) continue;
+    if (!league || league.sessionId !== input.sessionId) continue;
 
-    await recordAndDeleteWaitlistEntry(executor, {
+    const preference = waitlistOfferPreferenceAfterRegistration({
+      leagueId: league.id,
+      priorityLeagueIds,
+    });
+    const preferenceLabel = WAITLIST_OFFER_RESPONSE_PREFERENCE_LABELS[preference];
+    await updateWaitlistOfferPreference(executor, {
       entry,
       leagueId: league.id,
+      preference,
       actorMemberId: input.actorMemberId,
       source: 'registration_submission',
-      reason: 'WAITLIST_REMOVED_FROM_REGISTRATION',
-      metadata: { reason: 'REGISTRATION_PRIORITY_LIST_REMOVAL' },
+      reason:
+        preference === 'auto_accept'
+          ? 'WAITLIST_PREFERENCE_AUTO_ACCEPT_FROM_REGISTRATION'
+          : 'WAITLIST_PREFERENCE_AUTO_DECLINE_FROM_REGISTRATION',
+      summary: `Waitlist offer preference set to ${preferenceLabel.toLowerCase()} from registration`,
+      metadata: { reason: 'REGISTRATION_PRIORITY_LIST' },
     });
   }
 }

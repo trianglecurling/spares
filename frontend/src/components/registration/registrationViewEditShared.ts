@@ -17,6 +17,8 @@ export type LeagueCatalogItem = {
   sessionId?: number | null;
   name: string;
   dayOfWeek?: number | null;
+  /** Recurring draw times as `HH:MM`, earliest first. */
+  drawTimes?: string[];
   registrationFeeMinor: number;
   leagueType: 'standard' | 'bring_your_own_team';
   format: 'teams' | 'doubles' | 'instructional';
@@ -249,9 +251,38 @@ export function continuingSabbaticalForLeague(
 ): ContinuingSabbaticalSummary | undefined {
   return payload?.continuingSabbaticals?.find((entry) => entry.leagueId === leagueId);
 }
-export function leagueScheduleText(league: Pick<LeagueCatalogItem, 'dayOfWeek'>): string {
-  if (typeof league.dayOfWeek !== 'number') return 'Schedule not configured';
-  return DAY_NAMES[league.dayOfWeek] ?? 'Schedule not configured';
+
+export function formatLeagueDrawTime(time: string): string {
+  const match = /^(\d{1,2}):(\d{2})/.exec(time.trim());
+  if (!match) return time.trim();
+  const hour = Number.parseInt(match[1] ?? '', 10);
+  if (!Number.isFinite(hour)) return time.trim();
+  const minutes = match[2] ?? '00';
+  const period = hour >= 12 ? 'pm' : 'am';
+  const displayHour = hour % 12 || 12;
+  return `${displayHour}:${minutes}${period}`;
+}
+
+export function leagueScheduleText(
+  league: Pick<LeagueCatalogItem, 'dayOfWeek' | 'drawTimes'>,
+): string {
+  const day =
+    typeof league.dayOfWeek === 'number' ? (DAY_NAMES[league.dayOfWeek] ?? null) : null;
+  const times = (league.drawTimes ?? [])
+    .map((time) => formatLeagueDrawTime(time))
+    .filter((time) => time.length > 0);
+  const timeText =
+    times.length === 0
+      ? ''
+      : times.length === 1
+        ? (times[0] ?? '')
+        : times.length === 2
+          ? `${times[0]} and ${times[1]}`
+          : `${times.slice(0, -1).join(', ')}, and ${times[times.length - 1]}`;
+  if (day && timeText) return `${day} ${timeText}`;
+  if (day) return day;
+  if (timeText) return timeText;
+  return 'Schedule not configured';
 }
 
 export function formatCurrency(amountMinor: number): string {

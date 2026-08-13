@@ -48,8 +48,10 @@ export default function LeaguePriorityIntroStep({ continueLabel = 'Continue', on
           </li>
         </ul>
         <p className="text-sm text-gray-700">
-          Leagues beyond those protected spots are waitlisted or subject to availability, depending on the league. Labels
-          on the next screen update as you reorder your list so you can see what is guaranteed and what is not.
+          Waitlists are used to fill those protected spots. If you already have two guaranteed leagues, extra leagues
+          further down your list are not used. You can still add a league and move it higher to try a switch with
+          guaranteed fallback; until you do, that extra row is marked superfluous and you cannot continue. Labels on the
+          next screen update as you reorder your list so you can see what is guaranteed and what is not.
         </p>
       </section>
 

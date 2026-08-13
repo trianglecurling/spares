@@ -28,13 +28,16 @@ import {
   shouldShowGuaranteeChip,
   hydratePriorityList,
   incompletePlayInLeagueNames,
+  seedableWaitlistLeagueIds,
   immediateChargeEntries,
   isFreeLeague,
-  mergeActiveWaitlistLeagues,
+  mergeNewlyJoinedWaitlistLeagues,
   MAX_DESIRED_LEAGUE_COUNT,
   MIN_PLAY_IN_ROSTER_SIZE,
   canReorderPriorityDrop,
   movePriorityInList,
+  omittedWaitlistLeagues,
+  formatConjunctionList,
   paidPriorLeaguesOffList,
   removePriority,
   reorderPriorities,
@@ -79,6 +82,20 @@ function leagueRowSubtitle(league: LeagueCatalogItem): string {
   return [schedule, formatCurrency(league.registrationFeeMinor)].filter(Boolean).join(' · ');
 }
 
+function omittedWaitlistNotice(leagues: LeagueCatalogItem[]) {
+  const names = formatConjunctionList(leagues.map((league) => league.name));
+  const plural = leagues.length !== 1;
+  const pronoun = plural ? 'them' : 'it';
+  const leagueNoun = plural ? 'these leagues' : 'this league';
+  return (
+    <>
+      Notice: you are currently on the waitlist for {names}, but you have not included {pronoun} in your priority list
+      above. If your spot comes available in this session, it will be <strong>automatically declined</strong>. If you
+      are still interested in joining {leagueNoun}, include {pronoun} in your prioritized list above.
+    </>
+  );
+}
+
 /**
  * The single page where a registrant says how many leagues they want and ranks
  * the leagues they want them to be. Guarantee chips are computed locally with
@@ -112,6 +129,7 @@ export default function LeaguePriorityStep({
   const [validationMessage, setValidationMessage] = useState<string | null>(null);
   const [playInEntry, setPlayInEntry] = useState<Record<number, RegistrantPlayInEntrySummaryLike>>({});
   const hydratedRef = useRef(false);
+  const knownWaitlistLeagueIdsRef = useRef<Set<number>>(new Set());
 
   const leagues = useMemo(() => payload?.leagues ?? [], [payload]);
   const leagueById = useMemo(
@@ -123,6 +141,7 @@ export default function LeaguePriorityStep({
     if (!payload) return;
     const turnedOnFreeOnly = restrictToFreeLeagues && !restrictHydratedRef.current;
     restrictHydratedRef.current = restrictToFreeLeagues;
+    const currentWaitlistIds = new Set(seedableWaitlistLeagueIds(payload));
     if (!hydratedRef.current || turnedOnFreeOnly) {
       hydratedRef.current = true;
       setPriorities(hydratePriorityList(payload, { freeLeaguesOnly: restrictToFreeLeagues }));
@@ -130,13 +149,19 @@ export default function LeaguePriorityStep({
       setPriorLeagueDecisions(payload.priorLeagueDecisions ?? []);
       setBasicIceFallbackInterest(payload.basicIceFallbackInterest === true);
       setPlayInEntry(payload.playInEntry ?? {});
+      knownWaitlistLeagueIdsRef.current = currentWaitlistIds;
       return;
     }
     // Catalog may refresh after the registrant joins a waitlist elsewhere —
-    // pull those leagues onto the list without resetting other edits.
+    // pull only newly joined leagues onto the list without putting back ones
+    // they already removed.
+    const previouslyKnownWaitlistLeagueIds = knownWaitlistLeagueIdsRef.current;
+    knownWaitlistLeagueIdsRef.current = currentWaitlistIds;
     setPriorities((current) =>
       filterPrioritiesToAllowedLeagues(
-        mergeActiveWaitlistLeagues(current, payload, { freeLeaguesOnly: restrictToFreeLeagues }),
+        mergeNewlyJoinedWaitlistLeagues(current, payload, previouslyKnownWaitlistLeagueIds, {
+          freeLeaguesOnly: restrictToFreeLeagues,
+        }),
         payload.leagues,
         restrictToFreeLeagues,
       ),
@@ -239,6 +264,10 @@ export default function LeaguePriorityStep({
   const sabbaticalsToShow = useMemo(
     () => sabbaticals.filter((entry) => entry.kind === 'continuing' || !lastSessionLeagueIds.has(entry.leagueId)),
     [lastSessionLeagueIds, sabbaticals],
+  );
+  const omittedWaitlists = useMemo(
+    () => (payload ? omittedWaitlistLeagues(payload, priorities) : []),
+    [payload, priorities],
   );
 
   const maxSelectableCount = Math.min(
@@ -422,6 +451,11 @@ export default function LeaguePriorityStep({
       );
       const name = continuing?.leagueName ?? 'a league you held on sabbatical';
       return `Choose whether to return, extend sabbatical, or drop ${name} before continuing.`;
+    }
+    const superfluous = evaluation.entries.find((entry) => entry.label === 'superfluous');
+    if (superfluous) {
+      const name = leagueById.get(superfluous.leagueId)?.name ?? 'A league';
+      return `${name} is below the leagues that already fill the number you asked for. Remove it, or move it higher if you want it as a switch with guaranteed fallback.`;
     }
     return null;
   };
@@ -677,7 +711,7 @@ export default function LeaguePriorityStep({
                           required={!league.isPlayInBased}
                           helperText={
                             league.isPlayInBased
-                              ? `List at least ${MIN_PLAY_IN_ROSTER_SIZE} players to enter as a team. A full team over the points bar earns guaranteed entry.`
+                              ? `List at least ${MIN_PLAY_IN_ROSTER_SIZE} players to enter as a team.`
                               : 'Guaranteed return requires a full roster of returning players. Teams with new players go on the waitlist.'
                           }
                           playInCommittedOtherMemberTeams={playInEntry[league.id]?.committedOtherMemberTeams}
@@ -854,6 +888,15 @@ export default function LeaguePriorityStep({
           ) : null}
         </>
       )}
+
+      {omittedWaitlists.length > 0 ? (
+        <div
+          className="app-alert border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200"
+          role="status"
+        >
+          {omittedWaitlistNotice(omittedWaitlists)}
+        </div>
+      ) : null}
 
       {validationMessage ? (
         <FormFieldMessage tone="public" intent="error">

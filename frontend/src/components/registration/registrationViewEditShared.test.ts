@@ -11,8 +11,11 @@ import {
   incompletePlayInLeagueNames,
   isFreeLeague,
   mergeActiveWaitlistLeagues,
+  mergeNewlyJoinedWaitlistLeagues,
   movePriorityInList,
   normalizePriorityOrder,
+  omittedWaitlistLeagues,
+  formatConjunctionList,
   paidPriorLeaguesOffList,
   priorityMoveButtonTitle,
   removePriority,
@@ -29,6 +32,7 @@ import {
 } from './leaguePriorityShared';
 import {
   isLeagueSelectionEligibleLeague,
+  leagueScheduleText,
   type ContinuingSabbaticalSummary,
   type LeagueCatalogItem,
 } from './registrationViewEditShared';
@@ -190,11 +194,21 @@ describe('seeding the priority list', () => {
     expect(defaultDesiredLeagueCount({ ...basePayload, desiredLeagueCount: 1 })).toBe(1);
   });
 
-  test('saved priorities still pick up a newly joined waitlist league', () => {
+  test('saved priorities keep a waitlist league off the list after the registrant removed it', () => {
     expect(
       hydratePriorityList({
         ...basePayload,
         priorities: ranked(1, 2),
+        existingWaitlistEntries: [{ waitlistId: 7, leagueId: 3, status: 'active' }],
+      }),
+    ).toEqual(ranked(1, 2));
+  });
+
+  test('an empty saved list still seeds last-session leagues plus active waitlists', () => {
+    expect(
+      hydratePriorityList({
+        ...basePayload,
+        priorities: [],
         existingWaitlistEntries: [{ waitlistId: 7, leagueId: 3, status: 'active' }],
       }),
     ).toEqual(ranked(3, 1, 2));
@@ -207,6 +221,40 @@ describe('seeding the priority list', () => {
       existingWaitlistEntries: [{ waitlistId: 7, leagueId: 3, status: 'active' }],
     };
     expect(mergeActiveWaitlistLeagues(current, payload)).toBe(current);
+  });
+
+  test('a catalog refresh only inserts waitlist leagues joined since the last snapshot', () => {
+    const current = ranked(1, 2);
+    const payload = {
+      ...basePayload,
+      existingWaitlistEntries: [
+        { waitlistId: 7, leagueId: 3, status: 'active' },
+        { waitlistId: 8, leagueId: 2, status: 'active' },
+      ],
+    };
+    expect(mergeNewlyJoinedWaitlistLeagues(current, payload, new Set([3]))).toEqual(ranked(1, 2));
+    expect(mergeNewlyJoinedWaitlistLeagues(current, payload, new Set()).map((priority) => priority.leagueId)).toEqual([
+      3, 1, 2,
+    ]);
+  });
+
+  test('omitted waitlist leagues are those on an active waitlist but not on the priority list', () => {
+    const payload = {
+      ...basePayload,
+      existingWaitlistEntries: [
+        { waitlistId: 7, leagueId: 3, status: 'active' },
+        { waitlistId: 8, leagueId: 2, status: 'active' },
+        { waitlistId: 9, leagueId: 1, status: 'removed' },
+      ],
+    };
+    expect(omittedWaitlistLeagues(payload, ranked(2)).map((league) => league.id)).toEqual([3]);
+    expect(omittedWaitlistLeagues(payload, ranked(2, 3))).toEqual([]);
+  });
+
+  test('conjunction lists use and before the last name', () => {
+    expect(formatConjunctionList(['Monday'])).toBe('Monday');
+    expect(formatConjunctionList(['Monday', 'Tuesday'])).toBe('Monday and Tuesday');
+    expect(formatConjunctionList(['Monday', 'Tuesday', 'Wednesday'])).toBe('Monday, Tuesday, and Wednesday');
   });
 
   test('basic ice hydrates only free leagues and leaves paid return rights off the list', () => {
@@ -355,11 +403,32 @@ describe('guarantee labels shown while reordering', () => {
         returnEligibleMemberIdsByLeagueId: { 4: [100] },
       }).entries[0]?.label,
     ).toBe('subject_to_availability');
+    expect(
+      evaluate({
+        priorities,
+        desiredLeagueCount: 1,
+        returnRightLeagueIds: [4],
+      }).entries[0]?.label,
+    ).toBe('subject_to_availability');
   });
 
   test('wanting one league caps the guarantees at one', () => {
     const result = evaluate({ priorities: ranked(1, 2), desiredLeagueCount: 1, returnRightLeagueIds: [1, 2] });
-    expect(result.entries.map((entry) => entry.label)).toEqual(['guaranteed_return', 'waitlisted']);
+    expect(result.entries.map((entry) => entry.label)).toEqual(['guaranteed_return', 'superfluous']);
+  });
+
+  test('two guaranteed returns leave extra leagues subject to availability then superfluous', () => {
+    const result = evaluate({
+      priorities: ranked(1, 2, 3, 4),
+      desiredLeagueCount: 3,
+      returnRightLeagueIds: [1, 2],
+    });
+    expect(result.entries.map((entry) => entry.label)).toEqual([
+      'guaranteed_return',
+      'guaranteed_return',
+      'subject_to_availability',
+      'superfluous',
+    ]);
   });
 
   test('a sabbatical does not reduce the guarantee budget', () => {
@@ -379,7 +448,9 @@ describe('guarantee labels shown while reordering', () => {
     expect(guaranteeChipLabel('guaranteed_fallback')).toBe('Guaranteed fallback');
     expect(guaranteeChipLabel('waitlisted')).toBe('Waitlisted');
     expect(guaranteeChipLabel('subject_to_availability')).toBe('Subject to availability');
-    expect(shouldShowGuaranteeChip('subject_to_availability')).toBe(false);
+    expect(guaranteeChipLabel('superfluous')).toBe('Superfluous');
+    expect(shouldShowGuaranteeChip('subject_to_availability')).toBe(true);
+    expect(shouldShowGuaranteeChip('superfluous')).toBe(true);
     expect(shouldShowGuaranteeChip('waitlisted')).toBe(true);
   });
 });
@@ -593,5 +664,19 @@ describe('Junior Recreational program league', () => {
         membershipOption: 'regular',
       }),
     ).toBe(false);
+  });
+});
+
+describe('league schedule text', () => {
+  test('includes the draw time after the weekday', () => {
+    expect(leagueScheduleText({ dayOfWeek: 2, drawTimes: ['18:15'] })).toBe('Tuesday 6:15pm');
+  });
+
+  test('joins multiple draw times with and', () => {
+    expect(leagueScheduleText({ dayOfWeek: 2, drawTimes: ['18:15', '20:30'] })).toBe('Tuesday 6:15pm and 8:30pm');
+  });
+
+  test('falls back to the weekday when no draw times are configured', () => {
+    expect(leagueScheduleText({ dayOfWeek: 2, drawTimes: [] })).toBe('Tuesday');
   });
 });

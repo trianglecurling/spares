@@ -24,7 +24,8 @@ export type LeaguePriorityGuaranteeLabel =
   | 'awaiting_roster_entry'
   | 'guaranteed_fallback'
   | 'waitlisted'
-  | 'subject_to_availability';
+  | 'subject_to_availability'
+  | 'superfluous';
 
 export const LEAGUE_PRIORITY_GUARANTEE_LABEL_TEXT: Record<LeaguePriorityGuaranteeLabel, string> = {
   guaranteed_return: 'Guaranteed return',
@@ -32,6 +33,7 @@ export const LEAGUE_PRIORITY_GUARANTEE_LABEL_TEXT: Record<LeaguePriorityGuarante
   guaranteed_fallback: 'Guaranteed fallback',
   waitlisted: 'Waitlisted',
   subject_to_availability: 'Subject to availability',
+  superfluous: 'Superfluous',
 };
 
 export type PriorityLeagueShape = {
@@ -249,6 +251,34 @@ export function guaranteeBudgetFor(desiredLeagueCount: number): number {
 }
 
 /**
+ * An entry that already counts toward the desired league count: a held
+ * guarantee, a roster still being completed for a potential guarantee, or a
+ * billed subject-to-availability league. Waitlists and play-in misses do not
+ * secure a slot, so later entries can still be necessary.
+ */
+function entrySecuresDesiredSlot(entry: LabeledPriorityEntry): boolean {
+  if (entry.guaranteed || entry.label === 'awaiting_roster_entry') return true;
+  return entry.label === 'subject_to_availability' && !entry.isPlayInBased;
+}
+
+/**
+ * Anything below an already-filled desired count cannot be placed, billed, or
+ * waitlisted. Relabel those rows so the registrant can remove them or move
+ * them higher (for example to try a switch with guaranteed fallback).
+ */
+function markSuperfluousEntries(entries: LabeledPriorityEntry[], desiredLeagueCount: number): void {
+  let secured = 0;
+  for (const entry of entries) {
+    if (secured >= desiredLeagueCount) {
+      entry.label = 'superfluous';
+      entry.guaranteed = false;
+      continue;
+    }
+    if (entrySecuresDesiredSlot(entry)) secured += 1;
+  }
+}
+
+/**
  * Assigns a guarantee label to every entry on the list.
  *
  * A return right in the top two spots earns `guaranteed_return` once the roster
@@ -264,10 +294,20 @@ export function guaranteeBudgetFor(desiredLeagueCount: number): number {
  * A registrant who could not fill both of the top spots keeps the unused
  * guarantee and may spend it further down the list as a `guaranteed_fallback`
  * — but never on a play-in league, which sends a team that misses the bar to
- * playdowns rather than into a held spot. Everything left over is waitlisted
- * where the league has a waitlist, and otherwise simply subject to availability.
- * Subject-to-availability leagues (except play-in misses) are billed now and
- * do not consume the guarantee budget.
+ * playdowns rather than into a held spot.
+ *
+ * Leftovers join a waitlist only while fewer than two spots are guaranteed, or
+ * when the leftover sits in the top two ranks (trying to switch into a higher
+ * league while holding a fallback). Once two spots are already guaranteed,
+ * extra leagues further down the list are subject to availability even if the
+ * league has a waitlist. Subject-to-availability leagues (except play-in
+ * misses) are billed now and do not consume the guarantee budget.
+ *
+ * Once guaranteed spots plus billed subject-to-availability entries already
+ * fill the desired league count, every later entry is `superfluous`. Those
+ * rows are not waitlisted or billed. A registrant can still add a league and
+ * move it above a guaranteed spot to try a switch with fallback; until they
+ * do, the extra row blocks continue.
  *
  * Sabbaticals do not consume this budget. A registrant may hold two guaranteed
  * priority spots and still take sabbatical from other prior leagues.
@@ -322,8 +362,16 @@ export function labelPriorityEntries(input: {
       entry.label = 'awaiting_roster_entry';
       continue;
     }
-    entry.label = entry.allowsWaitlist ? 'waitlisted' : 'subject_to_availability';
+    // Waitlists fill protected spots. Rank 1–2 leftovers can still waitlist
+    // (switch-with-fallback). Once two guarantees are granted, ranks 3+ are
+    // subject to availability even when the league has a waitlist.
+    const waitlistToFillProtectedSpots =
+      entry.allowsWaitlist &&
+      (granted < MAX_PROTECTED_CLAIMS || entry.priorityRank <= MAX_PROTECTED_CLAIMS);
+    entry.label = waitlistToFillProtectedSpots ? 'waitlisted' : 'subject_to_availability';
   }
+
+  markSuperfluousEntries(entries, desiredLeagueCount);
 
   const charged = immediateChargeEntries({ entries, desiredLeagueCount });
   const chargedLeagueIds = new Set(charged.map((entry) => entry.leagueId));
@@ -333,7 +381,7 @@ export function labelPriorityEntries(input: {
   const maximumLeagueFeeMinor =
     confirmedLeagueFeeMinor +
     entries
-      .filter((entry) => !chargedLeagueIds.has(entry.leagueId))
+      .filter((entry) => !chargedLeagueIds.has(entry.leagueId) && entry.label !== 'superfluous')
       .map((entry) => entry.feeMinor)
       .sort((a, b) => b - a)
       .slice(0, remainingSlots)

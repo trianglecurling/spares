@@ -456,6 +456,15 @@ export function validateLeaguePriorities(context: RegistrationContext): Priority
     );
   }
 
+  if (evaluation.entries.some((entry) => entry.label === 'superfluous')) {
+    blockingErrors.push(
+      blockingError(
+        'priority_list_has_superfluous_leagues',
+        'Remove leagues below the ones that already fill the number you asked for, or move one higher if you want it as a switch with guaranteed fallback.',
+      ),
+    );
+  }
+
   validatePriorLeagueDecisions(context, blockingErrors);
   blockingErrors.push(...validateContinuingSabbaticalDecisions(context));
 
@@ -491,6 +500,7 @@ export function leaguePlacementDeferralReasons(evaluation: LeaguePriorityEvaluat
   for (const entry of evaluation.entries) {
     if (entry.priorityRank > evaluation.desiredLeagueCount) continue;
     if (billedLeagueIds.has(entry.leagueId)) continue;
+    if (entry.label === 'superfluous') continue;
     if (entry.isPlayInBased) {
       reasons.push('play_in_placement_pending');
     } else if (entry.label === 'waitlisted') {

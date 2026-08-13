@@ -1,15 +1,19 @@
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, sql } from 'drizzle-orm';
 import { getDatabaseConfig } from '../db/config.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import type {
   WaitlistAuditActionSqlite,
   WaitlistAuditSourceSqlite,
 } from '../db/drizzle-schema.js';
+import {
+  WAITLIST_OFFER_RESPONSE_PREFERENCE_LABELS,
+  type WaitlistOfferResponsePreference,
+} from './waitlistOfferPreference.js';
 
 type WaitlistAuditDb = ReturnType<typeof getDrizzleDb>['db'];
 type WaitlistAuditSelectExecutor = Pick<WaitlistAuditDb, 'select'>;
 type WaitlistAuditInsertExecutor = Pick<WaitlistAuditDb, 'insert' | 'select'>;
-type WaitlistAuditMutateExecutor = Pick<WaitlistAuditDb, 'insert' | 'delete' | 'select'>;
+type WaitlistAuditMutateExecutor = Pick<WaitlistAuditDb, 'insert' | 'delete' | 'select' | 'update'>;
 
 type MemberNameRow = {
   name?: string | null;
@@ -167,6 +171,8 @@ export function formatWaitlistAuditSummary(input: {
       return actorName
         ? `${actorName} corrected ${memberName}'s waitlist entry${teamSuffix}`
         : `${memberName}'s waitlist entry corrected${teamSuffix}`;
+    case 'offer_preference_changed':
+      return `${memberName}'s waitlist offer preference changed${teamSuffix}`;
     default:
       return null;
   }
@@ -305,6 +311,51 @@ export async function recordAndDeleteWaitlistEntry(
   });
 
   await tx.delete(schema.waitlistEntries).where(eq(schema.waitlistEntries.id, input.entry.id));
+}
+
+export async function updateWaitlistOfferPreference(
+  tx: WaitlistAuditMutateExecutor,
+  input: {
+    entry: WaitlistEntryRow & { offer_response_preference?: string | null };
+    leagueId: number | null;
+    preference: WaitlistOfferResponsePreference;
+    actorMemberId?: number | null;
+    source: WaitlistAuditSourceSqlite;
+    reason: string;
+    summary?: string | null;
+    metadata?: Record<string, unknown>;
+  },
+): Promise<boolean> {
+  const current = (input.entry.offer_response_preference ?? 'ask') as WaitlistOfferResponsePreference;
+  if (current === input.preference) return false;
+
+  const { schema } = getDrizzleDb();
+  await tx
+    .update(schema.waitlistEntries)
+    .set({
+      offer_response_preference: input.preference,
+      updated_at: sql`CURRENT_TIMESTAMP`,
+    })
+    .where(eq(schema.waitlistEntries.id, input.entry.id));
+
+  const preferenceLabel = WAITLIST_OFFER_RESPONSE_PREFERENCE_LABELS[input.preference];
+  await insertWaitlistAuditEvent(tx, {
+    waitlistEntryId: input.entry.id,
+    leagueId: input.leagueId,
+    memberId: input.entry.member_id,
+    actorMemberId: input.actorMemberId ?? null,
+    source: input.source,
+    action: 'offer_preference_changed',
+    reason: input.reason,
+    before: { offerResponsePreference: current },
+    after: { offerResponsePreference: input.preference },
+    metadata: {
+      ...(input.metadata ?? {}),
+      offerResponsePreference: input.preference,
+    },
+    summary: input.summary?.trim() || `Waitlist offer preference set to ${preferenceLabel.toLowerCase()}`,
+  });
+  return true;
 }
 
 function parseWaitlistAuditJson(value: unknown): Record<string, unknown> | null {

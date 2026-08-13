@@ -741,7 +741,9 @@ Recommended fields:
 - `auto_accept`
 - `auto_decline`
 
-Default: `ask`.
+Year-round joins default to `auto_accept`. Priority registration opening resets
+active session entries to `ask`. Submitting a priority list then sets
+`auto_accept` or `auto_decline` from whether the league is on the list.
 
 ### Status enum
 

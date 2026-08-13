@@ -229,19 +229,26 @@ export function seedPriorityList(
 }
 
 /**
- * Initial list for the priority page: saved ranks when present, otherwise the
- * prior-session seed. Active waitlist leagues are always merged in so joining
- * a waitlist outside registration still shows up after a refresh.
+ * Initial list for the priority page. A saved list is the registrant's last
+ * confirmed order and is not re-seeded with waitlist leagues they already
+ * removed. An empty list still seeds last-session leagues plus active waitlist
+ * entries (first visit, or joining a waitlist before any save).
  */
 export function hydratePriorityList(
   payload: RegistrationLeagueCatalogPayload,
   options?: PriorityListOptions,
 ): LeaguePriorityInput[] {
   const allowed = allowedLeagueIds(payload.leagues, options?.freeLeaguesOnly);
-  const source =
-    payload.priorities.length > 0
-      ? payload.priorities
-      : payload.priorSeasonLeagueIds.map((leagueId, index) => ({ leagueId, priorityRank: index + 1 }));
+  if (payload.priorities.length > 0) {
+    const source = allowed
+      ? payload.priorities.filter((priority) => allowed.has(priority.leagueId))
+      : payload.priorities;
+    return normalizePriorityOrder(source, payload.leagues);
+  }
+  const source = payload.priorSeasonLeagueIds.map((leagueId, index) => ({
+    leagueId,
+    priorityRank: index + 1,
+  }));
   const base = normalizePriorityOrder(
     allowed ? source.filter((priority) => allowed.has(priority.leagueId)) : source,
     payload.leagues,
@@ -251,6 +258,17 @@ export function hydratePriorityList(
 
 function isSeedableWaitlistEntry(entry: { status: string }): boolean {
   return entry.status === 'active' || entry.status === 'offered';
+}
+
+/** Active or offered waitlist league ids in the catalog, de-duplicated. */
+export function seedableWaitlistLeagueIds(payload: RegistrationLeagueCatalogPayload): number[] {
+  return [
+    ...new Set(
+      (payload.existingWaitlistEntries ?? [])
+        .filter(isSeedableWaitlistEntry)
+        .map((entry) => entry.leagueId),
+    ),
+  ];
 }
 
 /**
@@ -288,6 +306,51 @@ export function mergeActiveWaitlistLeagues(
     priorityRank: additions.length + index + 1,
   }));
   return normalizePriorityOrder([...additions, ...existing], payload.leagues);
+}
+
+/**
+ * Adds waitlist leagues that appeared since the last catalog snapshot. Already
+ * known waitlist leagues are left off if the registrant removed them, so a
+ * catalog refresh or returning from review cannot put them back.
+ */
+export function mergeNewlyJoinedWaitlistLeagues(
+  priorities: LeaguePriorityInput[],
+  payload: RegistrationLeagueCatalogPayload,
+  previouslyKnownWaitlistLeagueIds: ReadonlySet<number>,
+  options?: PriorityListOptions,
+): LeaguePriorityInput[] {
+  const newEntries = (payload.existingWaitlistEntries ?? []).filter(
+    (entry) => isSeedableWaitlistEntry(entry) && !previouslyKnownWaitlistLeagueIds.has(entry.leagueId),
+  );
+  return mergeActiveWaitlistLeagues(
+    priorities,
+    { ...payload, existingWaitlistEntries: newEntries },
+    options,
+  );
+}
+
+/** "Monday", "Monday and Tuesday", or "Monday, Tuesday, and Wednesday". */
+export function formatConjunctionList(items: string[]): string {
+  if (items.length === 0) return '';
+  if (items.length === 1) return items[0] ?? '';
+  if (items.length === 2) return `${items[0]} and ${items[1]}`;
+  return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`;
+}
+
+/**
+ * Active or offered waitlists whose leagues are in this session's catalog but
+ * not on the current priority list. Submitting without them auto-declines.
+ */
+export function omittedWaitlistLeagues(
+  payload: RegistrationLeagueCatalogPayload,
+  priorities: LeaguePriorityInput[],
+): LeagueCatalogItem[] {
+  const listed = new Set(priorities.map((priority) => priority.leagueId));
+  const byId = leagueById(payload.leagues);
+  return seedableWaitlistLeagueIds(payload)
+    .filter((leagueId) => !listed.has(leagueId))
+    .map((leagueId) => byId[leagueId])
+    .filter((league): league is LeagueCatalogItem => league != null);
 }
 
 /**
@@ -611,11 +674,11 @@ export function guaranteeChipLabel(label: LeaguePriorityGuaranteeLabel): string 
   return LEAGUE_PRIORITY_GUARANTEE_LABEL_TEXT[label];
 }
 
-/** Non-waitlist leftover spots are unlabeled in the UI; the derived value still drives billing. */
+/** Leftover spots without a waitlist or guarantee still show their derived status. */
 export function shouldShowGuaranteeChip(
   label: LeaguePriorityGuaranteeLabel | null | undefined,
 ): label is LeaguePriorityGuaranteeLabel {
-  return label != null && label !== 'subject_to_availability';
+  return label != null;
 }
 
 export function guaranteeChipClassName(label: LeaguePriorityGuaranteeLabel): string {
@@ -623,5 +686,6 @@ export function guaranteeChipClassName(label: LeaguePriorityGuaranteeLabel): str
   if (label === 'awaiting_roster_entry') return 'bg-yellow-100 text-yellow-900';
   if (label === 'guaranteed_fallback') return 'bg-sky-100 text-sky-900';
   if (label === 'waitlisted') return 'bg-amber-100 text-amber-900';
+  if (label === 'superfluous') return 'bg-rose-100 text-rose-900';
   return 'bg-gray-100 text-gray-800';
 }

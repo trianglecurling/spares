@@ -39,6 +39,8 @@ import {
   type WaitlistTeamMemberPlacementInput,
 } from './waitlistTeamRoster.js';
 
+import { getScheduleRegistrationWindow } from './registrationShellService.js';
+import { isPriorityEditableRegistrationStatus } from './registrationPriorityEdit.js';
 import { sendWaitlistEntryJoinedNotifications } from './waitlistJoinedNotificationService.js';
 import { assertMembersAvailableForWaitlist } from './waitlistMemberMembership.js';
 import { WaitlistStaffValidationError } from './waitlistErrors.js';
@@ -1568,6 +1570,31 @@ export async function cancelWaitlistOffer(input: { offerId: number; actorMemberI
   return { offerId: offer.id, status: 'cancelled' };
 }
 
+async function waitlistJoinOfferPreference(
+  memberId: number,
+  sessionId: number | null,
+): Promise<WaitlistOfferResponsePreferenceSqlite> {
+  if (sessionId == null) return 'auto_accept';
+  const { db, schema } = getDrizzleDb();
+  const [session] = await db
+    .select({ seasonId: schema.curlingSessions.season_id })
+    .from(schema.curlingSessions)
+    .where(eq(schema.curlingSessions.id, sessionId))
+    .limit(1);
+  if (!session) return 'auto_accept';
+  const window = await getScheduleRegistrationWindow(session.seasonId, sessionId);
+  if (window?.state !== 'priority') return 'auto_accept';
+  const registrationId = await getLatestRegistrationForMember(memberId, sessionId);
+  if (registrationId == null) return 'ask';
+  const [registration] = await db
+    .select({ status: schema.curlingRegistrations.status })
+    .from(schema.curlingRegistrations)
+    .where(eq(schema.curlingRegistrations.id, registrationId))
+    .limit(1);
+  if (!registration || !isPriorityEditableRegistrationStatus(registration.status)) return 'ask';
+  return 'auto_accept';
+}
+
 export async function addWaitlistEntry(input: {
   leagueId: number;
   memberId: number;
@@ -1593,6 +1620,7 @@ export async function addWaitlistEntry(input: {
   await assertMembersAvailableForWaitlist({ waitlistId, memberIds: rosterMemberIds });
   const registrationId = await getLatestRegistrationForMember(input.memberId, league.session_id);
   const priority = await waitlistPrioritySnapshot(input.memberId, input.leagueId, registrationId);
+  const offerResponsePreference = await waitlistJoinOfferPreference(input.memberId, league.session_id);
   const [entry] = await db
     .insert(schema.waitlistEntries)
     .values({
@@ -1603,6 +1631,7 @@ export async function addWaitlistEntry(input: {
       team_roster_placements: roster.teamRosterPlacements,
       priority_rank: priority.priorityRank,
       desired_league_count: priority.desiredLeagueCount,
+      offer_response_preference: offerResponsePreference,
       position_sort_key: nextPositionSortKey(),
       joined_at: dbNow(),
       decline_count: 0,

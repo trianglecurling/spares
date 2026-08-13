@@ -141,9 +141,14 @@ everyone's first and second choices have been considered.
 
 ## Offer response rule
 
-Entries created from registration default to `auto_accept`, because the priority
-list and desired count already state the curler's intent. Those offers resolve
-immediately without contacting the curler.
+Year-round waitlist joins default to auto-accept. When priority registration
+opens, those entries flip to Ask until the curler registers.
+
+Submitting registration confirms waitlist intent from the priority list:
+
+- Waitlisted leagues on the list auto-accept when a spot opens.
+- Waitlists for leagues left off the list stay queued and auto-decline.
+- Curlers who do not register stay at Ask.
 
 When an entry's preference is `ask`, the offer includes a response deadline
 chosen by staff. If the curler does not accept by that deadline, the offer is

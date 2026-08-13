@@ -35,6 +35,7 @@ export type RegistrationReasonCode =
   | 'desired_league_count_required'
   | 'desired_league_count_out_of_range'
   | 'priority_list_too_short'
+  | 'priority_list_has_superfluous_leagues'
   | 'priority_list_duplicate_league'
   | 'priority_rank_not_contiguous'
   | 'priority_league_not_eligible'

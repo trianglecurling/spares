@@ -19,6 +19,8 @@ export type LeagueConfig = {
   sessionId?: number | null;
   name: string;
   dayOfWeek?: number | null;
+  /** Recurring draw times for this league, earliest first, as `HH:MM`. */
+  drawTimes?: string[];
   leagueType: 'standard' | 'bring_your_own_team';
   capacityType: 'individual' | 'team';
   capacityValue: number;

@@ -774,13 +774,19 @@ Each active waitlist entry has an offer response preference for the current
 session:
 
 - `ask` — reach out when a spot opens and wait for a response
-- `auto_accept` — accept automatically when a spot opens (default)
+- `auto_accept` — accept automatically when a spot opens
 - `auto_decline` — decline automatically when a spot opens
 
-Entries created from registration default to `auto_accept`, because the priority
-list and desired count already state the registrant's intent: they asked for
-this league at this rank and said how many leagues they want. Asking again after
-priority registration closes only delays placement.
+Year-round waitlist joins default to `auto_accept`. When priority registration
+opens, every active waitlist entry for that session flips to `ask`. Members who
+never register stay at Ask. When a member submits registration:
+
+- A waitlisted league on their priority list is confirmed as `auto_accept`
+- A waitlist they hold for a league left off the priority list stays in the
+  queue as `auto_decline`
+
+Those registration-time preferences already state the curler's intent, so
+asking again after priority registration closes only delays placement.
 
 The preference is stored on the waitlist entry itself, not on individual team
 members. For BYOT waitlist entries the preference applies to the whole entry.

@@ -39,6 +39,9 @@ During priority registration:
 - Returning members may claim up to 2 protected return/sabbatical spots.
 - New members may register and join waitlists.
 - Waitlist order is first-come, first-served.
+- Opening the priority window resets waitlist offer preferences to Ask. A
+  submitted priority list then auto-accepts waitlisted leagues on the list and
+  auto-declines waitlists left off the list.
 - Payment may be immediate or deferred depending on registration contents.
 
 After priority registration:

@@ -81,9 +81,9 @@ describe('guarantee labeling', () => {
     expect(labelsFor(context)).toEqual(['waitlisted', 'guaranteed_return', 'guaranteed_fallback']);
   });
 
-  test('both guarantees claimed at the top leaves nothing for a fallback', () => {
+  test('both guarantees claimed at the top leaves extra leagues subject to availability', () => {
     const context = contextWithLeagues([standard(1), standard(2), standard(3)]);
-    expect(labelsFor(context)).toEqual(['guaranteed_return', 'guaranteed_return', 'waitlisted']);
+    expect(labelsFor(context)).toEqual(['guaranteed_return', 'guaranteed_return', 'subject_to_availability']);
   });
 
   test('a league without a return right and without a waitlist is subject to availability', () => {
@@ -249,7 +249,7 @@ describe('guarantee budget', () => {
   test('wanting one league caps guarantees at one', () => {
     const context = contextWithLeagues([standard(1), standard(2)], { desiredLeagueCount: 1 });
     expect(guaranteeBudget(context)).toBe(1);
-    expect(labelsFor(context)).toEqual(['guaranteed_return', 'waitlisted']);
+    expect(labelsFor(context)).toEqual(['guaranteed_return', 'superfluous']);
   });
 
   test('a sabbatical does not consume a guaranteed return spot', () => {
@@ -552,14 +552,59 @@ describe('validation', () => {
 });
 
 describe('derived downstream state', () => {
-  test('non-guaranteed entries with a waitlist become waitlist entries', () => {
-    const context = contextWithLeagues([standard(1), standard(2), standard(3)]);
+  test('non-guaranteed entries with a waitlist become waitlist entries until two spots are guaranteed', () => {
+    const context = contextWithLeagues([
+      standard(1, { predecessorLeagueId: null }),
+      standard(2),
+      standard(3),
+    ]);
     const evaluation = evaluateLeaguePriorities(context);
-    expect(waitlistedPriorityEntries(evaluation).map((entry) => entry.leagueId)).toEqual([3]);
+    expect(waitlistedPriorityEntries(evaluation).map((entry) => entry.leagueId)).toEqual([1]);
+  });
+
+  test('extra leagues beyond two guarantees are not waitlisted', () => {
+    const context = contextWithLeagues([standard(1), standard(2), standard(3), standard(4)]);
+    const evaluation = evaluateLeaguePriorities(context);
+    expect(waitlistedPriorityEntries(evaluation)).toEqual([]);
+    expect(evaluation.entries.map((entry) => entry.label)).toEqual([
+      'guaranteed_return',
+      'guaranteed_return',
+      'subject_to_availability',
+      'subject_to_availability',
+    ]);
+  });
+
+  test('leagues below an already-filled desired count are superfluous', () => {
+    const context = contextWithLeagues([standard(1), standard(2), standard(3), standard(4)], {
+      desiredLeagueCount: 2,
+    });
+    expect(labelsFor(context)).toEqual([
+      'guaranteed_return',
+      'guaranteed_return',
+      'superfluous',
+      'superfluous',
+    ]);
+    expect(validateLeaguePriorities(context).blockingErrors.map((error) => String(error.code))).toContain(
+      'priority_list_has_superfluous_leagues',
+    );
+  });
+
+  test('a switch-with-fallback list is not superfluous', () => {
+    const context = contextWithLeagues([
+      standard(1, { predecessorLeagueId: null }),
+      standard(2),
+      standard(3),
+    ]);
+    expect(labelsFor(context)).toEqual(['waitlisted', 'guaranteed_return', 'guaranteed_fallback']);
+    expect(validateLeaguePriorities(context).allowed).toBe(true);
   });
 
   test('every waitlisted leftover defers payment', () => {
-    const context = contextWithLeagues([standard(1), standard(2), standard(3)]);
+    const context = contextWithLeagues([
+      standard(1, { predecessorLeagueId: null }),
+      standard(2),
+      standard(3),
+    ]);
     expect(validateLeaguePriorities(context).deferralReasonCodes).toContain('waitlist_placement_pending');
   });
 
