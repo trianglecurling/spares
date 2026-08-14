@@ -11,7 +11,7 @@ function sharpSafe(input: Buffer): Sharp {
   return sharp(input, { limitInputPixels: SHARP_LIMIT_INPUT_PIXELS });
 }
 import type { Member } from '../types.js';
-import { isContentAdmin, isEventsAdmin, isVolunteerManager } from '../utils/auth.js';
+import { isContentAdmin, isEventsAdmin, isSponsorAdmin, isVolunteerManager } from '../utils/auth.js';
 import { listOwnedEventIds } from '../services/eventService.js';
 import { listManagedProgramIds } from '../services/volunteeringService.js';
 import { getFileStorageAdapter } from '../utils/fileStorage.js';
@@ -90,7 +90,17 @@ function requireContentAdmin(
   return true;
 }
 
-/** Content admins, events admins, event owners, or volunteer program managers may upload files. */
+function canListFiles(member: Member | undefined): boolean {
+  if (!member) return false;
+  return isContentAdmin(member) || isSponsorAdmin(member);
+}
+
+/** Sponsor admins may list public files only (logo picker). Content admins see the full library. */
+function restrictFileListToPublic(member: Member): boolean {
+  return !isContentAdmin(member) && isSponsorAdmin(member);
+}
+
+/** Content admins, events admins, event owners, volunteer program managers, or sponsor admins may upload files. */
 async function requireContentAdminOrEventManagerUpload(
   request: { member?: Member },
   reply: { code: (n: number) => { send: (o: object) => unknown } },
@@ -100,7 +110,14 @@ async function requireContentAdminOrEventManagerUpload(
     reply.code(403).send({ error: 'Forbidden' });
     return false;
   }
-  if (isContentAdmin(member) || isEventsAdmin(member) || isVolunteerManager(member)) return true;
+  if (
+    isContentAdmin(member) ||
+    isEventsAdmin(member) ||
+    isVolunteerManager(member) ||
+    isSponsorAdmin(member)
+  ) {
+    return true;
+  }
   const owned = await listOwnedEventIds(member.id);
   if (owned.length > 0) return true;
   const managedPrograms = await listManagedProgramIds(member);
@@ -378,7 +395,11 @@ export async function fileRoutes(fastify: FastifyInstance) {
       pageSize?: number;
     };
   }>('/content/files', async (request, reply) => {
-    if (!requireContentAdmin(request, reply)) return;
+    const member = request.member;
+    if (!member || !canListFiles(member)) {
+      reply.code(403).send({ error: 'Forbidden' });
+      return;
+    }
     const { db, schema } = getDrizzleDb();
     const page = Math.max(1, Number(request.query.page) || 1);
     const pageSize = Math.min(100, Math.max(1, Number(request.query.pageSize) || 25));
@@ -386,7 +407,9 @@ export async function fileRoutes(fastify: FastifyInstance) {
     const search = request.query.search?.trim();
 
     const conditions: ReturnType<typeof eq>[] = [];
-    if (request.query.visibility) {
+    if (restrictFileListToPublic(member)) {
+      conditions.push(eq(schema.files.visibility, 'public'));
+    } else if (request.query.visibility) {
       conditions.push(eq(schema.files.visibility, request.query.visibility));
     }
     if (request.query.suspectedOrphan === 'true') {

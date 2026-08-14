@@ -80,7 +80,7 @@ export default function AdminSponsorship() {
   async function loadAll() {
     setLoading(true);
     try {
-      const [levelsRes, sponsorsRes, sponsorshipsRes, filesRes] = await Promise.all([
+      const [levelsResult, sponsorsResult, sponsorshipsResult, filesResult] = await Promise.allSettled([
         api.get<Level[]>('/sponsorship/levels'),
         api.get<Sponsor[]>('/sponsorship/sponsors'),
         api.get<Sponsorship[]>('/sponsorship/sponsorships'),
@@ -88,10 +88,18 @@ export default function AdminSponsorship() {
           params: { page: 1, pageSize: 1000, visibility: 'public', type: 'image' },
         }),
       ]);
-      setLevels(levelsRes.data);
-      setSponsors(sponsorsRes.data);
-      setSponsorships(sponsorshipsRes.data);
-      setLogoFiles(filesRes.data.items);
+      if (
+        levelsResult.status === 'rejected' ||
+        sponsorsResult.status === 'rejected' ||
+        sponsorshipsResult.status === 'rejected'
+      ) {
+        showAlert('Failed to load sponsorship data', 'error');
+        return;
+      }
+      setLevels(levelsResult.value.data);
+      setSponsors(sponsorsResult.value.data);
+      setSponsorships(sponsorshipsResult.value.data);
+      setLogoFiles(filesResult.status === 'fulfilled' ? filesResult.value.data.items : []);
     } catch {
       showAlert('Failed to load sponsorship data', 'error');
     } finally {
