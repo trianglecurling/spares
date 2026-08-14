@@ -18,11 +18,25 @@ describe('registration shell validation', () => {
         mailingAddress: '123 Curling Way',
         emergencyContactName: 'Alex Curler',
         emergencyContactPhone: '919-555-0110',
+        preferredPronouns: 'She/Her',
       })
     ).toThrow(RegistrationShellValidationError);
   });
 
   test('complete demographics and guardian fields pass validation', () => {
+    expect(() =>
+      validateDemographics({
+        firstName: 'Jamie',
+        lastName: 'Curler',
+        email: 'jamie@example.com',
+        phone: '919-555-0100',
+        mailingAddress: '123 Curling Way',
+        emergencyContactName: 'Alex Curler',
+        emergencyContactPhone: '919-555-0110',
+        preferredPronouns: 'She/Her',
+      })
+    ).not.toThrow();
+
     expect(() =>
       validateDemographics({
         firstName: 'Jamie',
@@ -55,6 +69,7 @@ describe('registration shell validation', () => {
         mailingAddress: '123 Curling Way',
         emergencyContactName: 'Alex Curler',
         emergencyContactPhone: '919-555-0110',
+        preferredPronouns: 'She/Her',
       }),
     ).toBe(true);
 

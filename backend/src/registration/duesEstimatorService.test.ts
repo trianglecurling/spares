@@ -16,6 +16,7 @@ const testSettings = {
     sabbaticalFeeMinor: 5000,
     juniorRecreationalFeeMinor: 10000,
     defaultLeagueFeeMinor: 12000,
+    replacementNameTagFeeMinor: 0,
   },
   discountSettings: {
     student: { amountType: 'percent' as const, amountValue: 30 },

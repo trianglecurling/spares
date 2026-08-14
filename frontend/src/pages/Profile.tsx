@@ -153,6 +153,8 @@ export default function Profile() {
               mailingAddress: null,
               emergencyContactName: null,
               emergencyContactPhone: null,
+              preferredPronouns: null,
+              usaCurlingCompetitionGender: null,
               guardianFirstName: null,
               guardianLastName: null,
               guardianEmail: null,

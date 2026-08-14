@@ -476,7 +476,17 @@ function LeaguePriorityEditModal({ registrationId, isOpen, onClose, onSaved, fin
   };
 
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title="Edit league priorities" size="lg" verticalAlign="start">
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={
+        membership?.selection.membershipOption === 'none' || membership?.selection.membershipOption === 'social'
+          ? 'Edit sabbaticals'
+          : 'Edit league priorities'
+      }
+      size="lg"
+      verticalAlign="start"
+    >
       <div className="space-y-4">
         {loading ? (
           <InlineStateMessage title="Loading league choices..." />
@@ -488,8 +498,14 @@ function LeaguePriorityEditModal({ registrationId, isOpen, onClose, onSaved, fin
             saving={saving}
             continueLabel={saving ? 'Saving…' : 'Save changes'}
             restrictToFreeLeagues={
-              membership?.icePrivilegesChoice === 'basic_ice' ||
-              membership?.selection.membershipOption === 'regular_spare_only'
+              membership?.selection.membershipOption !== 'none' &&
+              membership?.selection.membershipOption !== 'social' &&
+              (membership?.icePrivilegesChoice === 'basic_ice' ||
+                membership?.selection.membershipOption === 'regular_spare_only')
+            }
+            sabbaticalOnly={
+              membership?.selection.membershipOption === 'none' ||
+              membership?.selection.membershipOption === 'social'
             }
             onSave={save}
           />

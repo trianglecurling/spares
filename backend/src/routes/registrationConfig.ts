@@ -196,6 +196,7 @@ function mapPriceRowToResponse(row: {
   sabbatical_fee_minor: number;
   junior_recreational_fee_minor: number;
   default_league_fee_minor?: number | null;
+  replacement_name_tag_fee_minor?: number | null;
   created_at: Date | string;
   updated_at: Date | string;
 }) {
@@ -207,6 +208,7 @@ function mapPriceRowToResponse(row: {
     sabbaticalFeeDollars: feeMinorToDollars(row.sabbatical_fee_minor),
     juniorRecreationalFeeDollars: feeMinorToDollars(row.junior_recreational_fee_minor),
     leagueFeeDollars: feeMinorToDollars(row.default_league_fee_minor ?? 0),
+    replacementNameTagFeeDollars: feeMinorToDollars(row.replacement_name_tag_fee_minor ?? 0),
     createdAt: normalizeDateTime(row.created_at) ?? '',
     updatedAt: normalizeDateTime(row.updated_at) ?? '',
   };
@@ -260,6 +262,7 @@ async function loadOrInsertRegistrationPriceSettings() {
       sabbatical_fee_minor: 0,
       junior_recreational_fee_minor: 0,
       default_league_fee_minor: 0,
+      replacement_name_tag_fee_minor: 0,
     })
     .onConflictDoNothing();
   [row] = await db
@@ -345,6 +348,7 @@ const pricePatchSchema = z.object({
   sabbaticalFeeDollars: dollarAmountSchema.optional(),
   juniorRecreationalFeeDollars: dollarAmountSchema.optional(),
   leagueFeeDollars: dollarAmountSchema.optional(),
+  replacementNameTagFeeDollars: dollarAmountSchema.optional(),
 });
 
 const discountSlotPatchSchema = z
@@ -958,6 +962,7 @@ export async function registrationConfigRoutes(fastify: FastifyInstance) {
             sabbaticalFeeDollars: { type: 'number' },
             juniorRecreationalFeeDollars: { type: 'number' },
             leagueFeeDollars: { type: 'number' },
+            replacementNameTagFeeDollars: { type: 'number' },
           },
         },
         response: { 200: registrationPriceSettingsSchema },
@@ -977,6 +982,7 @@ export async function registrationConfigRoutes(fastify: FastifyInstance) {
         sabbaticalFeeDollars: body.sabbaticalFeeDollars ?? current.sabbaticalFeeDollars,
         juniorRecreationalFeeDollars: body.juniorRecreationalFeeDollars ?? current.juniorRecreationalFeeDollars,
         leagueFeeDollars: body.leagueFeeDollars ?? current.leagueFeeDollars,
+        replacementNameTagFeeDollars: body.replacementNameTagFeeDollars ?? current.replacementNameTagFeeDollars,
       };
       const priceConfigMinor: PriceConfigInput = {
         regularMembershipFeeMinor: dollarsToFeeMinor(nextDollars.regularMembershipFeeDollars),
@@ -985,6 +991,7 @@ export async function registrationConfigRoutes(fastify: FastifyInstance) {
         sabbaticalFeeMinor: dollarsToFeeMinor(nextDollars.sabbaticalFeeDollars),
         juniorRecreationalFeeMinor: dollarsToFeeMinor(nextDollars.juniorRecreationalFeeDollars),
         defaultLeagueFeeMinor: dollarsToFeeMinor(nextDollars.leagueFeeDollars),
+        replacementNameTagFeeMinor: dollarsToFeeMinor(nextDollars.replacementNameTagFeeDollars),
       };
       try {
         assertValidPriceConfig(priceConfigMinor);
@@ -1001,6 +1008,7 @@ export async function registrationConfigRoutes(fastify: FastifyInstance) {
           sabbatical_fee_minor: priceConfigMinor.sabbaticalFeeMinor,
           junior_recreational_fee_minor: priceConfigMinor.juniorRecreationalFeeMinor,
           default_league_fee_minor: priceConfigMinor.defaultLeagueFeeMinor,
+          replacement_name_tag_fee_minor: priceConfigMinor.replacementNameTagFeeMinor,
           updated_at: sql`CURRENT_TIMESTAMP`,
         })
         .where(eq(schema.registrationPriceSettings.scope, SINGLETON_SCOPE))

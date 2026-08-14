@@ -46,6 +46,8 @@ export type PriceConfigInput = {
   juniorRecreationalFeeMinor: number;
   /** Default league registration fee (cents); leagues may override per-league. */
   defaultLeagueFeeMinor: number;
+  /** Replacement name tag unit price (cents) for returning members. */
+  replacementNameTagFeeMinor: number;
 };
 
 export type DiscountAmountType = 'dollar' | 'percent';

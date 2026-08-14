@@ -115,6 +115,7 @@ export function registrationContext(overrides: Partial<RegistrationContext> = {}
       sabbaticalFeeMinor: 5000,
       juniorRecreationalFeeMinor: 7500,
       defaultLeagueFeeMinor: 30000,
+      replacementNameTagFeeMinor: 1500,
     },
     discountSettings: {
       student: { amountType: 'dollar', amountValue: 1000 },

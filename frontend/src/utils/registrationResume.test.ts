@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   getRegistrationStartScreenMode,
   isDraftRegistrationResumeStatus,
+  membershipNeedsSabbaticalStep,
   nextStepFor,
   resolvePostShellResumeStepFromPayment,
   resolveResumeStepFromDraft,
@@ -17,6 +18,8 @@ function shellDraft(overrides: Partial<{
   demographicsConfirmed: number;
   guardianEmail: string | null;
   isMinor: boolean;
+  returningMemberAnswer: number | null;
+  nameTagComplete: boolean;
 }> = {}) {
   return {
     id: overrides.id ?? 42,
@@ -28,8 +31,10 @@ function shellDraft(overrides: Partial<{
       submitted_by_member_id: overrides.submittedByMemberId ?? 100,
       demographics_current_confirmed: overrides.demographicsConfirmed ?? 1,
       guardian_email: overrides.guardianEmail ?? null,
+      returning_member_answer: overrides.returningMemberAnswer ?? 1,
     },
     isMinor: overrides.isMinor ?? false,
+    nameTagComplete: overrides.nameTagComplete ?? true,
   };
 }
 
@@ -141,6 +146,48 @@ describe('registration resume targeting', () => {
     expect(nextStepFor(draft)).toBe('discounts');
   });
 
+  test('new and returning members continue to the name tag step after confirmed demographics', () => {
+    expect(
+      nextStepFor(
+        shellDraft({
+          status: 'demographics_incomplete',
+          returningMemberAnswer: 0,
+          nameTagComplete: false,
+        }),
+      ),
+    ).toBe('name-tag');
+
+    expect(
+      nextStepFor(
+        shellDraft({
+          status: 'demographics_incomplete',
+          returningMemberAnswer: 0,
+          nameTagComplete: true,
+        }),
+      ),
+    ).toBe('discounts');
+
+    expect(
+      nextStepFor(
+        shellDraft({
+          status: 'demographics_incomplete',
+          returningMemberAnswer: 1,
+          nameTagComplete: false,
+        }),
+      ),
+    ).toBe('name-tag');
+
+    expect(
+      nextStepFor(
+        shellDraft({
+          status: 'demographics_incomplete',
+          returningMemberAnswer: 1,
+          nameTagComplete: true,
+        }),
+      ),
+    ).toBe('discounts');
+  });
+
   test('post-shell resume falls back to membership after discounts are saved', () => {
     const draft = shellDraft({ status: 'shell_complete' });
 
@@ -205,5 +252,43 @@ describe('registration resume targeting', () => {
         icePrivilegesChoice: 'basic_ice',
       }),
     ).toBe('league-priority');
+
+    expect(
+      resolvePostShellResumeStepFromPayment({
+        selection: { membershipOption: 'social', experienceType: null },
+        icePrivilegesChoice: 'none',
+        noMembershipEligible: true,
+      }),
+    ).toBe('league-priority');
+
+    expect(
+      resolvePostShellResumeStepFromPayment({
+        selection: { membershipOption: 'social', experienceType: null },
+        icePrivilegesChoice: 'none',
+        noMembershipEligible: false,
+      }),
+    ).toBe('review');
+
+    expect(
+      resolvePostShellResumeStepFromPayment({
+        selection: { membershipOption: 'social', experienceType: null },
+        icePrivilegesChoice: 'none',
+      }),
+    ).toBe('review');
+  });
+
+  test('membershipNeedsSabbaticalStep is true for sabbatical-only and eligible social membership', () => {
+    expect(membershipNeedsSabbaticalStep({ membershipOption: 'none' })).toBe(true);
+    expect(
+      membershipNeedsSabbaticalStep({ membershipOption: 'social', noMembershipEligible: true }),
+    ).toBe(true);
+    expect(
+      membershipNeedsSabbaticalStep({ membershipOption: 'social', noMembershipEligible: false }),
+    ).toBe(false);
+    expect(membershipNeedsSabbaticalStep({ membershipOption: 'social' })).toBe(false);
+    expect(
+      membershipNeedsSabbaticalStep({ membershipOption: 'regular', noMembershipEligible: true }),
+    ).toBe(false);
+    expect(membershipNeedsSabbaticalStep({ membershipOption: 'junior_recreational' })).toBe(false);
   });
 });

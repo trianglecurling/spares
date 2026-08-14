@@ -92,6 +92,7 @@ export const curlingRegistrationDDLBase = `
     submitted_at DATETIME,
     cancelled_at DATETIME,
     desired_league_count INTEGER,
+    name_tag_replacement_quantity INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
@@ -124,6 +125,7 @@ export const curlingRegistrationDDLBase = `
     sabbatical_fee_minor INTEGER NOT NULL DEFAULT 0,
     junior_recreational_fee_minor INTEGER NOT NULL DEFAULT 0,
     default_league_fee_minor INTEGER NOT NULL DEFAULT 0,
+    replacement_name_tag_fee_minor INTEGER NOT NULL DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
@@ -424,6 +426,10 @@ const memberDemographicColumnsSQLite: { name: string; ddl: string }[] = [
   { name: 'mailing_address', ddl: 'mailing_address TEXT' },
   { name: 'emergency_contact_name', ddl: 'emergency_contact_name TEXT' },
   { name: 'emergency_contact_phone', ddl: 'emergency_contact_phone TEXT' },
+  { name: 'preferred_pronouns', ddl: 'preferred_pronouns TEXT' },
+  { name: 'usa_curling_competition_gender', ddl: "usa_curling_competition_gender TEXT DEFAULT 'Unspecified'" },
+  { name: 'name_tag_name', ddl: 'name_tag_name TEXT' },
+  { name: 'name_tag_include_pronouns', ddl: 'name_tag_include_pronouns INTEGER' },
   { name: 'guardian_first_name', ddl: 'guardian_first_name TEXT' },
   { name: 'guardian_last_name', ddl: 'guardian_last_name TEXT' },
   { name: 'guardian_email', ddl: 'guardian_email TEXT' },
@@ -511,11 +517,17 @@ CREATE TABLE IF NOT EXISTS registration_price_settings (
   sabbatical_fee_minor INTEGER NOT NULL DEFAULT 0,
   junior_recreational_fee_minor INTEGER NOT NULL DEFAULT 0,
   default_league_fee_minor INTEGER NOT NULL DEFAULT 0,
+  replacement_name_tag_fee_minor INTEGER NOT NULL DEFAULT 0,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 )`));
     try {
       await db.execute(sql.raw(`ALTER TABLE registration_price_settings ADD COLUMN IF NOT EXISTS default_league_fee_minor INTEGER NOT NULL DEFAULT 0`));
+    } catch {
+      /* ignore */
+    }
+    try {
+      await db.execute(sql.raw(`ALTER TABLE registration_price_settings ADD COLUMN IF NOT EXISTS replacement_name_tag_fee_minor INTEGER NOT NULL DEFAULT 0`));
     } catch {
       /* ignore */
     }
@@ -573,11 +585,17 @@ CREATE TABLE IF NOT EXISTS registration_price_settings (
   sabbatical_fee_minor INTEGER NOT NULL DEFAULT 0,
   junior_recreational_fee_minor INTEGER NOT NULL DEFAULT 0,
   default_league_fee_minor INTEGER NOT NULL DEFAULT 0,
+  replacement_name_tag_fee_minor INTEGER NOT NULL DEFAULT 0,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )`));
   try {
     await db.execute(sql.raw(`ALTER TABLE registration_price_settings ADD COLUMN default_league_fee_minor INTEGER NOT NULL DEFAULT 0`));
+  } catch {
+    /* ignore duplicate column */
+  }
+  try {
+    await db.execute(sql.raw(`ALTER TABLE registration_price_settings ADD COLUMN replacement_name_tag_fee_minor INTEGER NOT NULL DEFAULT 0`));
   } catch {
     /* ignore duplicate column */
   }
@@ -756,6 +774,9 @@ const registrationMembershipPaymentColumnsSQLite: { name: string; ddl: string }[
   { name: 'desired_league_count', ddl: 'desired_league_count INTEGER' },
   { name: 'basic_ice_fallback_interest', ddl: 'basic_ice_fallback_interest INTEGER CHECK(basic_ice_fallback_interest IN (0, 1))' },
   { name: 'membership_committee_comments', ddl: 'membership_committee_comments TEXT' },
+  { name: 'name_tag_replacement_quantity', ddl: 'name_tag_replacement_quantity INTEGER' },
+  { name: 'usa_curling_membership_opt_in', ddl: 'usa_curling_membership_opt_in INTEGER CHECK(usa_curling_membership_opt_in IN (0, 1))' },
+  { name: 'uswca_membership_opt_in', ddl: 'uswca_membership_opt_in INTEGER CHECK(uswca_membership_opt_in IN (0, 1))' },
 ];
 
 const waitlistOfferColumnsSQLite: { name: string; ddl: string }[] = [
@@ -918,6 +939,9 @@ const registrationMembershipPaymentColumnsPg: string[] = [
   'ALTER TABLE curling_registrations ADD COLUMN IF NOT EXISTS desired_league_count INTEGER',
   'ALTER TABLE curling_registrations ADD COLUMN IF NOT EXISTS basic_ice_fallback_interest INTEGER CHECK(basic_ice_fallback_interest IN (0, 1))',
   'ALTER TABLE curling_registrations ADD COLUMN IF NOT EXISTS membership_committee_comments TEXT',
+  'ALTER TABLE curling_registrations ADD COLUMN IF NOT EXISTS name_tag_replacement_quantity INTEGER',
+  'ALTER TABLE curling_registrations ADD COLUMN IF NOT EXISTS usa_curling_membership_opt_in INTEGER',
+  'ALTER TABLE curling_registrations ADD COLUMN IF NOT EXISTS uswca_membership_opt_in INTEGER',
 ];
 
 const waitlistOfferColumnsPg: string[] = [

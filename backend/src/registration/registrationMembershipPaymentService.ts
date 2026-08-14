@@ -12,6 +12,12 @@ import type {
 import { createPaymentService, PaymentServiceError, buildCheckoutSuccessUrl, getDefaultPaymentProvider } from '../services/paymentService.js';
 import { queueMembershipGrantSync } from '../services/mauticMembershipSyncService.js';
 import { normalizeFrontendBaseUrl } from '../utils/frontendUrl.js';
+import {
+  booleanFromSqliteFlag,
+  defaultUsaCurlingMembershipOptIn,
+  defaultUswcaMembershipOptIn,
+  sqliteFlagFromBoolean,
+} from '../utils/parentAssociationMemberships.js';
 import { paymentDetailsUrl } from '../utils/paymentDetailsUrl.js';
 import { evaluateRegistrationDraft } from './evaluateRegistrationDraft.js';
 import { defaultSabbaticalDurationLimitYears } from './sabbaticalDurationLimit.js';
@@ -46,6 +52,7 @@ import {
 import {
   canChooseNoMembership,
   isActiveSabbaticalRecord,
+  listLeaguesRequiringPriorSessionDecision,
   sabbaticalMatchesLeagueLineage,
 } from './registrationSabbaticalContinuity.js';
 import {
@@ -90,6 +97,8 @@ type RegistrationMembershipPaymentSelection = {
   reciprocalClubName: string | null;
   experienceType: CurlingExperienceTypeSqlite | null;
   experienceSelfReportedYears: number | null;
+  usaCurlingMembershipOptIn: boolean | null;
+  uswcaMembershipOptIn: boolean | null;
 };
 
 type RegistrationMembershipPaymentRowFields = {
@@ -101,6 +110,8 @@ type RegistrationMembershipPaymentRowFields = {
   reciprocal_club_name: string | null;
   experience_type: CurlingExperienceTypeSqlite | null;
   experience_self_reported_years: number | null;
+  usa_curling_membership_opt_in?: number | null;
+  uswca_membership_opt_in?: number | null;
 };
 
 export type RegistrationMembershipPaymentPayload = {
@@ -122,6 +133,8 @@ type UpdateMembershipInput = {
   membershipOption: 'regular' | 'social' | 'junior_recreational' | 'none';
   basicIcePrivileges?: boolean;
   juniorAssistancePercent?: number | null;
+  usaCurlingMembershipOptIn?: boolean | null;
+  uswcaMembershipOptIn?: boolean | null;
 };
 
 type UpdateIcePrivilegesInput = {
@@ -631,6 +644,8 @@ function membershipPaymentFieldsFromRegistrationRow(row: RegistrationMembershipP
       row.experience_self_reported_years === null || row.experience_self_reported_years === undefined
         ? null
         : Number(row.experience_self_reported_years),
+    usaCurlingMembershipOptIn: booleanFromSqliteFlag(row.usa_curling_membership_opt_in),
+    uswcaMembershipOptIn: booleanFromSqliteFlag(row.uswca_membership_opt_in),
   };
 }
 
@@ -851,6 +866,7 @@ async function loadRegistrationSettings(): Promise<{
       sabbaticalFeeMinor: price?.sabbatical_fee_minor ?? 0,
       juniorRecreationalFeeMinor: price?.junior_recreational_fee_minor ?? 0,
       defaultLeagueFeeMinor: price?.default_league_fee_minor ?? 0,
+      replacementNameTagFeeMinor: price?.replacement_name_tag_fee_minor ?? 0,
     },
     discountSettings: {
       student: {
@@ -896,6 +912,8 @@ export type RegistrationPublicMembershipFees = {
   regularMinor: number;
   socialMinor: number;
   juniorRecreationalMinor: number;
+  sabbaticalMinor: number;
+  replacementNameTagMinor: number;
 };
 
 export async function getPublicRegistrationMembershipFees(): Promise<RegistrationPublicMembershipFees> {
@@ -904,6 +922,8 @@ export async function getPublicRegistrationMembershipFees(): Promise<Registratio
     regularMinor: priceConfig.regularMembershipFeeMinor,
     socialMinor: priceConfig.socialMembershipFeeMinor,
     juniorRecreationalMinor: priceConfig.juniorRecreationalFeeMinor,
+    sabbaticalMinor: priceConfig.sabbaticalFeeMinor,
+    replacementNameTagMinor: priceConfig.replacementNameTagFeeMinor,
   };
 }
 
@@ -922,6 +942,9 @@ type RegistrationMembershipPaymentSourceRow = {
   experience_type: CurlingExperienceTypeSqlite | null;
   experience_self_reported_years: number | null;
   desired_league_count?: number | null;
+  name_tag_replacement_quantity?: number | null;
+  usa_curling_membership_opt_in?: number | null;
+  uswca_membership_opt_in?: number | null;
 };
 
 async function buildRegistrationContextFromSourceRow(
@@ -1051,6 +1074,7 @@ async function buildRegistrationContextFromSourceRow(
     playInEntry,
     sabbaticalDurationLimitYears: defaultSabbaticalDurationLimitYears(),
     desiredLeagueCount: registration.desired_league_count ?? null,
+    nameTagReplacementQuantity: registration.name_tag_replacement_quantity ?? null,
   };
 }
 
@@ -1083,6 +1107,8 @@ export type GuestMembershipPaymentPreviewInput = {
   reciprocalClubName: string | null;
   experienceType: 'none_or_minimal' | 'specified_years' | 'known_existing';
   experienceSelfReportedYears: number | null;
+  usaCurlingMembershipOptIn?: boolean | null;
+  uswcaMembershipOptIn?: boolean | null;
 };
 
 export async function getGuestMembershipPaymentPreview(input: GuestMembershipPaymentPreviewInput): Promise<RegistrationMembershipPaymentPayload> {
@@ -1115,6 +1141,8 @@ export async function getGuestMembershipPaymentPreview(input: GuestMembershipPay
     reciprocal_club_name: input.membershipChoice === 'social' ? null : input.reciprocalClubName,
     experience_type: experienceTypeResolved,
     experience_self_reported_years: experienceYears,
+    usa_curling_membership_opt_in: sqliteFlagFromBoolean(input.usaCurlingMembershipOptIn),
+    uswca_membership_opt_in: sqliteFlagFromBoolean(input.uswcaMembershipOptIn),
   };
 
   const context = await buildRegistrationContextFromSourceRow(synthetic, {
@@ -1213,9 +1241,10 @@ export async function updateMembership(registrationId: number, actor: Member, in
     }
   }
 
-  if (input.membershipOption === 'none') {
-    const context = await buildRegistrationContextForDraft(registrationId);
-    if (!canChooseNoMembership(context)) {
+  let contextForNonPlaying: RegistrationContext | undefined;
+  if (input.membershipOption === 'none' || input.membershipOption === 'social') {
+    contextForNonPlaying = await buildRegistrationContextForDraft(registrationId);
+    if (input.membershipOption === 'none' && !canChooseNoMembership(contextForNonPlaying)) {
       throw new RegistrationMembershipPaymentValidationError({
         membershipOption: 'No membership is only available when extending a sabbatical from the previous session.',
       });
@@ -1232,39 +1261,90 @@ export async function updateMembership(registrationId: number, actor: Member, in
           : input.basicIcePrivileges
             ? 'regular_spare_only'
             : 'regular';
+  const skipLeaguePlay =
+    membershipOption === 'social' || membershipOption === 'junior_recreational' || membershipOption === 'none';
+  const appliesParentAssociations =
+    membershipOption === 'regular' || membershipOption === 'regular_spare_only' || membershipOption === 'social';
+  const existingUsaCurlingOptIn = booleanFromSqliteFlag(registration.usa_curling_membership_opt_in);
+  const existingUswcaOptIn = booleanFromSqliteFlag(registration.uswca_membership_opt_in);
+  let uswcaDefaultPronouns: string | null = null;
+  if (
+    appliesParentAssociations &&
+    input.uswcaMembershipOptIn == null &&
+    existingUswcaOptIn == null &&
+    registration.curler_member_id
+  ) {
+    const { db: pronounDb, schema: pronounSchema } = getDrizzleDb();
+    const [curler] = await pronounDb
+      .select({ preferred_pronouns: pronounSchema.members.preferred_pronouns })
+      .from(pronounSchema.members)
+      .where(eq(pronounSchema.members.id, registration.curler_member_id))
+      .limit(1);
+    uswcaDefaultPronouns = curler?.preferred_pronouns ?? null;
+  }
+  const usaCurlingMembershipOptIn = appliesParentAssociations
+    ? sqliteFlagFromBoolean(
+        input.usaCurlingMembershipOptIn ?? existingUsaCurlingOptIn ?? defaultUsaCurlingMembershipOptIn(),
+      )
+    : null;
+  const uswcaMembershipOptIn = appliesParentAssociations
+    ? sqliteFlagFromBoolean(
+        input.uswcaMembershipOptIn ?? existingUswcaOptIn ?? defaultUswcaMembershipOptIn(uswcaDefaultPronouns),
+      )
+    : null;
   const { db, schema } = getDrizzleDb();
   await db.transaction(async (tx) => {
     await tx
       .update(schema.curlingRegistrations)
       .set({
         membership_option: membershipOption,
-        student_discount_claimed:
-          membershipOption === 'social' || membershipOption === 'junior_recreational' || membershipOption === 'none'
-            ? 0
-            : registration.student_discount_claimed,
-        student_institution:
-          membershipOption === 'social' || membershipOption === 'junior_recreational' || membershipOption === 'none'
-            ? null
-            : registration.student_institution,
-        reciprocal_discount_claimed:
-          membershipOption === 'social' || membershipOption === 'junior_recreational' || membershipOption === 'none'
-            ? 0
-            : registration.reciprocal_discount_claimed,
-        reciprocal_club_name:
-          membershipOption === 'social' || membershipOption === 'junior_recreational' || membershipOption === 'none'
-            ? null
-            : registration.reciprocal_club_name,
-        experience_type:
-          membershipOption === 'social' || membershipOption === 'junior_recreational' || membershipOption === 'none'
-            ? null
-            : registration.experience_type,
-        experience_self_reported_years:
-          membershipOption === 'social' || membershipOption === 'junior_recreational' || membershipOption === 'none'
-            ? null
-            : registration.experience_self_reported_years,
+        ice_privileges_choice: skipLeaguePlay ? 'none' : registration.ice_privileges_choice,
+        student_discount_claimed: skipLeaguePlay ? 0 : registration.student_discount_claimed,
+        student_institution: skipLeaguePlay ? null : registration.student_institution,
+        reciprocal_discount_claimed: skipLeaguePlay ? 0 : registration.reciprocal_discount_claimed,
+        reciprocal_club_name: skipLeaguePlay ? null : registration.reciprocal_club_name,
+        experience_type: skipLeaguePlay ? null : registration.experience_type,
+        experience_self_reported_years: skipLeaguePlay ? null : registration.experience_self_reported_years,
+        desired_league_count:
+          membershipOption === 'social' || membershipOption === 'none' ? null : registration.desired_league_count,
+        basic_ice_fallback_interest:
+          membershipOption === 'social' || membershipOption === 'none' ? null : registration.basic_ice_fallback_interest,
+        usa_curling_membership_opt_in: usaCurlingMembershipOptIn,
+        uswca_membership_opt_in: uswcaMembershipOptIn,
         updated_at: sql`CURRENT_TIMESTAMP`,
       })
       .where(eq(schema.curlingRegistrations.id, registrationId));
+
+    if (membershipOption === 'social' || membershipOption === 'none') {
+      await tx
+        .delete(schema.registrationLeaguePriorities)
+        .where(eq(schema.registrationLeaguePriorities.registration_id, registrationId));
+    }
+
+    if (
+      membershipOption === 'social' &&
+      contextForNonPlaying &&
+      !canChooseNoMembership(contextForNonPlaying)
+    ) {
+      await tx
+        .delete(schema.registrationSelections)
+        .where(eq(schema.registrationSelections.registration_id, registrationId));
+      const dropLeagues = listLeaguesRequiringPriorSessionDecision(contextForNonPlaying);
+      if (dropLeagues.length > 0) {
+        await tx.insert(schema.registrationSelections).values(
+          dropLeagues.map((league) => ({
+            registration_id: registrationId,
+            league_id: league.id,
+            selection_type: 'drop' as const,
+            is_temporary_sabbatical_fill: 0,
+            status: 'dropped' as const,
+            fee_amount_minor_snapshot: 0,
+            discount_amount_minor_snapshot: 0,
+            updated_at: sql`CURRENT_TIMESTAMP`,
+          })),
+        );
+      }
+    }
 
     await tx
       .delete(schema.financialAssistanceRequests)

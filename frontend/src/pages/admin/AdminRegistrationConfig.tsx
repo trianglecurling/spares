@@ -56,6 +56,7 @@ interface PriceSettings {
   sabbaticalFeeDollars: number;
   juniorRecreationalFeeDollars: number;
   leagueFeeDollars: number;
+  replacementNameTagFeeDollars: number;
 }
 
 type DiscountAmountType = 'dollar' | 'percent';
@@ -143,6 +144,7 @@ const emptyPriceForm = {
   sabbaticalFeeDollars: 0,
   juniorRecreationalFeeDollars: 0,
   leagueFeeDollars: 0,
+  replacementNameTagFeeDollars: 0,
 };
 
 const emptyDiscountForm: DiscountFormState = {
@@ -297,6 +299,7 @@ export default function AdminRegistrationConfig() {
         sabbaticalFeeDollars: prices.sabbaticalFeeDollars,
         juniorRecreationalFeeDollars: prices.juniorRecreationalFeeDollars,
         leagueFeeDollars: prices.leagueFeeDollars,
+        replacementNameTagFeeDollars: prices.replacementNameTagFeeDollars ?? 0,
       });
       setDiscountForm({
         studentDiscount: discounts.studentDiscount,
@@ -1108,6 +1111,10 @@ export default function AdminRegistrationConfig() {
                       <dt className="text-gray-600 dark:text-gray-400">League fee (default)</dt>
                       <dd>${priceForm.leagueFeeDollars.toFixed(2)}</dd>
                     </div>
+                    <div className="flex justify-between gap-4">
+                      <dt className="text-gray-600 dark:text-gray-400">Replacement name tag</dt>
+                      <dd>${priceForm.replacementNameTagFeeDollars.toFixed(2)}</dd>
+                    </div>
                   </dl>
                 </section>
                 <form className="app-card space-y-4" onSubmit={handleSavePrices}>
@@ -1155,6 +1162,14 @@ export default function AdminRegistrationConfig() {
                     label="Default league fee (USD)"
                     value={priceForm.leagueFeeDollars}
                     onChange={(leagueFeeDollars) => setPriceForm((form) => ({ ...form, leagueFeeDollars }))}
+                  />
+                  <DollarField
+                    id="replacement-name-tag-fee"
+                    label="Replacement name tag (USD)"
+                    value={priceForm.replacementNameTagFeeDollars}
+                    onChange={(replacementNameTagFeeDollars) =>
+                      setPriceForm((form) => ({ ...form, replacementNameTagFeeDollars }))
+                    }
                   />
                   <FormActions saving={saving} onCancel={() => loadAll()} isEditing={false} />
                 </form>

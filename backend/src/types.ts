@@ -39,6 +39,10 @@ export interface Member {
   mailing_address?: string | null;
   emergency_contact_name?: string | null;
   emergency_contact_phone?: string | null;
+  preferred_pronouns?: string | null;
+  usa_curling_competition_gender?: string | null;
+  name_tag_name?: string | null;
+  name_tag_include_pronouns?: number | null;
   guardian_first_name?: string | null;
   guardian_last_name?: string | null;
   guardian_email?: string | null;

@@ -132,6 +132,8 @@ export type PlayInEntryContext = {
 export type RegistrationContext = {
   /** How many leagues the registrant wants to play in, 1..MAX_DESIRED_LEAGUE_COUNT. */
   desiredLeagueCount?: number | null;
+  /** Returning-member replacement name tags: 0 declined, 1–3 purchased, null unanswered. */
+  nameTagReplacementQuantity?: number | null;
   season: {
     id: number;
     name: string;

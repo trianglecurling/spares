@@ -8,6 +8,7 @@ import {
   type RegistrationContext,
   type RegistrationInvoiceLineKind,
 } from './registrationContext.js';
+import { parseNameTagReplacementQuantity, replacementNameTagLineDescription } from '../utils/nameTag.js';
 
 export type RegistrationFeeLineItem = {
   lineType: RegistrationInvoiceLineKind;
@@ -74,6 +75,17 @@ function addCharge(
   const amountMinor = positiveMinor(input.amountMinor);
   if (amountMinor === 0) return;
   lineItems.push({ ...input, amountMinor });
+}
+
+function addReplacementNameTagCharge(context: RegistrationContext, lineItems: RegistrationFeeLineItem[]): void {
+  const quantity = parseNameTagReplacementQuantity(context.nameTagReplacementQuantity);
+  if (quantity !== 1 && quantity !== 2 && quantity !== 3) return;
+  addCharge(lineItems, {
+    lineType: 'replacement_name_tag_fee',
+    description: replacementNameTagLineDescription(quantity),
+    amountMinor: context.priceConfig.replacementNameTagFeeMinor * quantity,
+    discountEligible: false,
+  });
 }
 
 function applyDiscountToRemaining(input: {
@@ -286,6 +298,7 @@ function computePreview(context: RegistrationContext, chargedLeagueIds: number[]
   }
 
   addLeagueCharges(context, lineItems, chargedLeagueIds);
+  addReplacementNameTagCharge(context, lineItems);
 
   const ordinaryDiscounts = context.isSocialToRegularUpgrade ? [] : addOrdinaryDiscounts(context, lineItems);
   const sabbaticalFillDiscounts = addSabbaticalFillDiscounts(context);
@@ -348,7 +361,17 @@ export function calculateRegistrationFees(
   },
 ): RegistrationFeePreview {
   if (context.registrant.hasLifetimeMembership) {
-    return zeroRegistrationFeePreview();
+    const lineItems: RegistrationFeeLineItem[] = [];
+    addReplacementNameTagCharge(context, lineItems);
+    const subtotalMinor = lineItems.reduce((sum, item) => sum + item.amountMinor, 0);
+    return {
+      ...zeroRegistrationFeePreview(),
+      lineItems,
+      subtotalMinor,
+      totalDueMinor: subtotalMinor,
+      nonDiscountableSubtotalMinor: subtotalMinor,
+      estimatedMaximumTotalDueMinor: subtotalMinor,
+    };
   }
 
   if (options?.chargedLeagueIds) {

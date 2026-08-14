@@ -25,6 +25,7 @@ export type RegistrationReasonCode =
   | 'waitlist_not_enabled'
   | 'sabbatical_requires_return_right'
   | 'sabbatical_limit_exceeded'
+  | 'sabbatical_only_no_priority_list'
   | 'sabbatical_duration_limit_exceeded'
   | 'continuing_sabbatical_decision_required'
   | 'sabbatical_staff_override_required'

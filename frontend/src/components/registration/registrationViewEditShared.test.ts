@@ -21,6 +21,9 @@ import {
   removePriority,
   reorderPriorities,
   seedPriorityList,
+  sabbaticalEligiblePriorLeagues,
+  defaultSabbaticalOnlyDecisions,
+  isSabbaticalEligibleLeague,
   sabbaticalListEntries,
   shouldShowGuaranteeChip,
   addPriorityAtTop,
@@ -604,6 +607,75 @@ describe('sabbatical list', () => {
         priorLeagueDecisions: [],
       }),
     ).toEqual([11]);
+  });
+});
+
+describe('sabbatical-only last-session choices', () => {
+  const continuing = (
+    overrides: Partial<ContinuingSabbaticalSummary> & Pick<ContinuingSabbaticalSummary, 'leagueId'>,
+  ): ContinuingSabbaticalSummary => ({
+    sabbaticalId: overrides.leagueId,
+    leagueName: `League ${overrides.leagueId}`,
+    priorLeagueId: overrides.leagueId,
+    firstSabbaticalStartDate: '2025-10-01',
+    canExtend: true,
+    extensionBlockedMessage: null,
+    sabbaticalFeeMinor: 2500,
+    ...overrides,
+  });
+
+  test('lists only sabbatical-eligible last-session leagues', () => {
+    expect(
+      sabbaticalEligiblePriorLeagues({
+        priorSeasonLeagueIds: [1, 4, 2],
+        leagues: allLeagues,
+      }).map((league) => league.id),
+    ).toEqual([1, 2]);
+    expect(isSabbaticalEligibleLeague(standardA)).toBe(true);
+    expect(isSabbaticalEligibleLeague(teamLeague)).toBe(false);
+  });
+
+  test('defaults continuing sabbaticals to extend and drops ineligible last-session leagues', () => {
+    expect(
+      defaultSabbaticalOnlyDecisions({
+        priorSeasonLeagueIds: [1, 4],
+        priorLeagueDecisions: [],
+        continuingSabbaticals: [continuing({ leagueId: 10 }), continuing({ leagueId: 11 })],
+        leagues: allLeagues,
+      }),
+    ).toEqual([
+      { leagueId: 4, decision: 'drop' },
+      { leagueId: 10, decision: 'sabbatical' },
+      { leagueId: 11, decision: 'sabbatical' },
+    ]);
+  });
+
+  test('does not default a third continuing sabbatical when two are already extended', () => {
+    expect(
+      defaultSabbaticalOnlyDecisions({
+        priorSeasonLeagueIds: [],
+        priorLeagueDecisions: [],
+        continuingSabbaticals: [
+          continuing({ leagueId: 10 }),
+          continuing({ leagueId: 11 }),
+          continuing({ leagueId: 12 }),
+        ],
+        leagues: allLeagues,
+      })
+        .filter((entry) => entry.decision === 'sabbatical')
+        .map((entry) => entry.leagueId),
+    ).toEqual([10, 11]);
+  });
+
+  test('keeps a saved drop instead of re-defaulting to extend', () => {
+    expect(
+      defaultSabbaticalOnlyDecisions({
+        priorSeasonLeagueIds: [],
+        priorLeagueDecisions: [{ leagueId: 10, decision: 'drop' }],
+        continuingSabbaticals: [continuing({ leagueId: 10 })],
+        leagues: allLeagues,
+      }),
+    ).toEqual([{ leagueId: 10, decision: 'drop' }]);
   });
 });
 

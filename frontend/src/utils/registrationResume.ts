@@ -17,8 +17,10 @@ export type RegistrationShellResumePayload = {
     submitted_by_member_id: number | null;
     demographics_current_confirmed: number;
     guardian_email: string | null;
+    returning_member_answer?: number | null;
   };
   isMinor: boolean;
+  nameTagComplete?: boolean;
 };
 
 export type RegistrationResumePointerV1 = {
@@ -44,12 +46,14 @@ export type RegistrationMembershipPaymentResumeShape = {
   icePrivilegesChoice: 'none' | 'league_play' | 'basic_ice';
   hasLifetimeMembership?: boolean;
   knownExperienceYears?: number;
+  noMembershipEligible?: boolean;
 };
 
 export const REGISTRATION_FLOW_STEPS = new Set([
   'identity',
   'policies',
   'demographics',
+  'name-tag',
   'guardian',
   'membership',
   'discounts',
@@ -98,6 +102,7 @@ export function nextStepFor(payload: RegistrationShellResumePayload): string {
       return 'policies';
     case 'demographics_incomplete':
       if (!registration.demographics_current_confirmed) return 'demographics';
+      if (!payload.nameTagComplete) return 'name-tag';
       if (payload.isMinor && !registration.guardian_email) return 'guardian';
       return 'discounts';
     case 'shell_complete':
@@ -138,13 +143,28 @@ export function resumePointerMatchesGuestDraft(
   );
 }
 
+export function membershipNeedsSabbaticalStep(input: {
+  membershipOption: RegistrationMembershipPaymentResumeShape['selection']['membershipOption'] | null | undefined;
+  noMembershipEligible?: boolean;
+}): boolean {
+  if (input.membershipOption === 'none') return true;
+  return input.membershipOption === 'social' && input.noMembershipEligible === true;
+}
+
 export function resolvePostShellResumeStepFromPayment(
   payment: RegistrationMembershipPaymentResumeShape,
 ): string {
   const option = payment.selection.membershipOption;
 
   if (option === 'none') return 'discounts';
-  if (option === 'social') return 'review';
+  if (option === 'social') {
+    return membershipNeedsSabbaticalStep({
+      membershipOption: option,
+      noMembershipEligible: payment.noMembershipEligible,
+    })
+      ? 'league-priority'
+      : 'review';
+  }
   if (option === 'junior_recreational') return 'review';
   if (option === 'regular_spare_only') return 'league-priority';
 

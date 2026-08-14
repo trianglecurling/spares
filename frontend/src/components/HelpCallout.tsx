@@ -1,8 +1,9 @@
+import type { ReactNode } from 'react';
 import { useEffect, useId, useRef, useState } from 'react';
 import { HiQuestionMarkCircle } from 'react-icons/hi2';
 
 type HelpCalloutProps = {
-  text: string;
+  text: ReactNode;
   /** Accessible name for the help control. */
   label?: string;
   align?: 'start' | 'end';
@@ -56,7 +57,7 @@ export default function HelpCallout({
         id={tooltipId}
         role="tooltip"
         className={joinClasses(
-          'pointer-events-none absolute top-full z-30 mt-1.5 w-64 max-w-[calc(100vw-2.5rem)] rounded-lg border border-gray-200 bg-white p-3 text-sm font-normal normal-case leading-snug text-gray-600 shadow-lg dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300',
+          'absolute top-full z-30 mt-1.5 w-72 min-w-0 max-w-[calc(100vw-2.5rem)] whitespace-normal break-words rounded-lg border border-gray-200 bg-white p-3 text-sm font-normal normal-case leading-snug text-gray-600 shadow-lg dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300',
           align === 'end' ? 'right-0' : 'left-0',
           open ? 'block' : 'hidden'
         )}

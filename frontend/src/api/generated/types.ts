@@ -3306,6 +3306,8 @@ export interface paths {
                             mailingAddress: null | string;
                             emergencyContactName: null | string;
                             emergencyContactPhone: null | string;
+                            preferredPronouns: null | string;
+                            usaCurlingCompetitionGender: null | string;
                             guardianFirstName: null | string;
                             guardianLastName: null | string;
                             guardianEmail: null | string;
@@ -3348,6 +3350,9 @@ export interface paths {
                         mailingAddress?: string;
                         emergencyContactName?: string;
                         emergencyContactPhone?: string;
+                        preferredPronouns?: string;
+                        /** @enum {string} */
+                        usaCurlingCompetitionGender?: "Male" | "Female" | "Unspecified";
                         guardianFirstName?: string;
                         guardianLastName?: string;
                         guardianEmail?: string;
@@ -3378,6 +3383,8 @@ export interface paths {
                             mailingAddress: null | string;
                             emergencyContactName: null | string;
                             emergencyContactPhone: null | string;
+                            preferredPronouns: null | string;
+                            usaCurlingCompetitionGender: null | string;
                             guardianFirstName: null | string;
                             guardianLastName: null | string;
                             guardianEmail: null | string;
@@ -4075,6 +4082,8 @@ export interface paths {
                             mailingAddress: null | string;
                             emergencyContactName: null | string;
                             emergencyContactPhone: null | string;
+                            preferredPronouns: null | string;
+                            usaCurlingCompetitionGender: null | string;
                             guardianFirstName: null | string;
                             guardianLastName: null | string;
                             guardianEmail: null | string;
@@ -4158,6 +4167,9 @@ export interface paths {
                         mailingAddress?: string;
                         emergencyContactName?: string;
                         emergencyContactPhone?: string;
+                        preferredPronouns?: string;
+                        /** @enum {string} */
+                        usaCurlingCompetitionGender?: "Male" | "Female" | "Unspecified";
                         lifetimeMember?: boolean;
                         isAdmin?: boolean;
                         isServerAdmin?: boolean;
@@ -13040,7 +13052,7 @@ export interface paths {
                 query?: never;
                 header?: never;
                 path: {
-                    lineType: "regular_membership_fee" | "social_membership_fee" | "junior_recreational_fee" | "league_fee" | "spare_only_fee" | "sabbatical_fee";
+                    lineType: "regular_membership_fee" | "social_membership_fee" | "junior_recreational_fee" | "league_fee" | "spare_only_fee" | "sabbatical_fee" | "replacement_name_tag_fee";
                 };
                 cookie?: never;
             };
@@ -15282,6 +15294,7 @@ export interface paths {
                             sabbaticalFeeDollars: number;
                             juniorRecreationalFeeDollars: number;
                             leagueFeeDollars: number;
+                            replacementNameTagFeeDollars: number;
                             createdAt: string;
                             updatedAt: string;
                         };
@@ -15310,6 +15323,7 @@ export interface paths {
                         sabbaticalFeeDollars?: number;
                         juniorRecreationalFeeDollars?: number;
                         leagueFeeDollars?: number;
+                        replacementNameTagFeeDollars?: number;
                     };
                 };
             };
@@ -15328,6 +15342,7 @@ export interface paths {
                             sabbaticalFeeDollars: number;
                             juniorRecreationalFeeDollars: number;
                             leagueFeeDollars: number;
+                            replacementNameTagFeeDollars: number;
                             createdAt: string;
                             updatedAt: string;
                         };
@@ -16122,6 +16137,51 @@ export interface paths {
         trace?: never;
     };
     "/registration/drafts/{id}/demographics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: number;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/registration/drafts/{id}/name-tag": {
         parameters: {
             query?: never;
             header?: never;

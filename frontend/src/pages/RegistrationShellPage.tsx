@@ -9,6 +9,7 @@ import { useConfirm } from '../contexts/ConfirmContext';
 import { useMemberOptions } from '../contexts/MemberOptionsContext';
 import PublicLayout from '../components/PublicLayout';
 import PublicStateCard from '../components/PublicStateCard';
+import InlineStateMessage from '../components/InlineStateMessage';
 import FormField from '../components/FormField';
 import FormCheckbox from '../components/FormCheckbox';
 import ChoiceInput from '../components/ChoiceInput';
@@ -19,6 +20,8 @@ import RegistrationDemographicFields, {
   type RegistrationDemographicFieldsHandle,
 } from '../components/registration/RegistrationDemographicFields';
 import RegistrationDemographicsStep from '../components/registration/RegistrationDemographicsStep';
+import RegistrationNameTagStep from '../components/registration/RegistrationNameTagStep';
+import RegistrationParentAssociationFields from '../components/registration/RegistrationParentAssociationFields';
 import LeaguePriorityIntroStep from '../components/registration/LeaguePriorityIntroStep';
 import LeaguePriorityStep from '../components/registration/LeaguePriorityStep';
 import {
@@ -47,9 +50,28 @@ import {
   DEFAULT_REGISTRATION_MAILING_STATE,
   DEFAULT_REGISTRATION_MAILING_COUNTRY,
 } from '../utils/registrationMailingAddress';
+import { resolvePreferredPronounsForSave } from '../utils/preferredPronouns';
+import {
+  defaultUsaCurlingMembershipOptIn,
+  defaultUswcaMembershipOptIn,
+} from '../utils/parentAssociationMemberships';
+import {
+  defaultNameTagPrintName,
+  nameTagIsComplete,
+  nameTagStepIsComplete,
+  normalizeNameTagName,
+  parseNameTagReplacementQuantity,
+  resolveNameTagIncludePronounsForSave,
+  type NameTagReplacementQuantity,
+} from '../utils/nameTag';
+import {
+  USA_CURLING_COMPETITION_GENDER_DEFAULT,
+  resolveUsaCurlingCompetitionGenderForSave,
+} from '../utils/usaCurlingCompetitionGender';
 import {
   nextStepFor,
   parseRegistrationResumePointer,
+  membershipNeedsSabbaticalStep,
   resolvePostShellResumeStepFromPayment,
   resolveResumeStepFromDraft,
   resumePointerMatchesDraft,
@@ -101,6 +123,10 @@ type MemberSummary = {
   mailingAddress: string | null;
   emergencyContactName: string | null;
   emergencyContactPhone: string | null;
+  preferredPronouns: string | null;
+  usaCurlingCompetitionGender: string | null;
+  nameTagName: string | null;
+  nameTagIncludePronouns: boolean | null;
 };
 
 type RegistrationShellPayload = {
@@ -118,6 +144,7 @@ type RegistrationShellPayload = {
     guardian_last_name: string | null;
     guardian_email: string | null;
     guardian_phone: string | null;
+    name_tag_replacement_quantity?: number | null;
   };
   submitter: MemberSummary | null;
   curler: MemberSummary | null;
@@ -139,6 +166,8 @@ type RegistrationWindow = {
     regularMinor: number;
     socialMinor: number;
     juniorRecreationalMinor: number;
+    sabbaticalMinor: number;
+    replacementNameTagMinor: number;
   };
 };
 
@@ -161,6 +190,8 @@ type DemographicsForm = {
   mailingPostalCode: string;
   emergencyContactName: string;
   emergencyContactPhone: string;
+  preferredPronouns: string;
+  usaCurlingCompetitionGender: string;
 };
 
 type IcePrivilegesChoice = 'none' | 'league_play' | 'basic_ice';
@@ -181,6 +212,8 @@ type RegistrationMembershipPaymentPayload = {
     reciprocalClubName: string | null;
     experienceType: 'none_or_minimal' | 'specified_years' | 'known_existing' | null;
     experienceSelfReportedYears: number | null;
+    usaCurlingMembershipOptIn?: boolean | null;
+    uswcaMembershipOptIn?: boolean | null;
   };
   icePrivilegesChoice: IcePrivilegesChoice;
   isFirstSessionOfSeason: boolean;
@@ -295,7 +328,11 @@ type LocalRegistrationDraftV1 = {
   sameEmail: 'same' | 'different';
   demographics: DemographicsForm;
   guardian: { firstName: string; lastName: string; email: string; phone: string };
+  nameTagName: string;
+  nameTagIncludePronouns: boolean | null;
   membershipChoice: 'regular' | 'social' | null;
+  usaCurlingMembershipOptIn: boolean;
+  uswcaMembershipOptIn: boolean;
   basicIcePrivileges: boolean;
   studentDiscountClaimed: boolean;
   studentInstitution: string;
@@ -318,6 +355,8 @@ const emptyDemographics: DemographicsForm = {
   ...defaultRegistrationMailingAddressFormFields(),
   emergencyContactName: '',
   emergencyContactPhone: '',
+  preferredPronouns: '',
+  usaCurlingCompetitionGender: USA_CURLING_COMPETITION_GENDER_DEFAULT,
 };
 
 function errorMessage(error: unknown, fallback: string): string {
@@ -342,6 +381,19 @@ function registrationDiscountLabel(baseLabel: string, slot: RegistrationDiscount
 function membershipOptionTextValue(label: string, feeMinor: number | undefined): string {
   if (feeMinor == null) return label;
   return `${label}, ${formatCurrency(feeMinor)}`;
+}
+
+function membershipShowsParentAssociations(
+  choice: 'regular' | 'social' | 'junior_recreational' | 'none' | 'regular_spare_only' | null | undefined,
+): boolean {
+  return choice === 'regular' || choice === 'social' || choice === 'regular_spare_only';
+}
+
+function parentAssociationReviewText(usaOptIn: boolean, uswcaOptIn: boolean): string {
+  const names = ['GNCC'];
+  if (usaOptIn) names.unshift('USA Curling');
+  if (uswcaOptIn) names.push("US Women's Curling Association");
+  return names.join(', ');
 }
 
 function renderMembershipChoiceContent(label: string, description: string, feeMinor: number | undefined) {
@@ -421,6 +473,8 @@ function demographicsFromMember(member: MemberSummary | null): DemographicsForm 
     ...mailingParts,
     emergencyContactName: member.emergencyContactName || '',
     emergencyContactPhone: member.emergencyContactPhone || '',
+    preferredPronouns: member.preferredPronouns || '',
+    usaCurlingCompetitionGender: resolveUsaCurlingCompetitionGenderForSave(member.usaCurlingCompetitionGender),
   };
 }
 
@@ -457,6 +511,10 @@ function normalizeDraftDemographics(raw: unknown): DemographicsForm {
     ...mailing,
     emergencyContactName: String(o.emergencyContactName ?? ''),
     emergencyContactPhone: String(o.emergencyContactPhone ?? ''),
+    preferredPronouns: String(o.preferredPronouns ?? ''),
+    usaCurlingCompetitionGender: resolveUsaCurlingCompetitionGenderForSave(
+      typeof o.usaCurlingCompetitionGender === 'string' ? o.usaCurlingCompetitionGender : '',
+    ),
   };
 }
 
@@ -499,9 +557,12 @@ function registrationDemographicsFormIsComplete(
 
 function guestNextStepAfterPolicies(
   demographics: DemographicsForm,
-  curlerDateOfBirth?: string | null,
+  curlerDateOfBirth: string | null | undefined,
+  nameTagName: string,
+  nameTagIncludePronouns: boolean | null,
 ): string {
   if (!registrationDemographicsFormIsComplete(demographics, curlerDateOfBirth)) return 'demographics';
+  if (!nameTagIsComplete(nameTagName || defaultNameTagPrintName(demographics.firstName, demographics.lastName), nameTagIncludePronouns)) return 'name-tag';
   if (isMinorDate(resolvedCurlerDateOfBirth(curlerDateOfBirth, demographics))) return 'guardian';
   return 'discounts';
 }
@@ -517,6 +578,8 @@ function demographicsPayloadForIdentityApi(
     phone: form.phone,
     emergencyContactName: form.emergencyContactName,
     emergencyContactPhone: form.emergencyContactPhone,
+    preferredPronouns: resolvePreferredPronounsForSave(form.preferredPronouns),
+    usaCurlingCompetitionGender: resolveUsaCurlingCompetitionGenderForSave(form.usaCurlingCompetitionGender),
   };
   const withMailing = registrationMailingAddressIsComplete(form)
     ? { ...base, mailingAddress: serializeRegistrationMailingAddress(form) }
@@ -538,6 +601,8 @@ function demographicsPayloadForPersistedSave(
   mailingAddress: string;
   emergencyContactName: string;
   emergencyContactPhone: string;
+  preferredPronouns: string;
+  usaCurlingCompetitionGender: string;
   dateOfBirth?: string;
 } {
   const payload = {
@@ -548,6 +613,8 @@ function demographicsPayloadForPersistedSave(
     mailingAddress: serializeRegistrationMailingAddress(form),
     emergencyContactName: form.emergencyContactName,
     emergencyContactPhone: form.emergencyContactPhone,
+    preferredPronouns: resolvePreferredPronounsForSave(form.preferredPronouns),
+    usaCurlingCompetitionGender: resolveUsaCurlingCompetitionGenderForSave(form.usaCurlingCompetitionGender),
   };
   if (!curlerStoredDateOfBirth && form.dateOfBirth.trim()) {
     return { ...payload, dateOfBirth: form.dateOfBirth };
@@ -628,6 +695,12 @@ function shellResumePayload(
     id,
     registration: shell.registration,
     isMinor: shell.isMinor,
+    nameTagComplete: nameTagStepIsComplete({
+      isReturningMember: shell.registration.returning_member_answer === 1,
+      name: shell.curler?.nameTagName,
+      includePronouns: shell.curler?.nameTagIncludePronouns,
+      replacementQuantity: shell.registration.name_tag_replacement_quantity,
+    }),
   };
 }
 
@@ -664,7 +737,12 @@ function buildGuestDraftBase(
     sameEmail: partial.sameEmail ?? 'different',
     demographics: partial.demographics ?? emptyDemographics,
     guardian: partial.guardian ?? { firstName: '', lastName: '', email: '', phone: '' },
+    nameTagName: partial.nameTagName ?? '',
+    nameTagIncludePronouns: partial.nameTagIncludePronouns ?? null,
     membershipChoice: partial.membershipChoice ?? null,
+    usaCurlingMembershipOptIn: partial.usaCurlingMembershipOptIn ?? defaultUsaCurlingMembershipOptIn(),
+    uswcaMembershipOptIn:
+      partial.uswcaMembershipOptIn ?? defaultUswcaMembershipOptIn(partial.demographics?.preferredPronouns),
     basicIcePrivileges: partial.basicIcePrivileges ?? false,
     studentDiscountClaimed: partial.studentDiscountClaimed ?? false,
     studentInstitution: partial.studentInstitution ?? '',
@@ -762,11 +840,24 @@ export default function RegistrationShellPage() {
     setDemographics(form);
   }, []);
   const [guardian, setGuardian] = useState({ firstName: '', lastName: '', email: '', phone: '' });
+  const [nameTagName, setNameTagName] = useState('');
+  const [nameTagIncludePronouns, setNameTagIncludePronouns] = useState<boolean | null>(null);
+  const [nameTagReplacementQuantity, setNameTagReplacementQuantity] = useState<NameTagReplacementQuantity | null>(
+    null,
+  );
+  const nameTagNameRef = useRef(nameTagName);
+  const nameTagIncludePronounsRef = useRef(nameTagIncludePronouns);
+  nameTagNameRef.current = nameTagName;
+  nameTagIncludePronounsRef.current = nameTagIncludePronouns;
   const [membershipPayment, setMembershipPayment] = useState<RegistrationMembershipPaymentPayload | null>(null);
+  const [reviewPaymentReady, setReviewPaymentReady] = useState(false);
+  const [reviewCatalogReady, setReviewCatalogReady] = useState(false);
   const [membershipChoice, setMembershipChoice] = useState<
     'regular' | 'social' | 'junior_recreational' | 'none' | null
   >(null);
   const [juniorAssistancePercent, setJuniorAssistancePercent] = useState<'0' | '25' | '50' | '75'>('0');
+  const [usaCurlingMembershipOptIn, setUsaCurlingMembershipOptIn] = useState(defaultUsaCurlingMembershipOptIn);
+  const [uswcaMembershipOptIn, setUswcaMembershipOptIn] = useState(false);
   const [basicIcePrivileges, setBasicIcePrivileges] = useState(false);
   const [icePrivilegesChoice, setIcePrivilegesChoice] = useState<IcePrivilegesChoice | null>(null);
   /** Sub-screen on the ice-privileges step: confirming "no ice privileges". */
@@ -911,13 +1002,21 @@ export default function RegistrationShellPage() {
 
   const priorityReviewEntries = priorityEvaluation.entries;
 
+  const hideDroppedPriorLeagueDecisions =
+    membershipPayment?.selection.membershipOption === 'social' ||
+    membershipPayment?.selection.membershipOption === 'none' ||
+    membershipChoice === 'social' ||
+    membershipChoice === 'none';
+
   const priorLeagueDecisionSummary = useMemo(
     () =>
-      (leaguePayload?.priorLeagueDecisions ?? []).map((decision) => {
-        const name = leaguePayload?.leagues.find((league) => league.id === decision.leagueId)?.name ?? 'League';
-        return decision.decision === 'sabbatical' ? `${name}: sabbatical` : `${name}: dropped`;
-      }),
-    [leaguePayload],
+      (leaguePayload?.priorLeagueDecisions ?? [])
+        .filter((decision) => !(hideDroppedPriorLeagueDecisions && decision.decision === 'drop'))
+        .map((decision) => {
+          const name = leaguePayload?.leagues.find((league) => league.id === decision.leagueId)?.name ?? 'League';
+          return decision.decision === 'sabbatical' ? `${name}: sabbatical` : `${name}: dropped`;
+        }),
+    [hideDroppedPriorLeagueDecisions, leaguePayload],
   );
 
   const priorityRosterTextByLeagueId = useMemo(() => {
@@ -935,6 +1034,7 @@ export default function RegistrationShellPage() {
   }, [leaguePayload?.priorities, memberOptionById]);
 
   const isGuestLocal = !member;
+  const reviewQuoteReady = isGuestLocal ? reviewPaymentReady : reviewPaymentReady && reviewCatalogReady;
 
   const juniorRecreationalEligible = useMemo(
     () => isJuniorRecreationalEligibleDate(registeringCurlerDateOfBirth || ''),
@@ -984,10 +1084,10 @@ export default function RegistrationShellPage() {
     if (membershipPayment?.noMembershipEligible) {
       options.push({
         value: 'none',
-        label: 'No membership',
-        textValue: membershipOptionTextValue('No membership', 0),
+        label: 'Sabbatical only',
+        textValue: membershipOptionTextValue('Sabbatical only', fees?.sabbaticalMinor),
         description: noMembershipDescription,
-        render: () => renderMembershipChoiceContent('No membership', noMembershipDescription, 0),
+        render: () => renderMembershipChoiceContent('Sabbatical only', noMembershipDescription, fees?.sabbaticalMinor),
       });
     }
     if (juniorRecreationalEligible) {
@@ -1038,6 +1138,9 @@ export default function RegistrationShellPage() {
       email: data.registration.guardian_email || '',
       phone: data.registration.guardian_phone || '',
     });
+    setNameTagName(data.curler?.nameTagName || '');
+    setNameTagIncludePronouns(data.curler?.nameTagIncludePronouns ?? null);
+    setNameTagReplacementQuantity(parseNameTagReplacementQuantity(data.registration.name_tag_replacement_quantity));
   }, []);
 
   const hydrateDraftFromServerById = useCallback(
@@ -1058,7 +1161,19 @@ export default function RegistrationShellPage() {
         : draft.demographics,
     );
     setGuardian(draft.guardian);
+    setNameTagName(draft.nameTagName || '');
+    setNameTagIncludePronouns(draft.nameTagIncludePronouns ?? null);
     setMembershipChoice(draft.membershipChoice);
+    setUsaCurlingMembershipOptIn(
+      typeof draft.usaCurlingMembershipOptIn === 'boolean'
+        ? draft.usaCurlingMembershipOptIn
+        : defaultUsaCurlingMembershipOptIn(),
+    );
+    setUswcaMembershipOptIn(
+      typeof draft.uswcaMembershipOptIn === 'boolean'
+        ? draft.uswcaMembershipOptIn
+        : defaultUswcaMembershipOptIn(draft.demographics?.preferredPronouns),
+    );
     setBasicIcePrivileges(draft.basicIcePrivileges);
     setStudentDiscountClaimed(draft.studentDiscountClaimed);
     setStudentInstitution(draft.studentInstitution);
@@ -1077,10 +1192,14 @@ export default function RegistrationShellPage() {
           sameEmail,
           demographics: demographicsRef.current,
           guardian,
+          nameTagName: nameTagNameRef.current,
+          nameTagIncludePronouns: nameTagIncludePronounsRef.current,
           membershipChoice:
             membershipChoice === 'junior_recreational' || membershipChoice === 'none' || membershipChoice == null
               ? null
               : membershipChoice,
+          usaCurlingMembershipOptIn,
+          uswcaMembershipOptIn,
           basicIcePrivileges,
           studentDiscountClaimed,
           studentInstitution,
@@ -1099,6 +1218,8 @@ export default function RegistrationShellPage() {
       sameEmail,
       guardian,
       membershipChoice,
+      usaCurlingMembershipOptIn,
+      uswcaMembershipOptIn,
       basicIcePrivileges,
       studentDiscountClaimed,
       studentInstitution,
@@ -1434,6 +1555,11 @@ export default function RegistrationShellPage() {
   }, [member, registrationId, payload, currentStep, hydrateFromServerPayload, isPriorityEdit]);
 
   useEffect(() => {
+    setReviewPaymentReady(false);
+    setReviewCatalogReady(false);
+  }, [currentStep, registrationId]);
+
+  useEffect(() => {
     const membershipPaymentFlowSteps = [
       'membership',
       'discounts',
@@ -1446,6 +1572,7 @@ export default function RegistrationShellPage() {
     if (!member || !registrationId || !membershipPaymentFlowSteps.includes(currentStep)) return;
     if (payload && payload.registration.status !== 'shell_complete' && !isPriorityEdit) return;
     let canceled = false;
+    if (currentStep === 'review') setReviewPaymentReady(false);
     api
       .get(`/registration/drafts/${registrationId}/membership-payment`)
       .then((response) => {
@@ -1464,6 +1591,15 @@ export default function RegistrationShellPage() {
         } else if (membershipOption === 'regular' || membershipOption === 'regular_spare_only') {
           setMembershipChoice('regular');
         }
+        if (membershipShowsParentAssociations(membershipOption)) {
+          setUsaCurlingMembershipOptIn(
+            data.selection.usaCurlingMembershipOptIn ?? defaultUsaCurlingMembershipOptIn(),
+          );
+          setUswcaMembershipOptIn(
+            data.selection.uswcaMembershipOptIn ??
+              defaultUswcaMembershipOptIn(demographicsRef.current.preferredPronouns),
+          );
+        }
         setBasicIcePrivileges(membershipOption === 'regular_spare_only');
         setIcePrivilegesChoice((current) => {
           const onIcePrivilegesStep = currentStep === 'basic-ice';
@@ -1481,6 +1617,7 @@ export default function RegistrationShellPage() {
         setReciprocalClubName(data.selection.reciprocalClubName || '');
         setExperienceChoice(data.selection.experienceType || (data.knownExperienceYears > 0 ? 'known_existing' : 'none_or_minimal'));
         setExperienceYears(data.selection.experienceSelfReportedYears?.toString() || '');
+        if (currentStep === 'review') setReviewPaymentReady(true);
       })
       .catch((err) => {
         if (!canceled) setError(errorMessage(err, 'Unable to load membership details.'));
@@ -1528,14 +1665,19 @@ export default function RegistrationShellPage() {
     const leagueSteps = ['league-priority', 'review'];
     if (!member || !registrationId || !leagueSteps.includes(currentStep)) return;
     let canceled = false;
+    if (currentStep === 'review') setReviewCatalogReady(false);
     api
       .get(`/registration/drafts/${registrationId}/league-catalog`)
       .then((response) => {
         if (canceled) return;
         setLeaguePayload(response.data as RegistrationLeagueCatalogPayload);
+        if (currentStep === 'review') setReviewCatalogReady(true);
       })
       .catch((err) => {
-        if (!canceled) setError(errorMessage(err, 'Unable to load league choices.'));
+        if (!canceled) {
+          setError(errorMessage(err, 'Unable to load league choices.'));
+          if (currentStep === 'review') setReviewCatalogReady(true);
+        }
       });
     return () => {
       canceled = true;
@@ -1548,6 +1690,7 @@ export default function RegistrationShellPage() {
     if (authLoading || !isGuestLocal || !windowState || !guestPhaseSteps.includes(currentStep)) return;
     if (!registeringCurlerDateOfBirth?.trim()) return;
     let canceled = false;
+    if (currentStep === 'review') setReviewPaymentReady(false);
     (async () => {
       try {
         const { data } = await api.post<RegistrationMembershipPaymentPayload>('/registration/guest/preview-membership-payment', {
@@ -1563,10 +1706,15 @@ export default function RegistrationShellPage() {
           reciprocalClubName: reciprocalClubName || null,
           experienceType: experienceChoice,
           experienceSelfReportedYears: experienceChoice === 'specified_years' ? Number(experienceYears) : null,
+          usaCurlingMembershipOptIn:
+            membershipChoice === 'regular' || membershipChoice === 'social' ? usaCurlingMembershipOptIn : null,
+          uswcaMembershipOptIn:
+            membershipChoice === 'regular' || membershipChoice === 'social' ? uswcaMembershipOptIn : null,
         });
         if (!canceled) {
           setMembershipPayment(data);
           setError('');
+          if (currentStep === 'review') setReviewPaymentReady(true);
         }
       } catch (err) {
         if (!canceled) setError(errorMessage(err, 'Unable to load membership preview.'));
@@ -1589,6 +1737,8 @@ export default function RegistrationShellPage() {
     reciprocalClubName,
     experienceChoice,
     experienceYears,
+    usaCurlingMembershipOptIn,
+    uswcaMembershipOptIn,
   ]);
 
   useEffect(() => {
@@ -2302,7 +2452,12 @@ export default function RegistrationShellPage() {
         hydrateFromServerPayload({ id: registrationId, ...data });
         navigate(`/registration/${nextStepFor(shellResumePayload(data, registrationId))}`);
       } else {
-        const nextStep = guestNextStepAfterPolicies(demographics, registeringCurlerDateOfBirth);
+        const nextStep = guestNextStepAfterPolicies(
+          demographics,
+          registeringCurlerDateOfBirth,
+          nameTagName,
+          nameTagIncludePronouns,
+        );
         persistGuestDraft(nextStep);
         navigate(`/registration/${nextStep}`);
       }
@@ -2329,28 +2484,74 @@ export default function RegistrationShellPage() {
           demographicsPayloadForPersistedSave(form, curlerStoredDateOfBirth),
         );
         const data = response.data as RegistrationShellPayload;
-        if (data.isMinor) {
-          navigate('/registration/guardian');
-        } else {
-          await api.post(`/registration/drafts/${registrationId}/complete-shell`);
-          navigate('/registration/discounts');
-        }
-      } else if (isMinorDate(resolvedCurlerDateOfBirth(curlerStoredDateOfBirth, form))) {
-        persistGuestDraftRef.current('guardian');
-        navigate('/registration/guardian');
+        hydrateFromServerPayload({ id: registrationId, ...data });
+        navigate('/registration/name-tag');
       } else {
-        persistGuestDraftRef.current('discounts');
-        navigate('/registration/discounts');
+        persistGuestDraftRef.current('name-tag');
+        navigate('/registration/name-tag');
       }
     } catch (err) {
       setError(errorMessage(err, 'Unable to save demographic information.'));
     } finally {
       setLoading(false);
     }
-  }, [member, registrationId, navigate, curlerStoredDateOfBirth]);
+  }, [member, registrationId, navigate, curlerStoredDateOfBirth, hydrateFromServerPayload]);
 
   const handleRegistrationDemographicsBack = useCallback(() => {
     navigateRegistrationBack('/registration/policies');
+  }, [navigateRegistrationBack]);
+
+  const submitNameTag = useCallback(
+    async (value: {
+      nameTagName: string;
+      nameTagIncludePronouns: boolean;
+      replacementQuantity?: NameTagReplacementQuantity;
+    }) => {
+      const name = normalizeNameTagName(value.nameTagName);
+      setNameTagName(name);
+      setNameTagIncludePronouns(value.nameTagIncludePronouns);
+      nameTagNameRef.current = name;
+      nameTagIncludePronounsRef.current = value.nameTagIncludePronouns;
+      if (value.replacementQuantity !== undefined) {
+        setNameTagReplacementQuantity(value.replacementQuantity);
+      }
+      setLoading(true);
+      setError('');
+      try {
+        if (member && registrationId !== null) {
+          const response = await api.patch(`/registration/drafts/${registrationId}/name-tag`, {
+            nameTagName: name,
+            nameTagIncludePronouns: value.nameTagIncludePronouns,
+            ...(value.replacementQuantity !== undefined
+              ? { replacementQuantity: value.replacementQuantity }
+              : {}),
+          });
+          const data = response.data as RegistrationShellPayload;
+          hydrateFromServerPayload({ id: registrationId, ...data });
+          if (data.isMinor) {
+            navigate('/registration/guardian');
+          } else {
+            await api.post(`/registration/drafts/${registrationId}/complete-shell`);
+            navigate('/registration/discounts');
+          }
+        } else if (isMinorDate(resolvedCurlerDateOfBirth(curlerStoredDateOfBirth, demographicsRef.current))) {
+          persistGuestDraftRef.current('guardian');
+          navigate('/registration/guardian');
+        } else {
+          persistGuestDraftRef.current('discounts');
+          navigate('/registration/discounts');
+        }
+      } catch (err) {
+        setError(errorMessage(err, 'Unable to save name tag details.'));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [member, registrationId, navigate, curlerStoredDateOfBirth, hydrateFromServerPayload],
+  );
+
+  const handleRegistrationNameTagBack = useCallback(() => {
+    navigateRegistrationBack('/registration/demographics');
   }, [navigateRegistrationBack]);
 
   async function submitGuardian(event: React.FormEvent) {
@@ -2385,10 +2586,14 @@ export default function RegistrationShellPage() {
     setError('');
     try {
       if (member && registrationId !== null) {
+        const appliesParentAssociations = membershipShowsParentAssociations(selectedMembership);
         const response = await api.patch(`/registration/drafts/${registrationId}/membership`, {
           membershipOption: selectedMembership,
           basicIcePrivileges: false,
           juniorAssistancePercent: selectedMembership === 'junior_recreational' ? Number(juniorAssistancePercent) : 0,
+          ...(appliesParentAssociations && !isLifetimeMember
+            ? { usaCurlingMembershipOptIn, uswcaMembershipOptIn }
+            : {}),
         });
         setMembershipPayment(response.data as RegistrationMembershipPaymentPayload);
         if (isPriorityEdit) {
@@ -2396,8 +2601,12 @@ export default function RegistrationShellPage() {
           return;
         }
         const paymentPayload = response.data as RegistrationMembershipPaymentPayload;
+        const goToSabbaticalStep = membershipNeedsSabbaticalStep({
+          membershipOption: selectedMembership,
+          noMembershipEligible: paymentPayload.noMembershipEligible,
+        });
         navigate(
-          selectedMembership === 'none'
+          goToSabbaticalStep
             ? '/registration/league-priority'
             : selectedMembership === 'social' || selectedMembership === 'junior_recreational'
               ? '/registration/review'
@@ -2691,6 +2900,11 @@ export default function RegistrationShellPage() {
           useSubmitterEmailForCurler,
           submitter: registeringForSelf === 'self' ? undefined : demographicsPayloadForIdentityApi(demographics, curlerStoredDateOfBirth),
           curler: demographicsPayloadForPersistedSave(demographics, curlerStoredDateOfBirth),
+          nameTagName: normalizeNameTagName(nameTagName) || defaultNameTagPrintName(demographics.firstName, demographics.lastName),
+          nameTagIncludePronouns: resolveNameTagIncludePronounsForSave(
+            demographics.preferredPronouns,
+            nameTagIncludePronouns,
+          ),
           guardian: isMinorDate(registeringCurlerDateOfBirth || '') ? guardian : undefined,
           membershipChoice: membershipChoice === 'social' ? 'social' : 'regular',
           basicIcePrivileges,
@@ -2700,6 +2914,10 @@ export default function RegistrationShellPage() {
           reciprocalClubName: reciprocalClubName || null,
           experienceType: experienceChoice,
           experienceSelfReportedYears: experienceChoice === 'specified_years' ? Number(experienceYears) : null,
+          usaCurlingMembershipOptIn:
+            membershipChoice === 'regular' || membershipChoice === 'social' ? usaCurlingMembershipOptIn : undefined,
+          uswcaMembershipOptIn:
+            membershipChoice === 'regular' || membershipChoice === 'social' ? uswcaMembershipOptIn : undefined,
           payLater: options?.payLater ?? false,
           membershipCommitteeComments: membershipCommitteeComments.trim() || null,
         });
@@ -2780,7 +2998,8 @@ export default function RegistrationShellPage() {
     const membershipBackTarget = (): string => {
       const curlerIsMinor = payload?.isMinor ?? isMinorDate(registeringCurlerDateOfBirth || '');
       const guardianCollected = Boolean(payload?.registration.guardian_email || guardian.email.trim());
-      return curlerIsMinor && guardianCollected ? '/registration/guardian' : '/registration/demographics';
+      if (curlerIsMinor && guardianCollected) return '/registration/guardian';
+      return '/registration/name-tag';
     };
 
     switch (currentStep) {
@@ -2788,8 +3007,13 @@ export default function RegistrationShellPage() {
         return { label: 'Back', onClick: () => navigateRegistrationBack('/registration/identity') };
       case 'demographics':
         return { label: 'Back', onClick: () => navigateRegistrationBack('/registration/policies') };
-      case 'guardian':
+      case 'name-tag':
         return { label: 'Back', onClick: () => navigateRegistrationBack('/registration/demographics') };
+      case 'guardian':
+        return {
+          label: 'Back',
+          onClick: () => navigateRegistrationBack('/registration/name-tag'),
+        };
       case 'complete':
       case 'discounts':
         return { label: 'Back', onClick: () => navigateRegistrationBack(membershipBackTarget()) };
@@ -2820,8 +3044,17 @@ export default function RegistrationShellPage() {
               navigateRegistrationBack(priorityEditReturnTo);
               return;
             }
-            if (membershipPayment?.selection.membershipOption === 'none' || membershipChoice === 'none') {
-              noMembershipPathActiveRef.current = true;
+            if (
+              membershipPayment?.selection.membershipOption === 'none' ||
+              membershipPayment?.selection.membershipOption === 'social' ||
+              membershipChoice === 'none' ||
+              membershipChoice === 'social'
+            ) {
+              if (membershipPayment?.selection.membershipOption === 'none' || membershipChoice === 'none') {
+                noMembershipPathActiveRef.current = true;
+              }
+              navigateRegistrationBack('/registration/membership');
+              return;
             }
             navigateRegistrationBack(
               icePrivilegesChoice === 'league_play'
@@ -2840,6 +3073,17 @@ export default function RegistrationShellPage() {
               : membershipChoice === 'social'
                 ? 'social'
                 : null);
+        if (
+          membershipNeedsSabbaticalStep({
+            membershipOption,
+            noMembershipEligible: membershipPayment?.noMembershipEligible,
+          })
+        ) {
+          return {
+            label: 'Back',
+            onClick: () => navigateRegistrationBack('/registration/league-priority'),
+          };
+        }
         if (membershipOption === 'social' || membershipOption === 'junior_recreational') {
           return { label: 'Back', onClick: () => navigateRegistrationBack('/registration/membership') };
         }
@@ -2934,8 +3178,15 @@ export default function RegistrationShellPage() {
   }
 
   function renderFeeSummary() {
-    if (!membershipPayment) {
-      return <PublicStateCard title="Loading fees" description="Calculating your registration total." />;
+    if (!membershipPayment || !reviewQuoteReady) {
+      return (
+        <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 p-4">
+          <h2 className="text-lg font-semibold text-[#121033]">Charges</h2>
+          <div className="mt-3">
+            <InlineStateMessage title="Calculating your registration total." />
+          </div>
+        </div>
+      );
     }
     const allLines = [...membershipPayment.feePreview.lineItems, ...membershipPayment.feePreview.discountLineItems];
     const floorMinor = membershipPayment.feePreview.totalDueMinor;
@@ -3536,6 +3787,26 @@ export default function RegistrationShellPage() {
         onSubmit={submitDemographics}
       />
     );
+  } else if (currentStep === 'name-tag') {
+    content = (
+      <RegistrationNameTagStep
+        headerTitle={registrationFlowHeaderTitle}
+        showStartOver={Boolean(showStartOver)}
+        loading={loading}
+        error={error}
+        firstName={demographics.firstName}
+        lastName={demographics.lastName}
+        preferredPronouns={demographics.preferredPronouns}
+        initialName={nameTagName}
+        initialIncludePronouns={nameTagIncludePronouns}
+        isReturningMember={payload?.registration.returning_member_answer === 1}
+        replacementPriceMinor={windowState?.membershipFees?.replacementNameTagMinor ?? 0}
+        initialReplacementQuantity={nameTagReplacementQuantity}
+        onBack={handleRegistrationNameTagBack}
+        onStartOver={handleStartOver}
+        onSubmit={submitNameTag}
+      />
+    );
   } else if (currentStep === 'guardian') {
     content = (
       <RegistrationCard>
@@ -3625,25 +3896,27 @@ export default function RegistrationShellPage() {
                     | 'none'
                     | null
                     | undefined;
-                  setMembershipChoice(next ?? null);
-                  if (next != null && next !== 'none') {
+                  const resolved = next ?? null;
+                  const wasShowingParentAssociations = membershipShowsParentAssociations(membershipChoice);
+                  setMembershipChoice(resolved);
+                  if (resolved != null && resolved !== 'none') {
                     noMembershipPathActiveRef.current = false;
+                  }
+                  if (membershipShowsParentAssociations(resolved) && !wasShowingParentAssociations) {
+                    setUsaCurlingMembershipOptIn(
+                      membershipPayment?.selection.usaCurlingMembershipOptIn ??
+                        defaultUsaCurlingMembershipOptIn(),
+                    );
+                    setUswcaMembershipOptIn(
+                      membershipPayment?.selection.uswcaMembershipOptIn ??
+                        defaultUswcaMembershipOptIn(demographics.preferredPronouns),
+                    );
                   }
                 }}
                 options={membershipOptions}
               />
             </FormField>
           )}
-          {membershipChoice === 'none' ? (
-            <p className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-              You will choose which sabbaticals to extend on the next step. No membership fee applies for this session.
-            </p>
-          ) : null}
-          {membershipChoice === 'social' ? (
-            <p className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-              Social members do not receive ice privileges.
-            </p>
-          ) : null}
           {!isLifetimeMember && membershipChoice === 'junior_recreational' ? (
             <FormField label="Financial assistance request" htmlFor={`${membershipInputId}-assistance`} tone="public">
               <ChoiceInput
@@ -3659,6 +3932,14 @@ export default function RegistrationShellPage() {
                 ]}
               />
             </FormField>
+          ) : null}
+          {!isLifetimeMember && membershipShowsParentAssociations(membershipChoice) ? (
+            <RegistrationParentAssociationFields
+              usaCurlingOptIn={usaCurlingMembershipOptIn}
+              uswcaOptIn={uswcaMembershipOptIn}
+              onUsaCurlingChange={setUsaCurlingMembershipOptIn}
+              onUswcaChange={setUswcaMembershipOptIn}
+            />
           ) : null}
           {error ? <p className="text-sm text-red-600">{error}</p> : null}
           <div className="flex flex-wrap gap-3">
@@ -3895,14 +4176,23 @@ export default function RegistrationShellPage() {
       </RegistrationCard>
     );
   } else if (currentStep === 'league-priority') {
+    const sabbaticalOnly =
+      membershipPayment?.selection.membershipOption === 'none' ||
+      membershipPayment?.selection.membershipOption === 'social' ||
+      membershipChoice === 'none' ||
+      membershipChoice === 'social';
     content = (
       <RegistrationCard>
         <RegistrationFlowHeader />
-        <h1 className="text-3xl font-bold text-[#121033]">Leagues you want to play</h1>
+        <h1 className="text-3xl font-bold text-[#121033]">
+          {sabbaticalOnly ? 'Sabbaticals for this session' : 'Leagues you want to play'}
+        </h1>
         <p className="mt-3 text-gray-600">
-          {(membershipPayment?.icePrivilegesChoice ?? icePrivilegesChoice) === 'basic_ice'
-            ? 'Basic ice privileges include sparing, practice, and free daytime leagues. List only those free leagues, and decide what to do with any paid leagues you played last session.'
-            : 'Tell us how many leagues you want this session, then list them in the order you want them. We work down your list, so put the league you want most at the top.'}
+          {sabbaticalOnly
+            ? 'You are not registering to play this session. For each eligible league, take or extend a sabbatical, or drop it. You can hold at most two sabbaticals.'
+            : (membershipPayment?.icePrivilegesChoice ?? icePrivilegesChoice) === 'basic_ice'
+              ? 'Basic ice privileges include sparing, practice, and free daytime leagues. List only those free leagues, and decide what to do with any paid leagues you played last session.'
+              : 'Tell us how many leagues you want this session, then list them in the order you want them. We work down your list, so put the league you want most at the top.'}
         </p>
         <div className="mt-6">
           <LeaguePriorityStep
@@ -3912,9 +4202,11 @@ export default function RegistrationShellPage() {
             saving={loading}
             continueLabel={isPriorityEdit ? 'Save and return' : 'Continue'}
             restrictToFreeLeagues={
-              (membershipPayment?.icePrivilegesChoice ?? icePrivilegesChoice) === 'basic_ice' ||
-              membershipPayment?.selection.membershipOption === 'regular_spare_only'
+              !sabbaticalOnly &&
+              ((membershipPayment?.icePrivilegesChoice ?? icePrivilegesChoice) === 'basic_ice' ||
+                membershipPayment?.selection.membershipOption === 'regular_spare_only')
             }
+            sabbaticalOnly={sabbaticalOnly}
             onSave={(input) => saveLeaguePriorities(input, isPriorityEdit ? finishPriorityEdit : undefined)}
           />
         </div>
@@ -3935,7 +4227,7 @@ export default function RegistrationShellPage() {
               {membershipPayment?.selection.membershipOption === 'social'
                 ? 'Social membership'
                 : membershipPayment?.selection.membershipOption === 'none'
-                  ? 'No membership'
+                  ? 'None'
                   : membershipPayment?.selection.membershipOption === 'junior_recreational'
                     ? 'Junior Recreational'
                     : 'Regular membership'}
@@ -3953,6 +4245,17 @@ export default function RegistrationShellPage() {
             {membershipPayment?.selection.reciprocalDiscountClaimed ? (
               <p>
                 <span className="font-medium text-gray-900">Reciprocal discount:</span> {membershipPayment.selection.reciprocalClubName}
+              </p>
+            ) : null}
+            {membershipShowsParentAssociations(
+              membershipPayment?.selection.membershipOption ?? membershipChoice,
+            ) ? (
+              <p>
+                <span className="font-medium text-gray-900">Parent associations:</span>{' '}
+                {parentAssociationReviewText(
+                  membershipPayment?.selection.usaCurlingMembershipOptIn ?? usaCurlingMembershipOptIn,
+                  membershipPayment?.selection.uswcaMembershipOptIn ?? uswcaMembershipOptIn,
+                )}
               </p>
             ) : null}
           </div>
@@ -3992,30 +4295,44 @@ export default function RegistrationShellPage() {
                 </p>
               ) : null}
             </div>
+          ) : priorLeagueDecisionSummary.length > 0 ? (
+            <div className="rounded-2xl border border-gray-200 p-4 text-sm text-gray-700">
+              <h2 className="font-semibold text-[#121033]">Sabbaticals</h2>
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-gray-600">
+                {priorLeagueDecisionSummary.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            </div>
           ) : membershipPayment?.selection.membershipOption === 'junior_recreational' ? (
             <div className="rounded-2xl border border-gray-200 p-4 text-sm text-gray-700">
               <span className="font-medium text-gray-900">League choices:</span> Junior Recreational skips normal league selection.
             </div>
           ) : null}
           {renderFeeSummary()}
-          <p className="rounded-2xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
-            {membershipPayment?.paymentDecision.outcome === 'deferred_payment'
-              ? 'Payment is deferred. We will contact you when your registration is ready for payment.'
-              : membershipPayment?.paymentDecision.outcome === 'no_payment_required'
-                ? 'No payment is required now.'
-                : membershipPayment?.payLaterAvailable
-                  ? 'You can pay now, or choose Pay later to receive an invoice by email.'
-                  : 'Payment is due now to complete this registration.'}
-          </p>
-          {membershipPayment?.paymentDecision.outcome === 'deferred_payment' && membershipPayment.paymentDecision.deferralReasons.length > 0 ? (
-            <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950">
-              <h2 className="font-semibold">Why payment is deferred</h2>
-              <ul className="mt-2 list-disc space-y-1 pl-5">
-                {membershipPayment.paymentDecision.deferralReasons.map((reason) => (
-                  <li key={reason}>{deferralReasonText(reason)}</li>
-                ))}
-              </ul>
-            </div>
+          {reviewQuoteReady && membershipPayment ? (
+            <>
+              <p className="rounded-2xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">
+                {membershipPayment.paymentDecision.outcome === 'deferred_payment'
+                  ? 'Payment is deferred. We will contact you when your registration is ready for payment.'
+                  : membershipPayment.paymentDecision.outcome === 'no_payment_required'
+                    ? 'No payment is required now.'
+                    : membershipPayment.payLaterAvailable
+                      ? `You can pay now, or choose Pay later to receive an invoice by email. All invoices must be paid ${membershipPayment.paymentDeadlineDisplay ?? 'before leagues begin'}.`
+                      : 'Payment is due now to complete this registration.'}
+              </p>
+              {membershipPayment.paymentDecision.outcome === 'deferred_payment' &&
+              membershipPayment.paymentDecision.deferralReasons.length > 0 ? (
+                <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950">
+                  <h2 className="font-semibold">Why payment is deferred</h2>
+                  <ul className="mt-2 list-disc space-y-1 pl-5">
+                    {membershipPayment.paymentDecision.deferralReasons.map((reason) => (
+                      <li key={reason}>{deferralReasonText(reason)}</li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+            </>
           ) : null}
           <FormField
             label="Comments for the Membership Committee"
@@ -4033,14 +4350,14 @@ export default function RegistrationShellPage() {
           </FormField>
           {error ? <p className="text-sm text-red-600">{error}</p> : null}
           <div className="flex flex-wrap gap-3">
-            <Button type="button" disabled={loading || !membershipPayment} onClick={() => void submitRegistration()}>
-              {membershipPayment?.paymentDecision.outcome === 'immediate_payment' ? 'Submit and pay' : 'Submit registration'}
+            <Button type="button" disabled={loading || !reviewQuoteReady || !membershipPayment} onClick={() => void submitRegistration()}>
+              {reviewQuoteReady && membershipPayment?.paymentDecision.outcome === 'immediate_payment' ? 'Submit and pay' : 'Submit registration'}
             </Button>
-            {membershipPayment?.payLaterAvailable ? (
+            {reviewQuoteReady && membershipPayment?.payLaterAvailable ? (
               <Button
                 type="button"
                 variant="secondary"
-                disabled={loading || !membershipPayment}
+                disabled={loading || !reviewQuoteReady || !membershipPayment}
                 onClick={openPayLaterConfirmation}
               >
                 Pay later

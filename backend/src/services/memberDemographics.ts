@@ -4,6 +4,11 @@ import { getDrizzleDb } from '../db/drizzle-db.js';
 import { findMemberIdWithConflictingNormalizedEmailChange } from './accountAccess.js';
 import { normalizeEmail } from '../utils/auth.js';
 import { isMemberMinor } from '../utils/memberAge.js';
+import {
+  preferredPronounsValidationMessage,
+  resolvePreferredPronounsForSave,
+} from '../utils/preferredPronouns.js';
+import { resolveUsaCurlingCompetitionGenderForSave } from '../utils/usaCurlingCompetitionGender.js';
 import { queueMemberContactInfoSync } from './mauticMembershipSyncService.js';
 
 export type MemberDemographicsInput = {
@@ -15,6 +20,8 @@ export type MemberDemographicsInput = {
   mailingAddress: string;
   emergencyContactName: string;
   emergencyContactPhone: string;
+  preferredPronouns: string;
+  usaCurlingCompetitionGender: string;
 };
 
 export class MemberDemographicsValidationError extends Error {
@@ -62,6 +69,13 @@ function assertValidDateOfBirth(value: string): void {
   }
 }
 
+function assertValidPreferredPronouns(value: string): void {
+  const message = preferredPronounsValidationMessage(value);
+  if (message) {
+    throw new MemberDemographicsValidationError({ preferredPronouns: message });
+  }
+}
+
 export function validateMemberDemographics(
   input: MemberDemographicsInput,
   options?: { skipEmergencyContactForMinor?: boolean; requireDateOfBirth?: boolean },
@@ -76,6 +90,7 @@ export function validateMemberDemographics(
   assertValidEmail(input.email);
   assertNonEmpty(input.phone, 'phone');
   assertNonEmpty(input.mailingAddress, 'mailingAddress');
+  assertValidPreferredPronouns(input.preferredPronouns);
   const minorDateOfBirth = input.dateOfBirth.trim() || null;
   const skipEmergency =
     options?.skipEmergencyContactForMinor === true && isMemberMinor(minorDateOfBirth);
@@ -164,6 +179,8 @@ export async function applyMemberDemographicsUpdate(
     mailing_address: input.mailingAddress.trim(),
     emergency_contact_name: input.emergencyContactName.trim(),
     emergency_contact_phone: input.emergencyContactPhone.trim(),
+    preferred_pronouns: resolvePreferredPronounsForSave(input.preferredPronouns),
+    usa_curling_competition_gender: resolveUsaCurlingCompetitionGenderForSave(input.usaCurlingCompetitionGender),
     updated_at: sql`CURRENT_TIMESTAMP`,
   };
   if (resolvedDateOfBirth) {

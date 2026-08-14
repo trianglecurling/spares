@@ -146,6 +146,8 @@ export type MemberProfileResponse = {
   mailingAddress: string | null;
   emergencyContactName: string | null;
   emergencyContactPhone: string | null;
+  preferredPronouns: string | null;
+  usaCurlingCompetitionGender: string | null;
   guardianFirstName: string | null;
   guardianLastName: string | null;
   guardianEmail: string | null;
@@ -685,6 +687,8 @@ export type UpdateProfileBody = {
   mailingAddress?: string;
   emergencyContactName?: string;
   emergencyContactPhone?: string;
+  preferredPronouns?: string;
+  usaCurlingCompetitionGender?: string;
   guardianFirstName?: string;
   guardianLastName?: string;
   guardianEmail?: string;
@@ -717,6 +721,8 @@ export type UpdateMemberBody = {
   mailingAddress?: string;
   emergencyContactName?: string;
   emergencyContactPhone?: string;
+  preferredPronouns?: string;
+  usaCurlingCompetitionGender?: string;
   lifetimeMember?: boolean;
   isAdmin?: boolean;
   isServerAdmin?: boolean;

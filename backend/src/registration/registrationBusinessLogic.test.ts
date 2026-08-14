@@ -77,6 +77,32 @@ describe('registration business logic', () => {
     expect(fees.lineItems).toHaveLength(0);
   });
 
+  test('lifetime membership still charges replacement name tags', () => {
+    const fees = calculateRegistrationFees(
+      registrationContext({
+        registrant: {
+          memberId: 20,
+          hasUserAccount: true,
+          isReturningMember: true,
+          dateOfBirth: '1990-01-01',
+          hasLifetimeMembership: true,
+        },
+        nameTagReplacementQuantity: 2,
+      }),
+    );
+    expect(fees.lineItems.map((item) => item.lineType)).toEqual(['replacement_name_tag_fee']);
+    expect(fees.lineItems[0]?.description).toBe('Replacement name tag (×2)');
+    expect(fees.totalDueMinor).toBe(3000);
+  });
+
+  test('replacement name tags are billed by unit price times quantity', () => {
+    const fees = calculateRegistrationFees(membershipOnly({ nameTagReplacementQuantity: 3 }));
+    const nameTag = fees.lineItems.find((item) => item.lineType === 'replacement_name_tag_fee');
+    expect(nameTag?.amountMinor).toBe(4500);
+    expect(nameTag?.description).toBe('Replacement name tag (×3)');
+    expect(nameTag?.discountEligible).toBe(false);
+  });
+
   test('social-to-regular upgrade gets no credit and no discounts', () => {
     const fees = calculateRegistrationFees(
       membershipOnly({

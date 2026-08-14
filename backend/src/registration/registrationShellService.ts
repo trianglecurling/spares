@@ -14,6 +14,17 @@ import type { Member } from '../types.js';
 import { isAdmin, isServerAdmin, normalizeEmail } from '../utils/auth.js';
 import { memberCanManageRegistrations } from '../utils/registrationStaffAccess.js';
 import { isMemberMinor } from '../utils/memberAge.js';
+import { resolvePreferredPronounsForSave } from '../utils/preferredPronouns.js';
+import { resolveUsaCurlingCompetitionGenderForSave } from '../utils/usaCurlingCompetitionGender.js';
+import {
+  nameTagIncludePronounsFromStored,
+  nameTagPronounsAreIncludable,
+  nameTagStepIsComplete,
+  nameTagStepValidationMessage,
+  normalizeNameTagName,
+  parseNameTagReplacementQuantity,
+  resolveNameTagIncludePronounsForSave,
+} from '../utils/nameTag.js';
 import { applyMemberGuardianUpdate } from '../services/memberGuardian.js';
 
 export const REQUIRED_REGISTRATION_POLICIES: Array<{
@@ -44,6 +55,7 @@ export type RegistrationShellRow = {
   ice_privileges_choice: CurlingIcePrivilegesChoiceSqlite;
   membership_option: CurlingMembershipOptionSqlite;
   basic_ice_fallback_interest: number | null;
+  name_tag_replacement_quantity: number | null;
   status: RegistrationShellStatus;
   shell_completed_at: string | Date | null;
   cancelled_at: string | Date | null;
@@ -79,6 +91,10 @@ type MemberSummary = {
   mailingAddress: string | null;
   emergencyContactName: string | null;
   emergencyContactPhone: string | null;
+  preferredPronouns: string | null;
+  usaCurlingCompetitionGender: string | null;
+  nameTagName: string | null;
+  nameTagIncludePronouns: boolean | null;
 };
 
 function normalizeDate(value: unknown): string | null {
@@ -158,6 +174,8 @@ export function validateDemographics(
         mailingAddress: input.mailingAddress,
         emergencyContactName: input.emergencyContactName?.trim() ?? '',
         emergencyContactPhone: input.emergencyContactPhone?.trim() ?? '',
+        preferredPronouns: input.preferredPronouns?.trim() ?? '',
+        usaCurlingCompetitionGender: input.usaCurlingCompetitionGender?.trim() ?? '',
       },
       {
         skipEmergencyContactForMinor: isMemberMinor(resolvedDateOfBirth),
@@ -186,6 +204,8 @@ export function curlerDemographicsAreComplete(
         mailingAddress: input.mailingAddress?.trim() ?? '',
         emergencyContactName: input.emergencyContactName?.trim() ?? '',
         emergencyContactPhone: input.emergencyContactPhone?.trim() ?? '',
+        preferredPronouns: input.preferredPronouns?.trim() ?? '',
+        usaCurlingCompetitionGender: input.usaCurlingCompetitionGender?.trim() ?? '',
       },
       resolvedDateOfBirth,
     );
@@ -223,6 +243,7 @@ export function mapRegistration(row: any): RegistrationShellRow {
     ice_privileges_choice: (row.ice_privileges_choice ?? 'none') as CurlingIcePrivilegesChoiceSqlite,
     membership_option: (row.membership_option ?? 'none') as CurlingMembershipOptionSqlite,
     basic_ice_fallback_interest: row.basic_ice_fallback_interest ?? null,
+    name_tag_replacement_quantity: parseNameTagReplacementQuantity(row.name_tag_replacement_quantity),
     status: row.status,
     shell_completed_at: normalizeDateTime(row.shell_completed_at),
     cancelled_at: normalizeDateTime(row.cancelled_at),
@@ -243,6 +264,10 @@ export function mapMemberSummary(row: any): MemberSummary {
     mailingAddress: row.mailing_address ?? null,
     emergencyContactName: row.emergency_contact_name ?? null,
     emergencyContactPhone: row.emergency_contact_phone ?? null,
+    preferredPronouns: row.preferred_pronouns ?? null,
+    usaCurlingCompetitionGender: row.usa_curling_competition_gender ?? null,
+    nameTagName: row.name_tag_name ?? null,
+    nameTagIncludePronouns: nameTagIncludePronounsFromStored(row.name_tag_include_pronouns),
   };
 }
 
@@ -656,6 +681,8 @@ export async function createMemberForRegistration(input: Partial<MemberDemograph
     mailing_address: input.mailingAddress?.trim() || null,
     emergency_contact_name: input.emergencyContactName?.trim() || null,
     emergency_contact_phone: input.emergencyContactPhone?.trim() || null,
+    preferred_pronouns: resolvePreferredPronounsForSave(input.preferredPronouns),
+    usa_curling_competition_gender: resolveUsaCurlingCompetitionGenderForSave(input.usaCurlingCompetitionGender),
     opted_in_sms: 0,
     email_subscribed: 1,
     email_visible: 0,
@@ -809,6 +836,8 @@ export async function updateCurlerDemographics(
         mailingAddress: input.mailingAddress,
         emergencyContactName: input.emergencyContactName,
         emergencyContactPhone: input.emergencyContactPhone,
+        preferredPronouns: input.preferredPronouns ?? '',
+        usaCurlingCompetitionGender: input.usaCurlingCompetitionGender ?? '',
       },
       { registrationUpdate: true, resolvedDateOfBirth },
     );
@@ -825,6 +854,68 @@ export async function updateCurlerDemographics(
       updated_at: sql`CURRENT_TIMESTAMP`,
     })
     .where(eq(schema.curlingRegistrations.id, registrationId));
+}
+
+export async function updateCurlerNameTag(
+  registrationId: number,
+  input: {
+    nameTagName?: string;
+    nameTagIncludePronouns?: boolean | null;
+    replacementQuantity?: number | null;
+  },
+): Promise<void> {
+  const registration = await getRegistrationById(registrationId);
+  if (!registration?.curler_member_id) {
+    throw new RegistrationShellValidationError({ curler: 'A curler must be selected before a name tag can be saved.' });
+  }
+  const isReturningMember = registration.returning_member_answer === 1;
+  const { db, schema } = getDrizzleDb();
+  const [curler] = await db
+    .select({
+      preferred_pronouns: schema.members.preferred_pronouns,
+    })
+    .from(schema.members)
+    .where(eq(schema.members.id, registration.curler_member_id))
+    .limit(1);
+  const preferredPronouns = curler?.preferred_pronouns ?? '';
+  const replacementQuantity = isReturningMember
+    ? parseNameTagReplacementQuantity(input.replacementQuantity)
+    : null;
+  const message = nameTagStepValidationMessage({
+    isReturningMember,
+    name: input.nameTagName,
+    includePronouns: nameTagPronounsAreIncludable(preferredPronouns)
+      ? input.nameTagIncludePronouns
+      : false,
+    preferredPronouns,
+    replacementQuantity,
+  });
+  if (message) {
+    throw new RegistrationShellValidationError({ nameTag: message });
+  }
+  await db
+    .update(schema.curlingRegistrations)
+    .set({
+      name_tag_replacement_quantity: replacementQuantity,
+      updated_at: sql`CURRENT_TIMESTAMP`,
+    })
+    .where(eq(schema.curlingRegistrations.id, registrationId));
+  if (isReturningMember && replacementQuantity === 0) {
+    return;
+  }
+  const name = normalizeNameTagName(input.nameTagName);
+  const includePronouns = resolveNameTagIncludePronounsForSave(
+    preferredPronouns,
+    input.nameTagIncludePronouns,
+  );
+  await db
+    .update(schema.members)
+    .set({
+      name_tag_name: name,
+      name_tag_include_pronouns: includePronouns ? 1 : 0,
+      updated_at: sql`CURRENT_TIMESTAMP`,
+    })
+    .where(eq(schema.members.id, registration.curler_member_id));
 }
 
 export async function updateGuardian(registrationId: number, input: GuardianInput): Promise<void> {
@@ -865,6 +956,19 @@ export async function completeShell(registrationId: number): Promise<Registratio
   if (demographicsIncomplete) {
     details.demographics = 'Required curler demographic information is incomplete.';
   }
+  if (
+    !nameTagStepIsComplete({
+      isReturningMember: registration.returning_member_answer === 1,
+      name: curler?.nameTagName,
+      includePronouns: curler?.nameTagIncludePronouns,
+      replacementQuantity: registration.name_tag_replacement_quantity,
+    })
+  ) {
+    details.nameTag =
+      registration.returning_member_answer === 1
+        ? 'Choose whether to purchase a replacement name tag.'
+        : 'Enter the name to print on your name tag.';
+  }
   if (isMinor && (!registration.guardian_first_name || !registration.guardian_last_name || !registration.guardian_email || !registration.guardian_phone)) {
     details.guardian = 'Parent/guardian information is required for minors.';
   }
@@ -889,7 +993,13 @@ export type GuestRegistrationSubmitInput = {
   registeringForSelf: boolean;
   useSubmitterEmailForCurler?: boolean;
   submitter?: Partial<MemberDemographicsInput> & { email: string };
-  curler: Omit<MemberDemographicsInput, 'dateOfBirth'> & { dateOfBirth?: string };
+  curler: Omit<MemberDemographicsInput, 'dateOfBirth' | 'preferredPronouns' | 'usaCurlingCompetitionGender'> & {
+    dateOfBirth?: string;
+    preferredPronouns?: string;
+    usaCurlingCompetitionGender?: string;
+  };
+  nameTagName: string;
+  nameTagIncludePronouns: boolean;
   guardian?: GuardianInput;
   membershipChoice: 'regular' | 'social';
   basicIcePrivileges: boolean;
@@ -899,6 +1009,8 @@ export type GuestRegistrationSubmitInput = {
   reciprocalClubName: string | null;
   experienceType: 'none_or_minimal' | 'specified_years' | 'known_existing';
   experienceSelfReportedYears: number | null;
+  usaCurlingMembershipOptIn?: boolean;
+  uswcaMembershipOptIn?: boolean;
   payLater?: boolean;
   membershipCommitteeComments?: string | null;
 };
@@ -937,6 +1049,10 @@ export async function submitGuestRegistration(
   });
   await acceptPolicies(draft.id, submitter.id);
   await updateCurlerDemographics(draft.id, input.curler, false);
+  await updateCurlerNameTag(draft.id, {
+    nameTagName: input.nameTagName,
+    nameTagIncludePronouns: input.nameTagIncludePronouns,
+  });
   if (minor && input.guardian) {
     await updateGuardian(draft.id, input.guardian);
   }
@@ -951,11 +1067,21 @@ export async function submitGuestRegistration(
 
   const membershipPayment = await import('./registrationMembershipPaymentService.js');
   if (input.membershipChoice === 'social') {
-    await membershipPayment.updateMembership(draft.id, actor, { membershipOption: 'social', basicIcePrivileges: false });
+    await membershipPayment.updateMembership(draft.id, actor, {
+      membershipOption: 'social',
+      basicIcePrivileges: false,
+      usaCurlingMembershipOptIn: input.usaCurlingMembershipOptIn,
+      uswcaMembershipOptIn: input.uswcaMembershipOptIn,
+    });
   } else {
     const resolvedExperienceType =
       input.experienceType === 'known_existing' ? 'none_or_minimal' : input.experienceType;
-    await membershipPayment.updateMembership(draft.id, actor, { membershipOption: 'regular', basicIcePrivileges: false });
+    await membershipPayment.updateMembership(draft.id, actor, {
+      membershipOption: 'regular',
+      basicIcePrivileges: false,
+      usaCurlingMembershipOptIn: input.usaCurlingMembershipOptIn,
+      uswcaMembershipOptIn: input.uswcaMembershipOptIn,
+    });
     await membershipPayment.updateDiscounts(draft.id, actor, {
       studentDiscountClaimed: input.studentDiscountClaimed,
       studentInstitution: input.studentInstitution,
@@ -979,7 +1105,12 @@ export async function submitGuestRegistration(
         experienceSelfReportedYears: null,
       });
     }
-    await membershipPayment.updateMembership(draft.id, actor, { membershipOption: 'regular', basicIcePrivileges: input.basicIcePrivileges });
+    await membershipPayment.updateMembership(draft.id, actor, {
+      membershipOption: 'regular',
+      basicIcePrivileges: input.basicIcePrivileges,
+      usaCurlingMembershipOptIn: input.usaCurlingMembershipOptIn,
+      uswcaMembershipOptIn: input.uswcaMembershipOptIn,
+    });
   }
 
   return membershipPayment.submitRegistrationMembershipPayment({

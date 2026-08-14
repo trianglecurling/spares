@@ -4,6 +4,9 @@ import { sendApiError, sendValidationError } from '../api/errors.js';
 import type { ApiErrorResponse } from '../api/types.js';
 import { PaymentServiceError } from '../services/paymentService.js';
 import { resolveFrontendBaseUrl } from '../utils/frontendUrl.js';
+import { PREFERRED_PRONOUN_MAX_LENGTH } from '../utils/preferredPronouns.js';
+import { USA_CURLING_COMPETITION_GENDER_VALUES } from '../utils/usaCurlingCompetitionGender.js';
+import { NAME_TAG_NAME_MAX_LENGTH } from '../utils/nameTag.js';
 import type { Member } from '../types.js';
 import { abuseRouteRateLimits } from '../plugins/abuseRateLimits.js';
 import { MAX_DESIRED_LEAGUE_COUNT } from '../db/drizzle-schema.js';
@@ -49,6 +52,7 @@ import {
   listEligibleReturningProfiles,
   submitGuestRegistration,
   updateCurlerDemographics,
+  updateCurlerNameTag,
   updateGuardian,
   type GuardianInput,
   type MemberDemographicsInput,
@@ -112,6 +116,8 @@ const demographicsSchema = z.object({
   mailingAddress: z.string().min(1),
   emergencyContactName: z.string().optional().default(''),
   emergencyContactPhone: z.string().optional().default(''),
+  preferredPronouns: z.string().max(PREFERRED_PRONOUN_MAX_LENGTH).optional(),
+  usaCurlingCompetitionGender: z.enum(USA_CURLING_COMPETITION_GENDER_VALUES).optional(),
 });
 const newIdentitySchema = z.object({
   registeringForSelf: z.boolean(),
@@ -128,10 +134,17 @@ const guardianSchema = z.object({
   email: z.string().email(),
   phone: z.string().min(1),
 });
+const nameTagSchema = z.object({
+  nameTagName: z.string().trim().max(NAME_TAG_NAME_MAX_LENGTH).optional().default(''),
+  nameTagIncludePronouns: z.boolean().nullable().optional(),
+  replacementQuantity: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3)]).optional(),
+});
 const membershipSchema = z.object({
   membershipOption: z.enum(['regular', 'social', 'junior_recreational', 'none']),
   basicIcePrivileges: z.boolean().default(false),
   juniorAssistancePercent: z.number().int().refine((value) => [0, 25, 50, 75].includes(value)).nullable().optional(),
+  usaCurlingMembershipOptIn: z.boolean().nullable().optional(),
+  uswcaMembershipOptIn: z.boolean().nullable().optional(),
 });
 const icePrivilegesSchema = z.object({
   choice: z.enum(['league_play', 'basic_ice', 'none']),
@@ -211,6 +224,8 @@ const guestPreviewSchema = z.object({
   reciprocalClubName: z.string().nullable(),
   experienceType: z.enum(['none_or_minimal', 'specified_years', 'known_existing']),
   experienceSelfReportedYears: z.coerce.number().nullable(),
+  usaCurlingMembershipOptIn: z.boolean().nullable().optional(),
+  uswcaMembershipOptIn: z.boolean().nullable().optional(),
 });
 
 const guestSubmitSchema = z.object({
@@ -220,6 +235,8 @@ const guestSubmitSchema = z.object({
   useSubmitterEmailForCurler: z.boolean().optional(),
   submitter: demographicsSchema.partial().extend({ email: z.string().email() }).optional(),
   curler: demographicsSchema,
+  nameTagName: z.string().trim().min(1).max(NAME_TAG_NAME_MAX_LENGTH),
+  nameTagIncludePronouns: z.boolean(),
   guardian: guardianSchema.optional(),
   membershipChoice: z.enum(['regular', 'social']),
   basicIcePrivileges: z.boolean(),
@@ -229,6 +246,8 @@ const guestSubmitSchema = z.object({
   reciprocalClubName: z.string().nullable(),
   experienceType: z.enum(['none_or_minimal', 'specified_years', 'known_existing']),
   experienceSelfReportedYears: z.coerce.number().nullable(),
+  usaCurlingMembershipOptIn: z.boolean().optional(),
+  uswcaMembershipOptIn: z.boolean().optional(),
   payLater: z.boolean().optional(),
   membershipCommitteeComments: z.string().trim().max(2000).nullable().optional(),
 });
@@ -695,6 +714,32 @@ export async function protectedRegistrationShellRoutes(fastify: FastifyInstance)
         if (!(await requireDraftAccess(request, reply, id))) return reply;
         const body = demographicsSchema.extend({ confirmedCurrent: z.boolean().optional() }).parse(request.body);
         await updateCurlerDemographics(id, body, body.confirmedCurrent ?? false);
+        return await getRegistrationShellPayload(id);
+      } catch (error) {
+        return handleRegistrationError(reply, error);
+      }
+    }
+  );
+
+  fastify.patch<{
+    Params: { id: number };
+    Body: {
+      nameTagName?: string;
+      nameTagIncludePronouns?: boolean | null;
+      replacementQuantity?: 0 | 1 | 2 | 3;
+    };
+    Reply: unknown | ApiErrorResponse;
+  }>(
+    '/registration/drafts/:id/name-tag',
+    {
+      schema: { tags: ['registration'], params: idParamsJsonSchema, body: anyObjectSchema, response: { 200: anyObjectSchema } },
+    },
+    async (request, reply) => {
+      try {
+        const { id } = idParamsSchema.parse(request.params);
+        if (!(await requireDraftAccess(request, reply, id))) return reply;
+        const body = nameTagSchema.parse(request.body);
+        await updateCurlerNameTag(id, body);
         return await getRegistrationShellPayload(id);
       } catch (error) {
         return handleRegistrationError(reply, error);

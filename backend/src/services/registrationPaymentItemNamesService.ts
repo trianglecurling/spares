@@ -13,7 +13,8 @@ export type RegistrationPaymentItemLineType =
   | 'junior_recreational_fee'
   | 'league_fee'
   | 'spare_only_fee'
-  | 'sabbatical_fee';
+  | 'sabbatical_fee'
+  | 'replacement_name_tag_fee';
 
 export type RegistrationPaymentItemNameDefinition = {
   lineType: RegistrationPaymentItemLineType;
@@ -51,6 +52,11 @@ export const REGISTRATION_PAYMENT_ITEM_NAME_DEFINITIONS: RegistrationPaymentItem
     lineType: 'sabbatical_fee',
     label: 'Sabbatical fee',
     defaultItemName: 'Sabbatical fee',
+  },
+  {
+    lineType: 'replacement_name_tag_fee',
+    label: 'Replacement name tag',
+    defaultItemName: 'Replacement name tag',
   },
 ];
 

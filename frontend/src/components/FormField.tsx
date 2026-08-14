@@ -18,6 +18,11 @@ type FormFieldProps = {
   labelId?: string;
   required?: boolean;
   optional?: boolean;
+  /**
+   * Rendered beside the label, outside the `<label>` element so it can hold
+   * interactive help controls without nested-button issues.
+   */
+  labelAccessory?: ReactNode;
   helperText?: ReactNode;
   /** Where helper text renders. Default stays below the control for existing forms. */
   helperPlacement?: 'after-label' | 'after-control';
@@ -50,6 +55,7 @@ export default function FormField({
   labelId,
   required = false,
   optional = false,
+  labelAccessory,
   helperText,
   helperPlacement = 'after-control',
   error,
@@ -93,6 +99,7 @@ export default function FormField({
         </div>
       )}
       {markerText ? <span className={markerToneClasses[tone]}>{markerText}</span> : null}
+      {labelAccessory}
     </div>
   ) : null;
 

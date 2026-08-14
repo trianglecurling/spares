@@ -3853,6 +3853,18 @@
                         "string"
                       ]
                     },
+                    "preferredPronouns": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "usaCurlingCompetitionGender": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
                     "guardianFirstName": {
                       "type": [
                         "null",
@@ -3916,6 +3928,8 @@
                     "mailingAddress",
                     "emergencyContactName",
                     "emergencyContactPhone",
+                    "preferredPronouns",
+                    "usaCurlingCompetitionGender",
                     "guardianFirstName",
                     "guardianLastName",
                     "guardianEmail",
@@ -3980,6 +3994,18 @@
                   "emergencyContactPhone": {
                     "type": "string",
                     "minLength": 1
+                  },
+                  "preferredPronouns": {
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "usaCurlingCompetitionGender": {
+                    "type": "string",
+                    "enum": [
+                      "Male",
+                      "Female",
+                      "Unspecified"
+                    ]
                   },
                   "guardianFirstName": {
                     "type": "string",
@@ -4081,6 +4107,18 @@
                         "string"
                       ]
                     },
+                    "preferredPronouns": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "usaCurlingCompetitionGender": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
                     "guardianFirstName": {
                       "type": [
                         "null",
@@ -4144,6 +4182,8 @@
                     "mailingAddress",
                     "emergencyContactName",
                     "emergencyContactPhone",
+                    "preferredPronouns",
+                    "usaCurlingCompetitionGender",
                     "guardianFirstName",
                     "guardianLastName",
                     "guardianEmail",
@@ -5558,6 +5598,18 @@
                         "string"
                       ]
                     },
+                    "preferredPronouns": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "usaCurlingCompetitionGender": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
                     "guardianFirstName": {
                       "type": [
                         "null",
@@ -5621,6 +5673,8 @@
                     "mailingAddress",
                     "emergencyContactName",
                     "emergencyContactPhone",
+                    "preferredPronouns",
+                    "usaCurlingCompetitionGender",
                     "guardianFirstName",
                     "guardianLastName",
                     "guardianEmail",
@@ -5683,6 +5737,18 @@
                   },
                   "emergencyContactPhone": {
                     "type": "string"
+                  },
+                  "preferredPronouns": {
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "usaCurlingCompetitionGender": {
+                    "type": "string",
+                    "enum": [
+                      "Male",
+                      "Female",
+                      "Unspecified"
+                    ]
                   },
                   "lifetimeMember": {
                     "type": "boolean"
@@ -20765,7 +20831,8 @@
                 "junior_recreational_fee",
                 "league_fee",
                 "spare_only_fee",
-                "sabbatical_fee"
+                "sabbatical_fee",
+                "replacement_name_tag_fee"
               ]
             },
             "in": "path",
@@ -23262,6 +23329,9 @@
                     "leagueFeeDollars": {
                       "type": "number"
                     },
+                    "replacementNameTagFeeDollars": {
+                      "type": "number"
+                    },
                     "createdAt": {
                       "type": "string"
                     },
@@ -23277,6 +23347,7 @@
                     "sabbaticalFeeDollars",
                     "juniorRecreationalFeeDollars",
                     "leagueFeeDollars",
+                    "replacementNameTagFeeDollars",
                     "createdAt",
                     "updatedAt"
                   ]
@@ -23315,6 +23386,9 @@
                   },
                   "leagueFeeDollars": {
                     "type": "number"
+                  },
+                  "replacementNameTagFeeDollars": {
+                    "type": "number"
                   }
                 }
               }
@@ -23351,6 +23425,9 @@
                     "leagueFeeDollars": {
                       "type": "number"
                     },
+                    "replacementNameTagFeeDollars": {
+                      "type": "number"
+                    },
                     "createdAt": {
                       "type": "string"
                     },
@@ -23366,6 +23443,7 @@
                     "sabbaticalFeeDollars",
                     "juniorRecreationalFeeDollars",
                     "leagueFeeDollars",
+                    "replacementNameTagFeeDollars",
                     "createdAt",
                     "updatedAt"
                   ]
@@ -24430,6 +24508,47 @@
       }
     },
     "/registration/drafts/{id}/demographics": {
+      "patch": {
+        "tags": [
+          "registration"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "number"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/registration/drafts/{id}/name-tag": {
       "patch": {
         "tags": [
           "registration"

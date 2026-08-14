@@ -33,6 +33,11 @@ import { queueMemberContactInfoSync, queueMembershipRemovalSync } from '../servi
 import { getMemberMembershipCard } from '../services/memberMembershipCardService.js';
 import { memberHasActiveMembershipCondition } from '../services/memberMembershipStatusService.js';
 import { getCurrentDateStringAsync } from '../utils/time.js';
+import { PREFERRED_PRONOUN_MAX_LENGTH, resolvePreferredPronounsForSave } from '../utils/preferredPronouns.js';
+import {
+  resolveUsaCurlingCompetitionGenderForSave,
+  USA_CURLING_COMPETITION_GENDER_VALUES,
+} from '../utils/usaCurlingCompetitionGender.js';
 import { parseQueryBoolean } from '../utils/queryParams.js';
 import { resolveRelevantSessionIdForLeagues } from '../services/curlingSessionService.js';
 import { isLeagueEligibleForSpares } from '../utils/leagueSpareEligibility.js';
@@ -117,6 +122,8 @@ const profileDemographicFieldKeys = [
   'mailingAddress',
   'emergencyContactName',
   'emergencyContactPhone',
+  'preferredPronouns',
+  'usaCurlingCompetitionGender',
 ] as const;
 
 const profileGuardianFieldKeys = [
@@ -136,6 +143,8 @@ const updateProfileSchema = z.object({
   mailingAddress: z.string().min(1).optional(),
   emergencyContactName: z.string().min(1).optional(),
   emergencyContactPhone: z.string().min(1).optional(),
+  preferredPronouns: z.string().max(PREFERRED_PRONOUN_MAX_LENGTH).optional(),
+  usaCurlingCompetitionGender: z.enum(USA_CURLING_COMPETITION_GENDER_VALUES).optional(),
   guardianFirstName: z.string().min(1).optional(),
   guardianLastName: z.string().min(1).optional(),
   guardianEmail: z.string().email().optional(),
@@ -183,6 +192,8 @@ const updateMemberSchema = z.object({
   mailingAddress: z.string().optional(),
   emergencyContactName: z.string().optional(),
   emergencyContactPhone: z.string().optional(),
+  preferredPronouns: z.string().max(PREFERRED_PRONOUN_MAX_LENGTH).optional(),
+  usaCurlingCompetitionGender: z.enum(USA_CURLING_COMPETITION_GENDER_VALUES).optional(),
   lifetimeMember: z.boolean().optional(),
   isAdmin: z.boolean().optional(),
   isServerAdmin: z.boolean().optional(),
@@ -276,6 +287,8 @@ const updateProfileBodySchema = {
     mailingAddress: { type: 'string', minLength: 1 },
     emergencyContactName: { type: 'string', minLength: 1 },
     emergencyContactPhone: { type: 'string', minLength: 1 },
+    preferredPronouns: { type: 'string', maxLength: PREFERRED_PRONOUN_MAX_LENGTH },
+    usaCurlingCompetitionGender: { type: 'string', enum: ['Male', 'Female', 'Unspecified'] },
     guardianFirstName: { type: 'string', minLength: 1 },
     guardianLastName: { type: 'string', minLength: 1 },
     guardianEmail: { type: 'string' },
@@ -320,6 +333,8 @@ const updateMemberBodySchema = {
     mailingAddress: { type: 'string' },
     emergencyContactName: { type: 'string' },
     emergencyContactPhone: { type: 'string' },
+    preferredPronouns: { type: 'string', maxLength: PREFERRED_PRONOUN_MAX_LENGTH },
+    usaCurlingCompetitionGender: { type: 'string', enum: ['Male', 'Female', 'Unspecified'] },
     lifetimeMember: { type: 'boolean' },
     isAdmin: { type: 'boolean' },
     isServerAdmin: { type: 'boolean' },
@@ -406,6 +421,8 @@ interface MemberUpdateData {
   mailing_address?: string | null;
   emergency_contact_name?: string | null;
   emergency_contact_phone?: string | null;
+  preferred_pronouns?: string | null;
+  usa_curling_competition_gender?: string | null;
   lifetime_member?: number;
   opted_in_sms?: number;
   email_visible?: number;
@@ -522,6 +539,8 @@ function buildMemberProfileResponse(member: Member): MemberProfileResponse {
     mailingAddress: member.mailing_address ?? null,
     emergencyContactName: minor ? guardianEmergencyName ?? member.emergency_contact_name ?? null : member.emergency_contact_name ?? null,
     emergencyContactPhone: minor ? guardianPhone ?? member.emergency_contact_phone ?? null : member.emergency_contact_phone ?? null,
+    preferredPronouns: member.preferred_pronouns ?? null,
+    usaCurlingCompetitionGender: member.usa_curling_competition_gender ?? null,
     guardianFirstName,
     guardianLastName,
     guardianEmail: member.guardian_email ?? null,
@@ -819,6 +838,8 @@ export async function memberRoutes(fastify: FastifyInstance) {
           mailingAddress: body.mailingAddress!,
           emergencyContactName: body.emergencyContactName!,
           emergencyContactPhone: body.emergencyContactPhone!,
+          preferredPronouns: body.preferredPronouns ?? '',
+          usaCurlingCompetitionGender: body.usaCurlingCompetitionGender ?? '',
         });
       } catch (error) {
         if (error instanceof MemberDemographicsValidationError) {
@@ -1710,6 +1731,14 @@ export async function memberRoutes(fastify: FastifyInstance) {
     }
     if (body.emergencyContactPhone !== undefined) {
       updateData.emergency_contact_phone = body.emergencyContactPhone.trim() || null;
+    }
+    if (body.preferredPronouns !== undefined) {
+      updateData.preferred_pronouns = resolvePreferredPronounsForSave(body.preferredPronouns);
+    }
+    if (body.usaCurlingCompetitionGender !== undefined) {
+      updateData.usa_curling_competition_gender = resolveUsaCurlingCompetitionGenderForSave(
+        body.usaCurlingCompetitionGender,
+      );
     }
     if (body.lifetimeMember !== undefined) {
       updateData.lifetime_member = body.lifetimeMember ? 1 : 0;

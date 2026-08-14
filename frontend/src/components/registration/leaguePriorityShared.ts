@@ -14,6 +14,7 @@ import {
   LEAGUE_PRIORITY_GUARANTEE_LABEL_TEXT,
   MAX_DESIRED_LEAGUE_COUNT,
   MAX_PROTECTED_CLAIMS,
+  MAX_SIMULTANEOUS_SABBATICALS,
   MIN_PLAY_IN_ROSTER_SIZE,
   pendingRosterNames,
   priorityRosterAllReturning,
@@ -40,6 +41,7 @@ export {
   LEAGUE_PRIORITY_GUARANTEE_LABEL_TEXT,
   MAX_DESIRED_LEAGUE_COUNT,
   MAX_PROTECTED_CLAIMS,
+  MAX_SIMULTANEOUS_SABBATICALS,
   MIN_PLAY_IN_ROSTER_SIZE,
   pendingRosterNames,
   priorityRosterAllReturning,
@@ -108,6 +110,13 @@ export function leagueById(leagues: LeagueCatalogItem[]): Record<number, LeagueC
 /** Basic ice privileges only include leagues listed as free (no registration fee). */
 export function isFreeLeague(league: Pick<LeagueCatalogItem, 'registrationFeeMinor'> | undefined): boolean {
   return (league?.registrationFeeMinor ?? 0) === 0;
+}
+
+/** Standard leagues that allow a sabbatical. Bring-your-own-team leagues never do. */
+export function isSabbaticalEligibleLeague(
+  league: Pick<LeagueCatalogItem, 'allowsSabbatical' | 'leagueType'> | undefined,
+): boolean {
+  return league?.allowsSabbatical === true && league.leagueType !== 'bring_your_own_team';
 }
 
 export type PriorityListOptions = {
@@ -472,6 +481,58 @@ export function paidPriorLeaguesOffList(input: {
     if (!league || isFreeLeague(league)) return [];
     return [league];
   });
+}
+
+/**
+ * Last-session leagues the registrant can take a sabbatical from. Used when they
+ * are not building a priority list (sabbatical-only registration).
+ */
+export function sabbaticalEligiblePriorLeagues(input: {
+  priorSeasonLeagueIds: number[];
+  leagues: LeagueCatalogItem[];
+}): LeagueCatalogItem[] {
+  const leagues = leagueById(input.leagues);
+  return input.priorSeasonLeagueIds.flatMap((leagueId) => {
+    const league = leagues[leagueId];
+    if (!isSabbaticalEligibleLeague(league)) return [];
+    return [league];
+  });
+}
+
+/**
+ * Starting sabbatical/drop answers for sabbatical-only registration: drop last
+ * session leagues that cannot take a sabbatical, and extend continuing
+ * sabbaticals that still can, up to the simultaneous limit.
+ */
+export function defaultSabbaticalOnlyDecisions(input: {
+  priorSeasonLeagueIds: number[];
+  priorLeagueDecisions: PriorLeagueDecision[];
+  continuingSabbaticals: ContinuingSabbaticalSummary[];
+  leagues: LeagueCatalogItem[];
+}): PriorLeagueDecision[] {
+  const leagues = leagueById(input.leagues);
+  const byLeagueId = new Map<number, PriorLeagueDecision>();
+  for (const decision of input.priorLeagueDecisions) {
+    byLeagueId.set(decision.leagueId, decision);
+  }
+
+  for (const leagueId of input.priorSeasonLeagueIds) {
+    if (byLeagueId.has(leagueId)) continue;
+    if (!isSabbaticalEligibleLeague(leagues[leagueId])) {
+      byLeagueId.set(leagueId, { leagueId, decision: 'drop' });
+    }
+  }
+
+  let sabbaticalCount = [...byLeagueId.values()].filter((entry) => entry.decision === 'sabbatical').length;
+  for (const continuing of input.continuingSabbaticals) {
+    if (byLeagueId.has(continuing.leagueId)) continue;
+    if (!continuing.canExtend) continue;
+    if (sabbaticalCount >= MAX_SIMULTANEOUS_SABBATICALS) continue;
+    byLeagueId.set(continuing.leagueId, { leagueId: continuing.leagueId, decision: 'sabbatical' });
+    sabbaticalCount += 1;
+  }
+
+  return [...byLeagueId.values()];
 }
 
 /**

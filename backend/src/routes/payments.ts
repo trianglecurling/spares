@@ -54,6 +54,7 @@ const registrationItemLineTypeParamSchema = z.object({
     'league_fee',
     'spare_only_fee',
     'sabbatical_fee',
+    'replacement_name_tag_fee',
   ]),
 });
 
@@ -425,6 +426,7 @@ export async function paymentRoutes(fastify: FastifyInstance): Promise<void> {
                 'league_fee',
                 'spare_only_fee',
                 'sabbatical_fee',
+                'replacement_name_tag_fee',
               ],
             },
           },

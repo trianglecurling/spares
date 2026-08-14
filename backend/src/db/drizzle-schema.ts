@@ -28,6 +28,10 @@ export const membersSqlite = sqliteTable('members', {
   mailing_address: text('mailing_address'),
   emergency_contact_name: text('emergency_contact_name'),
   emergency_contact_phone: text('emergency_contact_phone'),
+  preferred_pronouns: text('preferred_pronouns'),
+  usa_curling_competition_gender: text('usa_curling_competition_gender').default('Unspecified'),
+  name_tag_name: text('name_tag_name'),
+  name_tag_include_pronouns: integer('name_tag_include_pronouns'),
   guardian_first_name: text('guardian_first_name'),
   guardian_last_name: text('guardian_last_name'),
   guardian_email: text('guardian_email'),
@@ -309,6 +313,7 @@ export type RegistrationInvoiceLineKindSqlite =
   | 'spare_only_fee'
   | 'sabbatical_fee'
   | 'junior_recreational_fee'
+  | 'replacement_name_tag_fee'
   | 'student_discount'
   | 'reciprocal_discount'
   | 'winter_only_discount'
@@ -474,6 +479,9 @@ export const curlingRegistrationsSqlite = sqliteTable('curling_registrations', {
   desired_league_count: integer('desired_league_count'),
   basic_ice_fallback_interest: integer('basic_ice_fallback_interest'),
   membership_committee_comments: text('membership_committee_comments'),
+  name_tag_replacement_quantity: integer('name_tag_replacement_quantity'),
+  usa_curling_membership_opt_in: integer('usa_curling_membership_opt_in'),
+  uswca_membership_opt_in: integer('uswca_membership_opt_in'),
   status: text('status').notNull().default('identity_incomplete').$type<CurlingRegistrationStatusSqlite>(),
   shell_completed_at: text('shell_completed_at'),
   submitted_at: text('submitted_at'),
@@ -682,7 +690,8 @@ export type RegistrationPaymentItemLineTypeSqlite =
   | 'junior_recreational_fee'
   | 'league_fee'
   | 'spare_only_fee'
-  | 'sabbatical_fee';
+  | 'sabbatical_fee'
+  | 'replacement_name_tag_fee';
 
 export const registrationPaymentItemNamesSqlite = sqliteTable('registration_payment_item_names', {
   line_type: text('line_type').primaryKey().notNull().$type<RegistrationPaymentItemLineTypeSqlite>(),
@@ -697,6 +706,7 @@ export const registrationPriceSettingsSqlite = sqliteTable('registration_price_s
   sabbatical_fee_minor: integer('sabbatical_fee_minor').default(0).notNull(),
   junior_recreational_fee_minor: integer('junior_recreational_fee_minor').default(0).notNull(),
   default_league_fee_minor: integer('default_league_fee_minor').default(0).notNull(),
+  replacement_name_tag_fee_minor: integer('replacement_name_tag_fee_minor').default(0).notNull(),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
 });
@@ -2399,6 +2409,10 @@ export const membersPg = pgTable('members', {
   mailing_address: textPg('mailing_address'),
   emergency_contact_name: textPg('emergency_contact_name'),
   emergency_contact_phone: textPg('emergency_contact_phone'),
+  preferred_pronouns: textPg('preferred_pronouns'),
+  usa_curling_competition_gender: textPg('usa_curling_competition_gender').default('Unspecified'),
+  name_tag_name: textPg('name_tag_name'),
+  name_tag_include_pronouns: integerPg('name_tag_include_pronouns'),
   guardian_first_name: textPg('guardian_first_name'),
   guardian_last_name: textPg('guardian_last_name'),
   guardian_email: textPg('guardian_email'),
@@ -2647,6 +2661,9 @@ export const curlingRegistrationsPg = pgTable('curling_registrations', {
   desired_league_count: integerPg('desired_league_count'),
   basic_ice_fallback_interest: integerPg('basic_ice_fallback_interest'),
   membership_committee_comments: textPg('membership_committee_comments'),
+  name_tag_replacement_quantity: integerPg('name_tag_replacement_quantity'),
+  usa_curling_membership_opt_in: integerPg('usa_curling_membership_opt_in'),
+  uswca_membership_opt_in: integerPg('uswca_membership_opt_in'),
   status: textPg('status').notNull().default('identity_incomplete').$type<CurlingRegistrationStatusSqlite>(),
   shell_completed_at: timestamp('shell_completed_at', { withTimezone: false }),
   submitted_at: timestamp('submitted_at', { withTimezone: false }),
@@ -2854,6 +2871,7 @@ export const registrationPriceSettingsPg = pgTable('registration_price_settings'
   sabbatical_fee_minor: integerPg('sabbatical_fee_minor').default(0).notNull(),
   junior_recreational_fee_minor: integerPg('junior_recreational_fee_minor').default(0).notNull(),
   default_league_fee_minor: integerPg('default_league_fee_minor').default(0).notNull(),
+  replacement_name_tag_fee_minor: integerPg('replacement_name_tag_fee_minor').default(0).notNull(),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
 });

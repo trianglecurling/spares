@@ -162,6 +162,8 @@ export type RegistrationMembershipPaymentPayload = {
     reciprocalClubName: string | null;
     experienceType: 'none_or_minimal' | 'specified_years' | 'known_existing' | null;
     experienceSelfReportedYears: number | null;
+    usaCurlingMembershipOptIn?: boolean | null;
+    uswcaMembershipOptIn?: boolean | null;
   };
   icePrivilegesChoice: IcePrivilegesChoice;
   isFirstSessionOfSeason: boolean;
@@ -225,6 +227,8 @@ export type RegistrationWindow = {
     regularMinor: number;
     socialMinor: number;
     juniorRecreationalMinor: number;
+    sabbaticalMinor: number;
+    replacementNameTagMinor?: number;
   };
 };
 

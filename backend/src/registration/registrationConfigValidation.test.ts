@@ -95,6 +95,7 @@ describe('registration configuration validation', () => {
           sabbaticalFeeMinor: 5000,
           juniorRecreationalFeeMinor: 7500,
           defaultLeagueFeeMinor: 0,
+          replacementNameTagFeeMinor: 0,
         }),
       'socialMembershipFeeMinor'
     );

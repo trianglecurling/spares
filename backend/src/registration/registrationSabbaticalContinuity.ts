@@ -80,7 +80,11 @@ function hasGuaranteedReturnToSabbaticalLeague(context: RegistrationContext): bo
   );
 }
 
-/** True when the curler may register without membership to extend a prior-session sabbatical. */
+/**
+ * True when the curler has a continuing sabbatical to extend or drop, or a
+ * protected spot in a sabbatical-eligible league. Used to offer sabbatical-only
+ * membership and to send social membership through the sabbatical step.
+ */
 export function canChooseNoMembership(context: RegistrationContext): boolean {
   return listContinuingSabbaticalSummaries(context).length > 0 || hasGuaranteedReturnToSabbaticalLeague(context);
 }

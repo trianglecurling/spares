@@ -41,12 +41,16 @@ import {
   paidPriorLeaguesOffList,
   removePriority,
   reorderPriorities,
+  sabbaticalEligiblePriorLeagues,
+  defaultSabbaticalOnlyDecisions,
+  isSabbaticalEligibleLeague,
   sabbaticalListEntries,
   undecidedContinuingSabbaticalIds,
   undecidedPriorLeagueIds,
   updatePriorityRoster,
   priorityMoveButtonTitle,
   addPriorityAtTop,
+  MAX_SIMULTANEOUS_SABBATICALS,
   type LeaguePriorityInput,
   type LeaguePrioritySavePayload,
   type PriorLeagueDecision,
@@ -69,6 +73,8 @@ type Props = {
   continueLabel: string;
   /** Basic ice privileges: only free leagues may be listed or added. */
   restrictToFreeLeagues?: boolean;
+  /** Sabbatical-only membership: no priority list; last-session and continuing sabbatical choices only. */
+  sabbaticalOnly?: boolean;
   onSave: (input: LeaguePrioritySavePayload) => Promise<void>;
 };
 
@@ -109,6 +115,7 @@ export default function LeaguePriorityStep({
   saving,
   continueLabel,
   restrictToFreeLeagues = false,
+  sabbaticalOnly = false,
   onSave,
 }: Props) {
   const { showAlert } = useAlert();
@@ -120,6 +127,7 @@ export default function LeaguePriorityStep({
   const sabbaticalsLabelId = useId();
   const paidReturnLabelId = useId();
   const restrictHydratedRef = useRef(restrictToFreeLeagues);
+  const sabbaticalOnlyHydratedRef = useRef(sabbaticalOnly);
 
   const [priorities, setPriorities] = useState<LeaguePriorityInput[]>([]);
   const [desiredLeagueCount, setDesiredLeagueCount] = useState<number | null>(null);
@@ -141,12 +149,27 @@ export default function LeaguePriorityStep({
     if (!payload) return;
     const turnedOnFreeOnly = restrictToFreeLeagues && !restrictHydratedRef.current;
     restrictHydratedRef.current = restrictToFreeLeagues;
+    const turnedOnSabbaticalOnly = sabbaticalOnly && !sabbaticalOnlyHydratedRef.current;
+    sabbaticalOnlyHydratedRef.current = sabbaticalOnly;
     const currentWaitlistIds = new Set(seedableWaitlistLeagueIds(payload));
-    if (!hydratedRef.current || turnedOnFreeOnly) {
+    if (!hydratedRef.current || turnedOnFreeOnly || turnedOnSabbaticalOnly) {
       hydratedRef.current = true;
-      setPriorities(hydratePriorityList(payload, { freeLeaguesOnly: restrictToFreeLeagues }));
-      setDesiredLeagueCount(defaultDesiredLeagueCount(payload, { freeLeaguesOnly: restrictToFreeLeagues }));
-      setPriorLeagueDecisions(payload.priorLeagueDecisions ?? []);
+      if (sabbaticalOnly) {
+        setPriorities([]);
+        setDesiredLeagueCount(null);
+        setPriorLeagueDecisions(
+          defaultSabbaticalOnlyDecisions({
+            priorSeasonLeagueIds: payload.priorSeasonLeagueIds,
+            priorLeagueDecisions: payload.priorLeagueDecisions ?? [],
+            continuingSabbaticals: payload.continuingSabbaticals ?? [],
+            leagues: payload.leagues,
+          }),
+        );
+      } else {
+        setPriorities(hydratePriorityList(payload, { freeLeaguesOnly: restrictToFreeLeagues }));
+        setDesiredLeagueCount(defaultDesiredLeagueCount(payload, { freeLeaguesOnly: restrictToFreeLeagues }));
+        setPriorLeagueDecisions(payload.priorLeagueDecisions ?? []);
+      }
       setBasicIceFallbackInterest(payload.basicIceFallbackInterest === true);
       setPlayInEntry(payload.playInEntry ?? {});
       knownWaitlistLeagueIdsRef.current = currentWaitlistIds;
@@ -157,6 +180,10 @@ export default function LeaguePriorityStep({
     // they already removed.
     const previouslyKnownWaitlistLeagueIds = knownWaitlistLeagueIdsRef.current;
     knownWaitlistLeagueIdsRef.current = currentWaitlistIds;
+    if (sabbaticalOnly) {
+      setPlayInEntry(payload.playInEntry ?? {});
+      return;
+    }
     setPriorities((current) =>
       filterPrioritiesToAllowedLeagues(
         mergeNewlyJoinedWaitlistLeagues(current, payload, previouslyKnownWaitlistLeagueIds, {
@@ -167,7 +194,7 @@ export default function LeaguePriorityStep({
       ),
     );
     setPlayInEntry(payload.playInEntry ?? {});
-  }, [payload, restrictToFreeLeagues]);
+  }, [payload, restrictToFreeLeagues, sabbaticalOnly]);
 
   const memberNameById = useMemo(
     () => new Map(memberOptions.options.map((option) => [option.id, option.name])),
@@ -206,11 +233,12 @@ export default function LeaguePriorityStep({
   const eligibleLeagues = useMemo(
     () =>
       leagues.filter((league) => {
+        if (sabbaticalOnly) return false;
         if (!isLeagueSelectionEligibleLeague(league, eligibility)) return false;
         if (restrictToFreeLeagues && !isFreeLeague(league)) return false;
         return true;
       }),
-    [eligibility, leagues, restrictToFreeLeagues],
+    [eligibility, leagues, restrictToFreeLeagues, sabbaticalOnly],
   );
 
   const addableLeagues = useMemo(
@@ -257,10 +285,30 @@ export default function LeaguePriorityStep({
     () => paidReturnLeagues.filter((league) => league.allowsSabbatical),
     [paidReturnLeagues],
   );
-  const lastSessionLeagueIds = useMemo(
-    () => new Set(paidReturnLeaguesWithChoice.map((league) => league.id)),
-    [paidReturnLeaguesWithChoice],
+  const sabbaticalOnlyLastSessionLeagues = useMemo(
+    () =>
+      sabbaticalOnly
+        ? sabbaticalEligiblePriorLeagues({
+            priorSeasonLeagueIds: payload?.priorSeasonLeagueIds ?? [],
+            leagues,
+          })
+        : [],
+    [leagues, payload?.priorSeasonLeagueIds, sabbaticalOnly],
   );
+  const lastSessionLeaguesForDecisions = sabbaticalOnly
+    ? sabbaticalOnlyLastSessionLeagues
+    : paidReturnLeaguesWithChoice;
+  const lastSessionLeagueIds = useMemo(
+    () => new Set(lastSessionLeaguesForDecisions.map((league) => league.id)),
+    [lastSessionLeaguesForDecisions],
+  );
+  const sabbaticalCount = priorLeagueDecisions.filter((entry) => entry.decision === 'sabbatical').length;
+  const canTakeAnotherSabbatical = (leagueId: number) => {
+    const current = priorLeagueDecisions.find((entry) => entry.leagueId === leagueId)?.decision;
+    if (current === 'sabbatical') return true;
+    return sabbaticalCount < MAX_SIMULTANEOUS_SABBATICALS;
+  };
+  const sabbaticalLimitDescription = `You can hold at most ${MAX_SIMULTANEOUS_SABBATICALS} sabbaticals. Drop another one first.`;
   const sabbaticalsToShow = useMemo(
     () => sabbaticals.filter((entry) => entry.kind === 'continuing' || !lastSessionLeagueIds.has(entry.leagueId)),
     [lastSessionLeagueIds, sabbaticals],
@@ -317,6 +365,11 @@ export default function LeaguePriorityStep({
   const isPriorSeasonLeague = (leagueId: number) => (payload?.priorSeasonLeagueIds ?? []).includes(leagueId);
 
   const applyRemoval = (leagueId: number, decision: 'sabbatical' | 'drop' | null) => {
+    if (decision === 'sabbatical' && !canTakeAnotherSabbatical(leagueId)) {
+      setValidationMessage(sabbaticalLimitDescription);
+      setRemovalPrompt(null);
+      return;
+    }
     setPriorities((current) => removePriority(current, leagueId, leagues));
     setPriorLeagueDecisions((current) => {
       const without = current.filter((entry) => entry.leagueId !== leagueId);
@@ -349,6 +402,7 @@ export default function LeaguePriorityStep({
   };
 
   const addLeague = (leagueId: number) => {
+    if (sabbaticalOnly) return;
     const league = leagueById.get(leagueId);
     if (restrictToFreeLeagues && !isFreeLeague(league)) return;
     setPriorities((current) => addPriority(current, leagueId, leagues));
@@ -361,11 +415,18 @@ export default function LeaguePriorityStep({
     choice: 'sabbatical' | 'return' | 'drop',
   ) => {
     if (choice === 'return') {
+      if (sabbaticalOnly) return;
       const league = leagueById.get(leagueId);
       if (restrictToFreeLeagues && !isFreeLeague(league)) return;
       setPriorities((current) => addPriorityAtTop(current, leagueId, leagues));
       setPriorLeagueDecisions((current) => current.filter((entry) => entry.leagueId !== leagueId));
     } else {
+      if (choice === 'sabbatical' && !canTakeAnotherSabbatical(leagueId)) {
+        setValidationMessage(
+          `You can hold at most ${MAX_SIMULTANEOUS_SABBATICALS} sabbaticals. Drop another one first.`,
+        );
+        return;
+      }
       setPriorities((current) => removePriority(current, leagueId, leagues));
       setPriorLeagueDecisions((current) => {
         const without = current.filter((entry) => entry.leagueId !== leagueId);
@@ -376,6 +437,12 @@ export default function LeaguePriorityStep({
   };
 
   const setSabbaticalDecision = (leagueId: number, decision: 'sabbatical' | 'drop') => {
+    if (decision === 'sabbatical' && !canTakeAnotherSabbatical(leagueId)) {
+      setValidationMessage(
+        `You can hold at most ${MAX_SIMULTANEOUS_SABBATICALS} sabbaticals. Drop another one first.`,
+      );
+      return;
+    }
     setPriorLeagueDecisions((current) => {
       const without = current.filter((entry) => entry.leagueId !== leagueId);
       return [...without, { leagueId, decision }];
@@ -384,7 +451,12 @@ export default function LeaguePriorityStep({
   };
 
   useEffect(() => {
-    const autoDrops = paidReturnLeagues.filter((league) => !league.allowsSabbatical);
+    const autoDrops = sabbaticalOnly
+      ? (payload?.priorSeasonLeagueIds ?? []).flatMap((leagueId) => {
+          const league = leagueById.get(leagueId);
+          return league && !isSabbaticalEligibleLeague(league) ? [league] : [];
+        })
+      : paidReturnLeagues.filter((league) => !league.allowsSabbatical);
     if (autoDrops.length === 0) return;
     setPriorLeagueDecisions((current) => {
       const decided = new Set(current.map((entry) => entry.leagueId));
@@ -394,9 +466,33 @@ export default function LeaguePriorityStep({
       if (additions.length === 0) return current;
       return [...current, ...additions];
     });
-  }, [paidReturnLeagues]);
+  }, [leagueById, paidReturnLeagues, payload?.priorSeasonLeagueIds, sabbaticalOnly]);
 
   const firstValidationMessage = (): string | null => {
+    if (sabbaticalOnly) {
+      if (sabbaticalCount > MAX_SIMULTANEOUS_SABBATICALS) {
+        return sabbaticalLimitDescription;
+      }
+      const undecidedLastSession = lastSessionLeaguesForDecisions.filter(
+        (league) => !priorLeagueDecisions.some((entry) => entry.leagueId === league.id),
+      );
+      if (undecidedLastSession.length > 0) {
+        return `Tell us whether you are taking a sabbatical from ${undecidedLastSession[0]?.name ?? 'a league you played last session'} or dropping it.`;
+      }
+      const undecidedContinuing = undecidedContinuingSabbaticalIds({
+        continuingSabbaticals: payload?.continuingSabbaticals ?? [],
+        priorities,
+        priorLeagueDecisions,
+      });
+      if (undecidedContinuing.length > 0) {
+        const continuing = (payload?.continuingSabbaticals ?? []).find(
+          (entry) => entry.leagueId === undecidedContinuing[0],
+        );
+        const name = continuing?.leagueName ?? 'a league you held on sabbatical';
+        return `Choose whether to extend sabbatical or drop ${name} before continuing.`;
+      }
+      return null;
+    }
     const count = desiredLeagueCount ?? 0;
     if (priorities.length === 0 && count > 0) {
       return 'Add at least one league to your priority list, or set the number of leagues to play to zero.';
@@ -479,10 +575,15 @@ export default function LeaguePriorityStep({
     }
     try {
       await onSave({
-        desiredLeagueCount: desiredLeagueCount && desiredLeagueCount > 0 ? desiredLeagueCount : null,
-        priorities,
+        desiredLeagueCount: sabbaticalOnly
+          ? null
+          : desiredLeagueCount && desiredLeagueCount > 0
+            ? desiredLeagueCount
+            : null,
+        priorities: sabbaticalOnly ? [] : priorities,
         priorLeagueDecisions,
-        basicIceFallbackInterest: payload?.collectBasicIceFallback ? basicIceFallbackInterest : null,
+        basicIceFallbackInterest:
+          sabbaticalOnly || !payload?.collectBasicIceFallback ? null : basicIceFallbackInterest,
       });
     } catch (error) {
       showAlert(
@@ -497,10 +598,11 @@ export default function LeaguePriorityStep({
     return <InlineStateMessage title="Loading leagues..." />;
   }
 
-  const showBasicIceFallback = payload.collectBasicIceFallback && immediateChargeEntries(evaluation).length === 0;
-  const showLeaguePicker = eligibleLeagues.length > 0;
+  const showBasicIceFallback =
+    !sabbaticalOnly && payload.collectBasicIceFallback && immediateChargeEntries(evaluation).length === 0;
+  const showLeaguePicker = !sabbaticalOnly && eligibleLeagues.length > 0;
   const showEmptyEligible =
-    !showLeaguePicker && paidReturnLeaguesWithChoice.length === 0 && sabbaticalsToShow.length === 0;
+    !showLeaguePicker && lastSessionLeaguesForDecisions.length === 0 && sabbaticalsToShow.length === 0;
 
   return (
     <div className="space-y-6">
@@ -508,7 +610,9 @@ export default function LeaguePriorityStep({
         <PublicStateCard
           title="No eligible leagues"
           description={
-            restrictToFreeLeagues
+            sabbaticalOnly
+              ? 'There are no sabbatical-eligible leagues for this curler this session. You can continue to review your registration.'
+              : restrictToFreeLeagues
               ? 'There are no free leagues available for this curler this session. You can continue to review your registration.'
               : 'There are no leagues available for this curler\'s age and experience path this session. You can continue to review your registration.'
           }
@@ -548,21 +652,23 @@ export default function LeaguePriorityStep({
           </FormField>
           ) : null}
 
-          {paidReturnLeaguesWithChoice.length > 0 ? (
+          {lastSessionLeaguesForDecisions.length > 0 ? (
             <div role="group" aria-labelledby={paidReturnLabelId} className="space-y-3">
               <div>
                 <h2 id={paidReturnLabelId} className="app-section-title">
                   Last session leagues
                 </h2>
                 <p className="mt-1 text-sm text-gray-600">
-                  Basic ice privileges cannot keep a guaranteed return to a paid league. Take a sabbatical or drop each
-                  of these.
+                  {sabbaticalOnly
+                    ? 'Take a sabbatical to hold your return right, or drop the league. You can hold at most two sabbaticals.'
+                    : 'Basic ice privileges cannot keep a guaranteed return to a paid league. Take a sabbatical or drop each of these.'}
                 </p>
               </div>
-              {paidReturnLeaguesWithChoice.map((league) => {
+              {lastSessionLeaguesForDecisions.map((league) => {
                 const schedule = leagueScheduleText(league);
                 const decision =
                   priorLeagueDecisions.find((entry) => entry.leagueId === league.id)?.decision ?? null;
+                const sabbaticalAvailable = canTakeAnotherSabbatical(league.id);
                 return (
                 <div key={league.id} className="app-card space-y-3 p-4">
                   <div>
@@ -582,7 +688,10 @@ export default function LeaguePriorityStep({
                       {
                         value: 'sabbatical',
                         label: 'Take a sabbatical',
-                        description: `Hold your return right for a future session. A ${formatCurrency(payload.sabbaticalFeeMinor ?? 0)} sabbatical fee applies each session you maintain this sabbatical.`,
+                        description: sabbaticalAvailable
+                          ? `Hold your return right for a future session. A ${formatCurrency(payload.sabbaticalFeeMinor ?? 0)} sabbatical fee applies each session you maintain this sabbatical.`
+                          : sabbaticalLimitDescription,
+                        disabled: !sabbaticalAvailable,
                       },
                       {
                         value: 'drop',
@@ -749,7 +858,10 @@ export default function LeaguePriorityStep({
                     {
                       value: 'sabbatical',
                       label: 'Take a sabbatical',
-                      description: `Hold your return right for a future session. A ${formatCurrency(payload?.sabbaticalFeeMinor ?? 0)} sabbatical fee applies each session you maintain this sabbatical.`,
+                      description: canTakeAnotherSabbatical(removalPrompt.league.id)
+                        ? `Hold your return right for a future session. A ${formatCurrency(payload?.sabbaticalFeeMinor ?? 0)} sabbatical fee applies each session you maintain this sabbatical.`
+                        : sabbaticalLimitDescription,
+                      disabled: !canTakeAnotherSabbatical(removalPrompt.league.id),
                     },
                     {
                       value: 'drop',
@@ -788,23 +900,26 @@ export default function LeaguePriorityStep({
 
             {sabbaticalsToShow.length > 0 ? (
               <div role="group" aria-labelledby={sabbaticalsLabelId} className="space-y-3">
-                <h3 id={sabbaticalsLabelId} className="app-section-title">
+                <h2 id={sabbaticalsLabelId} className="app-section-title">
                   Sabbaticals
-                </h3>
+                </h2>
                 {sabbaticalsToShow.map((entry) => {
                   const feeText = formatCurrency(entry.sabbaticalFeeMinor);
                   const canReturnToList =
-                    !restrictToFreeLeagues || isFreeLeague(leagueById.get(entry.leagueId));
+                    !sabbaticalOnly && (!restrictToFreeLeagues || isFreeLeague(leagueById.get(entry.leagueId)));
+                  const sabbaticalAvailable = entry.canExtend && canTakeAnotherSabbatical(entry.leagueId);
                   return (
                     <div key={entry.leagueId} className="app-card space-y-3 p-4">
                       <div>
                         <div className="font-medium text-gray-900">{entry.leagueName}</div>
                         <p className="mt-1 text-sm text-gray-600">
-                          {entry.kind === 'continuing'
-                            ? canReturnToList
-                              ? `You held a sabbatical for this league last session. Extend it (${feeText} this session), return with guaranteed return, or drop it.`
-                              : `You held a sabbatical for this league last session. Extend it (${feeText} this session) or drop it. Basic ice privileges cannot return you to a paid league.`
-                            : `Holding a sabbatical for this league (${feeText} this session).`}
+                          {entry.kind !== 'continuing'
+                            ? `Holding a sabbatical for this league (${feeText} this session).`
+                            : sabbaticalOnly
+                              ? `You held a sabbatical for this league last session. Extend it (${feeText} this session) or drop it.`
+                              : canReturnToList
+                                ? `You held a sabbatical for this league last session. Extend it (${feeText} this session), return with guaranteed return, or drop it.`
+                                : `You held a sabbatical for this league last session. Extend it (${feeText} this session) or drop it. Basic ice privileges cannot return you to a paid league.`}
                         </p>
                         {entry.kind === 'continuing' &&
                         entry.decision === 'sabbatical' &&
@@ -828,8 +943,13 @@ export default function LeaguePriorityStep({
                             {
                               value: 'sabbatical',
                               label: 'Extend sabbatical',
-                              description: `Keep your return right for a future session. A ${feeText} sabbatical fee applies this session.`,
-                              disabled: !entry.canExtend,
+                              description: sabbaticalAvailable
+                                ? `Keep your return right for a future session. A ${feeText} sabbatical fee applies this session.`
+                                : !entry.canExtend
+                                  ? entry.extensionBlockedMessage ??
+                                    'The configured sabbatical duration limit has been reached for this league.'
+                                  : sabbaticalLimitDescription,
+                              disabled: !sabbaticalAvailable,
                             },
                             ...(canReturnToList
                               ? [
@@ -889,7 +1009,7 @@ export default function LeaguePriorityStep({
         </>
       )}
 
-      {omittedWaitlists.length > 0 ? (
+      {omittedWaitlists.length > 0 && !sabbaticalOnly ? (
         <div
           className="app-alert border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200"
           role="status"

@@ -9,6 +9,8 @@ import InlineStateMessage from '../../components/InlineStateMessage';
 import Modal from '../../components/Modal';
 import PageTabs from '../../components/PageTabs';
 import PhysicalAddressCollect from '../../components/PhysicalAddressCollect';
+import PreferredPronounsField from '../../components/PreferredPronounsField';
+import UsaCurlingCompetitionGenderField from '../../components/UsaCurlingCompetitionGenderField';
 import ProfilePaymentHistoryTab from '../../components/profile/ProfilePaymentHistoryTab';
 import api, { formatApiError } from '../../utils/api';
 import type { MemberSummary as Member } from '../../../../backend/src/types.ts';
@@ -24,11 +26,13 @@ import {
   memberGuardianFormFromProfile,
   type MemberGuardianFormFields,
 } from '../../utils/memberGuardianForm';
+import { resolvePreferredPronounsForSave } from '../../utils/preferredPronouns';
 import {
   DEFAULT_REGISTRATION_MAILING_COUNTRY,
   DEFAULT_REGISTRATION_MAILING_STATE,
   serializeRegistrationMailingAddress,
 } from '../../utils/registrationMailingAddress';
+import { resolveUsaCurlingCompetitionGenderForSave } from '../../utils/usaCurlingCompetitionGender';
 
 function memberNameParts(member: Pick<Member, 'name' | 'firstName' | 'lastName'>): {
   firstName: string;
@@ -53,6 +57,8 @@ type MemberUpdatePayload = {
   mailingAddress: string;
   emergencyContactName?: string;
   emergencyContactPhone?: string;
+  preferredPronouns?: string;
+  usaCurlingCompetitionGender?: 'Male' | 'Female' | 'Unspecified';
   emailVisible: boolean;
   phoneVisible: boolean;
   lifetimeMember?: boolean;
@@ -188,6 +194,8 @@ export default function AdminMemberEditorModal({
   const emailInputId = useId();
   const phoneInputId = useId();
   const dateOfBirthInputId = useId();
+  const preferredPronounsInputId = useId();
+  const usaCurlingCompetitionGenderInputId = useId();
   const emergencyContactNameInputId = useId();
   const emergencyContactPhoneInputId = useId();
   const baselineOtherClubExperienceInputId = useId();
@@ -588,6 +596,10 @@ export default function AdminMemberEditorModal({
           phone: formData.phone.trim(),
           dateOfBirth: demographics.dateOfBirth.trim(),
           mailingAddress: serializeRegistrationMailingAddress(demographics),
+          preferredPronouns: resolvePreferredPronounsForSave(demographics.preferredPronouns),
+          usaCurlingCompetitionGender: resolveUsaCurlingCompetitionGenderForSave(
+            demographics.usaCurlingCompetitionGender,
+          ),
           emailVisible: formData.emailVisible,
           phoneVisible: formData.phoneVisible,
           guardianFirstName: guardian.guardianFirstName.trim(),
@@ -836,6 +848,25 @@ export default function AdminMemberEditorModal({
                   className="app-input"
                 />
               </FormField>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <PreferredPronounsField
+                  id={preferredPronounsInputId}
+                  value={demographics.preferredPronouns}
+                  onChange={(next) =>
+                    setDemographics((current) => ({ ...current, preferredPronouns: next }))
+                  }
+                />
+
+                <UsaCurlingCompetitionGenderField
+                  id={usaCurlingCompetitionGenderInputId}
+                  value={demographics.usaCurlingCompetitionGender}
+                  onChange={(next) =>
+                    setDemographics((current) => ({ ...current, usaCurlingCompetitionGender: next }))
+                  }
+                  alwaysShowSelect
+                />
+              </div>
 
               <PhysicalAddressCollect
                 value={mailingStructuredAddress}

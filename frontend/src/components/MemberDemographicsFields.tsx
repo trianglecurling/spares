@@ -1,6 +1,8 @@
 import { useMemo, type Dispatch, type SetStateAction } from 'react';
 import FormField from './FormField';
 import PhysicalAddressCollect from './PhysicalAddressCollect';
+import PreferredPronounsField from './PreferredPronounsField';
+import UsaCurlingCompetitionGenderField from './UsaCurlingCompetitionGenderField';
 import {
   DEFAULT_REGISTRATION_MAILING_COUNTRY,
   DEFAULT_REGISTRATION_MAILING_STATE,
@@ -9,20 +11,10 @@ import type { MemberDemographicsFormFields } from '../utils/memberDemographicsFo
 
 type DemographicScalarField = Exclude<
   keyof MemberDemographicsFormFields,
-  keyof import('../utils/registrationMailingAddress').RegistrationMailingAddressFormFields
+  | keyof import('../utils/registrationMailingAddress').RegistrationMailingAddressFormFields
+  | 'preferredPronouns'
+  | 'usaCurlingCompetitionGender'
 >;
-
-const PERSONAL_ROWS: Array<[DemographicScalarField, string, string]> = [
-  ['firstName', 'First name', 'given-name'],
-  ['lastName', 'Last name', 'family-name'],
-  ['dateOfBirth', 'Date of birth', 'bday'],
-  ['phone', 'Phone number', 'tel'],
-];
-
-const EMERGENCY_ROWS: Array<[DemographicScalarField, string, string]> = [
-  ['emergencyContactName', 'Emergency contact name', 'name'],
-  ['emergencyContactPhone', 'Emergency contact phone', 'tel'],
-];
 
 export type MemberDemographicsFieldsSection = 'personal' | 'emergency' | 'all';
 
@@ -44,12 +36,8 @@ export default function MemberDemographicsFields({
   section = 'all',
   lockDateOfBirth = false,
 }: MemberDemographicsFieldsProps) {
-  const scalarRows =
-    section === 'personal'
-      ? PERSONAL_ROWS
-      : section === 'emergency'
-        ? EMERGENCY_ROWS
-        : [...PERSONAL_ROWS, ...EMERGENCY_ROWS];
+  const showPersonal = section === 'personal' || section === 'all';
+  const showEmergency = section === 'emergency' || section === 'all';
   const showMailingAddress = section === 'personal' || section === 'all';
   const mailingStructuredAddress = useMemo(
     () => ({
@@ -74,40 +62,63 @@ export default function MemberDemographicsFields({
     onChange((current) => ({ ...current, [field]: fieldValue }));
   };
 
+  const renderScalarField = (
+    field: DemographicScalarField,
+    label: string,
+    autoComplete: string,
+    className: string,
+  ) => {
+    const fieldId = `${idPrefix}-${String(field)}`;
+    const lockDob = field === 'dateOfBirth' && lockDateOfBirth;
+    return (
+      <FormField key={field} label={label} htmlFor={fieldId} required={!lockDob} tone={tone} className={className}>
+        <input
+          id={fieldId}
+          type={lockDob ? 'text' : field === 'dateOfBirth' ? 'date' : field === 'email' ? 'email' : 'text'}
+          value={value[field]}
+          onChange={lockDob ? undefined : (event) => setField(field)(event.target.value)}
+          readOnly={lockDob}
+          autoComplete={autoComplete}
+          className="app-input"
+          required={!lockDob}
+        />
+      </FormField>
+    );
+  };
+
   return (
-    <div className="grid gap-4 sm:grid-cols-2">
-      {scalarRows.map(([field, label, autoComplete]) => {
-        const fieldId = `${idPrefix}-${String(field)}`;
-        if (field === 'dateOfBirth' && lockDateOfBirth) {
-          return (
-            <FormField key={field} label={label} htmlFor={fieldId} tone={tone}>
-              <input
-                id={fieldId}
-                type="text"
-                value={value.dateOfBirth}
-                readOnly
-                className="app-input"
-              />
-            </FormField>
-          );
-        }
-        return (
-          <FormField key={field} label={label} htmlFor={fieldId} required tone={tone}>
-            <input
-              id={fieldId}
-              type={field === 'dateOfBirth' ? 'date' : field === 'email' ? 'email' : 'text'}
-              value={value[field]}
-              onChange={(event) => setField(field)(event.target.value)}
-              autoComplete={autoComplete}
-              className="app-input"
-              required={field !== 'dateOfBirth' || !lockDateOfBirth}
-            />
-          </FormField>
-        );
-      })}
+    <div className="grid gap-4 sm:grid-cols-6">
+      {showPersonal ? (
+        <>
+          {renderScalarField('firstName', 'First name', 'given-name', 'sm:col-span-2')}
+          {renderScalarField('lastName', 'Last name', 'family-name', 'sm:col-span-2')}
+          {renderScalarField('dateOfBirth', 'Date of birth', 'bday', 'sm:col-span-2')}
+          {renderScalarField('phone', 'Phone number', 'tel', 'sm:col-span-3')}
+          <PreferredPronounsField
+            id={`${idPrefix}-preferredPronouns`}
+            value={value.preferredPronouns}
+            onChange={(next) => onChange((current) => ({ ...current, preferredPronouns: next }))}
+            tone={tone}
+            className="sm:col-span-3 sm:col-start-1"
+          />
+          <UsaCurlingCompetitionGenderField
+            id={`${idPrefix}-usaCurlingCompetitionGender`}
+            value={value.usaCurlingCompetitionGender}
+            onChange={(next) => onChange((current) => ({ ...current, usaCurlingCompetitionGender: next }))}
+            tone={tone}
+            className="sm:col-span-3"
+          />
+        </>
+      ) : null}
+      {showEmergency ? (
+        <>
+          {renderScalarField('emergencyContactName', 'Emergency contact name', 'name', 'sm:col-span-3')}
+          {renderScalarField('emergencyContactPhone', 'Emergency contact phone', 'tel', 'sm:col-span-3')}
+        </>
+      ) : null}
       {showMailingAddress ? (
         <PhysicalAddressCollect
-          className="sm:col-span-2"
+          className="sm:col-span-6"
           value={mailingStructuredAddress}
           onChange={(structured) =>
             onChange((current) => ({

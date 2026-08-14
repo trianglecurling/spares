@@ -286,6 +286,7 @@ async function loadRegistrationSettings() {
       sabbaticalFeeMinor: price?.sabbatical_fee_minor ?? 0,
       juniorRecreationalFeeMinor: price?.junior_recreational_fee_minor ?? 0,
       defaultLeagueFeeMinor: price?.default_league_fee_minor ?? 0,
+      replacementNameTagFeeMinor: price?.replacement_name_tag_fee_minor ?? 0,
     },
     discountSettings: {
       student: {

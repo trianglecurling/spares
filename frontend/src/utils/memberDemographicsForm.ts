@@ -7,6 +7,11 @@ import {
   serializeRegistrationMailingAddress,
   type RegistrationMailingAddressFormFields,
 } from './registrationMailingAddress';
+import { resolvePreferredPronounsForSave } from './preferredPronouns';
+import {
+  USA_CURLING_COMPETITION_GENDER_DEFAULT,
+  resolveUsaCurlingCompetitionGenderForSave,
+} from './usaCurlingCompetitionGender';
 
 export type MemberDemographicsFormFields = RegistrationMailingAddressFormFields & {
   firstName: string;
@@ -16,6 +21,8 @@ export type MemberDemographicsFormFields = RegistrationMailingAddressFormFields 
   phone: string;
   emergencyContactName: string;
   emergencyContactPhone: string;
+  preferredPronouns: string;
+  usaCurlingCompetitionGender: string;
 };
 
 export const emptyMemberDemographicsForm = (): MemberDemographicsFormFields => ({
@@ -27,6 +34,8 @@ export const emptyMemberDemographicsForm = (): MemberDemographicsFormFields => (
   ...defaultRegistrationMailingAddressFormFields(),
   emergencyContactName: '',
   emergencyContactPhone: '',
+  preferredPronouns: '',
+  usaCurlingCompetitionGender: USA_CURLING_COMPETITION_GENDER_DEFAULT,
 });
 
 export function memberDemographicsFormFromProfile(profile: MemberProfileResponse): MemberDemographicsFormFields {
@@ -41,6 +50,8 @@ export function memberDemographicsFormFromProfile(profile: MemberProfileResponse
     ...mailingParts,
     emergencyContactName: profile.emergencyContactName || '',
     emergencyContactPhone: profile.emergencyContactPhone || '',
+    preferredPronouns: profile.preferredPronouns || '',
+    usaCurlingCompetitionGender: resolveUsaCurlingCompetitionGenderForSave(profile.usaCurlingCompetitionGender),
   };
 }
 
@@ -54,6 +65,8 @@ export function memberDemographicsPayloadForSave(form: MemberDemographicsFormFie
     mailingAddress: serializeRegistrationMailingAddress(form),
     emergencyContactName: form.emergencyContactName,
     emergencyContactPhone: form.emergencyContactPhone,
+    preferredPronouns: resolvePreferredPronounsForSave(form.preferredPronouns),
+    usaCurlingCompetitionGender: resolveUsaCurlingCompetitionGenderForSave(form.usaCurlingCompetitionGender),
   };
 }
 

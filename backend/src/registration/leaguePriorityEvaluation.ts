@@ -24,6 +24,7 @@ import {
   isGuaranteedLabel,
   MAX_DESIRED_LEAGUE_COUNT,
   MAX_PROTECTED_CLAIMS,
+  MAX_SIMULTANEOUS_SABBATICALS,
   MIN_PLAY_IN_ROSTER_SIZE,
   type LabeledPriorityEntry,
   type LeaguePriorityGuaranteeLabel,
@@ -59,6 +60,7 @@ export {
   priorityRosterAllReturning,
   MAX_DESIRED_LEAGUE_COUNT,
   MAX_PROTECTED_CLAIMS,
+  MAX_SIMULTANEOUS_SABBATICALS,
   MIN_PLAY_IN_ROSTER_SIZE,
 };
 
@@ -443,6 +445,27 @@ export function validateLeaguePriorities(context: RegistrationContext): Priority
   }
   for (const selection of context.selections) {
     validateSelection(context, selection, blockingErrors, warnings);
+  }
+
+  if (sabbaticalClaimCount(context) > MAX_SIMULTANEOUS_SABBATICALS) {
+    blockingErrors.push(
+      blockingError(
+        'sabbatical_limit_exceeded',
+        'A registrant may be on sabbatical for at most two leagues.',
+      ),
+    );
+  }
+
+  if (
+    (context.membershipOption === 'none' || context.membershipOption === 'social') &&
+    context.priorities.length > 0
+  ) {
+    blockingErrors.push(
+      blockingError(
+        'sabbatical_only_no_priority_list',
+        'This membership cannot include a league priority list.',
+      ),
+    );
   }
 
   const evaluation = evaluateLeaguePriorities(context);

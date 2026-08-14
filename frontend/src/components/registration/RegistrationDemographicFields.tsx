@@ -10,6 +10,8 @@ import {
 import { isMemberMinor } from '../../utils/memberAge';
 import FormField from '../FormField';
 import PhysicalAddressCollect from '../PhysicalAddressCollect';
+import PreferredPronounsField from '../PreferredPronounsField';
+import UsaCurlingCompetitionGenderField from '../UsaCurlingCompetitionGenderField';
 import {
   DEFAULT_REGISTRATION_MAILING_COUNTRY,
   DEFAULT_REGISTRATION_MAILING_STATE,
@@ -30,6 +32,8 @@ export type RegistrationDemographicsFormFields = {
   mailingPostalCode: string;
   emergencyContactName: string;
   emergencyContactPhone: string;
+  preferredPronouns: string;
+  usaCurlingCompetitionGender: string;
 };
 
 type DemographicScalarField = Exclude<
@@ -40,24 +44,9 @@ type DemographicScalarField = Exclude<
   | 'mailingState'
   | 'mailingCountry'
   | 'mailingPostalCode'
+  | 'preferredPronouns'
+  | 'usaCurlingCompetitionGender'
 >;
-
-const BASE_DEMOGRAPHIC_ROWS: Array<[DemographicScalarField, string, string]> = [
-  ['firstName', 'First name', 'given-name'],
-  ['lastName', 'Last name', 'family-name'],
-  ['email', 'Email address', 'email'],
-  ['phone', 'Phone number', 'tel'],
-  ['emergencyContactName', 'Emergency contact name', 'name'],
-  ['emergencyContactPhone', 'Emergency contact phone', 'tel'],
-];
-
-function demographicRowsForCurler(curlerDateOfBirth: string | null): Array<[DemographicScalarField, string, string]> {
-  if (curlerDateOfBirth) return BASE_DEMOGRAPHIC_ROWS;
-  const rows = [...BASE_DEMOGRAPHIC_ROWS];
-  const lastNameIndex = rows.findIndex(([field]) => field === 'lastName');
-  rows.splice(lastNameIndex + 1, 0, ['dateOfBirth', 'Date of birth', 'bday']);
-  return rows;
-}
 
 function normalizeRegistrationEmail(email: string): string {
   return email.toLowerCase().trim();
@@ -97,6 +86,7 @@ type DemographicScalarFieldRowProps = {
   initialValue: string;
   type: string;
   disabled: boolean;
+  className?: string;
   onFieldChange: (field: DemographicScalarField, value: string) => void;
 };
 
@@ -108,12 +98,13 @@ const DemographicScalarFieldRow = memo(function DemographicScalarFieldRow({
   initialValue,
   type,
   disabled,
+  className,
   onFieldChange,
 }: DemographicScalarFieldRowProps) {
   const [value, setValue] = useState(initialValue);
 
   return (
-    <FormField label={label} htmlFor={fieldId} required tone="public">
+    <FormField label={label} htmlFor={fieldId} required tone="public" className={className}>
       <input
         id={fieldId}
         type={type}
@@ -153,7 +144,7 @@ const DemographicMailingAddressSection = memo(function DemographicMailingAddress
 
   return (
     <PhysicalAddressCollect
-      className="sm:col-span-2"
+      className="sm:col-span-6"
       value={mailing}
       onChange={handleChange}
       fillWhenEmpty={{ state: DEFAULT_REGISTRATION_MAILING_STATE, country: DEFAULT_REGISTRATION_MAILING_COUNTRY }}
@@ -210,6 +201,14 @@ const RegistrationDemographicFields = forwardRef<
     setFormDateOfBirth(initialValue.dateOfBirth);
   }, [initialValue.dateOfBirth]);
 
+  useEffect(() => {
+    setPreferredPronouns(initialValue.preferredPronouns);
+  }, [initialValue.preferredPronouns]);
+
+  useEffect(() => {
+    setUsaCurlingCompetitionGender(initialValue.usaCurlingCompetitionGender);
+  }, [initialValue.usaCurlingCompetitionGender]);
+
   useImperativeHandle(
     ref,
     () => ({
@@ -241,9 +240,24 @@ const RegistrationDemographicFields = forwardRef<
   }, []);
 
   const [formDateOfBirth, setFormDateOfBirth] = useState(initialValue.dateOfBirth);
+  const [preferredPronouns, setPreferredPronouns] = useState(initialValue.preferredPronouns);
+  const [usaCurlingCompetitionGender, setUsaCurlingCompetitionGender] = useState(
+    initialValue.usaCurlingCompetitionGender || 'Unspecified',
+  );
   const effectiveDateOfBirth = curlerDateOfBirth || formDateOfBirth || null;
   const emergencyFieldsDisabled = isMemberMinor(effectiveDateOfBirth);
-  const demographicRows = demographicRowsForCurler(curlerDateOfBirth);
+  const collectDateOfBirth = !curlerDateOfBirth;
+  const nameFieldSpan = collectDateOfBirth ? 'sm:col-span-2' : 'sm:col-span-3';
+
+  const handlePreferredPronounsChange = useCallback((value: string) => {
+    setPreferredPronouns(value);
+    draftRef.current = { ...draftRef.current, preferredPronouns: value };
+  }, []);
+
+  const handleCompetitionGenderChange = useCallback((value: string) => {
+    setUsaCurlingCompetitionGender(value);
+    draftRef.current = { ...draftRef.current, usaCurlingCompetitionGender: value };
+  }, []);
 
   const handleScalarFieldChange = useCallback((field: DemographicScalarField, value: string) => {
     if (field === 'dateOfBirth') {
@@ -252,34 +266,62 @@ const RegistrationDemographicFields = forwardRef<
     handleFieldChange(field, value);
   }, [handleFieldChange]);
 
+  const renderScalarField = (
+    field: DemographicScalarField,
+    label: string,
+    autoComplete: string,
+    className: string,
+  ) => {
+    const emailLocked = field === 'email' && lockCurlerEmailToSubmitter;
+    return (
+      <DemographicScalarFieldRow
+        key={field}
+        field={field}
+        label={label}
+        autoComplete={autoComplete}
+        fieldId={`${idPrefix}-${field}`}
+        initialValue={emailLocked ? submitterEmailForCurler : initialValue[field]}
+        type={field === 'dateOfBirth' ? 'date' : field === 'email' ? 'email' : 'text'}
+        disabled={emailLocked}
+        className={className}
+        onFieldChange={handleScalarFieldChange}
+      />
+    );
+  };
+
   return (
-    <div className="grid gap-4 sm:col-span-2 sm:grid-cols-2">
-      {demographicRows.map(([field, label, autoComplete]) => {
-        const fieldId = `${idPrefix}-${String(field)}`;
-        const emailLocked = field === 'email' && lockCurlerEmailToSubmitter;
-        const isEmergencyField = field === 'emergencyContactName' || field === 'emergencyContactPhone';
-        if (isEmergencyField && emergencyFieldsDisabled) {
-          return null;
-        }
-        return (
-          <DemographicScalarFieldRow
-            key={field}
-            field={field}
-            label={label}
-            autoComplete={autoComplete}
-            fieldId={fieldId}
-            initialValue={emailLocked ? submitterEmailForCurler : initialValue[field]}
-            type={field === 'dateOfBirth' ? 'date' : field === 'email' ? 'email' : 'text'}
-            disabled={emailLocked}
-            onFieldChange={handleScalarFieldChange}
-          />
-        );
-      })}
+    <div className="grid gap-4 sm:col-span-2 sm:grid-cols-6">
+      {renderScalarField('firstName', 'First name', 'given-name', nameFieldSpan)}
+      {renderScalarField('lastName', 'Last name', 'family-name', nameFieldSpan)}
+      {collectDateOfBirth
+        ? renderScalarField('dateOfBirth', 'Date of birth', 'bday', 'sm:col-span-2')
+        : null}
+      {renderScalarField('email', 'Email address', 'email', 'sm:col-span-3')}
+      {renderScalarField('phone', 'Phone number', 'tel', 'sm:col-span-3')}
+      <PreferredPronounsField
+        id={`${idPrefix}-preferredPronouns`}
+        value={preferredPronouns}
+        onChange={handlePreferredPronounsChange}
+        tone="public"
+        className="sm:col-span-3"
+      />
+      <UsaCurlingCompetitionGenderField
+        id={`${idPrefix}-usaCurlingCompetitionGender`}
+        value={usaCurlingCompetitionGender}
+        onChange={handleCompetitionGenderChange}
+        tone="public"
+        className="sm:col-span-3"
+      />
       {emergencyFieldsDisabled ? (
-        <p className="sm:col-span-2 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+        <p className="sm:col-span-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
           Parent or guardian contact information will be collected on the next screen and used as the emergency contact.
         </p>
-      ) : null}
+      ) : (
+        <>
+          {renderScalarField('emergencyContactName', 'Emergency contact name', 'name', 'sm:col-span-3')}
+          {renderScalarField('emergencyContactPhone', 'Emergency contact phone', 'tel', 'sm:col-span-3')}
+        </>
+      )}
       <DemographicMailingAddressSection initialValue={initialValue} onMailingChange={handleMailingChange} />
     </div>
   );

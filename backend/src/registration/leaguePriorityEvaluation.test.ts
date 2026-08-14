@@ -549,6 +549,82 @@ describe('validation', () => {
       'sabbatical_league_on_priority_list',
     );
   });
+
+  test('more than two sabbatical selections are rejected', () => {
+    expectBlocked(
+      contextWithLeagues([standard(1), standard(2), standard(3)], {
+        priorities: [],
+        desiredLeagueCount: null,
+        selections: [
+          selection({ selectionType: 'sabbatical', leagueId: 1 }),
+          selection({ selectionType: 'sabbatical', leagueId: 2 }),
+          selection({ selectionType: 'sabbatical', leagueId: 3 }),
+        ],
+      }),
+      'sabbatical_limit_exceeded',
+    );
+  });
+
+  test('two sabbaticals and a drop with an empty priority list are allowed', () => {
+    const context = contextWithLeagues([standard(1), standard(2), standard(3)], {
+      membershipOption: 'none',
+      priorities: [],
+      desiredLeagueCount: null,
+      selections: [
+        selection({ selectionType: 'sabbatical', leagueId: 1 }),
+        selection({ selectionType: 'sabbatical', leagueId: 2 }),
+        selection({ selectionType: 'drop', leagueId: 3 }),
+      ],
+    });
+    expect(validateLeaguePriorities(context).allowed).toBe(true);
+  });
+
+  test('sabbatical-only registration cannot keep a priority list', () => {
+    expectBlocked(
+      contextWithLeagues([standard(1), standard(2)], {
+        membershipOption: 'none',
+        priorities: [priority({ leagueId: 2, priorityRank: 1 })],
+        desiredLeagueCount: 1,
+        selections: [selection({ selectionType: 'sabbatical', leagueId: 1 })],
+      }),
+      'sabbatical_only_no_priority_list',
+    );
+  });
+
+  test('social membership can take sabbaticals without a priority list', () => {
+    const context = contextWithLeagues([standard(1), standard(2)], {
+      membershipOption: 'social',
+      priorities: [],
+      desiredLeagueCount: null,
+      selections: [
+        selection({ selectionType: 'sabbatical', leagueId: 1 }),
+        selection({ selectionType: 'drop', leagueId: 2 }),
+      ],
+    });
+    expect(validateLeaguePriorities(context).allowed).toBe(true);
+  });
+
+  test('social membership can skip play by dropping prior-session leagues', () => {
+    const context = contextWithLeagues([standard(1)], {
+      membershipOption: 'social',
+      priorities: [],
+      desiredLeagueCount: null,
+      selections: [selection({ selectionType: 'drop', leagueId: 1 })],
+    });
+    expect(validateLeaguePriorities(context).allowed).toBe(true);
+  });
+
+  test('social membership cannot keep a priority list', () => {
+    expectBlocked(
+      contextWithLeagues([standard(1), standard(2)], {
+        membershipOption: 'social',
+        priorities: [priority({ leagueId: 2, priorityRank: 1 })],
+        desiredLeagueCount: 1,
+        selections: [selection({ selectionType: 'sabbatical', leagueId: 1 })],
+      }),
+      'sabbatical_only_no_priority_list',
+    );
+  });
 });
 
 describe('derived downstream state', () => {

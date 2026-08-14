@@ -15,6 +15,9 @@ export const MAX_DESIRED_LEAGUE_COUNT = 5;
 /** Most guaranteed spots (returns + fallbacks + sabbaticals) any registrant may hold. */
 export const MAX_PROTECTED_CLAIMS = 2;
 
+/** Most leagues a registrant may hold on sabbatical at the same time. */
+export const MAX_SIMULTANEOUS_SABBATICALS = 2;
+
 /** Minimum players (linked members + pending names) required to declare a play-in team. */
 export const MIN_PLAY_IN_ROSTER_SIZE = 2;
 
