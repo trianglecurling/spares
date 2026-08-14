@@ -6,7 +6,7 @@ import {
   useParams,
   useSearchParams,
 } from 'react-router-dom';
-import { addYears, format, parseISO, subYears } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import api from '../utils/api';
 import { AppPage, AppPageHeader } from '../components/AppPage';
 import BackButton from '../components/BackButton';
@@ -19,7 +19,7 @@ import {
 } from './Calendar';
 import { useAuth } from '../contexts/AuthContext';
 
-type LocationState = { calendarEvent?: CalendarEvent } | null;
+type LocationState = { calendarEvent?: CalendarEvent; copyFromEvent?: CalendarEvent } | null;
 
 export default function CalendarEventFormPage() {
   const { member } = useAuth();
@@ -31,6 +31,9 @@ export default function CalendarEventFormPage() {
   const params = useParams();
   const splat = params['*'];
   const eventId = splat ? decodeURIComponent(splat) : null;
+  const copyId = searchParams.get('copy');
+  const sourceId = eventId ?? copyId;
+  const isCopy = Boolean(copyId) && !eventId;
 
   const initialDate = useMemo(() => {
     const d = searchParams.get('date');
@@ -59,53 +62,47 @@ export default function CalendarEventFormPage() {
   }, []);
 
   useEffect(() => {
-    if (!eventId) {
+    if (!sourceId) {
       setEvent(null);
       setLoadError(null);
       return;
     }
 
-    const fromState = (location.state as LocationState)?.calendarEvent;
-    if (fromState && fromState.id === eventId) {
-      setEvent(fromState);
-      setLoadError(null);
-      return;
-    }
-
+    const fromState = location.state as LocationState;
+    const stateEvent = eventId
+      ? fromState?.calendarEvent
+      : fromState?.copyFromEvent ?? fromState?.calendarEvent;
     let canceled = false;
     setEvent(undefined);
     setLoadError(null);
 
     (async () => {
-      const start = subYears(new Date(), 5);
-      const end = addYears(new Date(), 5);
       type EventPayload = Parameters<typeof apiEventToCalendar>[0];
       try {
-        const { data } = await api.get<EventPayload[]>(
-          `/calendar/events?start=${start.toISOString()}&end=${end.toISOString()}`
+        const { data } = await api.get<EventPayload>(
+          `/calendar/events/${encodeURIComponent(sourceId)}`
         );
-        const found = (data ?? []).map(apiEventToCalendar).find((e) => e.id === eventId);
         if (canceled) return;
-        if (!found) {
-          setLoadError(
-            'That event could not be found. It may be outside the search window—open it from the calendar and try again.'
-          );
-          setEvent(null);
+        setEvent(apiEventToCalendar(data));
+      } catch {
+        if (canceled) return;
+        if (stateEvent && stateEvent.id === sourceId) {
+          setEvent(stateEvent);
           return;
         }
-        setEvent(found);
-      } catch {
-        if (!canceled) {
-          setLoadError('Failed to load the event.');
-          setEvent(null);
-        }
+        setLoadError(
+          isCopy
+            ? 'That event could not be copied. Open it from the calendar and try again.'
+            : 'That event could not be found. Open it from the calendar and try again.'
+        );
+        setEvent(null);
       }
     })();
 
     return () => {
       canceled = true;
     };
-  }, [eventId, location.state]);
+  }, [sourceId, eventId, isCopy, location.state]);
 
   const goBackToCalendar = (focusDate?: Date) => {
     const date = focusDate ?? initialDate;
@@ -123,9 +120,11 @@ export default function CalendarEventFormPage() {
   const title = eventId ? 'Edit event' : 'New event';
   const subtitle = eventId
     ? 'Update this calendar event.'
-    : 'Add a new event to the club calendar.';
+    : isCopy
+      ? 'Create a new calendar event from this one. Recurrence is not copied.'
+      : 'Add a new event to the club calendar.';
 
-  if (eventId && loadError) {
+  if (sourceId && loadError) {
     return (
       <>
         <div className="px-4 sm:px-6 lg:px-8 py-8 flex-1 min-h-0 flex flex-col">
@@ -139,7 +138,7 @@ export default function CalendarEventFormPage() {
     );
   }
 
-  if (eventId && event === undefined) {
+  if (sourceId && event === undefined) {
     return (
       <>
         <div className="px-4 sm:px-6 lg:px-8 py-8 flex-1 min-h-0 flex flex-col">
@@ -151,12 +150,12 @@ export default function CalendarEventFormPage() {
     );
   }
 
-  if (eventId && event && isReadOnlyCalendarEvent(event)) {
+  if (sourceId && event && isReadOnlyCalendarEvent(event)) {
     return (
       <>
         <div className="px-4 sm:px-6 lg:px-8 py-8 flex-1 min-h-0 flex flex-col">
           <AppPage narrow>
-            <AppPageHeader title="Cannot edit this event" />
+            <AppPageHeader title={isCopy ? 'Cannot copy this event' : 'Cannot edit this event'} />
             <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
               League games are managed elsewhere. Member ice bookings can be edited or canceled from
               the calendar event details.
@@ -184,11 +183,14 @@ export default function CalendarEventFormPage() {
           />
           <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800 sm:p-6">
             <CalendarEventForm
+              key={sourceId ?? 'new'}
               event={eventId ? event! : null}
+              copyFrom={isCopy ? event : null}
               sheets={sheets}
               eventTypes={DEFAULT_EVENT_TYPES}
               initialDate={initialDate}
               onSaved={handleSaved}
+              onCancel={eventId ? undefined : () => goBackToCalendar(event?.start ?? initialDate)}
             />
           </div>
         </AppPage>

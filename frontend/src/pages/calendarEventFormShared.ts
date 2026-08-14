@@ -1,6 +1,16 @@
 import { format } from 'date-fns';
 import { RRule } from 'rrule';
 
+/** Prefer live editor markdown when the instance is ready; otherwise keep the form draft. */
+export function calendarEventDescriptionForSave(
+  editorMarkdown: string | undefined,
+  draft: string
+): string | undefined {
+  const raw = editorMarkdown !== undefined ? editorMarkdown : draft;
+  const trimmed = raw.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 export const LOCATION_OPTIONS = [
   { type: 'warm-room' as const, label: 'Warm room' },
   { type: 'exterior' as const, label: 'Exterior' },

@@ -41,6 +41,7 @@ import {
   HiOutlineCalendarDays as HiOutlineDay,
   HiPencil,
   HiPlus,
+  HiSquare2Stack,
   HiTrash,
 } from 'react-icons/hi2';
 import type { IconType } from 'react-icons';
@@ -893,6 +894,13 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
     navigate(`/calendar/events/edit/${encodeURIComponent(ev.id)}`, { state: { calendarEvent: ev } });
   };
 
+  const openCopyEvent = (ev: CalendarEvent) => {
+    navigate(
+      `/calendar/events/new?copy=${encodeURIComponent(ev.id)}&date=${format(ev.start, 'yyyy-MM-dd')}`,
+      { state: { copyFromEvent: ev } }
+    );
+  };
+
   /**
    * Desktop day/week keep a fixed shell + internal scroll.
    * Mobile day/week and month grow with the page so nav/toolbar can scroll away.
@@ -1407,6 +1415,18 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
                           >
                             <HiPencil className="w-4 h-4" />
                             Edit
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            onClick={() => {
+                              const ev = selectedEvent;
+                              setSelectedEvent(null);
+                              openCopyEvent(ev);
+                            }}
+                            className="inline-flex items-center justify-center gap-1.5 h-9 px-3"
+                          >
+                            <HiSquare2Stack className="w-4 h-4" />
+                            Copy
                           </Button>
                           <Button
                             variant="danger"

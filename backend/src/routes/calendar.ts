@@ -5,6 +5,7 @@ import { getDrizzleDb } from '../db/drizzle-db.js';
 import { isCalendarAdmin } from '../utils/auth.js';
 import { composeRecurrenceRule } from '../utils/calendarRecurrence.js';
 import { getCalendarFeed, getLeagueCalendarFeed } from '../domains/calendar/queries/calendarReadFacade.js';
+import { fetchDirectCalendarEventByFeedId } from '../services/calendarExpansion.js';
 import type { Member } from '../types.js';
 import { isCalendarRangeWithinLimit } from '../utils/abuseProtection.js';
 
@@ -115,6 +116,25 @@ export async function calendarRoutes(fastify: FastifyInstance) {
         return reply.code(400).send({ error: 'Date range must be 93 days or less' });
       }
       return getLeagueCalendarFeed(q.start, q.end);
+    }
+  );
+
+  // GET /calendar/events/:id
+  fastify.get(
+    '/calendar/events/:id',
+    {
+      schema: {
+        tags: ['calendar'],
+        params: { type: 'object', properties: { id: { type: 'string' } } },
+      },
+    },
+    async (request, reply) => {
+      const idParam = (request.params as { id: string }).id;
+      const event = await fetchDirectCalendarEventByFeedId(idParam);
+      if (!event) {
+        return reply.code(404).send({ error: 'Event not found' });
+      }
+      return event;
     }
   );
 

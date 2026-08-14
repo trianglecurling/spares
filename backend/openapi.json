@@ -16192,6 +16192,26 @@
       }
     },
     "/calendar/events/{id}": {
+      "get": {
+        "tags": [
+          "calendar"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
       "patch": {
         "tags": [
           "calendar"

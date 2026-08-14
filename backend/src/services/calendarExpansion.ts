@@ -43,6 +43,77 @@ function toEventId(event: { id: number; parent_event_id: number | null; recurren
   return `direct:${event.id}`;
 }
 
+const FEED_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Parse a member-calendar feed id such as `direct:12` or `direct:12:2026-12-11`. */
+export function parseDirectCalendarFeedId(
+  feedId: string
+): { dbId: number; recurrenceDate: string | null } | null {
+  const parts = feedId.split(':');
+  if (parts[0] !== 'direct' || parts.length < 2) return null;
+  const dbId = Number.parseInt(parts[1], 10);
+  if (!Number.isFinite(dbId) || dbId < 1) return null;
+  const recurrenceDate = parts.length >= 3 ? parts.slice(2).join(':') : null;
+  if (recurrenceDate && !FEED_DATE_RE.test(recurrenceDate)) return null;
+  return { dbId, recurrenceDate };
+}
+
+function utcWindowAroundDate(ymd: string, padDays = 1): { start: Date; end: Date } {
+  const start = new Date(`${ymd}T00:00:00.000Z`);
+  const end = new Date(`${ymd}T00:00:00.000Z`);
+  start.setUTCDate(start.getUTCDate() - padDays);
+  end.setUTCDate(end.getUTCDate() + padDays + 1);
+  return { start, end };
+}
+
+function utcWindowAroundInstant(iso: string, padMs = 24 * 60 * 60 * 1000): { start: Date; end: Date } {
+  const instant = new Date(iso);
+  if (Number.isNaN(instant.getTime())) {
+    return utcWindowAroundDate(new Date().toISOString().slice(0, 10));
+  }
+  return {
+    start: new Date(instant.getTime() - padMs),
+    end: new Date(instant.getTime() + padMs),
+  };
+}
+
+/**
+ * One expanded direct calendar event by feed id, including description.
+ * Used by the event editor so it does not depend on a 93-day list window.
+ */
+export async function fetchDirectCalendarEventByFeedId(
+  feedId: string
+): Promise<ExpandedDirectCalendarEvent | null> {
+  const parsed = parseDirectCalendarFeedId(feedId);
+  if (!parsed) return null;
+
+  const { db, schema } = getDrizzleDb();
+  const [row] = await db
+    .select({
+      id: schema.calendarEvents.id,
+      source: schema.calendarEvents.source,
+      start_dt: schema.calendarEvents.start_dt,
+      parent_event_id: schema.calendarEvents.parent_event_id,
+      recurrence_date: schema.calendarEvents.recurrence_date,
+    })
+    .from(schema.calendarEvents)
+    .where(eq(schema.calendarEvents.id, parsed.dbId))
+    .limit(1);
+
+  if (!row || row.source !== 'direct') return null;
+
+  const recurrenceDate = parsed.recurrenceDate ?? row.recurrence_date;
+  const window = recurrenceDate
+    ? utcWindowAroundDate(recurrenceDate)
+    : utcWindowAroundInstant(row.start_dt);
+
+  const events = await fetchDirectCalendarEventsForRange(window.start, window.end);
+  const exact = events.find((event) => event.id === feedId);
+  if (exact) return exact;
+  if (parsed.recurrenceDate) return null;
+  return events.find((event) => event.id === `direct:${parsed.dbId}`) ?? null;
+}
+
 /** Calendar + league events that appear on the member calendar, expanded into concrete intervals. */
 export async function fetchDirectCalendarEventsForRange(
   rangeStart: Date,

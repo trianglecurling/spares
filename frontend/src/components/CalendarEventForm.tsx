@@ -16,26 +16,35 @@ import RecurrenceFields, { useRecurrenceState } from './RecurrenceFields';
 import { useAlert } from '../contexts/AlertContext';
 import { useTheme } from '../contexts/ThemeContext';
 import type { CalendarEvent, CalendarEventType } from '../pages/Calendar';
-import { LOCATION_OPTIONS } from '../pages/calendarEventFormShared';
+import {
+  calendarEventDescriptionForSave,
+  LOCATION_OPTIONS,
+} from '../pages/calendarEventFormShared';
 
 export interface CalendarEventFormProps {
   event: CalendarEvent | null;
+  /** Prefill a new event from this source. Recurrence is not copied. */
+  copyFrom?: CalendarEvent | null;
   sheets: Array<{ id: number; name: string }>;
   eventTypes: CalendarEventType[];
   initialDate: Date;
   onSaved: () => void;
+  onCancel?: () => void;
 }
 
 export default function CalendarEventForm({
   event,
+  copyFrom = null,
   sheets,
   eventTypes,
   initialDate,
   onSaved,
+  onCancel,
 }: CalendarEventFormProps) {
   const { showAlert } = useAlert();
-  const base = event
-    ? { start: event.start, end: event.end }
+  const template = event ?? copyFrom;
+  const base = template
+    ? { start: template.start, end: template.end }
     : (() => {
         const start = new Date(initialDate);
         const hasTime = start.getHours() !== 0 || start.getMinutes() !== 0;
@@ -44,16 +53,16 @@ export default function CalendarEventForm({
         end.setHours(end.getHours() + (hasTime ? 1 : 2), 0, 0);
         return { start, end };
       })();
-  const [title, setTitle] = useState(event?.title ?? '');
-  const [typeId, setTypeId] = useState(event?.typeId ?? 'other');
+  const [title, setTitle] = useState(template?.title ?? '');
+  const [typeId, setTypeId] = useState(template?.typeId ?? 'other');
   const [startDate, setStartDate] = useState(format(base.start, 'yyyy-MM-dd'));
   const [startTime, setStartTime] = useState(format(base.start, 'HH:mm'));
   const [endDate, setEndDate] = useState(format(base.end, 'yyyy-MM-dd'));
   const [endTime, setEndTime] = useState(format(base.end, 'HH:mm'));
-  const [allDay, setAllDay] = useState(event?.allDay ?? false);
+  const [allDay, setAllDay] = useState(template?.allDay ?? false);
   const [selectedSheets, setSelectedSheets] = useState<number[]>(
     () =>
-      (event?.locations ?? [])
+      (template?.locations ?? [])
         .filter(
           (l): l is { type: 'sheet'; sheetId: number; sheetName?: string } => l.type === 'sheet'
         )
@@ -63,7 +72,7 @@ export default function CalendarEventForm({
     Array<'warm-room' | 'exterior' | 'offsite' | 'virtual'>
   >(
     () =>
-      (event?.locations ?? [])
+      (template?.locations ?? [])
         .filter(
           (l): l is { type: 'warm-room' | 'exterior' | 'offsite' | 'virtual' } => l.type !== 'sheet'
         )
@@ -71,11 +80,24 @@ export default function CalendarEventForm({
   );
   const recurrence = useRecurrenceState(event?.recurrenceRrule ?? '', startDate);
   const [editScope, setEditScope] = useState<'this' | 'all'>('this');
-  const [linkedArticle, setLinkedArticle] = useState<ArticleOption | null>(event?.article ?? null);
+  const [linkedArticle, setLinkedArticle] = useState<ArticleOption | null>(template?.article ?? null);
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<'details' | 'description'>('details');
+  const [descriptionDraft, setDescriptionDraft] = useState(template?.description ?? '');
   const descriptionEditorRef = useRef<MarkdownDescriptionEditorRef>(null);
   const { resolvedTheme } = useTheme();
+
+  const captureDescriptionFromEditor = () => {
+    const markdown = descriptionEditorRef.current?.getMarkdown?.();
+    if (markdown !== undefined) setDescriptionDraft(markdown);
+  };
+
+  const setTab = (tab: 'details' | 'description') => {
+    if (activeTab === 'description' && tab !== 'description') {
+      captureDescriptionFromEditor();
+    }
+    setActiveTab(tab);
+  };
 
   const isRecurringEdit = Boolean(event?.id && event.id.split(':').length === 3);
   const isEditingSingleInstance = isRecurringEdit && editScope === 'this';
@@ -142,15 +164,17 @@ export default function CalendarEventForm({
       ...selectedFixedLocs.map((type) => ({ type })),
     ];
 
-    const description =
-      descriptionEditorRef.current?.getMarkdown?.() ?? event?.description ?? '';
+    const description = calendarEventDescriptionForSave(
+      descriptionEditorRef.current?.getMarkdown?.(),
+      descriptionDraft
+    );
     const payload = {
       typeId,
       title,
       start: start.toISOString(),
       end: end.toISOString(),
       allDay,
-      description: description.trim() || undefined,
+      description,
       articleId: linkedArticle?.id ?? null,
       locations: locations.length > 0 ? locations : undefined,
       recurrence: !isEditingSingleInstance ? recurrence.payload ?? undefined : undefined,
@@ -180,13 +204,13 @@ export default function CalendarEventForm({
             key: 'details',
             label: 'Event details',
             isActive: activeTab === 'details',
-            onClick: () => setActiveTab('details'),
+            onClick: () => setTab('details'),
           },
           {
             key: 'description',
             label: 'Description',
             isActive: activeTab === 'description',
-            onClick: () => setActiveTab('description'),
+            onClick: () => setTab('description'),
           },
         ]}
       />
@@ -383,11 +407,15 @@ export default function CalendarEventForm({
           </div>
         )}
         {activeTab === 'description' && (
-          <div className="flex min-h-0 flex-1 flex-col">
+          <div
+            role="group"
+            aria-label="Event description"
+            className="flex min-h-0 flex-1 flex-col"
+          >
             <MarkdownDescriptionEditor
               key={event?.id ?? 'new'}
               ref={descriptionEditorRef}
-              initialValue={event?.description ?? ''}
+              initialValue={descriptionDraft}
               fill
               dark={resolvedTheme === 'dark'}
             />
@@ -396,6 +424,11 @@ export default function CalendarEventForm({
       </div>
 
       <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-gray-200 pt-4 dark:border-gray-600">
+        {onCancel ? (
+          <Button type="button" variant="secondary" disabled={saving} onClick={onCancel}>
+            Cancel
+          </Button>
+        ) : null}
         <Button type="submit" variant="primary" disabled={saving}>
           {saving ? 'Saving...' : event ? 'Update' : 'Create'}
         </Button>
