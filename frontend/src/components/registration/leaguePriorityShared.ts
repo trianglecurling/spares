@@ -494,7 +494,7 @@ export function sabbaticalEligiblePriorLeagues(input: {
   const leagues = leagueById(input.leagues);
   return input.priorSeasonLeagueIds.flatMap((leagueId) => {
     const league = leagues[leagueId];
-    if (!isSabbaticalEligibleLeague(league)) return [];
+    if (!league || !isSabbaticalEligibleLeague(league)) return [];
     return [league];
   });
 }
