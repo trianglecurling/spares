@@ -1,0 +1,14 @@
+{
+  "type": "postgres",
+  "postgres": {
+    "host": "dbhost.com",
+    "port": 5432,
+    "database": "thebroomstack",
+    "username": "dbuser",
+    "password": "dbpass",
+    "ssl": true
+  },
+  "adminEmails": [
+    "your@email.com"
+  ]
+}
