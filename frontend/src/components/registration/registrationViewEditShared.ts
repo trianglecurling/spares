@@ -32,6 +32,8 @@ export type LeagueCatalogItem = {
   allowsWaitlist: boolean;
   waitlistId?: number | null;
   activeWaitlistEntryCount?: number;
+  openSpotCount?: number;
+  temporarySabbaticalFillVacancyCount?: number;
   isPlayInBased?: boolean;
   isJuniorRecreational?: boolean;
   allowsSabbatical: boolean;
@@ -424,6 +426,17 @@ export function isLeagueSelectionEligibleLeague(league: LeagueCatalogItem, input
     return false;
   }
   return true;
+}
+
+/** The guaranteed-return intro is only useful when a non-instructional league is available. */
+export function shouldShowLeaguePriorityIntro(
+  leagues: LeagueCatalogItem[] | null | undefined,
+  eligibility: LeagueEligibilityInput,
+): boolean {
+  if (!leagues) return true;
+  return leagues.some(
+    (league) => isLeagueSelectionEligibleLeague(league, eligibility) && league.format !== 'instructional',
+  );
 }
 export function isBasicIceIncludedDaytimeLeague(league: LeagueCatalogItem): boolean {
   return (

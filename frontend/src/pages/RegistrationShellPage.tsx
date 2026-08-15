@@ -37,6 +37,7 @@ import {
   formatCurrency,
   formatEstimatedTotalRange,
   formatRegistrationDisplayDate,
+  shouldShowLeaguePriorityIntro,
   submitRegistrationEdits,
   type LeagueEligibilityInput,
   type SubmitRegistrationEditsResult,
@@ -54,6 +55,7 @@ import { resolvePreferredPronounsForSave } from '../utils/preferredPronouns';
 import {
   defaultUsaCurlingMembershipOptIn,
   defaultUswcaMembershipOptIn,
+  membershipAppliesParentAssociations,
 } from '../utils/parentAssociationMemberships';
 import {
   defaultNameTagPrintName,
@@ -381,12 +383,6 @@ function registrationDiscountLabel(baseLabel: string, slot: RegistrationDiscount
 function membershipOptionTextValue(label: string, feeMinor: number | undefined): string {
   if (feeMinor == null) return label;
   return `${label}, ${formatCurrency(feeMinor)}`;
-}
-
-function membershipShowsParentAssociations(
-  choice: 'regular' | 'social' | 'junior_recreational' | 'none' | 'regular_spare_only' | null | undefined,
-): boolean {
-  return choice === 'regular' || choice === 'social' || choice === 'regular_spare_only';
 }
 
 function parentAssociationReviewText(usaOptIn: boolean, uswcaOptIn: boolean): string {
@@ -880,6 +876,8 @@ export default function RegistrationShellPage() {
   /** Suppresses one-shot auto-forward effects right after an explicit Back navigation. */
   const registrationNavigationIntentRef = useRef<'back' | null>(null);
   const noMembershipPathActiveRef = useRef(false);
+  /** Keeps an in-progress discounts pick from being overwritten by a late membership-payment fetch. */
+  const discountsTouchedRef = useRef(false);
   /** Keeps the experience step reachable after Back until the user leaves the step. */
   const suppressExperienceAutoSkipRef = useRef(false);
   const backToStartInFlightRef = useRef(false);
@@ -996,8 +994,9 @@ export default function RegistrationShellPage() {
         playInEntry: leaguePayload?.playInEntry,
         priorLeagueDecisions: leaguePayload?.priorLeagueDecisions ?? [],
         registrantMemberId: registeringCurlerMemberId,
+        registrationState: leaguePayload?.registrationState ?? windowState?.state,
       }),
-    [leaguePayload, registeringCurlerMemberId],
+    [leaguePayload, registeringCurlerMemberId, windowState?.state],
   );
 
   const priorityReviewEntries = priorityEvaluation.entries;
@@ -1058,7 +1057,7 @@ export default function RegistrationShellPage() {
       'Choose this if the individual wants to be a member but will not curl this session. All social members will have association dues paid on their behalf.';
     const noMembershipDescription =
       'Register or extend a sabbatical from the previous session without purchasing membership for this session.';
-    const juniorDescription = 'Choose this special junior program. It skips normal league selection. For Junior Advanced Commitment, please select "Regular membership".';
+    const juniorDescription = 'This special junior program skips normal league selection. For Junior Advanced Commitment, please select "Regular membership".';
     const options: Array<{
       value: 'regular' | 'social' | 'junior_recreational' | 'none';
       label: string;
@@ -1175,10 +1174,12 @@ export default function RegistrationShellPage() {
         : defaultUswcaMembershipOptIn(draft.demographics?.preferredPronouns),
     );
     setBasicIcePrivileges(draft.basicIcePrivileges);
-    setStudentDiscountClaimed(draft.studentDiscountClaimed);
-    setStudentInstitution(draft.studentInstitution);
-    setReciprocalDiscountClaimed(draft.reciprocalDiscountClaimed);
-    setReciprocalClubName(draft.reciprocalClubName);
+    if (!discountsTouchedRef.current) {
+      setStudentDiscountClaimed(draft.studentDiscountClaimed);
+      setStudentInstitution(draft.studentInstitution);
+      setReciprocalDiscountClaimed(draft.reciprocalDiscountClaimed);
+      setReciprocalClubName(draft.reciprocalClubName);
+    }
     setExperienceChoice(draft.experienceChoice);
     setExperienceYears(draft.experienceYears);
   }, [member?.email]);
@@ -1560,6 +1561,12 @@ export default function RegistrationShellPage() {
   }, [currentStep, registrationId]);
 
   useEffect(() => {
+    if (currentStep !== 'discounts') {
+      discountsTouchedRef.current = false;
+    }
+  }, [currentStep]);
+
+  useEffect(() => {
     const membershipPaymentFlowSteps = [
       'membership',
       'discounts',
@@ -1591,7 +1598,7 @@ export default function RegistrationShellPage() {
         } else if (membershipOption === 'regular' || membershipOption === 'regular_spare_only') {
           setMembershipChoice('regular');
         }
-        if (membershipShowsParentAssociations(membershipOption)) {
+        if (membershipAppliesParentAssociations(membershipOption)) {
           setUsaCurlingMembershipOptIn(
             data.selection.usaCurlingMembershipOptIn ?? defaultUsaCurlingMembershipOptIn(),
           );
@@ -1611,10 +1618,14 @@ export default function RegistrationShellPage() {
           // pre-selected when the registrant first reaches ice privileges.
           return icePrivilegesChoiceForUi(data.icePrivilegesChoice);
         });
-        setStudentDiscountClaimed(data.selection.studentDiscountClaimed);
-        setStudentInstitution(data.selection.studentInstitution || '');
-        setReciprocalDiscountClaimed(data.selection.reciprocalDiscountClaimed);
-        setReciprocalClubName(data.selection.reciprocalClubName || '');
+        // Keep a pick the registrant already made on this screen across a late
+        // membership-payment fetch (complete-shell + hydrate can land after click).
+        if (!discountsTouchedRef.current) {
+          setStudentDiscountClaimed(data.selection.studentDiscountClaimed);
+          setStudentInstitution(data.selection.studentInstitution || '');
+          setReciprocalDiscountClaimed(data.selection.reciprocalDiscountClaimed);
+          setReciprocalClubName(data.selection.reciprocalClubName || '');
+        }
         setExperienceChoice(data.selection.experienceType || (data.knownExperienceYears > 0 ? 'known_existing' : 'none_or_minimal'));
         setExperienceYears(data.selection.experienceSelfReportedYears?.toString() || '');
         if (currentStep === 'review') setReviewPaymentReady(true);
@@ -1662,7 +1673,18 @@ export default function RegistrationShellPage() {
   }, [currentStep, member, registrationId, membershipPayment, experienceChoice, navigate]);
 
   useEffect(() => {
-    const leagueSteps = ['league-priority', 'review'];
+    if (currentStep !== 'league-priority-intro') return;
+    if (!leaguePayload || shouldShowLeaguePriorityIntro(leaguePayload.leagues, leagueEligibilityInput)) return;
+    if (registrationNavigationIntentRef.current === 'back') {
+      registrationNavigationIntentRef.current = null;
+      navigate('/registration/basic-ice', { replace: true });
+      return;
+    }
+    navigate('/registration/league-priority', { replace: true });
+  }, [currentStep, leagueEligibilityInput, leaguePayload, navigate]);
+
+  useEffect(() => {
+    const leagueSteps = ['basic-ice', 'league-priority-intro', 'league-priority', 'review'];
     if (!member || !registrationId || !leagueSteps.includes(currentStep)) return;
     let canceled = false;
     if (currentStep === 'review') setReviewCatalogReady(false);
@@ -1706,10 +1728,12 @@ export default function RegistrationShellPage() {
           reciprocalClubName: reciprocalClubName || null,
           experienceType: experienceChoice,
           experienceSelfReportedYears: experienceChoice === 'specified_years' ? Number(experienceYears) : null,
-          usaCurlingMembershipOptIn:
-            membershipChoice === 'regular' || membershipChoice === 'social' ? usaCurlingMembershipOptIn : null,
-          uswcaMembershipOptIn:
-            membershipChoice === 'regular' || membershipChoice === 'social' ? uswcaMembershipOptIn : null,
+          usaCurlingMembershipOptIn: membershipAppliesParentAssociations(membershipChoice)
+            ? usaCurlingMembershipOptIn
+            : null,
+          uswcaMembershipOptIn: membershipAppliesParentAssociations(membershipChoice)
+            ? uswcaMembershipOptIn
+            : null,
         });
         if (!canceled) {
           setMembershipPayment(data);
@@ -2586,7 +2610,7 @@ export default function RegistrationShellPage() {
     setError('');
     try {
       if (member && registrationId !== null) {
-        const appliesParentAssociations = membershipShowsParentAssociations(selectedMembership);
+        const appliesParentAssociations = membershipAppliesParentAssociations(selectedMembership);
         const response = await api.patch(`/registration/drafts/${registrationId}/membership`, {
           membershipOption: selectedMembership,
           basicIcePrivileges: false,
@@ -2743,7 +2767,9 @@ export default function RegistrationShellPage() {
         return;
       }
       navigate(
-        choice === 'league_play' ? '/registration/league-priority-intro' : '/registration/league-priority',
+        choice === 'league_play' && shouldShowLeaguePriorityIntro(leaguePayload?.leagues, leagueEligibilityInput)
+          ? '/registration/league-priority-intro'
+          : '/registration/league-priority',
       );
     } catch (err) {
       setError(errorMessage(err, 'Unable to save ice privileges.'));
@@ -2914,10 +2940,12 @@ export default function RegistrationShellPage() {
           reciprocalClubName: reciprocalClubName || null,
           experienceType: experienceChoice,
           experienceSelfReportedYears: experienceChoice === 'specified_years' ? Number(experienceYears) : null,
-          usaCurlingMembershipOptIn:
-            membershipChoice === 'regular' || membershipChoice === 'social' ? usaCurlingMembershipOptIn : undefined,
-          uswcaMembershipOptIn:
-            membershipChoice === 'regular' || membershipChoice === 'social' ? uswcaMembershipOptIn : undefined,
+          usaCurlingMembershipOptIn: membershipAppliesParentAssociations(membershipChoice)
+            ? usaCurlingMembershipOptIn
+            : undefined,
+          uswcaMembershipOptIn: membershipAppliesParentAssociations(membershipChoice)
+            ? uswcaMembershipOptIn
+            : undefined,
           payLater: options?.payLater ?? false,
           membershipCommitteeComments: membershipCommitteeComments.trim() || null,
         });
@@ -3057,7 +3085,8 @@ export default function RegistrationShellPage() {
               return;
             }
             navigateRegistrationBack(
-              icePrivilegesChoice === 'league_play'
+              icePrivilegesChoice === 'league_play' &&
+                shouldShowLeaguePriorityIntro(leaguePayload?.leagues, leagueEligibilityInput)
                 ? '/registration/league-priority-intro'
                 : '/registration/basic-ice',
             );
@@ -3897,12 +3926,12 @@ export default function RegistrationShellPage() {
                     | null
                     | undefined;
                   const resolved = next ?? null;
-                  const wasShowingParentAssociations = membershipShowsParentAssociations(membershipChoice);
+                  const wasShowingParentAssociations = membershipAppliesParentAssociations(membershipChoice);
                   setMembershipChoice(resolved);
                   if (resolved != null && resolved !== 'none') {
                     noMembershipPathActiveRef.current = false;
                   }
-                  if (membershipShowsParentAssociations(resolved) && !wasShowingParentAssociations) {
+                  if (membershipAppliesParentAssociations(resolved) && !wasShowingParentAssociations) {
                     setUsaCurlingMembershipOptIn(
                       membershipPayment?.selection.usaCurlingMembershipOptIn ??
                         defaultUsaCurlingMembershipOptIn(),
@@ -3933,7 +3962,7 @@ export default function RegistrationShellPage() {
               />
             </FormField>
           ) : null}
-          {!isLifetimeMember && membershipShowsParentAssociations(membershipChoice) ? (
+          {!isLifetimeMember && membershipAppliesParentAssociations(membershipChoice) ? (
             <RegistrationParentAssociationFields
               usaCurlingOptIn={usaCurlingMembershipOptIn}
               uswcaOptIn={uswcaMembershipOptIn}
@@ -3977,6 +4006,7 @@ export default function RegistrationShellPage() {
             ]}
             onChange={(nextValue) => {
               const selected = Array.isArray(nextValue) ? nextValue : nextValue ? [nextValue] : [];
+              discountsTouchedRef.current = true;
               setStudentDiscountClaimed(selected.includes('student'));
               setReciprocalDiscountClaimed(selected.includes('reciprocal'));
             }}
@@ -3984,12 +4014,26 @@ export default function RegistrationShellPage() {
           />
           {studentDiscountClaimed ? (
             <FormField label="Institution of study" htmlFor="student-institution" required tone="public">
-              <FieldInput id="student-institution" value={studentInstitution} onChange={setStudentInstitution} />
+              <FieldInput
+                id="student-institution"
+                value={studentInstitution}
+                onChange={(next) => {
+                  discountsTouchedRef.current = true;
+                  setStudentInstitution(next);
+                }}
+              />
             </FormField>
           ) : null}
           {reciprocalDiscountClaimed ? (
             <FormField label="Other curling club" htmlFor="reciprocal-club" required tone="public">
-              <FieldInput id="reciprocal-club" value={reciprocalClubName} onChange={setReciprocalClubName} />
+              <FieldInput
+                id="reciprocal-club"
+                value={reciprocalClubName}
+                onChange={(next) => {
+                  discountsTouchedRef.current = true;
+                  setReciprocalClubName(next);
+                }}
+              />
             </FormField>
           ) : null}
           {error ? <p className="text-sm text-red-600">{error}</p> : null}
@@ -4155,6 +4199,24 @@ export default function RegistrationShellPage() {
       );
     }
   } else if (currentStep === 'league-priority-intro') {
+    if (member && registrationId != null && !leaguePayload) {
+      content = (
+        <RegistrationCard>
+          <RegistrationFlowHeader />
+          <PublicStateCard title="Loading registration" description="Checking which leagues are available." />
+        </RegistrationCard>
+      );
+    } else if (
+      leaguePayload &&
+      !shouldShowLeaguePriorityIntro(leaguePayload.leagues, leagueEligibilityInput)
+    ) {
+      content = (
+        <RegistrationCard>
+          <RegistrationFlowHeader />
+          <PublicStateCard title="Continuing registration" description="Opening league selection." />
+        </RegistrationCard>
+      );
+    } else {
     content = (
       <RegistrationCard>
         <RegistrationFlowHeader />
@@ -4175,6 +4237,7 @@ export default function RegistrationShellPage() {
         </div>
       </RegistrationCard>
     );
+    }
   } else if (currentStep === 'league-priority') {
     const sabbaticalOnly =
       membershipPayment?.selection.membershipOption === 'none' ||
@@ -4192,7 +4255,7 @@ export default function RegistrationShellPage() {
             ? 'You are not registering to play this session. For each eligible league, take or extend a sabbatical, or drop it. You can hold at most two sabbaticals.'
             : (membershipPayment?.icePrivilegesChoice ?? icePrivilegesChoice) === 'basic_ice'
               ? 'Basic ice privileges include sparing, practice, and free daytime leagues. List only those free leagues, and decide what to do with any paid leagues you played last session.'
-              : 'Tell us how many leagues you want this session, then list them in the order you want them. We work down your list, so put the league you want most at the top.'}
+              : 'Tell us how many leagues/instructional programs you want this session, then list them in the order you want them. We work down your list, so put the league you want most at the top.'}
         </p>
         <div className="mt-6">
           <LeaguePriorityStep
@@ -4207,6 +4270,14 @@ export default function RegistrationShellPage() {
                 membershipPayment?.selection.membershipOption === 'regular_spare_only')
             }
             sabbaticalOnly={sabbaticalOnly}
+            registrationState={leaguePayload?.registrationState ?? windowState?.state}
+            discountClaims={{
+              studentDiscountClaimed:
+                membershipPayment?.selection.studentDiscountClaimed ?? studentDiscountClaimed,
+              reciprocalDiscountClaimed:
+                membershipPayment?.selection.reciprocalDiscountClaimed ?? reciprocalDiscountClaimed,
+              availableDiscounts: windowState?.availableDiscounts,
+            }}
             onSave={(input) => saveLeaguePriorities(input, isPriorityEdit ? finishPriorityEdit : undefined)}
           />
         </div>
@@ -4247,7 +4318,7 @@ export default function RegistrationShellPage() {
                 <span className="font-medium text-gray-900">Reciprocal discount:</span> {membershipPayment.selection.reciprocalClubName}
               </p>
             ) : null}
-            {membershipShowsParentAssociations(
+            {membershipAppliesParentAssociations(
               membershipPayment?.selection.membershipOption ?? membershipChoice,
             ) ? (
               <p>

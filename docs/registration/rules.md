@@ -942,6 +942,9 @@ If dollar discounts and percentage discounts both apply:
 Percentage discounts apply to all discount-eligible invoice items unless a
 discount's configuration narrows its scope.
 
+Dollar discounts apply to regular membership dues only. They do not apply to
+league fees.
+
 Student and reciprocal discounts may be combined.
 
 ## 20. Fees

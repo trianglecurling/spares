@@ -428,6 +428,7 @@ function LeaguePriorityEditModal({ registrationId, isOpen, onClose, onSaved, fin
   const [leaguePayload, setLeaguePayload] = useState<RegistrationLeagueCatalogPayload | null>(null);
   const [curler, setCurler] = useState<RegistrationShellCurler | null>(null);
   const [membership, setMembership] = useState<RegistrationMembershipPaymentPayload | null>(null);
+  const [windowState, setWindowState] = useState<RegistrationWindow | null>(null);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -440,6 +441,7 @@ function LeaguePriorityEditModal({ registrationId, isOpen, onClose, onSaved, fin
         setLeaguePayload(context.league);
         setCurler(context.curler);
         setMembership(context.membership);
+        setWindowState(context.window);
       })
       .catch((err) => {
         if (!canceled) setError(editValidationErrorMessage(err, 'Unable to load league choices.'));
@@ -507,6 +509,12 @@ function LeaguePriorityEditModal({ registrationId, isOpen, onClose, onSaved, fin
               membership?.selection.membershipOption === 'none' ||
               membership?.selection.membershipOption === 'social'
             }
+            registrationState={leaguePayload?.registrationState ?? windowState?.state}
+            discountClaims={{
+              studentDiscountClaimed: membership?.selection.studentDiscountClaimed ?? false,
+              reciprocalDiscountClaimed: membership?.selection.reciprocalDiscountClaimed ?? false,
+              availableDiscounts: windowState?.availableDiscounts,
+            }}
             onSave={save}
           />
         )}

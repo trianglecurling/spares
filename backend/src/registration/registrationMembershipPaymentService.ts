@@ -15,6 +15,7 @@ import { normalizeFrontendBaseUrl } from '../utils/frontendUrl.js';
 import {
   booleanFromSqliteFlag,
   defaultUsaCurlingMembershipOptIn,
+  membershipAppliesParentAssociations,
   defaultUswcaMembershipOptIn,
   sqliteFlagFromBoolean,
 } from '../utils/parentAssociationMemberships.js';
@@ -455,6 +456,8 @@ const GUARANTEE_LABEL_TEXT: Record<string, string> = {
   guaranteed_return: 'Guaranteed return',
   awaiting_roster_entry: 'Awaiting roster entry',
   guaranteed_fallback: 'Guaranteed fallback',
+  available: 'Available',
+  temporary_spot_available: 'Temporary spot available',
   waitlisted: 'Waitlisted',
   subject_to_availability: 'Subject to availability',
   superfluous: 'Superfluous',
@@ -1263,8 +1266,7 @@ export async function updateMembership(registrationId: number, actor: Member, in
             : 'regular';
   const skipLeaguePlay =
     membershipOption === 'social' || membershipOption === 'junior_recreational' || membershipOption === 'none';
-  const appliesParentAssociations =
-    membershipOption === 'regular' || membershipOption === 'regular_spare_only' || membershipOption === 'social';
+  const appliesParentAssociations = membershipAppliesParentAssociations(membershipOption);
   const existingUsaCurlingOptIn = booleanFromSqliteFlag(registration.usa_curling_membership_opt_in);
   const existingUswcaOptIn = booleanFromSqliteFlag(registration.uswca_membership_opt_in);
   let uswcaDefaultPronouns: string | null = null;
@@ -2551,7 +2553,10 @@ export async function triggerDeferredRegistrationPayment(input: {
   // Placement is settled, so bill for the leagues the registrant actually holds
   // rather than the guarantees their priority list promised.
   const placedRows = await db
-    .select({ leagueId: schema.leagueRoster.league_id })
+    .select({
+      leagueId: schema.leagueRoster.league_id,
+      temporaryFill: schema.leagueRoster.is_temporary_sabbatical_fill,
+    })
     .from(schema.leagueRoster)
     .where(
       and(
@@ -2561,7 +2566,13 @@ export async function triggerDeferredRegistrationPayment(input: {
       ),
     );
   const placedLeagueIds = [...new Set(placedRows.map((row) => row.leagueId))];
-  const feePreview = calculateRegistrationFees(paymentContext, { chargedLeagueIds: placedLeagueIds });
+  const temporaryFillLeagueIds = [
+    ...new Set(placedRows.filter((row) => row.temporaryFill === 1).map((row) => row.leagueId)),
+  ];
+  const feePreview = calculateRegistrationFees(paymentContext, {
+    chargedLeagueIds: placedLeagueIds,
+    temporaryFillLeagueIds,
+  });
   const paymentDecision = decideRegistrationPayment({
     context: paymentContext,
     feePreview,

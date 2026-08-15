@@ -9,7 +9,8 @@ and third-league interest.
 
 Registration shows a purely informational step (`league-priority-intro`)
 immediately before the interactive priority list **when the registrant chose
-League play for ice privileges**. That screen explains:
+League play for ice privileges** and at least one eligible league is not an
+instructional program. That screen explains:
 
 1. What the next screen asks for (desired count and ordered priority list).
 2. How league rosters use up to two protected spots from leagues the member
@@ -17,8 +18,9 @@ League play for ice privileges**. That screen explains:
    when trying to switch into a higher-priority league.
 
 Continue advances to the priority list. No answers are saved on the intro step.
-Registrants on basic ice privileges (or other non–league-play paths) skip this
-intro and go straight to the priority list.
+Registrants on basic ice privileges, other non–league-play paths, or whose only
+eligible offerings are instructional programs skip this intro and go straight to
+the priority list.
 
 ## Basic ice privileges
 
@@ -64,7 +66,8 @@ a larger bill. Fees are always summed per league, never multiplied by a count.
 
 On first load the flow seeds:
 
-- **Count** = the number of leagues the registrant played in the prior session.
+- **Count** = the number of leagues the registrant played in the prior session,
+  or 1 if they did not play any.
 - **List** = those same leagues, plus any league the registrant currently has an
   active waitlist entry for. Waitlisted leagues are placed at the highest ranks
   the bring-your-own-team ordering rule allows.
@@ -78,8 +81,10 @@ live as the registrant reorders, adds, or removes leagues.
 
 | Label | Meaning |
 | --- | --- |
-| Guaranteed return | The spot is held. Billed immediately. |
-| Guaranteed fallback | The spot is held as a backstop if higher choices do not come through. Billed immediately. |
+| Guaranteed return | The spot is held. Billed immediately. Priority registration only. |
+| Guaranteed fallback | The spot is held as a backstop if higher choices do not come through. Billed immediately. Priority registration only. |
+| Available | The league currently has vacancies. Billed immediately. Open registration only. |
+| Temporary spot available | A sabbatical has left a temporary fill vacancy. Billed immediately, minus the sabbatical fee. Open registration only. |
 | Waitlisted | Queued on the league waitlist. Payment deferred. |
 | Subject to availability | Wanted, not waitlisted. Assumed to have room; billed immediately. |
 | Superfluous | Below leagues that already fill the desired count. Not waitlisted or billed. Must be removed or moved higher before continuing. |
@@ -94,6 +99,47 @@ sabbatical right in that lineage, and registration is in the priority state. See
 A play-in based league is return eligible only when the registrant's declared
 entry team has a complete roster and clears the TLINE guarantee bar. See
 `play-in-entry.md`.
+
+### Open registration
+
+Open registration does not grant guaranteed returns or guaranteed fallbacks.
+Labels come from live vacancies instead:
+
+A league has vacancies when its active waitlist entry count is **strictly less
+than** its remaining open spots (capacity minus permanent roster placements and
+active sabbaticals).
+
+```
+availableGranted = 0
+availableBudget = min(2, desiredLeagueCount)
+
+for entry in rank order:
+    if play-in and roster incomplete:
+        entry.label = awaiting_roster_entry
+    else if play-in and roster complete but TLINE bar not cleared:
+        entry.label = subject_to_availability
+    else if league has vacancies and availableGranted < availableBudget:
+        entry.label = available
+        availableGranted += 1
+    else if league has vacancies and desiredLeagueCount >= 3:
+        entry.label = subject_to_availability
+    else if league has a temporary sabbatical-fill vacancy:
+        entry.label = temporary_spot_available
+    else:
+        entry.label = waitlisted
+
+# then the same superfluous pass as priority registration
+```
+
+The add-a-league picker shows **Available**, **Temporary spot available**, or
+**Waitlist** next to each league from that vacancy check, independent of how
+many available spots the registrant has already taken. Permanent vacancies take
+priority over temporary fill vacancies. A temporary fill is billed at the
+league fee minus the sabbatical fee.
+
+When the registrant wants three or more leagues, the first two vacant selections
+are Available. Further vacant selections are Subject to availability. Leagues
+without vacancies stay Waitlisted.
 
 ### The guarantee budget
 
@@ -247,11 +293,11 @@ simultaneous sabbaticals).
 
 ## Basic ice fallback
 
-When the priority list produces no leagues billed today (no guaranteed entries
-and no subject-to-availability entries), the registrant is offered basic ice as
-a fallback so they have something to skate on if no league spot materializes.
-The question appears inline on the priority page and disappears as soon as any
-billed-now league is present.
+When the priority list has no guaranteed leagues (no guaranteed return and no
+guaranteed fallback), the registrant is offered basic ice as a fallback so they
+have something to skate on if no league spot materializes. The question appears
+inline on the priority page and disappears as soon as any guaranteed league is
+present. Available and subject-to-availability entries do not hide it.
 
 ## Waitlist derivation
 
@@ -265,7 +311,8 @@ See `waitlists.md` for offer and placement behavior.
 
 ## Billing
 
-Guaranteed entries and subject-to-availability entries are billed now.
+Guaranteed entries, open-registration available entries, and
+subject-to-availability entries are billed now.
 Waitlisted entries, incomplete rosters, play-in misses, and superfluous entries
 are not. Superfluous entries also cannot be submitted.
 

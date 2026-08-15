@@ -17,7 +17,7 @@ export default function LeaguePriorityIntroStep({ continueLabel = 'Continue', on
       <section className="space-y-3">
         <h2 className="app-section-title">What you will do next</h2>
         <p className="text-sm text-gray-700">
-          On the next screen you will choose how many leagues you want to play this session, then build an ordered
+          On the next screen you will choose how many leagues/instructional programs you want to play this session, then build an ordered
           priority list of leagues. Put the league you want most at the top. We work down that list to fill up to the
           number of leagues you asked for.
         </p>
@@ -48,10 +48,9 @@ export default function LeaguePriorityIntroStep({ continueLabel = 'Continue', on
           </li>
         </ul>
         <p className="text-sm text-gray-700">
-          Waitlists are used to fill those protected spots. If you already have two guaranteed leagues, extra leagues
-          further down your list are not used. You can still add a league and move it higher to try a switch with
-          guaranteed fallback; until you do, that extra row is marked superfluous and you cannot continue. Labels on the
-          next screen update as you reorder your list so you can see what is guaranteed and what is not.
+          Waitlists are used to fill league vacancies after all returning participants are rostered. Waitlists are processed after the priority
+          registration period. To join another league, you must first join its waitlist. Some leagues may move through their waitlists quickly
+          while others may take longer. You will stay on the waitlist until you remove yourself or you decline an offer to join the league twice.
         </p>
       </section>
 

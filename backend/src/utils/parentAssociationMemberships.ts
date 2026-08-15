@@ -1,5 +1,16 @@
 import { resolvePreferredPronounsForSave } from './preferredPronouns.js';
 
+export function membershipAppliesParentAssociations(
+  choice: 'regular' | 'social' | 'junior_recreational' | 'none' | 'regular_spare_only' | null | undefined,
+): boolean {
+  return (
+    choice === 'regular' ||
+    choice === 'social' ||
+    choice === 'regular_spare_only' ||
+    choice === 'junior_recreational'
+  );
+}
+
 export function defaultUsaCurlingMembershipOptIn(): boolean {
   return true;
 }

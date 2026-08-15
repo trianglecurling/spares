@@ -25,11 +25,12 @@ import {
   filterPrioritiesToAllowedLeagues,
   guaranteeChipClassName,
   guaranteeChipLabel,
+  leagueHasTemporaryFillVacancy,
+  leagueHasVacancies,
   shouldShowGuaranteeChip,
   hydratePriorityList,
   incompletePlayInLeagueNames,
   seedableWaitlistLeagueIds,
-  immediateChargeEntries,
   isFreeLeague,
   mergeNewlyJoinedWaitlistLeagues,
   MAX_DESIRED_LEAGUE_COUNT,
@@ -54,6 +55,7 @@ import {
   type LeaguePriorityInput,
   type LeaguePrioritySavePayload,
   type PriorLeagueDecision,
+  type PriorityLabelMode,
   type RegistrationLeagueCatalogPayload,
 } from './leaguePriorityShared';
 import {
@@ -64,6 +66,10 @@ import {
   type LeagueEligibilityInput,
   type RegistrationPlayInEntrySummary,
 } from './registrationViewEditShared';
+import {
+  computeDiscountedEligibleFeeMinor,
+  type RegistrationDiscountClaims,
+} from '../../utils/registrationMembershipFees';
 
 type Props = {
   payload: RegistrationLeagueCatalogPayload | null;
@@ -75,6 +81,8 @@ type Props = {
   restrictToFreeLeagues?: boolean;
   /** Sabbatical-only membership: no priority list; last-session and continuing sabbatical choices only. */
   sabbaticalOnly?: boolean;
+  registrationState?: PriorityLabelMode | 'closed';
+  discountClaims?: RegistrationDiscountClaims;
   onSave: (input: LeaguePrioritySavePayload) => Promise<void>;
 };
 
@@ -83,9 +91,47 @@ type RemovalPrompt = {
   decision: 'sabbatical' | 'drop' | null;
 };
 
-function leagueRowSubtitle(league: LeagueCatalogItem): string {
+function leagueDisplayFeeMinor(
+  league: LeagueCatalogItem,
+  discountClaims?: RegistrationDiscountClaims,
+  sabbaticalFillDiscountMinor = 0,
+): number {
+  const discounted = discountClaims
+    ? computeDiscountedEligibleFeeMinor(
+        league.registrationFeeMinor,
+        discountClaims,
+        league.discountEligible !== false,
+      )
+    : league.registrationFeeMinor;
+  return Math.max(0, discounted - Math.max(0, sabbaticalFillDiscountMinor));
+}
+
+function leagueRowSubtitle(
+  league: LeagueCatalogItem,
+  discountClaims?: RegistrationDiscountClaims,
+  sabbaticalFillDiscountMinor = 0,
+): string {
   const schedule = leagueScheduleText(league);
-  return [schedule, formatCurrency(league.registrationFeeMinor)].filter(Boolean).join(' · ');
+  return [schedule, formatCurrency(leagueDisplayFeeMinor(league, discountClaims, sabbaticalFillDiscountMinor))]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+function leagueDropdownAvailabilityLabel(league: LeagueCatalogItem): string {
+  if (leagueHasVacancies(league)) return 'Available';
+  if (leagueHasTemporaryFillVacancy(league)) return 'Temporary spot available';
+  return 'Waitlist';
+}
+
+function sabbaticalFillDiscountForLeague(
+  league: LeagueCatalogItem,
+  sabbaticalFeeMinor: number,
+  label?: string,
+): number {
+  if (label === 'temporary_spot_available') return sabbaticalFeeMinor;
+  if (label) return 0;
+  if (!leagueHasVacancies(league) && leagueHasTemporaryFillVacancy(league)) return sabbaticalFeeMinor;
+  return 0;
 }
 
 function omittedWaitlistNotice(leagues: LeagueCatalogItem[]) {
@@ -116,6 +162,8 @@ export default function LeaguePriorityStep({
   continueLabel,
   restrictToFreeLeagues = false,
   sabbaticalOnly = false,
+  registrationState,
+  discountClaims,
   onSave,
 }: Props) {
   const { showAlert } = useAlert();
@@ -212,16 +260,19 @@ export default function LeaguePriorityStep({
         playInEntry: playInEntry as Record<number, RegistrationPlayInEntrySummary>,
         priorLeagueDecisions,
         registrantMemberId: registeringCurler.id,
+        registrationState: registrationState ?? payload?.registrationState,
       }),
     [
       desiredLeagueCount,
       leagues,
+      payload?.registrationState,
       payload?.returnEligibleMemberIdsByLeagueId,
       payload?.returnRightLeagueIds,
       playInEntry,
       priorLeagueDecisions,
       priorities,
       registeringCurler.id,
+      registrationState,
     ],
   );
 
@@ -551,7 +602,9 @@ export default function LeaguePriorityStep({
     const superfluous = evaluation.entries.find((entry) => entry.label === 'superfluous');
     if (superfluous) {
       const name = leagueById.get(superfluous.leagueId)?.name ?? 'A league';
-      return `${name} is below the leagues that already fill the number you asked for. Remove it, or move it higher if you want it as a switch with guaranteed fallback.`;
+      return (registrationState ?? payload?.registrationState) === 'open'
+        ? `${name} is below the leagues that already fill the number you asked for. Remove it, or move it higher.`
+        : `${name} is below the leagues that already fill the number you asked for. Remove it, or move it higher if you want it as a switch with guaranteed fallback.`;
     }
     return null;
   };
@@ -583,7 +636,9 @@ export default function LeaguePriorityStep({
         priorities: sabbaticalOnly ? [] : priorities,
         priorLeagueDecisions,
         basicIceFallbackInterest:
-          sabbaticalOnly || !payload?.collectBasicIceFallback ? null : basicIceFallbackInterest,
+          sabbaticalOnly || restrictToFreeLeagues || evaluation.guaranteedCount > 0
+            ? null
+            : basicIceFallbackInterest,
       });
     } catch (error) {
       showAlert(
@@ -599,7 +654,7 @@ export default function LeaguePriorityStep({
   }
 
   const showBasicIceFallback =
-    !sabbaticalOnly && payload.collectBasicIceFallback && immediateChargeEntries(evaluation).length === 0;
+    !sabbaticalOnly && !restrictToFreeLeagues && evaluation.guaranteedCount === 0;
   const showLeaguePicker = !sabbaticalOnly && eligibleLeagues.length > 0;
   const showEmptyEligible =
     !showLeaguePicker && lastSessionLeaguesForDecisions.length === 0 && sabbaticalsToShow.length === 0;
@@ -774,7 +829,17 @@ export default function LeaguePriorityStep({
                               </span>
                             ) : null}
                           </div>
-                          <p className="mt-1 text-sm text-gray-600">{leagueRowSubtitle(league)}</p>
+                          <p className="mt-1 text-sm text-gray-600">
+                            {leagueRowSubtitle(
+                              league,
+                              discountClaims,
+                              sabbaticalFillDiscountForLeague(
+                                league,
+                                payload?.sabbaticalFeeMinor ?? 0,
+                                label,
+                              ),
+                            )}
+                          </p>
                         </div>
                         <div className="flex shrink-0 items-center gap-2">
                           <Button
@@ -889,8 +954,15 @@ export default function LeaguePriorityStep({
                   }}
                   options={addableLeagues.map((league) => ({
                     value: league.id,
-                    label: league.name,
-                    description: leagueRowSubtitle(league),
+                    label:
+                      (registrationState ?? payload?.registrationState) === 'open'
+                        ? `${league.name} · ${leagueDropdownAvailabilityLabel(league)}`
+                        : league.name,
+                    description: leagueRowSubtitle(
+                      league,
+                      discountClaims,
+                      sabbaticalFillDiscountForLeague(league, payload?.sabbaticalFeeMinor ?? 0),
+                    ),
                   }))}
                 />
               </FormField>
@@ -1000,7 +1072,7 @@ export default function LeaguePriorityStep({
           {showBasicIceFallback ? (
             <FormCheckbox
               tone="public"
-              label="Give me basic ice privileges if I cannot be placed in any league"
+              label="I want basic ice privileges if I cannot be placed in any league"
               checked={basicIceFallbackInterest}
               onChange={setBasicIceFallbackInterest}
               helperText="Basic ice privileges allow unlimited sparing, practice, daytime leagues, and early morning sessions."

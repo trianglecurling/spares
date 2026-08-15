@@ -22,6 +22,8 @@ import {
   guaranteeBudgetFor,
   immediateChargeEntries,
   isGuaranteedLabel,
+  leagueHasTemporaryFillVacancy,
+  leagueHasVacancies,
   MAX_DESIRED_LEAGUE_COUNT,
   MAX_PROTECTED_CLAIMS,
   MAX_SIMULTANEOUS_SABBATICALS,
@@ -140,12 +142,16 @@ export function evaluateLeaguePriorities(context: RegistrationContext): LeaguePr
       feeMinor: league?.registrationFeeMinor ?? 0,
       allowsWaitlist: league?.allowsWaitlist === true,
       isPlayInBased: league?.isPlayInBased === true,
+      hasVacancies: leagueHasVacancies(league),
+      hasTemporaryFillVacancy: leagueHasTemporaryFillVacancy(league),
+      playInGuaranteed: league?.isPlayInBased === true && context.playInEntry?.[priority.leagueId]?.guaranteed === true,
     };
   });
 
   return labelPriorityEntries({
     candidates,
     desiredLeagueCount: context.desiredLeagueCount,
+    mode: context.registrationState === 'open' ? 'open' : 'priority',
   });
 }
 
@@ -483,7 +489,9 @@ export function validateLeaguePriorities(context: RegistrationContext): Priority
     blockingErrors.push(
       blockingError(
         'priority_list_has_superfluous_leagues',
-        'Remove leagues below the ones that already fill the number you asked for, or move one higher if you want it as a switch with guaranteed fallback.',
+        context.registrationState === 'open'
+          ? 'Remove leagues below the ones that already fill the number you asked for, or move one higher.'
+          : 'Remove leagues below the ones that already fill the number you asked for, or move one higher if you want it as a switch with guaranteed fallback.',
       ),
     );
   }
@@ -537,13 +545,13 @@ export function leaguePlacementDeferralReasons(evaluation: LeaguePriorityEvaluat
 }
 
 /**
- * The basic ice fallback question is asked only when nothing on the list is
- * billed as a league today, so the registrant might end the session with no ice
- * at all. Subject-to-availability leagues count: we assume they have room.
+ * The basic ice fallback question is asked when the list has no guaranteed
+ * leagues, so the registrant might end the session with no protected ice.
+ * Available and subject-to-availability entries do not hide the question.
  */
 export function shouldCollectBasicIceFallback(context: RegistrationContext): boolean {
   if (context.membershipOption === 'regular_spare_only') return false;
   if (context.membershipOption === 'junior_recreational') return false;
   const evaluation = evaluateLeaguePriorities(context);
-  return immediateChargeEntries(evaluation).length === 0;
+  return evaluation.guaranteedCount === 0;
 }

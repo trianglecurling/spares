@@ -10,6 +10,8 @@ import {
   expectedByotRosterSize,
   isGuaranteedLabel,
   labelPriorityEntries,
+  leagueHasTemporaryFillVacancy,
+  leagueHasVacancies,
   immediateChargeEntries,
   LEAGUE_PRIORITY_GUARANTEE_LABEL_TEXT,
   MAX_DESIRED_LEAGUE_COUNT,
@@ -22,6 +24,7 @@ import {
   type LabeledPriorityEntry,
   type LeaguePriorityGuaranteeLabel,
   type PriorityLabelCandidate,
+  type PriorityLabelMode,
   type PriorityLabelResult,
 } from '../../../../backend/src/registration/leaguePriorityRules';
 import type {
@@ -37,6 +40,8 @@ export {
   expectedByotRosterSize,
   isGuaranteedLabel,
   labelPriorityEntries,
+  leagueHasTemporaryFillVacancy,
+  leagueHasVacancies,
   immediateChargeEntries,
   LEAGUE_PRIORITY_GUARANTEE_LABEL_TEXT,
   MAX_DESIRED_LEAGUE_COUNT,
@@ -47,7 +52,7 @@ export {
   priorityRosterAllReturning,
   priorityRosterIsComplete,
 };
-export type { LabeledPriorityEntry, LeaguePriorityGuaranteeLabel, PriorityLabelResult };
+export type { LabeledPriorityEntry, LeaguePriorityGuaranteeLabel, PriorityLabelMode, PriorityLabelResult };
 
 /** One league on the registrant's list, most wanted first. */
 export type LeaguePriorityInput = {
@@ -67,6 +72,7 @@ export type PriorLeagueDecision = {
 
 export type RegistrationLeagueCatalogPayload = {
   leagues: LeagueCatalogItem[];
+  registrationState?: PriorityLabelMode | 'closed';
   priorities: LeaguePriorityInput[];
   desiredLeagueCount: number | null;
   maxDesiredLeagueCount: number;
@@ -152,9 +158,11 @@ export function hasReturnRight(input: {
   returnRightLeagueIds: ReadonlySet<number>;
   playInEntry?: Record<number, RegistrationPlayInEntrySummary>;
   registrantMemberId: number | null;
+  registrationState?: PriorityLabelMode | 'closed';
 }): boolean {
   const { league, priority } = input;
   if (!league) return false;
+  if (input.registrationState != null && input.registrationState !== 'priority') return false;
   if (league.isPlayInBased === true) {
     if (!input.playInEntry?.[league.id]?.guaranteed) return false;
     return priorityRosterIsComplete(league, priority, input.registrantMemberId);
@@ -171,6 +179,7 @@ export function evaluatePriorityList(input: {
   playInEntry?: Record<number, RegistrationPlayInEntrySummary>;
   priorLeagueDecisions: PriorLeagueDecision[];
   registrantMemberId: number | null;
+  registrationState?: PriorityLabelMode | 'closed';
 }): PriorityLabelResult {
   const leagues = leagueById(input.leagues);
   const returnRightLeagueIds = new Set(input.returnRightLeagueIds);
@@ -182,6 +191,7 @@ export function evaluatePriorityList(input: {
       returnRightLeagueIds,
       playInEntry: input.playInEntry,
       registrantMemberId: input.registrantMemberId,
+      registrationState: input.registrationState,
     });
     const returnEligibleMemberIds = new Set(input.returnEligibleMemberIdsByLeagueId?.[priority.leagueId] ?? []);
     if (hasRight && input.registrantMemberId != null) {
@@ -198,12 +208,16 @@ export function evaluatePriorityList(input: {
       feeMinor: league?.registrationFeeMinor ?? 0,
       allowsWaitlist: league?.allowsWaitlist === true,
       isPlayInBased: league?.isPlayInBased === true,
+      hasVacancies: leagueHasVacancies(league),
+      hasTemporaryFillVacancy: leagueHasTemporaryFillVacancy(league),
+      playInGuaranteed: league?.isPlayInBased === true && input.playInEntry?.[priority.leagueId]?.guaranteed === true,
     };
   });
 
   return labelPriorityEntries({
     candidates,
     desiredLeagueCount: input.desiredLeagueCount,
+    mode: input.registrationState === 'open' ? 'open' : 'priority',
   });
 }
 
@@ -364,7 +378,8 @@ export function omittedWaitlistLeagues(
 
 /**
  * Initial "how many leagues do you want" value. Uses a saved answer when
- * present; otherwise only last-session participation (not waitlist seeds).
+ * present; otherwise last-session participation (not waitlist seeds), or 1
+ * when the registrant did not play any leagues last session.
  */
 export function defaultDesiredLeagueCount(
   payload: RegistrationLeagueCatalogPayload,
@@ -382,7 +397,7 @@ export function defaultDesiredLeagueCount(
     return Math.min(payload.desiredLeagueCount, cap, MAX_DESIRED_LEAGUE_COUNT);
   }
   const priorSeasonCount = priorSeasonLeagueIds.length;
-  if (priorSeasonCount <= 0) return null;
+  if (priorSeasonCount <= 0) return 1;
   return Math.min(priorSeasonCount, MAX_DESIRED_LEAGUE_COUNT);
 }
 
@@ -743,7 +758,8 @@ export function shouldShowGuaranteeChip(
 }
 
 export function guaranteeChipClassName(label: LeaguePriorityGuaranteeLabel): string {
-  if (label === 'guaranteed_return') return 'bg-emerald-100 text-emerald-900';
+  if (label === 'guaranteed_return' || label === 'available') return 'bg-emerald-100 text-emerald-900';
+  if (label === 'temporary_spot_available') return 'bg-teal-100 text-teal-900';
   if (label === 'awaiting_roster_entry') return 'bg-yellow-100 text-yellow-900';
   if (label === 'guaranteed_fallback') return 'bg-sky-100 text-sky-900';
   if (label === 'waitlisted') return 'bg-amber-100 text-amber-900';

@@ -135,7 +135,10 @@ function addOrdinaryDiscounts(context: RegistrationContext, lineItems: Registrat
       valid: Boolean(context.discountClaims.student?.institution?.trim()),
       lineType: 'student_discount' as const,
       description: 'Student discount',
-      scope: 'eligible_invoice_items' as const,
+      scope:
+        context.discountSettings.student.amountType === 'dollar'
+          ? ('regular_membership' as const)
+          : ('eligible_invoice_items' as const),
       slot: context.discountSettings.student,
     },
     {
@@ -143,7 +146,10 @@ function addOrdinaryDiscounts(context: RegistrationContext, lineItems: Registrat
       valid: Boolean(context.discountClaims.reciprocal?.clubName?.trim()),
       lineType: 'reciprocal_discount' as const,
       description: 'Reciprocal club discount',
-      scope: 'eligible_invoice_items' as const,
+      scope:
+        context.discountSettings.reciprocal.amountType === 'dollar'
+          ? ('regular_membership' as const)
+          : ('eligible_invoice_items' as const),
       slot: context.discountSettings.reciprocal,
     },
     {
@@ -227,19 +233,48 @@ function addLeagueCharges(
   }
 }
 
-function addSabbaticalFillDiscounts(context: RegistrationContext): RegistrationFeeLineItem[] {
+function addSabbaticalFillDiscounts(
+  context: RegistrationContext,
+  chargedLeagueIds: number[],
+  temporaryFillLeagueIds: number[] = [],
+): RegistrationFeeLineItem[] {
   const discountLineItems: RegistrationFeeLineItem[] = [];
-  for (const selection of context.selections) {
-    const league = getSelectionLeague(context, selection);
-    if (!league || !selection.isTemporarySabbaticalFill) continue;
+  const addedLeagueIds = new Set<number>();
+  const amountMinor = -positiveMinor(context.priceConfig.sabbaticalFeeMinor);
+  if (amountMinor === 0) return discountLineItems;
+
+  const pushDiscount = (league: { id: number; name: string }) => {
+    if (addedLeagueIds.has(league.id)) return;
+    addedLeagueIds.add(league.id);
     discountLineItems.push({
       lineType: 'sabbatical_fill_discount',
       description: `${league.name} temporary sabbatical-fill discount`,
-      amountMinor: -positiveMinor(context.priceConfig.sabbaticalFeeMinor),
+      amountMinor,
       discountEligible: false,
       relatedLeagueId: league.id,
     });
+  };
+
+  for (const selection of context.selections) {
+    const league = getSelectionLeague(context, selection);
+    if (!league || !selection.isTemporarySabbaticalFill) continue;
+    pushDiscount(league);
   }
+
+  const charged = new Set(chargedLeagueIds);
+  for (const leagueId of temporaryFillLeagueIds) {
+    if (!charged.has(leagueId)) continue;
+    const league = getLeague(context, leagueId);
+    if (!league) continue;
+    pushDiscount(league);
+  }
+  for (const entry of evaluateLeaguePriorities(context).entries) {
+    if (entry.label !== 'temporary_spot_available' || !charged.has(entry.leagueId)) continue;
+    const league = getLeague(context, entry.leagueId);
+    if (!league) continue;
+    pushDiscount(league);
+  }
+
   return discountLineItems;
 }
 
@@ -258,7 +293,11 @@ function zeroRegistrationFeePreview(): RegistrationFeePreview {
   };
 }
 
-function computePreview(context: RegistrationContext, chargedLeagueIds: number[]): RegistrationFeePreview {
+function computePreview(
+  context: RegistrationContext,
+  chargedLeagueIds: number[],
+  temporaryFillLeagueIds: number[] = [],
+): RegistrationFeePreview {
   const lineItems: RegistrationFeeLineItem[] = [];
   const blockingErrors = validateDiscountClaims(context).blockingErrors;
 
@@ -301,7 +340,11 @@ function computePreview(context: RegistrationContext, chargedLeagueIds: number[]
   addReplacementNameTagCharge(context, lineItems);
 
   const ordinaryDiscounts = context.isSocialToRegularUpgrade ? [] : addOrdinaryDiscounts(context, lineItems);
-  const sabbaticalFillDiscounts = addSabbaticalFillDiscounts(context);
+  const sabbaticalFillDiscounts = addSabbaticalFillDiscounts(
+    context,
+    chargedLeagueIds,
+    temporaryFillLeagueIds,
+  );
   const assistancePercent =
     context.membershipOption === 'junior_recreational' &&
     (context.juniorAssistance?.status === 'approved' || context.juniorAssistance?.status === 'partially_approved')
@@ -358,6 +401,8 @@ export function calculateRegistrationFees(
      * actually placed into rather than the ones they were promised.
      */
     chargedLeagueIds?: number[];
+    /** Leagues already placed as temporary sabbatical fills. */
+    temporaryFillLeagueIds?: number[];
   },
 ): RegistrationFeePreview {
   if (context.registrant.hasLifetimeMembership) {
@@ -375,7 +420,7 @@ export function calculateRegistrationFees(
   }
 
   if (options?.chargedLeagueIds) {
-    return computePreview(context, options.chargedLeagueIds);
+    return computePreview(context, options.chargedLeagueIds, options.temporaryFillLeagueIds);
   }
 
   const evaluation = evaluateLeaguePriorities(context);

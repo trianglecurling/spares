@@ -218,6 +218,37 @@ export function calculateWaitlistVacancies(input: {
   };
 }
 
+/** Remaining permanent and temporary-fill spots per league, using staff waitlist vacancy math. */
+export async function loadLeagueVacancyCountsByLeagueId(
+  leagues: Array<{ id: number; capacityValue: number }>,
+): Promise<Map<number, { permanentVacancies: number; temporarySabbaticalFillVacancies: number }>> {
+  const leagueIds = leagues.map((league) => league.id);
+  const rosterCounts = await activeRosterCountByLeague(leagueIds);
+  const sabbaticalCounts = await activeSabbaticalCountByLeague(leagueIds);
+  const counts = new Map<number, { permanentVacancies: number; temporarySabbaticalFillVacancies: number }>();
+  for (const league of leagues) {
+    const roster = rosterCounts.get(league.id) ?? { permanent: 0, temporary: 0 };
+    counts.set(
+      league.id,
+      calculateWaitlistVacancies({
+        capacity: league.capacityValue ?? 0,
+        permanentPlacements: roster.permanent,
+        temporaryPlacements: roster.temporary,
+        activeSabbaticals: sabbaticalCounts.get(league.id) ?? 0,
+      }),
+    );
+  }
+  return counts;
+}
+
+/** Remaining permanent spots per league, using the same vacancy math as staff waitlists. */
+export async function loadPermanentOpenSpotCountsByLeagueId(
+  leagues: Array<{ id: number; capacityValue: number }>,
+): Promise<Map<number, number>> {
+  const vacancies = await loadLeagueVacancyCountsByLeagueId(leagues);
+  return new Map([...vacancies].map(([leagueId, counts]) => [leagueId, counts.permanentVacancies]));
+}
+
 export function resolveWaitlistDecline(input: {
   declineCount: number;
   positionSortKey: string;

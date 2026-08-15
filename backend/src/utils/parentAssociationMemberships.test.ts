@@ -3,10 +3,20 @@ import {
   booleanFromSqliteFlag,
   defaultUsaCurlingMembershipOptIn,
   defaultUswcaMembershipOptIn,
+  membershipAppliesParentAssociations,
   sqliteFlagFromBoolean,
 } from './parentAssociationMemberships.js';
 
 describe('parent association memberships', () => {
+  test('regular, social, spare-only, and Junior Recreational show parent associations', () => {
+    expect(membershipAppliesParentAssociations('regular')).toBe(true);
+    expect(membershipAppliesParentAssociations('social')).toBe(true);
+    expect(membershipAppliesParentAssociations('regular_spare_only')).toBe(true);
+    expect(membershipAppliesParentAssociations('junior_recreational')).toBe(true);
+    expect(membershipAppliesParentAssociations('none')).toBe(false);
+    expect(membershipAppliesParentAssociations(null)).toBe(false);
+  });
+
   test('USA Curling is opted in by default', () => {
     expect(defaultUsaCurlingMembershipOptIn()).toBe(true);
   });

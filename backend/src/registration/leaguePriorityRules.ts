@@ -26,6 +26,8 @@ export type LeaguePriorityGuaranteeLabel =
   | 'guaranteed_return'
   | 'awaiting_roster_entry'
   | 'guaranteed_fallback'
+  | 'available'
+  | 'temporary_spot_available'
   | 'waitlisted'
   | 'subject_to_availability'
   | 'superfluous';
@@ -34,10 +36,15 @@ export const LEAGUE_PRIORITY_GUARANTEE_LABEL_TEXT: Record<LeaguePriorityGuarante
   guaranteed_return: 'Guaranteed return',
   awaiting_roster_entry: 'Awaiting roster entry',
   guaranteed_fallback: 'Guaranteed fallback',
+  available: 'Available',
+  temporary_spot_available: 'Temporary spot available',
   waitlisted: 'Waitlisted',
   subject_to_availability: 'Subject to availability',
   superfluous: 'Superfluous',
 };
+
+/** How labels are derived. Priority uses return rights; open uses live vacancies. */
+export type PriorityLabelMode = 'priority' | 'open';
 
 export type PriorityLeagueShape = {
   leagueType: 'standard' | 'bring_your_own_team';
@@ -190,6 +197,21 @@ export type PriorityLabelCandidate = {
   feeMinor: number;
   allowsWaitlist: boolean;
   isPlayInBased: boolean;
+  /**
+   * Open registration only: waitlist length is strictly below remaining open
+   * spots. Ignored during priority registration.
+   */
+  hasVacancies?: boolean;
+  /**
+   * Open registration only: a sabbatical has left a temporary fill vacancy.
+   * Ignored during priority registration.
+   */
+  hasTemporaryFillVacancy?: boolean;
+  /**
+   * Play-in team cleared the TLINE bar. Used in open registration so a miss is
+   * not labeled Available just because the league still has roster room.
+   */
+  playInGuaranteed?: boolean;
 };
 
 export type LabeledPriorityEntry = PriorityLabelCandidate & {
@@ -217,12 +239,33 @@ export function isGuaranteedLabel(label: LeaguePriorityGuaranteeLabel): boolean 
 }
 
 /**
- * Leagues billed today: protected guarantees, plus non-waitlist leagues we
- * assume have room. Play-in entries that missed the bar stay unlabeled as
- * subject to availability but are not charged until placement settles.
+ * A league has vacancies when current waitlist demand is strictly below the
+ * remaining open spots. Missing counts are treated as zero so we do not
+ * over-promise availability.
+ */
+export function leagueHasVacancies(league: {
+  activeWaitlistEntryCount?: number | null;
+  openSpotCount?: number | null;
+} | undefined): boolean {
+  if (!league) return false;
+  return (league.activeWaitlistEntryCount ?? 0) < (league.openSpotCount ?? 0);
+}
+
+/** A sabbatical has left at least one unfilled temporary spot. */
+export function leagueHasTemporaryFillVacancy(league: {
+  temporarySabbaticalFillVacancyCount?: number | null;
+} | undefined): boolean {
+  return (league?.temporarySabbaticalFillVacancyCount ?? 0) > 0;
+}
+
+/**
+ * Leagues billed today: protected guarantees, open-registration available
+ * spots, plus non-waitlist leagues we assume have room. Play-in entries that
+ * missed the bar stay unlabeled as subject to availability but are not charged
+ * until placement settles.
  */
 export function isImmediateChargeEntry(entry: LabeledPriorityEntry): boolean {
-  if (entry.guaranteed) return true;
+  if (entry.guaranteed || entry.label === 'available' || entry.label === 'temporary_spot_available') return true;
   return entry.label === 'subject_to_availability' && !entry.isPlayInBased;
 }
 
@@ -260,7 +303,14 @@ export function guaranteeBudgetFor(desiredLeagueCount: number): number {
  * secure a slot, so later entries can still be necessary.
  */
 function entrySecuresDesiredSlot(entry: LabeledPriorityEntry): boolean {
-  if (entry.guaranteed || entry.label === 'awaiting_roster_entry') return true;
+  if (
+    entry.guaranteed ||
+    entry.label === 'awaiting_roster_entry' ||
+    entry.label === 'available' ||
+    entry.label === 'temporary_spot_available'
+  ) {
+    return true;
+  }
   return entry.label === 'subject_to_availability' && !entry.isPlayInBased;
 }
 
@@ -315,9 +365,42 @@ function markSuperfluousEntries(entries: LabeledPriorityEntry[], desiredLeagueCo
  * Sabbaticals do not consume this budget. A registrant may hold two guaranteed
  * priority spots and still take sabbatical from other prior leagues.
  */
+function labelOpenRegistrationEntries(entries: LabeledPriorityEntry[], desiredLeagueCount: number): void {
+  const availableBudget = guaranteeBudgetFor(desiredLeagueCount);
+  let availableGranted = 0;
+
+  for (const entry of entries) {
+    entry.guaranteed = false;
+    if (entry.isPlayInBased && !entry.rosterComplete) {
+      entry.label = 'awaiting_roster_entry';
+      continue;
+    }
+    if (entry.isPlayInBased && entry.rosterComplete && entry.playInGuaranteed !== true) {
+      entry.label = 'subject_to_availability';
+      continue;
+    }
+    if (entry.hasVacancies) {
+      if (availableGranted < availableBudget) {
+        entry.label = 'available';
+        availableGranted += 1;
+        continue;
+      }
+      if (desiredLeagueCount >= 3) {
+        entry.label = 'subject_to_availability';
+        continue;
+      }
+    } else if (entry.hasTemporaryFillVacancy) {
+      entry.label = 'temporary_spot_available';
+      continue;
+    }
+    entry.label = 'waitlisted';
+  }
+}
+
 export function labelPriorityEntries(input: {
   candidates: PriorityLabelCandidate[];
   desiredLeagueCount: number | null | undefined;
+  mode?: PriorityLabelMode;
 }): PriorityLabelResult {
   const desiredLeagueCount = resolveDesiredLeagueCount(input.desiredLeagueCount);
   const budget = guaranteeBudgetFor(desiredLeagueCount);
@@ -327,51 +410,55 @@ export function labelPriorityEntries(input: {
 
   let granted = 0;
 
-  for (const entry of entries) {
-    if (entry.priorityRank > MAX_PROTECTED_CLAIMS) break;
-    if (granted >= budget) break;
-    if (!entry.hasReturnRight) continue;
-    if (!entry.rosterComplete) {
-      // Still a return right — just waiting on an all-returning declared team.
-      if (entry.rosterAllReturning) {
-        entry.label = 'awaiting_roster_entry';
-      }
-      continue;
-    }
-    if (!entry.rosterAllReturning) continue;
-    entry.label = 'guaranteed_return';
-    entry.guaranteed = true;
-    granted += 1;
-  }
-
-  if (granted < MAX_PROTECTED_CLAIMS) {
+  if (input.mode === 'open') {
+    labelOpenRegistrationEntries(entries, desiredLeagueCount);
+  } else {
     for (const entry of entries) {
-      if (entry.priorityRank <= MAX_PROTECTED_CLAIMS) continue;
+      if (entry.priorityRank > MAX_PROTECTED_CLAIMS) break;
       if (granted >= budget) break;
-      if (!entry.hasReturnRight || !entry.rosterComplete || !entry.rosterAllReturning) continue;
-      if (entry.isPlayInBased) continue;
-      entry.label = 'guaranteed_fallback';
+      if (!entry.hasReturnRight) continue;
+      if (!entry.rosterComplete) {
+        // Still a return right — just waiting on an all-returning declared team.
+        if (entry.rosterAllReturning) {
+          entry.label = 'awaiting_roster_entry';
+        }
+        continue;
+      }
+      if (!entry.rosterAllReturning) continue;
+      entry.label = 'guaranteed_return';
       entry.guaranteed = true;
       granted += 1;
     }
-  }
 
-  for (const entry of entries) {
-    if (entry.guaranteed) continue;
-    if (entry.label === 'awaiting_roster_entry') continue;
-    // Play-in teams with an incomplete declared roster are still assembling —
-    // same awaiting chip as an incomplete returning BYOT team.
-    if (entry.isPlayInBased && !entry.rosterComplete) {
-      entry.label = 'awaiting_roster_entry';
-      continue;
+    if (granted < MAX_PROTECTED_CLAIMS) {
+      for (const entry of entries) {
+        if (entry.priorityRank <= MAX_PROTECTED_CLAIMS) continue;
+        if (granted >= budget) break;
+        if (!entry.hasReturnRight || !entry.rosterComplete || !entry.rosterAllReturning) continue;
+        if (entry.isPlayInBased) continue;
+        entry.label = 'guaranteed_fallback';
+        entry.guaranteed = true;
+        granted += 1;
+      }
     }
-    // Waitlists fill protected spots. Rank 1–2 leftovers can still waitlist
-    // (switch-with-fallback). Once two guarantees are granted, ranks 3+ are
-    // subject to availability even when the league has a waitlist.
-    const waitlistToFillProtectedSpots =
-      entry.allowsWaitlist &&
-      (granted < MAX_PROTECTED_CLAIMS || entry.priorityRank <= MAX_PROTECTED_CLAIMS);
-    entry.label = waitlistToFillProtectedSpots ? 'waitlisted' : 'subject_to_availability';
+
+    for (const entry of entries) {
+      if (entry.guaranteed) continue;
+      if (entry.label === 'awaiting_roster_entry') continue;
+      // Play-in teams with an incomplete declared roster are still assembling —
+      // same awaiting chip as an incomplete returning BYOT team.
+      if (entry.isPlayInBased && !entry.rosterComplete) {
+        entry.label = 'awaiting_roster_entry';
+        continue;
+      }
+      // Waitlists fill protected spots. Rank 1–2 leftovers can still waitlist
+      // (switch-with-fallback). Once two guarantees are granted, ranks 3+ are
+      // subject to availability even when the league has a waitlist.
+      const waitlistToFillProtectedSpots =
+        entry.allowsWaitlist &&
+        (granted < MAX_PROTECTED_CLAIMS || entry.priorityRank <= MAX_PROTECTED_CLAIMS);
+      entry.label = waitlistToFillProtectedSpots ? 'waitlisted' : 'subject_to_availability';
+    }
   }
 
   markSuperfluousEntries(entries, desiredLeagueCount);

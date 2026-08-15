@@ -138,8 +138,10 @@ When multiple discounts apply:
 
 1. Identify discount-eligible charges.
 2. Exclude non-discountable charges.
-3. Apply ordinary dollar discounts to discount-eligible charges first.
-4. Apply ordinary percentage discounts after dollar discounts.
+3. Apply ordinary dollar discounts to regular membership dues first.
+4. Apply ordinary percentage discounts after dollar discounts. Percentage
+   discounts apply to discount-eligible charges, including league fees. Dollar
+   discounts do not apply to league fees.
 5. Apply sabbatical-fill discount separately according to its own rule.
 6. Add non-discountable charges.
 7. Produce final total.

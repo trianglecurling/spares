@@ -38,6 +38,10 @@ export type LeagueConfig = {
   allowsWaitlist: boolean;
   waitlistId?: number | null;
   activeWaitlistEntryCount?: number;
+  /** Remaining permanent spots (capacity minus rostered members and sabbaticals). */
+  openSpotCount?: number;
+  /** Unfilled temporary spots created by active sabbaticals. */
+  temporarySabbaticalFillVacancyCount?: number;
   isPlayInBased: boolean;
   /** When true, Junior Recreational membership places registrants on this roster. */
   isJuniorRecreational?: boolean;

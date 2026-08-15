@@ -36,6 +36,7 @@ import {
 import {
   isLeagueSelectionEligibleLeague,
   leagueScheduleText,
+  shouldShowLeaguePriorityIntro,
   type ContinuingSabbaticalSummary,
   type LeagueCatalogItem,
 } from './registrationViewEditShared';
@@ -84,10 +85,12 @@ function evaluate(input: {
   returnEligibleMemberIdsByLeagueId?: Record<number, number[]>;
   playInEntry?: RegistrationLeagueCatalogPayload['playInEntry'];
   sabbaticalLeagueIds?: number[];
+  registrationState?: RegistrationLeagueCatalogPayload['registrationState'];
+  leagues?: LeagueCatalogItem[];
 }) {
   return evaluatePriorityList({
     priorities: input.priorities,
-    leagues: allLeagues,
+    leagues: input.leagues ?? allLeagues,
     desiredLeagueCount: input.desiredLeagueCount,
     returnRightLeagueIds: input.returnRightLeagueIds ?? [],
     returnEligibleMemberIdsByLeagueId: input.returnEligibleMemberIdsByLeagueId,
@@ -97,6 +100,7 @@ function evaluate(input: {
       decision: 'sabbatical' as const,
     })),
     registrantMemberId: 100,
+    registrationState: input.registrationState,
   });
 }
 
@@ -193,7 +197,7 @@ describe('seeding the priority list', () => {
         priorSeasonLeagueIds: [],
         existingWaitlistEntries: [{ waitlistId: 7, leagueId: 3, status: 'active' }],
       }),
-    ).toBeNull();
+    ).toBe(1);
     expect(defaultDesiredLeagueCount({ ...basePayload, desiredLeagueCount: 1 })).toBe(1);
   });
 
@@ -449,12 +453,54 @@ describe('guarantee labels shown while reordering', () => {
     expect(guaranteeChipLabel('guaranteed_return')).toBe('Guaranteed return');
     expect(guaranteeChipLabel('awaiting_roster_entry')).toBe('Awaiting roster entry');
     expect(guaranteeChipLabel('guaranteed_fallback')).toBe('Guaranteed fallback');
+    expect(guaranteeChipLabel('available')).toBe('Available');
+    expect(guaranteeChipLabel('temporary_spot_available')).toBe('Temporary spot available');
     expect(guaranteeChipLabel('waitlisted')).toBe('Waitlisted');
     expect(guaranteeChipLabel('subject_to_availability')).toBe('Subject to availability');
     expect(guaranteeChipLabel('superfluous')).toBe('Superfluous');
     expect(shouldShowGuaranteeChip('subject_to_availability')).toBe(true);
     expect(shouldShowGuaranteeChip('superfluous')).toBe(true);
     expect(shouldShowGuaranteeChip('waitlisted')).toBe(true);
+    expect(shouldShowGuaranteeChip('available')).toBe(true);
+  });
+
+  test('open registration uses vacancy labels instead of return guarantees', () => {
+    const vacantLeagues = [
+      catalogLeague({ id: 1, name: 'Monday', openSpotCount: 4, activeWaitlistEntryCount: 1 }),
+      catalogLeague({ id: 2, name: 'Tuesday', openSpotCount: 2, activeWaitlistEntryCount: 0 }),
+      catalogLeague({ id: 3, name: 'Wednesday', openSpotCount: 6, activeWaitlistEntryCount: 0 }),
+    ];
+    const result = evaluate({
+      priorities: ranked(1, 2, 3),
+      desiredLeagueCount: 3,
+      returnRightLeagueIds: [1, 2],
+      registrationState: 'open',
+      leagues: vacantLeagues,
+    });
+    expect(result.entries.map((entry) => entry.label)).toEqual([
+      'available',
+      'available',
+      'subject_to_availability',
+    ]);
+    expect(result.guaranteedCount).toBe(0);
+  });
+
+  test('open registration labels a sabbatical-fill vacancy as a temporary spot', () => {
+    const result = evaluate({
+      priorities: ranked(1),
+      desiredLeagueCount: 1,
+      registrationState: 'open',
+      leagues: [
+        catalogLeague({
+          id: 1,
+          name: 'Monday',
+          openSpotCount: 0,
+          activeWaitlistEntryCount: 5,
+          temporarySabbaticalFillVacancyCount: 1,
+        }),
+      ],
+    });
+    expect(result.entries[0]?.label).toBe('temporary_spot_available');
   });
 });
 
@@ -723,6 +769,44 @@ describe('incomplete play-in roster confirmation', () => {
         100,
       ),
     ).toEqual([]);
+  });
+});
+
+describe('league priority intro', () => {
+  const beginnerEligibility = {
+    dateOfBirth: '2010-01-01',
+    experienceType: 'none_or_minimal' as const,
+    membershipOption: 'regular' as const,
+  };
+
+  test('skips the intro when only instructional programs are eligible', () => {
+    const instructional = catalogLeague({
+      id: 20,
+      name: 'Learn to Curl',
+      format: 'instructional',
+      minExperienceYears: 0,
+    });
+    const experienced = catalogLeague({
+      id: 21,
+      name: 'Monday Night',
+      format: 'teams',
+      minExperienceYears: 1,
+    });
+    expect(shouldShowLeaguePriorityIntro([instructional, experienced], beginnerEligibility)).toBe(false);
+  });
+
+  test('shows the intro when a non-instructional league is eligible', () => {
+    const instructional = catalogLeague({
+      id: 20,
+      name: 'Learn to Curl',
+      format: 'instructional',
+    });
+    const openLeague = catalogLeague({
+      id: 21,
+      name: 'Monday Night',
+      format: 'teams',
+    });
+    expect(shouldShowLeaguePriorityIntro([instructional, openLeague], beginnerEligibility)).toBe(true);
   });
 });
 

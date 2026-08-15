@@ -9,7 +9,12 @@ import {
   validateLeaguePriorities,
   waitlistedPriorityEntries,
 } from './leaguePriorityEvaluation.js';
-import { labelPriorityEntries, type PriorityLabelCandidate } from './leaguePriorityRules.js';
+import {
+  labelPriorityEntries,
+  leagueHasTemporaryFillVacancy,
+  leagueHasVacancies,
+  type PriorityLabelCandidate,
+} from './leaguePriorityRules.js';
 import { league, priority, registrationContext, selection } from './registrationTestFixtures.js';
 import type { LeagueConfig, PlayInEntryContext, RegistrationContext } from './registrationContext.js';
 
@@ -63,6 +68,21 @@ function labelsFor(context: RegistrationContext): string[] {
 function playInEntryContext(guaranteed: boolean, committedOtherMemberIds: number[] = []): PlayInEntryContext {
   return { onExistingTeam: false, committedOtherMemberIds, guaranteed };
 }
+
+describe('league vacancies', () => {
+  test('a league has vacancies only when the waitlist is shorter than open spots', () => {
+    expect(leagueHasVacancies({ openSpotCount: 4, activeWaitlistEntryCount: 3 })).toBe(true);
+    expect(leagueHasVacancies({ openSpotCount: 4, activeWaitlistEntryCount: 4 })).toBe(false);
+    expect(leagueHasVacancies({ openSpotCount: 0, activeWaitlistEntryCount: 0 })).toBe(false);
+    expect(leagueHasVacancies({})).toBe(false);
+  });
+
+  test('a league has a temporary fill vacancy when at least one sabbatical spot is unfilled', () => {
+    expect(leagueHasTemporaryFillVacancy({ temporarySabbaticalFillVacancyCount: 1 })).toBe(true);
+    expect(leagueHasTemporaryFillVacancy({ temporarySabbaticalFillVacancyCount: 0 })).toBe(false);
+    expect(leagueHasTemporaryFillVacancy({})).toBe(false);
+  });
+});
 
 describe('guarantee labeling', () => {
   test('a return right in the top two spots is a guaranteed return', () => {
@@ -225,6 +245,74 @@ describe('guarantee labeling', () => {
     const context = contextWithLeagues([standard(1)], { registrationState: 'open' });
     expect(hasReturnRight(context, context.priorities[0]!)).toBe(false);
     expect(labelsFor(context)).toEqual(['waitlisted']);
+  });
+
+  test('open registration labels vacant leagues available instead of guaranteed', () => {
+    const context = contextWithLeagues(
+      [
+        standard(1, { openSpotCount: 4, activeWaitlistEntryCount: 1 }),
+        standard(2, { openSpotCount: 2, activeWaitlistEntryCount: 0 }),
+      ],
+      { registrationState: 'open', desiredLeagueCount: 2 },
+    );
+    expect(labelsFor(context)).toEqual(['available', 'available']);
+    expect(evaluateLeaguePriorities(context).guaranteedCount).toBe(0);
+    expect(evaluateLeaguePriorities(context).confirmedLeagueFeeMinor).toBe(60000);
+  });
+
+  test('open registration waitlists a league when waitlist length meets open spots', () => {
+    const context = contextWithLeagues(
+      [standard(1, { openSpotCount: 3, activeWaitlistEntryCount: 3 })],
+      { registrationState: 'open', desiredLeagueCount: 1 },
+    );
+    expect(labelsFor(context)).toEqual(['waitlisted']);
+  });
+
+  test('open registration marks a third vacant league subject to availability', () => {
+    const vacant = { openSpotCount: 5, activeWaitlistEntryCount: 0 };
+    const context = contextWithLeagues(
+      [standard(1, vacant), standard(2, vacant), standard(3, vacant)],
+      { registrationState: 'open', desiredLeagueCount: 3 },
+    );
+    expect(labelsFor(context)).toEqual(['available', 'available', 'subject_to_availability']);
+  });
+
+  test('open registration labels a sabbatical-fill vacancy as a temporary spot', () => {
+    const context = contextWithLeagues(
+      [
+        standard(1, {
+          openSpotCount: 0,
+          activeWaitlistEntryCount: 4,
+          temporarySabbaticalFillVacancyCount: 1,
+        }),
+      ],
+      { registrationState: 'open', desiredLeagueCount: 1 },
+    );
+    expect(labelsFor(context)).toEqual(['temporary_spot_available']);
+    expect(evaluateLeaguePriorities(context).confirmedLeagueFeeMinor).toBe(30000);
+  });
+
+  test('open registration prefers a permanent vacancy over a temporary fill', () => {
+    const context = contextWithLeagues(
+      [
+        standard(1, {
+          openSpotCount: 2,
+          activeWaitlistEntryCount: 0,
+          temporarySabbaticalFillVacancyCount: 1,
+        }),
+      ],
+      { registrationState: 'open', desiredLeagueCount: 1 },
+    );
+    expect(labelsFor(context)).toEqual(['available']);
+  });
+
+  test('open registration keeps a third vacant league waitlisted when only two are wanted', () => {
+    const vacant = { openSpotCount: 5, activeWaitlistEntryCount: 0 };
+    const context = contextWithLeagues(
+      [standard(1, vacant), standard(2, vacant), standard(3, vacant)],
+      { registrationState: 'open', desiredLeagueCount: 2 },
+    );
+    expect(labelsFor(context)).toEqual(['available', 'available', 'superfluous']);
   });
 
   test('a sabbatical right substitutes for prior participation', () => {
@@ -723,13 +811,13 @@ describe('derived downstream state', () => {
     expect(evaluateLeaguePriorities(context).confirmedLeagueFeeMinor).toBe(0);
   });
 
-  test('the basic ice fallback question appears only when nothing is billed as a league today', () => {
+  test('the basic ice fallback question appears when the list has no guaranteed leagues', () => {
     expect(shouldCollectBasicIceFallback(contextWithLeagues([standard(1)]))).toBe(false);
     expect(
       shouldCollectBasicIceFallback(
         contextWithLeagues([standard(1, { predecessorLeagueId: null, allowsWaitlist: false })]),
       ),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       shouldCollectBasicIceFallback(contextWithLeagues([standard(1, { predecessorLeagueId: null })])),
     ).toBe(true);

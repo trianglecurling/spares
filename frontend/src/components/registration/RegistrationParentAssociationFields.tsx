@@ -1,6 +1,4 @@
 import { useId, type ReactNode } from 'react';
-import FormCheckbox from '../FormCheckbox';
-import FormField from '../FormField';
 import FormSection from '../FormSection';
 import HelpCallout from '../HelpCallout';
 
@@ -49,14 +47,52 @@ function OrgMention({
   );
 }
 
+function MembershipOptInToggle({
+  organization,
+  checked,
+  onChange,
+}: {
+  organization: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  const id = useId();
+
+  return (
+    <div className="flex items-start gap-3">
+      <button
+        type="button"
+        id={id}
+        role="switch"
+        aria-checked={checked}
+        onClick={() => onChange(!checked)}
+        className={[
+          'relative mt-0.5 inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors',
+          'focus:outline-none focus:ring-2 focus:ring-primary-teal focus:ring-offset-2',
+          checked ? 'bg-primary-teal' : 'bg-gray-200',
+        ].join(' ')}
+      >
+        <span
+          className={[
+            'pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition',
+            checked ? 'translate-x-5' : 'translate-x-1',
+          ].join(' ')}
+          aria-hidden
+        />
+      </button>
+      <label htmlFor={id} className="cursor-pointer text-sm font-medium text-gray-700">
+        I {checked ? <strong>want</strong> : <strong>do not want</strong>} to be a member of {organization}
+      </label>
+    </div>
+  );
+}
+
 export default function RegistrationParentAssociationFields({
   usaCurlingOptIn,
   uswcaOptIn,
   onUsaCurlingChange,
   onUswcaChange,
 }: RegistrationParentAssociationFieldsProps) {
-  const optOutLabelId = useId();
-
   return (
     <FormSection title="Parent association memberships" tone="public">
       <div className="text-sm leading-relaxed text-gray-600">
@@ -64,34 +100,22 @@ export default function RegistrationParentAssociationFields({
         <OrgMention name="USA Curling" help={USA_CURLING_HELP} helpLabel="About USA Curling" />, the{' '}
         <OrgMention name="GNCC" help={GNCC_HELP} helpLabel="About the GNCC" />, and{' '}
         <OrgMention name="USWCA" help={USWCA_HELP} helpLabel="About the USWCA" />. You may opt-out of USA Curling
-        and/or USWCA membership by <strong>unchecking</strong> the checkbox below. Because Triangle Curling&apos;s
+        and/or USWCA membership by <strong>turning off</strong> the toggles below. Because Triangle Curling&apos;s
         liability insurance policy is provided through the GNCC, opting out of GNCC membership is not offered.{' '}
         <strong>Your selections here will not affect your dues.</strong>
       </div>
-      <FormField
-        label={
-          <>
-            To opt out of a parent organization, <strong>uncheck</strong> the box below.
-          </>
-        }
-        labelId={optOutLabelId}
-        tone="public"
-      >
-        <div role="group" aria-labelledby={optOutLabelId} className="space-y-3">
-          <FormCheckbox
-            tone="public"
-            label="USA Curling"
-            checked={usaCurlingOptIn}
-            onChange={onUsaCurlingChange}
-          />
-          <FormCheckbox
-            tone="public"
-            label="US Women's Curling Association"
-            checked={uswcaOptIn}
-            onChange={onUswcaChange}
-          />
-        </div>
-      </FormField>
+      <div className="space-y-3">
+        <MembershipOptInToggle
+          organization="USA Curling"
+          checked={usaCurlingOptIn}
+          onChange={onUsaCurlingChange}
+        />
+        <MembershipOptInToggle
+          organization="US Women's Curling Association"
+          checked={uswcaOptIn}
+          onChange={onUswcaChange}
+        />
+      </div>
     </FormSection>
   );
 }

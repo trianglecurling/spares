@@ -19,7 +19,7 @@ export type GuaranteedPlacement = {
   leagueId: number;
   placementType: Extract<
     LeagueRosterPlacementTypeSqlite,
-    'guaranteed_return' | 'guaranteed_fallback' | 'new_placement'
+    'guaranteed_return' | 'guaranteed_fallback' | 'new_placement' | 'temporary_sabbatical_fill'
   >;
 };
 
@@ -232,7 +232,13 @@ function billedSubjectToAvailabilityPlacements(
 ): GuaranteedPlacement[] {
   return immediateChargeEntries(evaluation)
     .filter((entry) => !entry.guaranteed)
-    .map((entry) => ({ leagueId: entry.leagueId, placementType: 'new_placement' as const }));
+    .map((entry) => ({
+      leagueId: entry.leagueId,
+      placementType:
+        entry.label === 'temporary_spot_available'
+          ? ('temporary_sabbatical_fill' as const)
+          : ('new_placement' as const),
+    }));
 }
 
 export function rosterPlacementsForRegistration(
@@ -355,7 +361,7 @@ export async function persistRegistrationRosterPlacements(input: {
       source_registration_id: input.registrationId,
       status: 'active' as const,
       placement_type: placement.placementType,
-      is_temporary_sabbatical_fill: 0,
+      is_temporary_sabbatical_fill: placement.placementType === 'temporary_sabbatical_fill' ? 1 : 0,
       related_sabbatical_id: null,
       updated_at: sql`CURRENT_TIMESTAMP`,
     };

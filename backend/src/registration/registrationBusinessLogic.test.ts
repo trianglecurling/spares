@@ -213,6 +213,46 @@ describe('registration business logic', () => {
     expect(social.totalDueMinor).toBe(4000);
   });
 
+  test('open registration temporary fill discounts the league by the sabbatical fee', () => {
+    const fees = calculateRegistrationFees(
+      registrationContext({
+        registrationState: 'open',
+        leagues: {
+          100: league({
+            id: 100,
+            predecessorLeagueId: null,
+            openSpotCount: 0,
+            activeWaitlistEntryCount: 3,
+            temporarySabbaticalFillVacancyCount: 1,
+          }),
+        },
+        participatedLeagueIds: [],
+        priorities: [priority({ leagueId: 100 })],
+        desiredLeagueCount: 1,
+      }),
+    );
+    expect(fees.lineItems.find((item) => item.lineType === 'league_fee')?.amountMinor).toBe(30000);
+    expect(fees.discountLineItems.find((item) => item.lineType === 'sabbatical_fill_discount')?.amountMinor).toBe(-5000);
+    expect(fees.totalDueMinor).toBe(35000);
+  });
+
+  test('dollar discounts apply to membership and not to league fees', () => {
+    const fees = calculateRegistrationFees(
+      registrationContext({
+        discountClaims: { student: { claimed: true, institution: 'NCSU' } },
+        discountSettings: {
+          student: { amountType: 'dollar', amountValue: 15000 },
+          reciprocal: { amountType: 'percent', amountValue: 0 },
+          winterOnly: { amountType: 'dollar', amountValue: 0 },
+        },
+      }),
+    );
+    expect(fees.lineItems.find((item) => item.lineType === 'regular_membership_fee')?.amountMinor).toBe(10000);
+    expect(fees.lineItems.find((item) => item.lineType === 'league_fee')?.amountMinor).toBe(30000);
+    expect(fees.discountLineItems.find((item) => item.lineType === 'student_discount')?.amountMinor).toBe(-10000);
+    expect(fees.totalDueMinor).toBe(30000);
+  });
+
   test('dollar discounts apply before percentage discounts', () => {
     const fees = calculateRegistrationFees(
       membershipOnly({

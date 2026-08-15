@@ -31,6 +31,7 @@ import type {
 } from './registrationContext.js';
 import { listContinuingSabbaticalSummaries } from './registrationSabbaticalContinuity.js';
 import { loadActiveWaitlistEntryCountsByLeagueId } from './waitlistEntityService.js';
+import { loadLeagueVacancyCountsByLeagueId } from './waitlistStaffService.js';
 import { evaluateRegistrantPlayInEntry, type RegistrantPlayInEntrySummary } from './leagueEntryService.js';
 
 export class RegistrationLeagueSelectionValidationError extends Error {
@@ -209,11 +210,19 @@ function validationDetails(context: RegistrationContext): Record<string, string>
 }
 
 async function leaguesWithActiveWaitlistEntryCounts(leagues: LeagueConfig[]): Promise<LeagueConfig[]> {
-  const counts = await loadActiveWaitlistEntryCountsByLeagueId(leagues.map((league) => league.id));
-  return leagues.map((league) => ({
-    ...league,
-    activeWaitlistEntryCount: league.waitlistId != null ? (counts.get(league.id) ?? 0) : 0,
-  }));
+  const [waitlistCounts, vacancyCounts] = await Promise.all([
+    loadActiveWaitlistEntryCountsByLeagueId(leagues.map((league) => league.id)),
+    loadLeagueVacancyCountsByLeagueId(leagues),
+  ]);
+  return leagues.map((league) => {
+    const vacancies = vacancyCounts.get(league.id);
+    return {
+      ...league,
+      activeWaitlistEntryCount: league.waitlistId != null ? (waitlistCounts.get(league.id) ?? 0) : 0,
+      openSpotCount: vacancies?.permanentVacancies ?? 0,
+      temporarySabbaticalFillVacancyCount: vacancies?.temporarySabbaticalFillVacancies ?? 0,
+    };
+  });
 }
 
 /**
@@ -279,6 +288,7 @@ async function buildLeagueCatalogPayload(registrationId: number) {
   );
   return {
     leagues,
+    registrationState: context.registrationState,
     priorities: context.priorities,
     desiredLeagueCount: registration?.desired_league_count ?? null,
     maxDesiredLeagueCount: MAX_DESIRED_LEAGUE_COUNT,
