@@ -11,6 +11,7 @@ coverage
 .vscode
 .idea
 db-config*.json
+!db-config.example.json
 backend/data/uploads/
 backend/data/search-index.json
 backend/data/google-oauth.client.json
