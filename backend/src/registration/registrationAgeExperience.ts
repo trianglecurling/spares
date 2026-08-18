@@ -101,6 +101,25 @@ export function effectiveExperienceYears(context: RegistrationContext): number {
   });
 }
 
+/** Basic ice privileges are only offered once a new curler reports at least this many years. */
+export const BASIC_ICE_MIN_EXPERIENCE_YEARS = 1;
+
+/**
+ * New curlers with none/minimal experience, or fewer than one specified year,
+ * are not offered basic ice privileges. Returning members (`known_existing`) are.
+ */
+export function experienceAllowsBasicIcePrivileges(
+  experienceType: CurlingExperienceTypeSqlite | null | undefined,
+  selfReportedYears?: number | null,
+): boolean {
+  if (experienceType === 'none_or_minimal') return false;
+  if (experienceType === 'specified_years') {
+    const years = selfReportedYears == null ? null : Number(selfReportedYears);
+    return years != null && Number.isFinite(years) && years >= BASIC_ICE_MIN_EXPERIENCE_YEARS;
+  }
+  return true;
+}
+
 export function hasRecordedExperience(input: {
   experienceType: CurlingExperienceTypeSqlite;
   selfReportedYears?: number | null;

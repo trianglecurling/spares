@@ -361,6 +361,45 @@ describe('guarantee labels shown while reordering', () => {
     expect(result.maximumLeagueFeeMinor).toBe(result.confirmedLeagueFeeMinor);
   });
 
+  test('an instructional program with remaining space reads as available and is billed now', () => {
+    const instructional = catalogLeague({
+      id: 6,
+      name: 'Saturday Instructional',
+      format: 'instructional',
+      allowsWaitlist: false,
+      openSpotCount: 20,
+      activeWaitlistEntryCount: 0,
+      registrationFeeMinor: 15000,
+    });
+    const result = evaluate({
+      priorities: ranked(6),
+      desiredLeagueCount: 1,
+      leagues: [instructional],
+    });
+    expect(result.entries[0]?.label).toBe('available');
+    expect(result.confirmedLeagueFeeMinor).toBe(15000);
+  });
+
+  test('a full instructional program is subject to availability and is not billed yet', () => {
+    const instructional = catalogLeague({
+      id: 6,
+      name: 'Saturday Instructional',
+      format: 'instructional',
+      allowsWaitlist: false,
+      openSpotCount: 0,
+      activeWaitlistEntryCount: 0,
+      registrationFeeMinor: 15000,
+    });
+    const result = evaluate({
+      priorities: ranked(6),
+      desiredLeagueCount: 1,
+      leagues: [instructional],
+    });
+    expect(result.entries[0]?.label).toBe('subject_to_availability');
+    expect(result.confirmedLeagueFeeMinor).toBe(0);
+    expect(result.maximumLeagueFeeMinor).toBe(15000);
+  });
+
   test('a play-in league is guaranteed only when its declared team clears the bar', () => {
     const priorities: LeaguePriorityInput[] = [
       {
@@ -779,7 +818,7 @@ describe('league priority intro', () => {
     membershipOption: 'regular' as const,
   };
 
-  test('skips the intro when only instructional programs are eligible', () => {
+  test('shows the intro when only instructional programs are eligible', () => {
     const instructional = catalogLeague({
       id: 20,
       name: 'Learn to Curl',
@@ -792,7 +831,17 @@ describe('league priority intro', () => {
       format: 'teams',
       minExperienceYears: 1,
     });
-    expect(shouldShowLeaguePriorityIntro([instructional, experienced], beginnerEligibility)).toBe(false);
+    expect(shouldShowLeaguePriorityIntro([instructional, experienced], beginnerEligibility)).toBe(true);
+  });
+
+  test('skips the intro when no leagues are eligible', () => {
+    const experienced = catalogLeague({
+      id: 21,
+      name: 'Monday Night',
+      format: 'teams',
+      minExperienceYears: 1,
+    });
+    expect(shouldShowLeaguePriorityIntro([experienced], beginnerEligibility)).toBe(false);
   });
 
   test('shows the intro when a non-instructional league is eligible', () => {

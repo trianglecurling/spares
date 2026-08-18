@@ -12,6 +12,7 @@ import { abuseRouteRateLimits } from '../plugins/abuseRateLimits.js';
 import { MAX_DESIRED_LEAGUE_COUNT } from '../db/drizzle-schema.js';
 import {
   RegistrationLeagueSelectionValidationError,
+  getGuestLeagueCatalog,
   getRegistrationLeagueCatalog,
   getRegistrationLeagueSelectionEvaluation,
   putRegistrationLeaguePriorities,
@@ -228,6 +229,11 @@ const guestPreviewSchema = z.object({
   uswcaMembershipOptIn: z.boolean().nullable().optional(),
 });
 
+const guestPreviewLeagueCatalogSchema = guestPreviewSchema.extend({
+  desiredLeagueCount: z.number().int().min(1).max(MAX_DESIRED_LEAGUE_COUNT).nullable().optional(),
+  priorities: z.array(leaguePrioritySchema).optional(),
+});
+
 const guestSubmitSchema = z.object({
   seasonId: z.number().int().positive(),
   sessionId: z.number().int().positive(),
@@ -250,6 +256,10 @@ const guestSubmitSchema = z.object({
   uswcaMembershipOptIn: z.boolean().optional(),
   payLater: z.boolean().optional(),
   membershipCommitteeComments: z.string().trim().max(2000).nullable().optional(),
+  icePrivilegesChoice: z.enum(['none', 'league_play', 'basic_ice']).optional(),
+  desiredLeagueCount: z.number().int().min(1).max(MAX_DESIRED_LEAGUE_COUNT).nullable().optional(),
+  priorities: z.array(leaguePrioritySchema).optional(),
+  basicIceFallbackInterest: z.boolean().nullable().optional(),
 });
 
 const idParamsJsonSchema = {
@@ -409,7 +419,7 @@ export async function publicRegistrationShellRoutes(fastify: FastifyInstance) {
     }
   );
 
-  fastify.post<{ Body: z.infer<typeof guestPreviewSchema>; Reply: unknown | ApiErrorResponse }>(
+  fastify.post<{ Body: z.infer<typeof guestPreviewLeagueCatalogSchema>; Reply: unknown | ApiErrorResponse }>(
     '/registration/guest/preview-membership-payment',
     {
       schema: {
@@ -420,8 +430,27 @@ export async function publicRegistrationShellRoutes(fastify: FastifyInstance) {
     },
     async (request, reply) => {
       try {
-        const body = guestPreviewSchema.parse(request.body);
+        const body = guestPreviewLeagueCatalogSchema.parse(request.body);
         return await getGuestMembershipPaymentPreview(body);
+      } catch (error) {
+        return handleRegistrationError(reply, error);
+      }
+    }
+  );
+
+  fastify.post<{ Body: z.infer<typeof guestPreviewLeagueCatalogSchema>; Reply: unknown | ApiErrorResponse }>(
+    '/registration/guest/preview-league-catalog',
+    {
+      schema: {
+        tags: ['registration'],
+        body: anyObjectSchema,
+        response: { 200: anyObjectSchema, 400: apiErrorResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const body = guestPreviewLeagueCatalogSchema.parse(request.body);
+        return await getGuestLeagueCatalog(body);
       } catch (error) {
         return handleRegistrationError(reply, error);
       }

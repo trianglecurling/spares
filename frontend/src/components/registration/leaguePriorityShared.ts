@@ -211,6 +211,7 @@ export function evaluatePriorityList(input: {
       hasVacancies: leagueHasVacancies(league),
       hasTemporaryFillVacancy: leagueHasTemporaryFillVacancy(league),
       playInGuaranteed: league?.isPlayInBased === true && input.playInEntry?.[priority.leagueId]?.guaranteed === true,
+      isInstructional: league?.format === 'instructional',
     };
   });
 

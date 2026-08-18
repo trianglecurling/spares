@@ -160,6 +160,69 @@ describe('registration business logic', () => {
     expect(fees.lineItems.map((item) => item.lineType)).not.toContain('spare_only_fee');
   });
 
+  test('an available instructional program is billed as a league fee', () => {
+    const instructional = league({
+      id: 300,
+      name: 'Saturday Instructional',
+      format: 'instructional',
+      allowsWaitlist: false,
+      predecessorLeagueId: null,
+      openSpotCount: 20,
+      activeWaitlistEntryCount: 0,
+      registrationFeeMinor: 15000,
+    });
+    const fees = calculateRegistrationFees(
+      registrationContext({
+        membershipOption: 'regular',
+        experience: {
+          type: 'none_or_minimal',
+          selfReportedYears: null,
+          baselineOtherClubExperienceYears: 0,
+          baselineClubExperienceYears: 0,
+          completedSessions: [],
+        },
+        leagues: { [instructional.id]: instructional },
+        participatedLeagueIds: [],
+        priorities: [priority({ leagueId: instructional.id, priorityRank: 1 })],
+        desiredLeagueCount: 1,
+      }),
+    );
+    expect(fees.lineItems.map((item) => item.lineType)).toEqual(['regular_membership_fee', 'league_fee']);
+    expect(fees.lineItems.find((item) => item.lineType === 'league_fee')?.amountMinor).toBe(15000);
+    expect(fees.lineItems.find((item) => item.lineType === 'league_fee')?.relatedLeagueId).toBe(300);
+  });
+
+  test('a full instructional program is not billed until placement', () => {
+    const instructional = league({
+      id: 300,
+      name: 'Saturday Instructional',
+      format: 'instructional',
+      allowsWaitlist: false,
+      predecessorLeagueId: null,
+      openSpotCount: 0,
+      activeWaitlistEntryCount: 0,
+      registrationFeeMinor: 15000,
+    });
+    const fees = calculateRegistrationFees(
+      registrationContext({
+        membershipOption: 'regular',
+        experience: {
+          type: 'none_or_minimal',
+          selfReportedYears: null,
+          baselineOtherClubExperienceYears: 0,
+          baselineClubExperienceYears: 0,
+          completedSessions: [],
+        },
+        leagues: { [instructional.id]: instructional },
+        participatedLeagueIds: [],
+        priorities: [priority({ leagueId: instructional.id, priorityRank: 1 })],
+        desiredLeagueCount: 1,
+      }),
+    );
+    expect(fees.lineItems.map((item) => item.lineType)).toEqual(['regular_membership_fee']);
+    expect(fees.estimatedMaximumTotalDueMinor).toBeGreaterThan(fees.totalDueMinor);
+  });
+
   test('social membership cannot include spare-only basic ice privileges', () => {
     const result = validateSpareOnlyEligibility(membershipOnly({ membershipOption: 'social' }));
     expect(result.eligible).toBe(false);

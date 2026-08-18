@@ -10,6 +10,7 @@ import {
 } from 'react';
 import { get } from '../api/client';
 import type { MemberPickerOption } from '../types/memberPicker';
+import { useAuth } from './AuthContext';
 
 type MemberOptionsContextValue = {
   options: MemberPickerOption[];
@@ -22,6 +23,8 @@ type MemberOptionsContextValue = {
 
 const MemberOptionsContext = createContext<MemberOptionsContextValue | undefined>(undefined);
 
+const EMPTY_OPTIONS: MemberPickerOption[] = [];
+
 function mapMemberOptions(
   members: Array<{ id: number; name: string; email?: string | null }>
 ): MemberPickerOption[] {
@@ -33,15 +36,24 @@ function mapMemberOptions(
 }
 
 export function MemberOptionsProvider({ children }: { children: ReactNode }) {
-  const [options, setOptions] = useState<MemberPickerOption[]>([]);
+  const { member } = useAuth();
+  const memberId = member?.id ?? null;
+  const [options, setOptions] = useState<MemberPickerOption[]>(EMPTY_OPTIONS);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const optionsRef = useRef<MemberPickerOption[]>([]);
+  const optionsRef = useRef<MemberPickerOption[]>(EMPTY_OPTIONS);
   const loadedRef = useRef(false);
   const inFlightRef = useRef<Promise<MemberPickerOption[]> | null>(null);
 
   const loadMembers = useCallback((force = false) => {
+    if (memberId == null) {
+      loadedRef.current = true;
+      setLoaded(true);
+      setLoading(false);
+      return Promise.resolve(EMPTY_OPTIONS);
+    }
+
     if (!force && loadedRef.current) {
       return Promise.resolve(optionsRef.current);
     }
@@ -75,7 +87,27 @@ export function MemberOptionsProvider({ children }: { children: ReactNode }) {
 
     inFlightRef.current = request;
     return request;
-  }, []);
+  }, [memberId]);
+
+  useEffect(() => {
+    optionsRef.current = EMPTY_OPTIONS;
+    inFlightRef.current = null;
+    setOptions((prev) => (prev.length === 0 ? prev : EMPTY_OPTIONS));
+    setError(null);
+    setLoading(false);
+
+    if (memberId == null) {
+      loadedRef.current = true;
+      setLoaded(true);
+      return;
+    }
+
+    loadedRef.current = false;
+    setLoaded(false);
+  }, [memberId]);
+
+  const ensureLoaded = useCallback(() => loadMembers(false), [loadMembers]);
+  const refresh = useCallback(() => loadMembers(true), [loadMembers]);
 
   const value = useMemo<MemberOptionsContextValue>(
     () => ({
@@ -83,10 +115,10 @@ export function MemberOptionsProvider({ children }: { children: ReactNode }) {
       loading,
       loaded,
       error,
-      ensureLoaded: () => loadMembers(false),
-      refresh: () => loadMembers(true),
+      ensureLoaded,
+      refresh,
     }),
-    [error, loadMembers, loaded, loading, options]
+    [ensureLoaded, error, loaded, loading, options, refresh]
   );
 
   return <MemberOptionsContext.Provider value={value}>{children}</MemberOptionsContext.Provider>;
@@ -99,12 +131,12 @@ export function useMemberOptions({ autoLoad = true }: { autoLoad?: boolean } = {
     throw new Error('useMemberOptions must be used within a MemberOptionsProvider');
   }
 
-  const { ensureLoaded, loaded, loading } = context;
+  const { ensureLoaded, loaded, loading, error } = context;
 
   useEffect(() => {
-    if (!autoLoad || loaded || loading) return;
+    if (!autoLoad || loaded || loading || error) return;
     void ensureLoaded().catch(() => {});
-  }, [autoLoad, ensureLoaded, loaded, loading]);
+  }, [autoLoad, ensureLoaded, error, loaded, loading]);
 
   return context;
 }

@@ -116,6 +116,36 @@ describe('guarantee labeling', () => {
     expect(validateLeaguePriorities(context).deferralReasonCodes).toEqual([]);
   });
 
+  test('an instructional program with remaining space is available and billed now', () => {
+    const context = contextWithLeagues([
+      standard(1, {
+        format: 'instructional',
+        predecessorLeagueId: null,
+        allowsWaitlist: false,
+        openSpotCount: 12,
+        activeWaitlistEntryCount: 0,
+      }),
+    ]);
+    expect(labelsFor(context)).toEqual(['available']);
+    expect(evaluateLeaguePriorities(context).confirmedLeagueFeeMinor).toBe(30000);
+    expect(validateLeaguePriorities(context).deferralReasonCodes).toEqual([]);
+  });
+
+  test('a full instructional program is subject to availability and defers payment', () => {
+    const context = contextWithLeagues([
+      standard(1, {
+        format: 'instructional',
+        predecessorLeagueId: null,
+        allowsWaitlist: false,
+        openSpotCount: 0,
+        activeWaitlistEntryCount: 0,
+      }),
+    ]);
+    expect(labelsFor(context)).toEqual(['subject_to_availability']);
+    expect(evaluateLeaguePriorities(context).confirmedLeagueFeeMinor).toBe(0);
+    expect(validateLeaguePriorities(context).deferralReasonCodes).toContain('non_guaranteed_league_defers_payment');
+  });
+
   test('a play-in league never receives a fallback guarantee', () => {
     const playIn = standard(3, {
       isPlayInBased: true,
@@ -275,6 +305,20 @@ describe('guarantee labeling', () => {
       { registrationState: 'open', desiredLeagueCount: 3 },
     );
     expect(labelsFor(context)).toEqual(['available', 'available', 'subject_to_availability']);
+  });
+
+  test('open registration labels a vacant instructional program available even as a third choice', () => {
+    const vacant = { openSpotCount: 5, activeWaitlistEntryCount: 0 };
+    const context = contextWithLeagues(
+      [
+        standard(1, vacant),
+        standard(2, vacant),
+        standard(3, { ...vacant, format: 'instructional', predecessorLeagueId: null, allowsWaitlist: false }),
+      ],
+      { registrationState: 'open', desiredLeagueCount: 3 },
+    );
+    expect(labelsFor(context)).toEqual(['available', 'available', 'available']);
+    expect(evaluateLeaguePriorities(context).confirmedLeagueFeeMinor).toBe(90000);
   });
 
   test('open registration labels a sabbatical-fill vacancy as a temporary spot', () => {
@@ -820,6 +864,49 @@ describe('derived downstream state', () => {
     ).toBe(true);
     expect(
       shouldCollectBasicIceFallback(contextWithLeagues([standard(1, { predecessorLeagueId: null })])),
+    ).toBe(true);
+  });
+
+  test('the basic ice fallback question is not offered to new curlers with under one year of experience', () => {
+    const noGuarantees = [standard(1, { predecessorLeagueId: null })];
+    expect(
+      shouldCollectBasicIceFallback(
+        contextWithLeagues(noGuarantees, {
+          experience: {
+            type: 'none_or_minimal',
+            selfReportedYears: null,
+            baselineOtherClubExperienceYears: 0,
+            baselineClubExperienceYears: 0,
+            completedSessions: [],
+          },
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      shouldCollectBasicIceFallback(
+        contextWithLeagues(noGuarantees, {
+          experience: {
+            type: 'specified_years',
+            selfReportedYears: 0.5,
+            baselineOtherClubExperienceYears: 0,
+            baselineClubExperienceYears: 0,
+            completedSessions: [],
+          },
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      shouldCollectBasicIceFallback(
+        contextWithLeagues(noGuarantees, {
+          experience: {
+            type: 'specified_years',
+            selfReportedYears: 1,
+            baselineOtherClubExperienceYears: 0,
+            baselineClubExperienceYears: 0,
+            completedSessions: [],
+          },
+        }),
+      ),
     ).toBe(true);
   });
 });

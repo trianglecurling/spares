@@ -173,12 +173,12 @@ export function useLeagueOptions({ autoLoad = true }: { autoLoad?: boolean } = {
     throw new Error('useLeagueOptions must be used within a LeagueOptionsProvider');
   }
 
-  const { ensureLoaded, loaded, loading } = context;
+  const { ensureLoaded, loaded, loading, error } = context;
 
   useEffect(() => {
-    if (!autoLoad || loaded || loading) return;
+    if (!autoLoad || loaded || loading || error) return;
     void ensureLoaded().catch(() => {});
-  }, [autoLoad, ensureLoaded, loaded, loading]);
+  }, [autoLoad, ensureLoaded, error, loaded, loading]);
 
   return context;
 }

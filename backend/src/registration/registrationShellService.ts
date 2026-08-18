@@ -1013,6 +1013,15 @@ export type GuestRegistrationSubmitInput = {
   uswcaMembershipOptIn?: boolean;
   payLater?: boolean;
   membershipCommitteeComments?: string | null;
+  icePrivilegesChoice?: 'none' | 'league_play' | 'basic_ice';
+  desiredLeagueCount?: number | null;
+  priorities?: Array<{
+    leagueId: number;
+    priorityRank: number;
+    byotTeammateText?: string | null;
+    teamRosterPlacements?: Array<{ memberId: number }> | null;
+  }>;
+  basicIceFallbackInterest?: boolean | null;
 };
 
 export async function submitGuestRegistration(
@@ -1110,6 +1119,30 @@ export async function submitGuestRegistration(
       basicIcePrivileges: input.basicIcePrivileges,
       usaCurlingMembershipOptIn: input.usaCurlingMembershipOptIn,
       uswcaMembershipOptIn: input.uswcaMembershipOptIn,
+    });
+  }
+
+  const belowBasicIceMin =
+    input.experienceType === 'none_or_minimal' ||
+    (input.experienceType === 'specified_years' &&
+      (input.experienceSelfReportedYears == null || Number(input.experienceSelfReportedYears) < 1));
+  const icePrivilegesChoice = belowBasicIceMin
+    ? 'league_play'
+    : input.icePrivilegesChoice ?? (input.basicIcePrivileges ? 'basic_ice' : undefined);
+  if (input.membershipChoice !== 'social' && icePrivilegesChoice) {
+    await membershipPayment.updateIcePrivileges(draft.id, actor, { choice: icePrivilegesChoice });
+  }
+
+  if (
+    input.membershipChoice !== 'social' &&
+    ((input.priorities && input.priorities.length > 0) || input.desiredLeagueCount != null)
+  ) {
+    const { putRegistrationLeaguePriorities } = await import('./registrationLeagueSelectionService.js');
+    await putRegistrationLeaguePriorities(draft.id, actor, {
+      desiredLeagueCount: input.desiredLeagueCount ?? null,
+      priorities: input.priorities ?? [],
+      priorLeagueDecisions: [],
+      basicIceFallbackInterest: input.basicIceFallbackInterest,
     });
   }
 

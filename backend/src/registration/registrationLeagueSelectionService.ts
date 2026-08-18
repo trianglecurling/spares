@@ -11,7 +11,7 @@ import {
   shouldCollectBasicIceFallback,
   validateLeaguePriorities,
 } from './leaguePriorityEvaluation.js';
-import { buildRegistrationContextForDraft } from './registrationMembershipPaymentService.js';
+import { buildGuestRegistrationContext, buildRegistrationContextForDraft } from './registrationMembershipPaymentService.js';
 import {
   assertRegistrationEditableForLeagueOrMembership,
   isPriorityEditableRegistrationStatus,
@@ -30,8 +30,6 @@ import type {
   RegistrationSelectionInput,
 } from './registrationContext.js';
 import { listContinuingSabbaticalSummaries } from './registrationSabbaticalContinuity.js';
-import { loadActiveWaitlistEntryCountsByLeagueId } from './waitlistEntityService.js';
-import { loadLeagueVacancyCountsByLeagueId } from './waitlistStaffService.js';
 import { evaluateRegistrantPlayInEntry, type RegistrantPlayInEntrySummary } from './leagueEntryService.js';
 
 export class RegistrationLeagueSelectionValidationError extends Error {
@@ -210,19 +208,8 @@ function validationDetails(context: RegistrationContext): Record<string, string>
 }
 
 async function leaguesWithActiveWaitlistEntryCounts(leagues: LeagueConfig[]): Promise<LeagueConfig[]> {
-  const [waitlistCounts, vacancyCounts] = await Promise.all([
-    loadActiveWaitlistEntryCountsByLeagueId(leagues.map((league) => league.id)),
-    loadLeagueVacancyCountsByLeagueId(leagues),
-  ]);
-  return leagues.map((league) => {
-    const vacancies = vacancyCounts.get(league.id);
-    return {
-      ...league,
-      activeWaitlistEntryCount: league.waitlistId != null ? (waitlistCounts.get(league.id) ?? 0) : 0,
-      openSpotCount: vacancies?.permanentVacancies ?? 0,
-      temporarySabbaticalFillVacancyCount: vacancies?.temporarySabbaticalFillVacancies ?? 0,
-    };
-  });
+  const { attachLiveLeagueAvailability } = await import('./leagueAvailability.js');
+  return attachLiveLeagueAvailability(leagues);
 }
 
 /**
@@ -272,17 +259,13 @@ function standardReturnRightLeagueIds(context: RegistrationContext): number[] {
     .map((league) => league.id);
 }
 
-async function buildLeagueCatalogPayload(registrationId: number) {
-  const { db, schema } = getDrizzleDb();
-  const [registration] = await db
-    .select({
-      basic_ice_fallback_interest: schema.curlingRegistrations.basic_ice_fallback_interest,
-      desired_league_count: schema.curlingRegistrations.desired_league_count,
-    })
-    .from(schema.curlingRegistrations)
-    .where(eq(schema.curlingRegistrations.id, registrationId))
-    .limit(1);
-  const context = await buildRegistrationContextForDraft(registrationId);
+async function catalogPayloadFromContext(
+  context: RegistrationContext,
+  extras: {
+    desiredLeagueCount: number | null;
+    basicIceFallbackInterest: boolean | null;
+  },
+) {
   const leagues = await leaguesWithActiveWaitlistEntryCounts(
     await sortLeaguesByDayThenFirstDraw(Object.values(context.leagues)),
   );
@@ -290,7 +273,7 @@ async function buildLeagueCatalogPayload(registrationId: number) {
     leagues,
     registrationState: context.registrationState,
     priorities: context.priorities,
-    desiredLeagueCount: registration?.desired_league_count ?? null,
+    desiredLeagueCount: extras.desiredLeagueCount,
     maxDesiredLeagueCount: MAX_DESIRED_LEAGUE_COUNT,
     priorSeasonLeagueIds: priorSeasonLeagueIds(context),
     priorLeagueDecisions: context.selections
@@ -312,16 +295,52 @@ async function buildLeagueCatalogPayload(registrationId: number) {
     continuingSabbaticals: listContinuingSabbaticalSummaries(context),
     sabbaticalFeeMinor: context.priceConfig.sabbaticalFeeMinor,
     existingWaitlistEntries: context.existingWaitlistEntries,
-    basicIceFallbackInterest: basicIceFallbackInterestFromRow(registration?.basic_ice_fallback_interest),
+    basicIceFallbackInterest: extras.basicIceFallbackInterest,
     collectBasicIceFallback: shouldCollectBasicIceFallback(context),
     playInEntry: await buildPlayInEntrySummaries(context),
     evaluation: evaluateRegistrationDraft(context),
   };
 }
 
+async function buildLeagueCatalogPayload(registrationId: number) {
+  const { db, schema } = getDrizzleDb();
+  const [registration] = await db
+    .select({
+      basic_ice_fallback_interest: schema.curlingRegistrations.basic_ice_fallback_interest,
+      desired_league_count: schema.curlingRegistrations.desired_league_count,
+    })
+    .from(schema.curlingRegistrations)
+    .where(eq(schema.curlingRegistrations.id, registrationId))
+    .limit(1);
+  const context = await buildRegistrationContextForDraft(registrationId);
+  return catalogPayloadFromContext(context, {
+    desiredLeagueCount: registration?.desired_league_count ?? null,
+    basicIceFallbackInterest: basicIceFallbackInterestFromRow(registration?.basic_ice_fallback_interest),
+  });
+}
+
 export async function getRegistrationLeagueCatalog(registrationId: number, actor: Member) {
   await requireEditableRegistration(registrationId, actor);
   return buildLeagueCatalogPayload(registrationId);
+}
+
+export async function getGuestLeagueCatalog(
+  input: Parameters<typeof buildGuestRegistrationContext>[0] & {
+    desiredLeagueCount?: number | null;
+    priorities?: LeaguePriorityInput[];
+  },
+) {
+  const base = await buildGuestRegistrationContext(input, { includeSessionLeagues: true });
+  const desiredLeagueCount = input.desiredLeagueCount ?? null;
+  const context: RegistrationContext = {
+    ...base,
+    desiredLeagueCount,
+    priorities: input.priorities ?? [],
+  };
+  return catalogPayloadFromContext(context, {
+    desiredLeagueCount,
+    basicIceFallbackInterest: null,
+  });
 }
 
 export async function putRegistrationLeaguePriorities(

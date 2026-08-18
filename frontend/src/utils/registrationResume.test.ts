@@ -3,6 +3,8 @@ import {
   getRegistrationStartScreenMode,
   isDraftRegistrationResumeStatus,
   membershipNeedsSabbaticalStep,
+  experienceSkipsIcePrivilegesStep,
+  shouldRecommendSaturdayInstructional,
   nextStepFor,
   resolvePostShellResumeStepFromPayment,
   resolveResumeStepFromDraft,
@@ -216,10 +218,24 @@ describe('registration resume targeting', () => {
 
     expect(
       resolvePostShellResumeStepFromPayment({
-        selection: { membershipOption: 'regular', experienceType: 'specified_years' },
+        selection: { membershipOption: 'regular', experienceType: 'specified_years', experienceSelfReportedYears: 2 },
         icePrivilegesChoice: 'none',
       }),
     ).toBe('basic-ice');
+
+    expect(
+      resolvePostShellResumeStepFromPayment({
+        selection: { membershipOption: 'regular', experienceType: 'specified_years', experienceSelfReportedYears: 0.5 },
+        icePrivilegesChoice: 'none',
+      }),
+    ).toBe('league-priority-intro');
+
+    expect(
+      resolvePostShellResumeStepFromPayment({
+        selection: { membershipOption: 'regular', experienceType: 'none_or_minimal' },
+        icePrivilegesChoice: 'none',
+      }),
+    ).toBe('league-priority-intro');
 
     expect(
       resolvePostShellResumeStepFromPayment({
@@ -275,6 +291,26 @@ describe('registration resume targeting', () => {
         icePrivilegesChoice: 'none',
       }),
     ).toBe('review');
+  });
+
+  test('ice privileges are skipped until a new curler reports at least one year', () => {
+    expect(experienceSkipsIcePrivilegesStep('none_or_minimal')).toBe(true);
+    expect(experienceSkipsIcePrivilegesStep('specified_years')).toBe(true);
+    expect(experienceSkipsIcePrivilegesStep('specified_years', 0.5)).toBe(true);
+    expect(experienceSkipsIcePrivilegesStep('specified_years', 1)).toBe(false);
+    expect(experienceSkipsIcePrivilegesStep('specified_years', 2)).toBe(false);
+    expect(experienceSkipsIcePrivilegesStep('known_existing')).toBe(false);
+    expect(experienceSkipsIcePrivilegesStep(null)).toBe(false);
+    expect(experienceSkipsIcePrivilegesStep(undefined)).toBe(false);
+  });
+
+  test('Saturday Instructional is recommended at one year of experience or less', () => {
+    expect(shouldRecommendSaturdayInstructional('none_or_minimal')).toBe(true);
+    expect(shouldRecommendSaturdayInstructional('specified_years', 0.5)).toBe(true);
+    expect(shouldRecommendSaturdayInstructional('specified_years', 1)).toBe(true);
+    expect(shouldRecommendSaturdayInstructional('specified_years', 1.5)).toBe(false);
+    expect(shouldRecommendSaturdayInstructional('specified_years')).toBe(false);
+    expect(shouldRecommendSaturdayInstructional('known_existing', 4)).toBe(false);
   });
 
   test('membershipNeedsSabbaticalStep is true for sabbatical-only and eligible social membership', () => {

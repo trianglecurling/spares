@@ -198,13 +198,13 @@ export type PriorityLabelCandidate = {
   allowsWaitlist: boolean;
   isPlayInBased: boolean;
   /**
-   * Open registration only: waitlist length is strictly below remaining open
-   * spots. Ignored during priority registration.
+   * Waitlist length is strictly below remaining open spots. Used in open
+   * registration, and for instructional programs in every registration state.
    */
   hasVacancies?: boolean;
   /**
-   * Open registration only: a sabbatical has left a temporary fill vacancy.
-   * Ignored during priority registration.
+   * A sabbatical has left a temporary fill vacancy. Used in open registration,
+   * and for instructional programs in every registration state.
    */
   hasTemporaryFillVacancy?: boolean;
   /**
@@ -212,6 +212,12 @@ export type PriorityLabelCandidate = {
    * not labeled Available just because the league still has roster room.
    */
   playInGuaranteed?: boolean;
+  /**
+   * Instructional programs use live vacancies in both priority and open
+   * registration: space remaining is Available and billed now; full is subject
+   * to availability and payment waits.
+   */
+  isInstructional?: boolean;
 };
 
 export type LabeledPriorityEntry = PriorityLabelCandidate & {
@@ -260,13 +266,14 @@ export function leagueHasTemporaryFillVacancy(league: {
 
 /**
  * Leagues billed today: protected guarantees, open-registration available
- * spots, plus non-waitlist leagues we assume have room. Play-in entries that
- * missed the bar stay unlabeled as subject to availability but are not charged
- * until placement settles.
+ * spots, instructional programs with remaining space, plus non-waitlist
+ * standard leagues we assume have room. Play-in misses and full instructional
+ * programs stay unlabeled as subject to availability and are not charged until
+ * placement settles.
  */
 export function isImmediateChargeEntry(entry: LabeledPriorityEntry): boolean {
   if (entry.guaranteed || entry.label === 'available' || entry.label === 'temporary_spot_available') return true;
-  return entry.label === 'subject_to_availability' && !entry.isPlayInBased;
+  return entry.label === 'subject_to_availability' && !entry.isPlayInBased && !entry.isInstructional;
 }
 
 /**
@@ -311,7 +318,7 @@ function entrySecuresDesiredSlot(entry: LabeledPriorityEntry): boolean {
   ) {
     return true;
   }
-  return entry.label === 'subject_to_availability' && !entry.isPlayInBased;
+  return entry.label === 'subject_to_availability' && !entry.isPlayInBased && !entry.isInstructional;
 }
 
 /**
@@ -353,8 +360,11 @@ function markSuperfluousEntries(entries: LabeledPriorityEntry[], desiredLeagueCo
  * when the leftover sits in the top two ranks (trying to switch into a higher
  * league while holding a fallback). Once two spots are already guaranteed,
  * extra leagues further down the list are subject to availability even if the
- * league has a waitlist. Subject-to-availability leagues (except play-in
- * misses) are billed now and do not consume the guarantee budget.
+ * league has a waitlist. Subject-to-availability standard leagues (except
+ * play-in misses) are billed now and do not consume the guarantee budget.
+ * Instructional programs ignore that leftover rule: remaining space is
+ * Available and billed now; a full program is subject to availability and
+ * payment waits.
  *
  * Once guaranteed spots plus billed subject-to-availability entries already
  * fill the desired league count, every later entry is `superfluous`. Those
@@ -365,6 +375,18 @@ function markSuperfluousEntries(entries: LabeledPriorityEntry[], desiredLeagueCo
  * Sabbaticals do not consume this budget. A registrant may hold two guaranteed
  * priority spots and still take sabbatical from other prior leagues.
  */
+function labelInstructionalByVacancies(entry: LabeledPriorityEntry): void {
+  if (entry.hasVacancies) {
+    entry.label = 'available';
+    return;
+  }
+  if (entry.hasTemporaryFillVacancy) {
+    entry.label = 'temporary_spot_available';
+    return;
+  }
+  entry.label = 'subject_to_availability';
+}
+
 function labelOpenRegistrationEntries(entries: LabeledPriorityEntry[], desiredLeagueCount: number): void {
   const availableBudget = guaranteeBudgetFor(desiredLeagueCount);
   let availableGranted = 0;
@@ -377,6 +399,10 @@ function labelOpenRegistrationEntries(entries: LabeledPriorityEntry[], desiredLe
     }
     if (entry.isPlayInBased && entry.rosterComplete && entry.playInGuaranteed !== true) {
       entry.label = 'subject_to_availability';
+      continue;
+    }
+    if (entry.isInstructional) {
+      labelInstructionalByVacancies(entry);
       continue;
     }
     if (entry.hasVacancies) {
@@ -449,6 +475,10 @@ export function labelPriorityEntries(input: {
       // same awaiting chip as an incomplete returning BYOT team.
       if (entry.isPlayInBased && !entry.rosterComplete) {
         entry.label = 'awaiting_roster_entry';
+        continue;
+      }
+      if (entry.isInstructional) {
+        labelInstructionalByVacancies(entry);
         continue;
       }
       // Waitlists fill protected spots. Rank 1–2 leftovers can still waitlist

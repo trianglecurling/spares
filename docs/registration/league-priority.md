@@ -8,19 +8,31 @@ and third-league interest.
 ## Flow placement
 
 Registration shows a purely informational step (`league-priority-intro`)
-immediately before the interactive priority list **when the registrant chose
-League play for ice privileges** and at least one eligible league is not an
-instructional program. That screen explains:
+immediately before the interactive priority list **when the registrant is on
+league play** and at least one eligible league or instructional program is
+available. New curlers with **none or minimal** experience, or with **less than
+one year** of self-reported experience, skip ice privileges and are placed on
+league play automatically. New curlers who report **at least one year** of
+experience see ice privileges first (including basic ice privileges); choosing
+league play then continues through this intro.
+
+For returning members, that screen explains:
 
 1. What the next screen asks for (desired count and ordered priority list).
 2. How league rosters use up to two protected spots from leagues the member
    played last session — as a guaranteed return, or as a guaranteed fallback
    when trying to switch into a higher-priority league.
 
+For new members, the same screen uses shorter roster copy: returning members
+are placed first, remaining spots come from waitlists, and adding a league to
+the priority list joins that waitlist. New members with **one year of
+experience or less** are also encouraged to add Saturday Instructional at the
+top of their list. New members with more experience still go through this intro
+and the priority list, without that Saturday Instructional prompt.
+
 Continue advances to the priority list. No answers are saved on the intro step.
-Registrants on basic ice privileges, other non–league-play paths, or whose only
-eligible offerings are instructional programs skip this intro and go straight to
-the priority list.
+Registrants on basic ice privileges or other non–league-play paths skip this
+intro and go straight to the priority list.
 
 ## Basic ice privileges
 
@@ -83,10 +95,10 @@ live as the registrant reorders, adds, or removes leagues.
 | --- | --- |
 | Guaranteed return | The spot is held. Billed immediately. Priority registration only. |
 | Guaranteed fallback | The spot is held as a backstop if higher choices do not come through. Billed immediately. Priority registration only. |
-| Available | The league currently has vacancies. Billed immediately. Open registration only. |
+| Available | The league currently has vacancies. Billed immediately. Open registration, or instructional programs in any registration state. |
 | Temporary spot available | A sabbatical has left a temporary fill vacancy. Billed immediately, minus the sabbatical fee. Open registration only. |
 | Waitlisted | Queued on the league waitlist. Payment deferred. |
-| Subject to availability | Wanted, not waitlisted. Assumed to have room; billed immediately. |
+| Subject to availability | Wanted, not waitlisted. Standard leagues are assumed to have room and billed immediately. A full instructional program defers payment. |
 | Superfluous | Below leagues that already fill the desired count. Not waitlisted or billed. Must be removed or moved higher before continuing. |
 
 ### Return eligibility
@@ -118,6 +130,8 @@ for entry in rank order:
         entry.label = awaiting_roster_entry
     else if play-in and roster complete but TLINE bar not cleared:
         entry.label = subject_to_availability
+    else if instructional:
+        entry.label = available if vacancies else subject_to_availability
     else if league has vacancies and availableGranted < availableBudget:
         entry.label = available
         availableGranted += 1
@@ -181,6 +195,8 @@ if returnCount < 2:
 for entry with no label:
     if play-in and roster incomplete:
         entry.label = awaiting_roster_entry
+    else if instructional:
+        entry.label = available if vacancies else subject_to_availability
     else if league.allowsWaitlist and (granted < 2 or rank <= 2):
         entry.label = waitlisted
     else:
@@ -202,6 +218,18 @@ to availability only while they still fill a remaining desired-count slot.
 Anything below an already-filled desired count is superfluous: the registrant
 may add a league in order to move it higher (switch with fallback), but cannot
 continue until those extra rows are removed or reordered.
+
+### Instructional programs
+
+Instructional programs such as Saturday Instructional use live vacancies in
+both priority and open registration, instead of return rights or the two-spot
+available budget:
+
+- Remaining space → **Available**, billed immediately.
+- Full → **Subject to availability**, payment deferred until staff can place
+  the curler.
+
+They do not join a waitlist from this leftover path.
 
 A bring-your-own-team entry that still has a return right but an incomplete
 all-returning declared team, or a play-in entry whose team is not yet fully
@@ -295,9 +323,11 @@ simultaneous sabbaticals).
 
 When the priority list has no guaranteed leagues (no guaranteed return and no
 guaranteed fallback), the registrant is offered basic ice as a fallback so they
-have something to skate on if no league spot materializes. The question appears
-inline on the priority page and disappears as soon as any guaranteed league is
-present. Available and subject-to-availability entries do not hide it.
+have something to skate on if no league spot materializes. New curlers are not
+offered this unless they report **at least one year** of experience. The
+question appears inline on the priority page and disappears as soon as any
+guaranteed league is present. Available and subject-to-availability entries do
+not hide it.
 
 ## Waitlist derivation
 
@@ -311,15 +341,18 @@ See `waitlists.md` for offer and placement behavior.
 
 ## Billing
 
-Guaranteed entries, open-registration available entries, and
-subject-to-availability entries are billed now.
-Waitlisted entries, incomplete rosters, play-in misses, and superfluous entries
-are not. Superfluous entries also cannot be submitted.
+Guaranteed entries, open-registration available entries, instructional
+programs with remaining space, and subject-to-availability **standard**
+leagues are billed now.
+Waitlisted entries, incomplete rosters, play-in misses, full instructional
+programs, and superfluous entries are not. Superfluous entries also cannot be
+submitted.
 
-Subject-to-availability means the leftover is not joining a waitlist. That
-includes leagues with no waitlist, and extra leagues below two already-granted
-protected spots. We assume there will be room, take payment, and do not consume
-a protected guarantee spot.
+Subject-to-availability on a standard league means the leftover is not joining
+a waitlist. That includes leagues with no waitlist, and extra leagues below two
+already-granted protected spots. We assume there will be room, take payment,
+and do not consume a protected guarantee spot. A full instructional program is
+also labeled subject to availability, but payment waits until placement.
 
 - **Confirmed total** = membership and other fixed fees, plus the sum of
   `registrationFeeMinor` for every guaranteed entry and every

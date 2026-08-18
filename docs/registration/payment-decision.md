@@ -20,7 +20,8 @@ Payment is immediate when:
 
 - Registration is otherwise valid.
 - There is an amount due.
-- Billed-now leagues (guaranteed entries plus subject-to-availability entries)
+- Billed-now leagues (guaranteed entries, available instructional programs, and
+  standard subject-to-availability entries)
   fill the desired league count, so nothing about the league outcome is still
   unresolved.
 - No staff review is required.
@@ -45,6 +46,7 @@ Payment is deferred when any selected item requires later placement or review.
 Deferral reasons include:
 
 - Fewer billed-now leagues on the priority list than the desired league count.
+- Full instructional program with remaining desired-count slots.
 - Waitlist placement still needed to fill the desired count.
 - Play-in entry that has not cleared the TLINE guarantee bar.
 - Junior Recreational financial assistance request.
@@ -59,8 +61,9 @@ The system should avoid multiple payments for the same registration when practic
 A deferred registration is quoted as a range, not a single total:
 
 - **Floor** — the confirmed total: membership and other fixed fees plus the
-  league fees for every guaranteed entry and every subject-to-availability
-  entry filling a remaining desired-count slot.
+  league fees for every guaranteed entry, every available instructional
+  program, and every billed subject-to-availability standard league filling a
+  remaining desired-count slot.
 - **Ceiling** — the floor plus the remaining desired-count slots' most
   expensive unbilled entries on the priority list.
 

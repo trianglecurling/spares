@@ -39,6 +39,7 @@ import {
   type DecisionMessage,
   type RegistrationReasonCode,
 } from './registrationDecisionTypes.js';
+import { experienceAllowsBasicIcePrivileges } from './registrationAgeExperience.js';
 import { validateLeagueEligibility, validateRegistrationIsOpen, validateSpareOnlyEligibility } from './registrationEligibility.js';
 import { evaluateSabbaticalEligibility, findRelevantSabbatical } from './registrationReturningRights.js';
 import { validateContinuingSabbaticalDecisions } from './registrationSabbaticalContinuity.js';
@@ -145,6 +146,7 @@ export function evaluateLeaguePriorities(context: RegistrationContext): LeaguePr
       hasVacancies: leagueHasVacancies(league),
       hasTemporaryFillVacancy: leagueHasTemporaryFillVacancy(league),
       playInGuaranteed: league?.isPlayInBased === true && context.playInEntry?.[priority.leagueId]?.guaranteed === true,
+      isInstructional: league?.format === 'instructional',
     };
   });
 
@@ -548,10 +550,14 @@ export function leaguePlacementDeferralReasons(evaluation: LeaguePriorityEvaluat
  * The basic ice fallback question is asked when the list has no guaranteed
  * leagues, so the registrant might end the session with no protected ice.
  * Available and subject-to-availability entries do not hide the question.
+ * New curlers are not asked unless they report at least one year of experience.
  */
 export function shouldCollectBasicIceFallback(context: RegistrationContext): boolean {
   if (context.membershipOption === 'regular_spare_only') return false;
   if (context.membershipOption === 'junior_recreational') return false;
+  if (!experienceAllowsBasicIcePrivileges(context.experience.type, context.experience.selfReportedYears)) {
+    return false;
+  }
   const evaluation = evaluateLeaguePriorities(context);
   return evaluation.guaranteedCount === 0;
 }

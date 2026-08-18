@@ -428,15 +428,17 @@ export function isLeagueSelectionEligibleLeague(league: LeagueCatalogItem, input
   return true;
 }
 
-/** The guaranteed-return intro is only useful when a non-instructional league is available. */
+/**
+ * Show the league-priority intro when the curler has at least one eligible
+ * league or instructional program. None-or-minimal curlers typically only
+ * qualify for instructional programs and still need this screen.
+ */
 export function shouldShowLeaguePriorityIntro(
   leagues: LeagueCatalogItem[] | null | undefined,
   eligibility: LeagueEligibilityInput,
 ): boolean {
   if (!leagues) return true;
-  return leagues.some(
-    (league) => isLeagueSelectionEligibleLeague(league, eligibility) && league.format !== 'instructional',
-  );
+  return leagues.some((league) => isLeagueSelectionEligibleLeague(league, eligibility));
 }
 export function isBasicIceIncludedDaytimeLeague(league: LeagueCatalogItem): boolean {
   return (

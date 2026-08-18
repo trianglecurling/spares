@@ -59,6 +59,9 @@ import {
   type RegistrationLeagueCatalogPayload,
 } from './leaguePriorityShared';
 import {
+  experienceSkipsIcePrivilegesStep,
+} from '../../utils/registrationResume';
+import {
   formatCurrency,
   isLeagueSelectionEligibleLeague,
   leagueScheduleText,
@@ -168,7 +171,7 @@ export default function LeaguePriorityStep({
 }: Props) {
   const { showAlert } = useAlert();
   const { confirm } = useConfirm();
-  const memberOptions = useMemberOptions({ autoLoad: true });
+  const memberOptions = useMemberOptions({ autoLoad: Boolean(registeringCurler.id) });
   const countInputId = useId();
   const addLeagueInputId = useId();
   const listLabelId = useId();
@@ -275,6 +278,11 @@ export default function LeaguePriorityStep({
       registrationState,
     ],
   );
+
+  const allowsBasicIceFallback =
+    !sabbaticalOnly &&
+    !restrictToFreeLeagues &&
+    !experienceSkipsIcePrivilegesStep(eligibility.experienceType, eligibility.experienceSelfReportedYears);
 
   const labelByLeagueId = useMemo(
     () => new Map(evaluation.entries.map((entry) => [entry.leagueId, entry.label])),
@@ -636,9 +644,7 @@ export default function LeaguePriorityStep({
         priorities: sabbaticalOnly ? [] : priorities,
         priorLeagueDecisions,
         basicIceFallbackInterest:
-          sabbaticalOnly || restrictToFreeLeagues || evaluation.guaranteedCount > 0
-            ? null
-            : basicIceFallbackInterest,
+          !allowsBasicIceFallback || evaluation.guaranteedCount > 0 ? null : basicIceFallbackInterest,
       });
     } catch (error) {
       showAlert(
@@ -653,8 +659,7 @@ export default function LeaguePriorityStep({
     return <InlineStateMessage title="Loading leagues..." />;
   }
 
-  const showBasicIceFallback =
-    !sabbaticalOnly && !restrictToFreeLeagues && evaluation.guaranteedCount === 0;
+  const showBasicIceFallback = allowsBasicIceFallback && evaluation.guaranteedCount === 0;
   const showLeaguePicker = !sabbaticalOnly && eligibleLeagues.length > 0;
   const showEmptyEligible =
     !showLeaguePicker && lastSessionLeaguesForDecisions.length === 0 && sabbaticalsToShow.length === 0;
@@ -940,7 +945,7 @@ export default function LeaguePriorityStep({
 
             {addableLeagues.length > 0 ? (
               <FormField
-                label="Add a league"
+                label="Add a league or instructional program"
                 htmlFor={addLeagueInputId}
                 tone="public"
               >

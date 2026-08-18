@@ -42,6 +42,7 @@ export type RegistrationMembershipPaymentResumeShape = {
   selection: {
     membershipOption: 'none' | 'regular' | 'social' | 'regular_spare_only' | 'junior_recreational';
     experienceType: 'none_or_minimal' | 'specified_years' | 'known_existing' | null;
+    experienceSelfReportedYears?: number | null;
   };
   icePrivilegesChoice: 'none' | 'league_play' | 'basic_ice';
   hasLifetimeMembership?: boolean;
@@ -151,6 +152,48 @@ export function membershipNeedsSabbaticalStep(input: {
   return input.membershipOption === 'social' && input.noMembershipEligible === true;
 }
 
+/** Basic ice privileges are only offered once a new curler reports at least this many years. */
+export const BASIC_ICE_MIN_EXPERIENCE_YEARS = 1;
+
+/** Saturday Instructional is highlighted for new curlers at or below this many years. */
+export const SATURDAY_INSTRUCTIONAL_MAX_EXPERIENCE_YEARS = 1;
+
+function specifiedExperienceYears(experienceSelfReportedYears: number | null | undefined): number | null {
+  if (experienceSelfReportedYears == null) return null;
+  const years = Number(experienceSelfReportedYears);
+  return Number.isFinite(years) ? years : null;
+}
+
+/**
+ * New curlers skip the ice-privileges picker (and auto-enter league play) unless they
+ * report at least one year of experience. Returning members with a club record still
+ * see ice privileges.
+ */
+export function experienceSkipsIcePrivilegesStep(
+  experienceType: 'none_or_minimal' | 'specified_years' | 'known_existing' | null | undefined,
+  experienceSelfReportedYears?: number | null,
+): boolean {
+  if (experienceType === 'none_or_minimal') return true;
+  if (experienceType === 'specified_years') {
+    const years = specifiedExperienceYears(experienceSelfReportedYears);
+    return years == null || years < BASIC_ICE_MIN_EXPERIENCE_YEARS;
+  }
+  return false;
+}
+
+/** Highlight Saturday Instructional for new curlers with one year of experience or less. */
+export function shouldRecommendSaturdayInstructional(
+  experienceType: 'none_or_minimal' | 'specified_years' | 'known_existing' | null | undefined,
+  experienceSelfReportedYears?: number | null,
+): boolean {
+  if (experienceType === 'none_or_minimal' || experienceType == null) return true;
+  if (experienceType === 'specified_years') {
+    const years = specifiedExperienceYears(experienceSelfReportedYears);
+    return years != null && years <= SATURDAY_INSTRUCTIONAL_MAX_EXPERIENCE_YEARS;
+  }
+  return false;
+}
+
 export function resolvePostShellResumeStepFromPayment(
   payment: RegistrationMembershipPaymentResumeShape,
 ): string {
@@ -169,7 +212,13 @@ export function resolvePostShellResumeStepFromPayment(
   if (option === 'regular_spare_only') return 'league-priority';
 
   const ice = payment.icePrivilegesChoice;
-  if (ice === 'league_play') {
+  if (
+    ice === 'league_play' ||
+    experienceSkipsIcePrivilegesStep(
+      payment.selection.experienceType,
+      payment.selection.experienceSelfReportedYears,
+    )
+  ) {
     return 'league-priority-intro';
   }
   if (ice === 'basic_ice') {

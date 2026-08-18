@@ -711,7 +711,10 @@ async function loadCompletedSessions(memberId: number): Promise<RegistrationCont
 async function loadLeaguesForSession(sessionId: number, defaultLeagueFeeMinor: number): Promise<Record<number, LeagueConfig>> {
   const { db, schema } = getDrizzleDb();
   const rows = await db.select().from(schema.leagues).where(eq(schema.leagues.session_id, sessionId));
-  return Object.fromEntries(rows.map((row) => [row.id, mapLeagueConfig(row, defaultLeagueFeeMinor)]));
+  const mapped = rows.map((row) => mapLeagueConfig(row, defaultLeagueFeeMinor));
+  const { attachLiveLeagueAvailability } = await import('./leagueAvailability.js');
+  const withAvailability = await attachLiveLeagueAvailability(mapped);
+  return Object.fromEntries(withAvailability.map((league) => [league.id, league]));
 }
 
 async function loadRegistrationSelections(registrationId: number): Promise<RegistrationSelectionInput[]> {
@@ -958,6 +961,8 @@ async function buildRegistrationContextFromSourceRow(
     curlerHasLifetimeMembership?: boolean;
     completedSessions: RegistrationContext['experience']['completedSessions'];
     experienceBaselines?: MemberExperienceBaselines;
+    /** Load session leagues even when there is no draft (guest catalog preview). */
+    includeSessionLeagues?: boolean;
   },
 ): Promise<RegistrationContext> {
   const { isEarlyAccessUnlockedInRequest } = await import('./registrationEarlyAccess.js');
@@ -991,15 +996,16 @@ async function buildRegistrationContextFromSourceRow(
     RegistrationContext['existingWaitlistEntries'],
     RegistrationContext['juniorAssistance'] | undefined,
   ] = [{}, [], [], [], [], [], undefined];
-  const [leagues, selections, priorities, activeLeagueIds, existingSabbaticals, existingWaitlistEntries, juniorAssistance] = options.registrationId
+  const shouldLoadLeagues = options.registrationId != null || options.includeSessionLeagues === true;
+  const [leagues, selections, priorities, activeLeagueIds, existingSabbaticals, existingWaitlistEntries, juniorAssistance] = shouldLoadLeagues
     ? await Promise.all([
         loadLeaguesForSession(registration.session_id, defaultLeagueFeeMinor),
-        loadRegistrationSelections(options.registrationId),
-        loadRegistrationLeaguePriorities(options.registrationId),
+        options.registrationId ? loadRegistrationSelections(options.registrationId) : Promise.resolve([]),
+        options.registrationId ? loadRegistrationLeaguePriorities(options.registrationId) : Promise.resolve([]),
         memberId ? loadActiveLeagueIds(memberId, registration.session_id) : Promise.resolve([]),
         memberId ? loadExistingSabbaticals(memberId) : Promise.resolve([]),
         memberId ? loadExistingWaitlistEntriesForMember(memberId, registration.session_id) : Promise.resolve([]),
-        loadJuniorAssistance(options.registrationId),
+        options.registrationId ? loadJuniorAssistance(options.registrationId) : Promise.resolve(undefined),
       ])
     : emptyContextState;
   const participatedLeagueIds = Array.from(
@@ -1112,13 +1118,11 @@ export type GuestMembershipPaymentPreviewInput = {
   experienceSelfReportedYears: number | null;
   usaCurlingMembershipOptIn?: boolean | null;
   uswcaMembershipOptIn?: boolean | null;
+  desiredLeagueCount?: number | null;
+  priorities?: LeaguePriorityInput[];
 };
 
-export async function getGuestMembershipPaymentPreview(input: GuestMembershipPaymentPreviewInput): Promise<RegistrationMembershipPaymentPayload> {
-  const window = await getEffectiveRegistrationWindow(input.seasonId, input.sessionId);
-  if (!window) {
-    throw new RegistrationMembershipPaymentValidationError({ registration: 'Registration window not found.' });
-  }
+function guestSyntheticSourceRow(input: GuestMembershipPaymentPreviewInput): RegistrationMembershipPaymentSourceRow {
   const membershipOption: CurlingMembershipOptionSqlite =
     input.membershipChoice === 'social' ? 'social' : input.basicIcePrivileges ? 'regular_spare_only' : 'regular';
   const experienceTypeResolved: CurlingExperienceTypeSqlite | null =
@@ -1130,7 +1134,7 @@ export async function getGuestMembershipPaymentPreview(input: GuestMembershipPay
   const experienceYears =
     input.membershipChoice === 'social' || input.experienceType !== 'specified_years' ? null : input.experienceSelfReportedYears;
 
-  const synthetic: RegistrationMembershipPaymentSourceRow = {
+  return {
     season_id: input.seasonId,
     session_id: input.sessionId,
     curler_member_id: null,
@@ -1144,14 +1148,35 @@ export async function getGuestMembershipPaymentPreview(input: GuestMembershipPay
     reciprocal_club_name: input.membershipChoice === 'social' ? null : input.reciprocalClubName,
     experience_type: experienceTypeResolved,
     experience_self_reported_years: experienceYears,
+    desired_league_count: input.desiredLeagueCount ?? null,
     usa_curling_membership_opt_in: sqliteFlagFromBoolean(input.usaCurlingMembershipOptIn),
     uswca_membership_opt_in: sqliteFlagFromBoolean(input.uswcaMembershipOptIn),
   };
+}
 
-  const context = await buildRegistrationContextFromSourceRow(synthetic, {
+export async function buildGuestRegistrationContext(
+  input: GuestMembershipPaymentPreviewInput,
+  options?: { includeSessionLeagues?: boolean },
+): Promise<RegistrationContext> {
+  return buildRegistrationContextFromSourceRow(guestSyntheticSourceRow(input), {
     curlerDateOfBirth: input.curlerDateOfBirth,
     completedSessions: [],
+    includeSessionLeagues: options?.includeSessionLeagues,
   });
+}
+
+export async function getGuestMembershipPaymentPreview(input: GuestMembershipPaymentPreviewInput): Promise<RegistrationMembershipPaymentPayload> {
+  const window = await getEffectiveRegistrationWindow(input.seasonId, input.sessionId);
+  if (!window) {
+    throw new RegistrationMembershipPaymentValidationError({ registration: 'Registration window not found.' });
+  }
+
+  const base = await buildGuestRegistrationContext(input, { includeSessionLeagues: true });
+  const context: RegistrationContext = {
+    ...base,
+    desiredLeagueCount: input.desiredLeagueCount ?? base.desiredLeagueCount,
+    priorities: input.priorities ?? base.priorities,
+  };
   const evaluation = evaluateRegistrationDraft(context);
   const deadlineFields = await paymentDeadlineFieldsForSeasonSession(
     input.seasonId,
@@ -1160,7 +1185,7 @@ export async function getGuestMembershipPaymentPreview(input: GuestMembershipPay
   );
 
   return {
-    selection: membershipPaymentFieldsFromRegistrationRow(synthetic),
+    selection: membershipPaymentFieldsFromRegistrationRow(guestSyntheticSourceRow(input)),
     icePrivilegesChoice: input.basicIcePrivileges ? 'basic_ice' : 'none',
     isFirstSessionOfSeason: context.isFirstSessionOfSeason,
     knownExperienceYears: effectiveExperienceYears(context),
@@ -1379,6 +1404,18 @@ export async function updateIcePrivileges(registrationId: number, actor: Member,
       icePrivileges: 'Ice privileges only apply to regular membership.',
     });
   }
+  if (input.choice === 'basic_ice') {
+    const experienceType = registration.experience_type;
+    const years = registration.experience_self_reported_years;
+    const belowBasicIceMin =
+      experienceType === 'none_or_minimal' ||
+      (experienceType === 'specified_years' && (years == null || Number(years) < 1));
+    if (belowBasicIceMin) {
+      throw new RegistrationMembershipPaymentValidationError({
+        icePrivileges: 'Basic ice privileges require at least one year of curling experience.',
+      });
+    }
+  }
 
   const membershipOption: CurlingMembershipOptionSqlite = input.choice === 'basic_ice' ? 'regular_spare_only' : 'regular';
   const { db, schema } = getDrizzleDb();
@@ -1449,11 +1486,22 @@ export async function updateExperience(registrationId: number, actor: Member, in
   }
 
   const { db, schema } = getDrizzleDb();
+  const noneOrMinimalLeaguePlay = input.experienceType === 'none_or_minimal';
+  const specifiedYearsBelowBasicIceMin =
+    input.experienceType === 'specified_years' &&
+    (input.experienceSelfReportedYears == null || Number(input.experienceSelfReportedYears) < 1);
+  const autoLeaguePlay = noneOrMinimalLeaguePlay || specifiedYearsBelowBasicIceMin;
   await db
     .update(schema.curlingRegistrations)
     .set({
       experience_type: input.experienceType,
       experience_self_reported_years: input.experienceType === 'specified_years' ? input.experienceSelfReportedYears : null,
+      ...(autoLeaguePlay
+        ? {
+            ice_privileges_choice: 'league_play' as const,
+            ...(registration.membership_option === 'regular_spare_only' ? { membership_option: 'regular' as const } : {}),
+          }
+        : {}),
       updated_at: sql`CURRENT_TIMESTAMP`,
     })
     .where(eq(schema.curlingRegistrations.id, registrationId));
