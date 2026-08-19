@@ -30,6 +30,7 @@ import type {
   RegistrationSelectionInput,
 } from './registrationContext.js';
 import { listContinuingSabbaticalSummaries } from './registrationSabbaticalContinuity.js';
+import { omitLeaveBehindSelectionsForListedLeagues } from './leaguePriorityRules.js';
 import { evaluateRegistrantPlayInEntry, type RegistrantPlayInEntrySummary } from './leagueEntryService.js';
 
 export class RegistrationLeagueSelectionValidationError extends Error {
@@ -276,7 +277,7 @@ async function catalogPayloadFromContext(
     desiredLeagueCount: extras.desiredLeagueCount,
     maxDesiredLeagueCount: MAX_DESIRED_LEAGUE_COUNT,
     priorSeasonLeagueIds: priorSeasonLeagueIds(context),
-    priorLeagueDecisions: context.selections
+    priorLeagueDecisions: omitLeaveBehindSelectionsForListedLeagues(context.selections, context.priorities)
       .filter((selection) => selection.selectionType === 'sabbatical' || selection.selectionType === 'drop')
       .map((selection) => ({
         leagueId: selection.leagueId ?? null,
@@ -356,10 +357,10 @@ export async function putRegistrationLeaguePriorities(
   const programSelections = currentContext.selections.filter(
     (selection) => selection.selectionType === 'junior_recreational' || selection.selectionType === 'spare_only',
   );
-  const selections = [
-    ...programSelections,
-    ...selectionsFromPriorLeagueDecisions(input.priorLeagueDecisions ?? []),
-  ];
+  const selections = omitLeaveBehindSelectionsForListedLeagues(
+    [...programSelections, ...selectionsFromPriorLeagueDecisions(input.priorLeagueDecisions ?? [])],
+    priorities,
+  );
 
   const context: RegistrationContext = {
     ...currentContext,

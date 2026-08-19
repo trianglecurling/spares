@@ -1,3 +1,4 @@
+import { AxiosError } from 'axios';
 import { describe, expect, test } from 'bun:test';
 import {
   addPriority,
@@ -12,6 +13,7 @@ import {
   isFreeLeague,
   mergeActiveWaitlistLeagues,
   mergeNewlyJoinedWaitlistLeagues,
+  omitLeaveBehindDecisionsForListedLeagues,
   movePriorityInList,
   normalizePriorityOrder,
   omittedWaitlistLeagues,
@@ -37,6 +39,7 @@ import {
   isLeagueSelectionEligibleLeague,
   leagueScheduleText,
   shouldShowLeaguePriorityIntro,
+  editValidationErrorMessage,
   type ContinuingSabbaticalSummary,
   type LeagueCatalogItem,
 } from './registrationViewEditShared';
@@ -159,6 +162,17 @@ describe('seeding the priority list', () => {
 
   test('prior-session leagues seed the list', () => {
     expect(seedPriorityList(basePayload)).toEqual(ranked(1, 2));
+  });
+
+  test('re-seeding last-session leagues drops a leftover drop for a listed play-in league', () => {
+    const payload: RegistrationLeagueCatalogPayload = {
+      ...basePayload,
+      priorSeasonLeagueIds: [5],
+      priorLeagueDecisions: [{ leagueId: 5, decision: 'drop' }],
+    };
+    const priorities = hydratePriorityList(payload);
+    expect(priorities.map((entry) => entry.leagueId)).toEqual([5]);
+    expect(omitLeaveBehindDecisionsForListedLeagues(payload.priorLeagueDecisions, priorities)).toEqual([]);
   });
 
   test('a league the registrant is already waitlisted for leads the list', () => {
@@ -423,6 +437,21 @@ describe('guarantee labels shown while reordering', () => {
     expect(
       evaluate({ priorities, desiredLeagueCount: 1, playInEntry: { 5: { guaranteed: true } } }).entries[0]?.label,
     ).toBe('awaiting_roster_entry');
+  });
+
+  test('an incomplete play-in roster does not make later leagues superfluous', () => {
+    const priorities: LeaguePriorityInput[] = [
+      { leagueId: 5, priorityRank: 1, teamRosterPlacements: [{ memberId: 100 }, { memberId: 101 }] },
+      { leagueId: 1, priorityRank: 2 },
+    ];
+    expect(
+      evaluate({
+        priorities,
+        desiredLeagueCount: 1,
+        returnRightLeagueIds: [1],
+        playInEntry: { 5: { guaranteed: true } },
+      }).entries.map((entry) => entry.label),
+    ).toEqual(['awaiting_roster_entry', 'guaranteed_return']);
   });
 
   test('a BYOT league is guaranteed only when every teammate is returning', () => {
@@ -883,5 +912,26 @@ describe('league schedule text', () => {
 
   test('falls back to the weekday when no draw times are configured', () => {
     expect(leagueScheduleText({ dayOfWeek: 2, drawTimes: [] })).toBe('Tuesday');
+  });
+});
+
+describe('editValidationErrorMessage', () => {
+  test('shows membership payment detail messages instead of the generic envelope', () => {
+    const error = new AxiosError('Request failed');
+    error.response = {
+      data: {
+        error: 'Registration membership payment validation failed',
+        details: {
+          iceLeagues: 'Add at least one league to your priority list to continue with league play.',
+        },
+      },
+      status: 400,
+      statusText: 'Bad Request',
+      headers: {},
+      config: { headers: {} } as never,
+    };
+    expect(editValidationErrorMessage(error, 'Unable to submit registration.')).toBe(
+      'Add at least one league to your priority list to continue with league play.',
+    );
   });
 });

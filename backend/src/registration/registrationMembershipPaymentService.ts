@@ -37,6 +37,7 @@ import {
   type RegistrationContext,
   type RegistrationSelectionInput,
 } from './registrationContext.js';
+import { omitLeaveBehindSelectionsForListedLeagues } from './leaguePriorityRules.js';
 import { evaluateLeaguePriorities, type LeaguePriorityEvaluation } from './leaguePriorityEvaluation.js';
 import { formatRegistrationTeammatesDisplay, sendRegistrationEmailForDashboard, type RegistrationEmailPayload, type RegistrationMessageType, type RegistrationReceiptLineItem } from './registrationEmailService.js';
 import {
@@ -429,7 +430,7 @@ async function registrationSummaryLines(context: RegistrationContext): Promise<s
     lines.push(line);
   }
 
-  for (const selection of context.selections) {
+  for (const selection of omitLeaveBehindSelectionsForListedLeagues(context.selections, context.priorities)) {
     const leagueName = selection.leagueId ? context.leagues[selection.leagueId]?.name : null;
     const label = SELECTION_TYPE_LABELS[selection.selectionType] ?? selection.selectionType.replace(/_/g, ' ');
     lines.push(leagueName ? `${label}: ${leagueName}` : label);
@@ -997,7 +998,7 @@ async function buildRegistrationContextFromSourceRow(
     RegistrationContext['juniorAssistance'] | undefined,
   ] = [{}, [], [], [], [], [], undefined];
   const shouldLoadLeagues = options.registrationId != null || options.includeSessionLeagues === true;
-  const [leagues, selections, priorities, activeLeagueIds, existingSabbaticals, existingWaitlistEntries, juniorAssistance] = shouldLoadLeagues
+  const [loadedLeagues, loadedSelections, priorities, activeLeagueIds, existingSabbaticals, existingWaitlistEntries, juniorAssistance] = shouldLoadLeagues
     ? await Promise.all([
         loadLeaguesForSession(registration.session_id, defaultLeagueFeeMinor),
         options.registrationId ? loadRegistrationSelections(options.registrationId) : Promise.resolve([]),
@@ -1008,6 +1009,8 @@ async function buildRegistrationContextFromSourceRow(
         options.registrationId ? loadJuniorAssistance(options.registrationId) : Promise.resolve(undefined),
       ])
     : emptyContextState;
+  const leagues = loadedLeagues;
+  const selections = omitLeaveBehindSelectionsForListedLeagues(loadedSelections, priorities);
   const participatedLeagueIds = Array.from(
     new Set([...options.completedSessions.map((session) => session.leagueId), ...activeLeagueIds])
   );
@@ -2040,8 +2043,23 @@ async function persistRegistrationSabbaticals(input: {
   }
 }
 
-async function setSubmittedSelectionStatuses(tx: any, registrationId: number): Promise<void> {
+async function setSubmittedSelectionStatuses(
+  tx: any,
+  registrationId: number,
+  priorityLeagueIds: number[],
+): Promise<void> {
   const { schema } = getDrizzleDb();
+  if (priorityLeagueIds.length > 0) {
+    await tx
+      .delete(schema.registrationSelections)
+      .where(
+        and(
+          eq(schema.registrationSelections.registration_id, registrationId),
+          inArray(schema.registrationSelections.league_id, priorityLeagueIds),
+          sql`${schema.registrationSelections.selection_type} IN ('drop', 'sabbatical')`,
+        ),
+      );
+  }
   await tx
     .update(schema.registrationSelections)
     .set({ status: 'confirmed', updated_at: sql`CURRENT_TIMESTAMP` })
@@ -2260,7 +2278,11 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
       context,
       feePreview: evaluation.feePreview,
     });
-    await setSubmittedSelectionStatuses(tx, input.registrationId);
+    await setSubmittedSelectionStatuses(
+      tx,
+      input.registrationId,
+      context.priorities.map((priority) => priority.leagueId),
+    );
     const snapshotId = await createInvoiceSnapshot({
       registrationId: input.registrationId,
       payerMemberId,

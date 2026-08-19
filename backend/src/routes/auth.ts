@@ -42,6 +42,7 @@ import type {
   AuthVerifyCodeResponse,
   AuthVerifyTokenResponse,
 } from '../api/types.js';
+import { sendApiError } from '../api/errors.js';
 import { logEvent } from '../services/observability.js';
 import { issueAuthSession, refreshAuthSession, revokeRefreshToken } from '../services/authSessionService.js';
 import { memberIsSocialMember, memberIsSpareOnly } from '../utils/memberMembershipHelpers.js';
@@ -264,6 +265,15 @@ const authRequestCodeBodySchema = {
     contact: { type: 'string', minLength: 1 },
   },
   required: ['contact'],
+} as const;
+
+const apiErrorResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    error: { type: 'string' },
+  },
+  required: ['error'],
 } as const;
 
 const authRequestCodeResponseSchema = {
@@ -510,6 +520,7 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
         body: authRequestCodeBodySchema,
         response: {
           200: authRequestCodeResponseSchema,
+          404: apiErrorResponseSchema,
         },
       },
     },
@@ -533,9 +544,14 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
     const { isEmail, authContactToStore } = resolved;
     let members = resolved.members;
 
-    // Anti-enumeration: unknown contacts get the same success shape (no send).
     if (!authContactToStore || members.length === 0) {
-      return { success: true, multipleMembers: false };
+      return sendApiError(
+        reply,
+        404,
+        isEmail
+          ? 'That email address was not found. If you are a member, contact Membership for help.'
+          : 'That phone number was not found. If you are a member, contact Membership for help.'
+      );
     }
 
     if (isLoginDisabledForMembers(members, disableUserLogin)) {

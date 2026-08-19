@@ -13,6 +13,8 @@ import {
   labelPriorityEntries,
   leagueHasTemporaryFillVacancy,
   leagueHasVacancies,
+  omitLeaveBehindDecisionsForListedLeagues,
+  omitLeaveBehindSelectionsForListedLeagues,
   type PriorityLabelCandidate,
 } from './leaguePriorityRules.js';
 import { league, priority, registrationContext, selection } from './registrationTestFixtures.js';
@@ -203,6 +205,29 @@ describe('guarantee labeling', () => {
     expect(evaluateLeaguePriorities(context).guaranteedCount).toBe(0);
   });
 
+  test('an incomplete play-in roster does not make later leagues superfluous', () => {
+    const playIn = standard(1, {
+      isPlayInBased: true,
+      leagueType: 'bring_your_own_team',
+      format: 'teams',
+      allowsWaitlist: false,
+    });
+    const context = contextWithLeagues([playIn, standard(2)], {
+      priorities: [
+        priority({
+          leagueId: 1,
+          priorityRank: 1,
+          teamRosterPlacements: [{ memberId: 20 }, { memberId: 21 }],
+        }),
+        priority({ leagueId: 2, priorityRank: 2 }),
+      ],
+      desiredLeagueCount: 1,
+      playInEntry: { 1: playInEntryContext(true) },
+    });
+    expect(labelsFor(context)).toEqual(['awaiting_roster_entry', 'guaranteed_return']);
+    expect(evaluateLeaguePriorities(context).guaranteedCount).toBe(1);
+  });
+
   test('a play-in league whose team misses the bar is not guaranteed', () => {
     const playIn = standard(1, {
       isPlayInBased: true,
@@ -232,6 +257,16 @@ describe('guarantee labeling', () => {
     // Still a return right — just waiting on the declared team, not a waitlist.
     expect(labelsFor(context)).toEqual(['awaiting_roster_entry']);
     expect(evaluateLeaguePriorities(context).guaranteedCount).toBe(0);
+
+    const withBackup = contextWithLeagues([byot, standard(2)], {
+      priorities: [
+        priority({ leagueId: 1, priorityRank: 1 }),
+        priority({ leagueId: 2, priorityRank: 2 }),
+      ],
+      desiredLeagueCount: 1,
+      returnEligibleMemberIdsByLeagueId: { 1: [20, 21] },
+    });
+    expect(labelsFor(withBackup)).toEqual(['awaiting_roster_entry', 'guaranteed_return']);
 
     const withRoster = contextWithLeagues([byot], {
       priorities: [
@@ -756,6 +791,32 @@ describe('validation', () => {
       }),
       'sabbatical_only_no_priority_list',
     );
+  });
+});
+
+describe('leave-behind decisions for listed leagues', () => {
+  test('a drop for a league on the priority list is omitted', () => {
+    expect(
+      omitLeaveBehindDecisionsForListedLeagues(
+        [
+          { leagueId: 1, decision: 'drop' as const },
+          { leagueId: 2, decision: 'drop' as const },
+        ],
+        [priority({ leagueId: 1, priorityRank: 1 })],
+      ),
+    ).toEqual([{ leagueId: 2, decision: 'drop' }]);
+  });
+
+  test('a drop selection for a listed play-in league is omitted from confirmation', () => {
+    expect(
+      omitLeaveBehindSelectionsForListedLeagues(
+        [
+          selection({ selectionType: 'drop', leagueId: 1 }),
+          selection({ selectionType: 'drop', leagueId: 2 }),
+        ],
+        [priority({ leagueId: 1, priorityRank: 1 })],
+      ).map((item) => item.leagueId),
+    ).toEqual([2]);
   });
 });
 

@@ -207,7 +207,7 @@ secured = 0
 for entry in rank order:
     if secured >= desiredLeagueCount:
         entry.label = superfluous
-    else if entry is guaranteed, awaiting roster, or billed subject-to-availability:
+    else if entry is guaranteed, available, temporary fill, or billed subject-to-availability:
         secured += 1
 ```
 
@@ -285,9 +285,10 @@ members.
 | Bring-your-own-team, standard | Exactly the league team size (4 for teams, 2 for doubles) |
 | Play-in based | At least 2 to declare; the full team size to clear the TLINE bar |
 
-An entry whose roster is incomplete is never labeled guaranteed. For a
-bring-your-own-team league, an incomplete roster of only returning players
-shows **Awaiting roster entry**; naming a non-returning teammate (or a
+An entry whose roster is incomplete is never labeled guaranteed, and it does
+not count toward filling the desired league count for the superfluous pass.
+For a bring-your-own-team league, an incomplete roster of only returning
+players shows **Awaiting roster entry**; naming a non-returning teammate (or a
 free-text name) moves the entry to waitlisted. A play-in league with an
 incomplete declared team also shows **Awaiting roster entry**.
 
@@ -307,8 +308,10 @@ guaranteed.
 ## Leaving a league behind
 
 A league the registrant played last session that does not appear in the priority
-list is being given up. Before the entry leaves the list the flow asks what
-should happen to the return right:
+list is being given up. A league that remains on the list is being kept: a
+leftover drop or sabbatical answer for it is ignored and is not shown on review
+or confirmation. Before the entry leaves the list the flow asks what should
+happen to the return right:
 
 - **Sabbatical** — hold the return right, pay the sabbatical fee. Available only
   when the league permits sabbaticals. See `sabbaticals.md`.

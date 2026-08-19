@@ -97,6 +97,30 @@ export function priorityHasDeclaredRoster(priority: PriorityRosterShape): boolea
   return (priority.teamRosterPlacements?.length ?? 0) > 0 || pendingRosterNames(priority.byotTeammateText).length > 0;
 }
 
+/**
+ * Drop and sabbatical answers only apply to leagues left off the list. A league
+ * that is on the priority list is being kept, so a leftover leave-behind
+ * decision for it is stale — for example after last-session leagues are
+ * re-seeded onto an empty saved list.
+ */
+export function omitLeaveBehindDecisionsForListedLeagues<T extends { leagueId?: number | null }>(
+  decisions: T[],
+  priorities: Array<{ leagueId: number }>,
+): T[] {
+  const listed = new Set(priorities.map((priority) => priority.leagueId));
+  return decisions.filter((decision) => decision.leagueId == null || !listed.has(decision.leagueId));
+}
+
+export function omitLeaveBehindSelectionsForListedLeagues<
+  T extends { leagueId?: number | null; selectionType: string },
+>(selections: T[], priorities: Array<{ leagueId: number }>): T[] {
+  const listed = new Set(priorities.map((priority) => priority.leagueId));
+  return selections.filter((selection) => {
+    if (selection.selectionType !== 'drop' && selection.selectionType !== 'sabbatical') return true;
+    return selection.leagueId == null || !listed.has(selection.leagueId);
+  });
+}
+
 /** Whether a league needs a full declared team before it can be guaranteed. */
 export function priorityRosterIsComplete(
   league: PriorityLeagueShape,
@@ -305,17 +329,13 @@ export function guaranteeBudgetFor(desiredLeagueCount: number): number {
 
 /**
  * An entry that already counts toward the desired league count: a held
- * guarantee, a roster still being completed for a potential guarantee, or a
- * billed subject-to-availability league. Waitlists and play-in misses do not
- * secure a slot, so later entries can still be necessary.
+ * guarantee, an available or temporary fill, or a billed subject-to-availability
+ * league. Waitlists, incomplete rosters, and play-in misses do not secure a
+ * slot — we cannot guarantee return until a roster is complete — so later
+ * entries can still be necessary.
  */
 function entrySecuresDesiredSlot(entry: LabeledPriorityEntry): boolean {
-  if (
-    entry.guaranteed ||
-    entry.label === 'awaiting_roster_entry' ||
-    entry.label === 'available' ||
-    entry.label === 'temporary_spot_available'
-  ) {
+  if (entry.guaranteed || entry.label === 'available' || entry.label === 'temporary_spot_available') {
     return true;
   }
   return entry.label === 'subject_to_availability' && !entry.isPlayInBased && !entry.isInstructional;
@@ -349,7 +369,7 @@ function markSuperfluousEntries(entries: LabeledPriorityEntry[], desiredLeagueCo
  * waitlisted or subject to availability. Naming a non-returning BYOT teammate
  * (or a free-text pending name) ends that awaiting state and the entry goes on
  * the waitlist like any other non-guaranteed request. Awaiting labels do not
- * consume budget or bill.
+ * consume budget, bill, or fill a desired-count slot.
  *
  * A registrant who could not fill both of the top spots keeps the unused
  * guarantee and may spend it further down the list as a `guaranteed_fallback`

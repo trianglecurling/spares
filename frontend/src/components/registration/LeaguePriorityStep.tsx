@@ -33,6 +33,7 @@ import {
   seedableWaitlistLeagueIds,
   isFreeLeague,
   mergeNewlyJoinedWaitlistLeagues,
+  omitLeaveBehindDecisionsForListedLeagues,
   MAX_DESIRED_LEAGUE_COUNT,
   MIN_PLAY_IN_ROSTER_SIZE,
   canReorderPriorityDrop,
@@ -217,9 +218,12 @@ export default function LeaguePriorityStep({
           }),
         );
       } else {
-        setPriorities(hydratePriorityList(payload, { freeLeaguesOnly: restrictToFreeLeagues }));
+        const nextPriorities = hydratePriorityList(payload, { freeLeaguesOnly: restrictToFreeLeagues });
+        setPriorities(nextPriorities);
         setDesiredLeagueCount(defaultDesiredLeagueCount(payload, { freeLeaguesOnly: restrictToFreeLeagues }));
-        setPriorLeagueDecisions(payload.priorLeagueDecisions ?? []);
+        setPriorLeagueDecisions(
+          omitLeaveBehindDecisionsForListedLeagues(payload.priorLeagueDecisions ?? [], nextPriorities),
+        );
       }
       setBasicIceFallbackInterest(payload.basicIceFallbackInterest === true);
       setPlayInEntry(payload.playInEntry ?? {});
@@ -642,7 +646,10 @@ export default function LeaguePriorityStep({
             ? desiredLeagueCount
             : null,
         priorities: sabbaticalOnly ? [] : priorities,
-        priorLeagueDecisions,
+        priorLeagueDecisions: omitLeaveBehindDecisionsForListedLeagues(
+          priorLeagueDecisions,
+          sabbaticalOnly ? [] : priorities,
+        ),
         basicIceFallbackInterest:
           !allowsBasicIceFallback || evaluation.guaranteedCount > 0 ? null : basicIceFallbackInterest,
       });

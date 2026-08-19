@@ -26,6 +26,7 @@ import LeaguePriorityStep from '../components/registration/LeaguePriorityStep';
 import {
   evaluatePriorityList,
   guaranteeChipLabel,
+  omitLeaveBehindDecisionsForListedLeagues,
   pendingRosterNames,
   shouldShowGuaranteeChip,
   type LeaguePriorityInput,
@@ -367,10 +368,7 @@ const emptyDemographics: DemographicsForm = {
 };
 
 function errorMessage(error: unknown, fallback: string): string {
-  if (axios.isAxiosError(error)) {
-    return error.response?.data?.error || fallback;
-  }
-  return fallback;
+  return editValidationErrorMessage(error, fallback);
 }
 
 function formatRegistrationDiscountOffPhrase(slot: RegistrationDiscountSlot): string {
@@ -929,6 +927,8 @@ export default function RegistrationShellPage() {
     priorities: LeaguePriorityInput[];
   } | null>(null);
   const [membershipCommitteeComments, setMembershipCommitteeComments] = useState('');
+  /** Remounts identity fields after a fresh start so leftover parent details cannot stick. */
+  const [registrationFormEpoch, setRegistrationFormEpoch] = useState(0);
   const [error, setError] = useState('');
   const [checkoutConfirmation, setCheckoutConfirmation] = useState<SubmitRegistrationEditsResult | null>(null);
   const [checkoutConfirmationMode, setCheckoutConfirmationMode] = useState<'submit' | 'priority-edit'>('submit');
@@ -943,6 +943,46 @@ export default function RegistrationShellPage() {
   const discountsTouchedRef = useRef(false);
   /** Keeps the experience step reachable after Back until the user leaves the step. */
   const suppressExperienceAutoSkipRef = useRef(false);
+
+  const resetRegistrationFormState = useCallback(() => {
+    setRegistrationId(null);
+    setPayload(null);
+    setMembershipPayment(null);
+    setReviewPaymentReady(false);
+    setReviewCatalogReady(false);
+    setMembershipChoice(null);
+    setJuniorAssistancePercent('0');
+    setUsaCurlingMembershipOptIn(defaultUsaCurlingMembershipOptIn());
+    setUswcaMembershipOptIn(false);
+    setBasicIcePrivileges(false);
+    setIcePrivilegesChoice(null);
+    setNoIceConfirm(false);
+    setStudentDiscountClaimed(false);
+    setStudentInstitution('');
+    setReciprocalDiscountClaimed(false);
+    setReciprocalClubName('');
+    setExperienceChoice('none_or_minimal');
+    setExperienceYears('');
+    setLeaguePayload(null);
+    guestLeagueSelectionRef.current = null;
+    setMembershipCommitteeComments('');
+    setSameEmail('different');
+    setDemographics(emptyDemographics);
+    demographicsRef.current = emptyDemographics;
+    setGuardian({ firstName: '', lastName: '', email: '', phone: '' });
+    setNameTagName('');
+    nameTagNameRef.current = '';
+    setNameTagIncludePronouns(null);
+    nameTagIncludePronounsRef.current = null;
+    setNameTagReplacementQuantity(null);
+    noMembershipPathActiveRef.current = false;
+    discountsTouchedRef.current = false;
+    suppressExperienceAutoSkipRef.current = false;
+    setCheckoutConfirmation(null);
+    setPayLaterConfirmationOpen(false);
+    setError('');
+    setRegistrationFormEpoch((epoch) => epoch + 1);
+  }, []);
   const backToStartInFlightRef = useRef(false);
   const [resumeOffer, setResumeOffer] = useState<'none' | 'server' | 'local'>('none');
   const [resumeCheckComplete, setResumeCheckComplete] = useState(false);
@@ -1078,7 +1118,10 @@ export default function RegistrationShellPage() {
 
   const priorLeagueDecisionSummary = useMemo(
     () =>
-      (leaguePayload?.priorLeagueDecisions ?? [])
+      omitLeaveBehindDecisionsForListedLeagues(
+        leaguePayload?.priorLeagueDecisions ?? [],
+        leaguePayload?.priorities ?? [],
+      )
         .filter((decision) => !(hideDroppedPriorLeagueDecisions && decision.decision === 'drop'))
         .map((decision) => {
           const name = leaguePayload?.leagues.find((league) => league.id === decision.leagueId)?.name ?? 'League';
@@ -2411,16 +2454,13 @@ export default function RegistrationShellPage() {
         }
       }
       clearLocalDraft();
-      setRegistrationId(null);
-      setPayload(null);
-      setMembershipPayment(null);
+      resetRegistrationFormState();
       setResumeOffer('none');
       setServerResume(null);
       setReturningAnswer(null);
       resetReturningGuestLoginFlow();
       setReturningIdentityAuxMode(null);
       setReturningRegistrarProfileChoice(null);
-      noMembershipPathActiveRef.current = false;
       navigate('/registration/start', { replace: true });
     } catch (err) {
       setError(errorMessage(err, 'Unable to clear registration.'));
@@ -2459,9 +2499,7 @@ export default function RegistrationShellPage() {
       }
       clearLocalDraft();
       clearRegistrationResumePointer();
-      setRegistrationId(null);
-      setPayload(null);
-      setMembershipPayment(null);
+      resetRegistrationFormState();
       setServerResume(null);
       setResumeOffer('none');
       setReturningAnswer(null);
@@ -2469,7 +2507,6 @@ export default function RegistrationShellPage() {
       setReturningIdentityAuxMode(null);
       setReturningRegistrarProfileChoice(null);
       setReturningProfilesFetchStatus('idle');
-      noMembershipPathActiveRef.current = false;
       navigate('/registration/start', { replace: true });
     } catch (err) {
       setError(errorMessage(err, 'Unable to go back.'));
@@ -2477,7 +2514,7 @@ export default function RegistrationShellPage() {
       backToStartInFlightRef.current = false;
       setLoading(false);
     }
-  }, [member, navigate, registrationId]);
+  }, [member, navigate, registrationId, resetRegistrationFormState]);
 
   async function handleResumeLocalContinue() {
     const local = loadLocalDraft();
@@ -2505,9 +2542,10 @@ export default function RegistrationShellPage() {
   }
 
   function handleRegisterForSomeoneElse() {
+    clearLocalDraft();
+    resetRegistrationFormState();
     setReturningAnswer(null);
     resetReturningGuestLoginFlow();
-    setError('');
     navigate('/registration/start?for=other', { replace: true });
   }
 
@@ -2536,13 +2574,12 @@ export default function RegistrationShellPage() {
 
   async function startDraft(answer: 'yes' | 'no') {
     if (!windowState) return;
+    if (answer === 'yes' && !member) return;
     setLoading(true);
     setError('');
+    resetRegistrationFormState();
     try {
       if (answer === 'yes') {
-        if (!member) {
-          return;
-        }
         const response = await api.post('/registration/drafts', {
           seasonId: windowState.season.id,
           sessionId: windowState.session.id,
@@ -3469,7 +3506,7 @@ export default function RegistrationShellPage() {
     const lockCurlerEmailToSubmitter = sameEmail === 'same' && Boolean(submitterEmailForCurler);
     return (
       <RegistrationDemographicFields
-        key={`${registrationId ?? 'guest'}-identity-${identityKey}`}
+        key={`${registrationId ?? 'guest'}-identity-${identityKey}-${registrationFormEpoch}`}
         ref={identityDemographicFieldsRef}
         initialValue={demographics}
         curlerDateOfBirth={curlerStoredDateOfBirth}
@@ -3899,14 +3936,14 @@ export default function RegistrationShellPage() {
             description: profile.email?.trim() || undefined,
           })),
           {
-            value: RETURNING_IDENTITY_OTHER_NEW_VALUE,
-            label: 'Someone else who is joining as a new member',
-            description: 'The curler needs a new club member account.',
+            value: RETURNING_IDENTITY_OTHER_RETURNING_VALUE,
+            label: 'Someone else who is a returning member from Winter 2026',
+            description: 'They will need to give you permission to register on their behalf.',
           },
           {
-            value: RETURNING_IDENTITY_OTHER_RETURNING_VALUE,
-            label: 'Someone else who is a returning member',
-            description: 'They will need to give you permission to register on their behalf.',
+            value: RETURNING_IDENTITY_OTHER_NEW_VALUE,
+            label: 'Someone else who is joining as a new member or returning from a previous season',
+            description: 'The curler needs a new club member account.',
           },
         ];
 

@@ -21,6 +21,7 @@ import {
   pendingRosterNames,
   priorityRosterAllReturning,
   priorityRosterIsComplete,
+  omitLeaveBehindDecisionsForListedLeagues,
   type LabeledPriorityEntry,
   type LeaguePriorityGuaranteeLabel,
   type PriorityLabelCandidate,
@@ -51,6 +52,7 @@ export {
   pendingRosterNames,
   priorityRosterAllReturning,
   priorityRosterIsComplete,
+  omitLeaveBehindDecisionsForListedLeagues,
 };
 export type { LabeledPriorityEntry, LeaguePriorityGuaranteeLabel, PriorityLabelMode, PriorityLabelResult };
 

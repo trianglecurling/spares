@@ -1,11 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { useAuth } from '../contexts/AuthContext';
 import { get, post } from '../api/client';
 import Button from '../components/Button';
 import Footer from '../components/Footer';
+import { buildContactPageLink } from '../constants/contactRecipients';
 import type { AuthenticatedMember } from '../../../backend/src/types.ts';
+
+const MEMBERSHIP_CONTACT_HREF = buildContactPageLink('membership');
 
 type MemberOption = {
   id: number;
@@ -37,6 +40,26 @@ const isSelectionResponse = (
   value !== null &&
   (value as { requiresSelection?: boolean }).requiresSelection === true;
 
+function MembershipContactLink({ children }: { children: ReactNode }) {
+  return (
+    <Link to={MEMBERSHIP_CONTACT_HREF} className="font-medium text-primary-teal-link hover:underline">
+      {children}
+    </Link>
+  );
+}
+
+function LoginErrorMessage({ id, children }: { id?: string; children: ReactNode }) {
+  return (
+    <div
+      id={id}
+      className="text-red-600 dark:text-red-400 text-sm bg-red-50 dark:bg-red-900/20 p-3 rounded"
+      role="alert"
+    >
+      {children}
+    </div>
+  );
+}
+
 const isLoginSuccessResponse = (
   value: unknown
 ): value is { accessToken: string; refreshToken: string; member: AuthenticatedMember } =>
@@ -52,7 +75,7 @@ export default function Login() {
   const [contact, setContact] = useState('');
   const [code, setCode] = useState('');
   const [step, setStep] = useState<'contact' | 'code' | 'select'>('contact');
-  const [error, setError] = useState('');
+  const [error, setError] = useState<ReactNode>(null);
   const [loading, setLoading] = useState(false);
   const [multipleMembers, setMultipleMembers] = useState<MemberOption[]>([]);
   const [tempToken, setTempToken] = useState('');
@@ -60,6 +83,7 @@ export default function Login() {
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const contactErrorId = useId();
 
   // Get the intended destination from location state
   const rawRedirectParam = searchParams.get('redirect');
@@ -87,7 +111,7 @@ export default function Login() {
 
   const handleRequestCode = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setError(null);
     setLoading(true);
 
     try {
@@ -110,8 +134,17 @@ export default function Login() {
         setStep('code');
       }
     } catch (err: unknown) {
-      const message = axios.isAxiosError(err) ? err.response?.data?.error : undefined;
-      setError(message || 'Failed to send code');
+      if (axios.isAxiosError(err) && err.response?.status === 404) {
+        setError(
+          <>
+            That email address was not found. If you are a member, please{' '}
+            <MembershipContactLink>contact Membership</MembershipContactLink>.
+          </>
+        );
+      } else {
+        const message = axios.isAxiosError(err) ? err.response?.data?.error : undefined;
+        setError(typeof message === 'string' && message ? message : 'Failed to send code');
+      }
     } finally {
       setLoading(false);
     }
@@ -119,7 +152,7 @@ export default function Login() {
 
   const handleVerifyCode = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setError(null);
     setLoading(true);
 
     try {
@@ -145,7 +178,7 @@ export default function Login() {
   };
 
   const handleSelectMember = async (memberId: number) => {
-    setError('');
+    setError(null);
     setLoading(true);
 
     try {
@@ -202,14 +235,12 @@ export default function Login() {
                     placeholder="your.email@example.com"
                     autoComplete="email"
                     required
+                    aria-invalid={error ? true : undefined}
+                    aria-describedby={error ? contactErrorId : undefined}
                   />
                 </div>
 
-                {error && (
-                  <div className="text-red-600 dark:text-red-400 text-sm bg-red-50 dark:bg-red-900/20 p-3 rounded">
-                    {error}
-                  </div>
-                )}
+                {error ? <LoginErrorMessage id={contactErrorId}>{error}</LoginErrorMessage> : null}
 
                 <Button type="submit" disabled={loading} className="w-full">
                   {loading ? 'Sending...' : 'Send login code'}
@@ -242,11 +273,7 @@ export default function Login() {
                   </p>
                 </div>
 
-                {error && (
-                  <div className="text-red-600 dark:text-red-400 text-sm bg-red-50 dark:bg-red-900/20 p-3 rounded">
-                    {error}
-                  </div>
-                )}
+                {error ? <LoginErrorMessage>{error}</LoginErrorMessage> : null}
 
                 <div className="space-y-2">
                   <Button type="submit" disabled={loading} className="w-full">
@@ -258,7 +285,7 @@ export default function Login() {
                     onClick={() => {
                       setStep('contact');
                       setCode('');
-                      setError('');
+                      setError(null);
                     }}
                     className="w-full"
                   >
@@ -274,11 +301,7 @@ export default function Login() {
                   Multiple members share this contact. Select your name:
                 </p>
 
-                {error && (
-                  <div className="text-red-600 dark:text-red-400 text-sm bg-red-50 dark:bg-red-900/20 p-3 rounded mb-4">
-                    {error}
-                  </div>
-                )}
+                {error ? <div className="mb-4"><LoginErrorMessage>{error}</LoginErrorMessage></div> : null}
 
                 <div className="space-y-2">
                   {multipleMembers.map((member) => (
@@ -300,10 +323,7 @@ export default function Login() {
             <p className="text-sm leading-relaxed text-gray-600 dark:text-gray-400">
               User login is for Triangle Curling members. A login is not needed to register for public events. If you
               are a member and are having trouble logging in, please contact the{' '}
-              <Link
-                to="/contact?recipient=membership#send-message"
-                className="text-primary-teal-link hover:underline"
-              >
+              <Link to={MEMBERSHIP_CONTACT_HREF} className="text-primary-teal-link hover:underline">
                 Membership Committee
               </Link>
               .
