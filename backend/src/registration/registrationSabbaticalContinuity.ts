@@ -18,6 +18,18 @@ export function isActiveSabbaticalRecord(sabbatical: ExistingSabbatical): boolea
   return sabbatical.status === 'active' || sabbatical.status === 'staff_overridden' || sabbatical.status === 'returning';
 }
 
+/**
+ * Last-session leagues that belong on the priority list or need sabbatical/drop.
+ * Junior Recreational is a membership choice, not a priority-list league.
+ */
+export function isPriorityKeepOrLeaveLeague(
+  league: Pick<LeagueConfig, 'predecessorLeagueId' | 'isJuniorRecreational'>,
+  participatedLeagueIds: readonly number[],
+): boolean {
+  if (league.isJuniorRecreational === true) return false;
+  return league.predecessorLeagueId != null && participatedLeagueIds.includes(league.predecessorLeagueId);
+}
+
 export function leagueRequiresPriorSessionDecision(
   context: RegistrationContext,
   league: LeagueConfig,
@@ -90,6 +102,8 @@ export function canChooseNoMembership(context: RegistrationContext): boolean {
 }
 
 export function validateContinuingSabbaticalDecisions(context: RegistrationContext): DecisionMessage[] {
+  if (context.membershipOption === 'junior_recreational') return [];
+
   const blockingErrors: DecisionMessage[] = [];
   for (const summary of listContinuingSabbaticalSummaries(context)) {
     // Returning is expressed by putting the league on the priority list; stepping

@@ -42,7 +42,7 @@ import {
 import { experienceAllowsBasicIcePrivileges } from './registrationAgeExperience.js';
 import { validateLeagueEligibility, validateRegistrationIsOpen, validateSpareOnlyEligibility } from './registrationEligibility.js';
 import { evaluateSabbaticalEligibility, findRelevantSabbatical } from './registrationReturningRights.js';
-import { validateContinuingSabbaticalDecisions } from './registrationSabbaticalContinuity.js';
+import { isPriorityKeepOrLeaveLeague, validateContinuingSabbaticalDecisions } from './registrationSabbaticalContinuity.js';
 import {
   getLeague,
   orderedPriorities,
@@ -175,6 +175,7 @@ export type PriorityValidationResult = BusinessDecision<'valid' | 'invalid'> & {
 };
 
 function validateDesiredCount(context: RegistrationContext, blockingErrors: DecisionMessage[]): void {
+  if (context.membershipOption === 'junior_recreational') return;
   const raw = context.desiredLeagueCount;
   if (context.priorities.length === 0 && (raw == null || raw === 0)) return;
   if (raw == null) {
@@ -404,9 +405,13 @@ function validateSelection(
 /**
  * Every prior-session league must be accounted for: either it is on the priority
  * list, or the registrant chose sabbatical or drop for it.
+ *
+ * Junior Recreational skips this: it is a membership choice, not a priority-list
+ * league, and that path never asks keep-or-leave questions.
  */
 function validatePriorLeagueDecisions(context: RegistrationContext, blockingErrors: DecisionMessage[]): void {
   if (context.registrationState !== 'priority') return;
+  if (context.membershipOption === 'junior_recreational') return;
   const decided = new Set<number>();
   for (const priority of context.priorities) {
     const league = getLeague(context, priority.leagueId);
@@ -421,7 +426,7 @@ function validatePriorLeagueDecisions(context: RegistrationContext, blockingErro
 
   const returnableLeagueIds = new Set(
     Object.values(context.leagues)
-      .filter((league) => league.predecessorLeagueId != null && context.participatedLeagueIds.includes(league.predecessorLeagueId))
+      .filter((league) => isPriorityKeepOrLeaveLeague(league, context.participatedLeagueIds))
       .map((league) => league.predecessorLeagueId as number),
   );
 

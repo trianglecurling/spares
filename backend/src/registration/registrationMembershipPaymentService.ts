@@ -1273,7 +1273,11 @@ export async function updateMembership(registrationId: number, actor: Member, in
   }
 
   let contextForNonPlaying: RegistrationContext | undefined;
-  if (input.membershipOption === 'none' || input.membershipOption === 'social') {
+  if (
+    input.membershipOption === 'none' ||
+    input.membershipOption === 'social' ||
+    input.membershipOption === 'junior_recreational'
+  ) {
     contextForNonPlaying = await buildRegistrationContextForDraft(registrationId);
     if (input.membershipOption === 'none' && !canChooseNoMembership(contextForNonPlaying)) {
       throw new RegistrationMembershipPaymentValidationError({
@@ -1335,17 +1339,15 @@ export async function updateMembership(registrationId: number, actor: Member, in
         reciprocal_club_name: skipLeaguePlay ? null : registration.reciprocal_club_name,
         experience_type: skipLeaguePlay ? null : registration.experience_type,
         experience_self_reported_years: skipLeaguePlay ? null : registration.experience_self_reported_years,
-        desired_league_count:
-          membershipOption === 'social' || membershipOption === 'none' ? null : registration.desired_league_count,
-        basic_ice_fallback_interest:
-          membershipOption === 'social' || membershipOption === 'none' ? null : registration.basic_ice_fallback_interest,
+        desired_league_count: skipLeaguePlay ? null : registration.desired_league_count,
+        basic_ice_fallback_interest: skipLeaguePlay ? null : registration.basic_ice_fallback_interest,
         usa_curling_membership_opt_in: usaCurlingMembershipOptIn,
         uswca_membership_opt_in: uswcaMembershipOptIn,
         updated_at: sql`CURRENT_TIMESTAMP`,
       })
       .where(eq(schema.curlingRegistrations.id, registrationId));
 
-    if (membershipOption === 'social' || membershipOption === 'none') {
+    if (skipLeaguePlay) {
       await tx
         .delete(schema.registrationLeaguePriorities)
         .where(eq(schema.registrationLeaguePriorities.registration_id, registrationId));
@@ -1360,6 +1362,29 @@ export async function updateMembership(registrationId: number, actor: Member, in
         .delete(schema.registrationSelections)
         .where(eq(schema.registrationSelections.registration_id, registrationId));
       const dropLeagues = listLeaguesRequiringPriorSessionDecision(contextForNonPlaying);
+      if (dropLeagues.length > 0) {
+        await tx.insert(schema.registrationSelections).values(
+          dropLeagues.map((league) => ({
+            registration_id: registrationId,
+            league_id: league.id,
+            selection_type: 'drop' as const,
+            is_temporary_sabbatical_fill: 0,
+            status: 'dropped' as const,
+            fee_amount_minor_snapshot: 0,
+            discount_amount_minor_snapshot: 0,
+            updated_at: sql`CURRENT_TIMESTAMP`,
+          })),
+        );
+      }
+    }
+
+    if (membershipOption === 'junior_recreational' && contextForNonPlaying) {
+      await tx
+        .delete(schema.registrationSelections)
+        .where(eq(schema.registrationSelections.registration_id, registrationId));
+      const dropLeagues = listLeaguesRequiringPriorSessionDecision(contextForNonPlaying).filter(
+        (league) => league.isJuniorRecreational !== true,
+      );
       if (dropLeagues.length > 0) {
         await tx.insert(schema.registrationSelections).values(
           dropLeagues.map((league) => ({

@@ -756,6 +756,41 @@ describe('validation', () => {
     expect(validateLeaguePriorities(context).allowed).toBe(true);
   });
 
+  test('Junior Recreational membership does not require a keep-or-leave for last session', () => {
+    const context = contextWithLeagues(
+      [standard(1, { name: 'Junior Recreational', isJuniorRecreational: true })],
+      {
+        membershipOption: 'junior_recreational',
+        priorities: [],
+        desiredLeagueCount: null,
+        selections: [],
+      },
+    );
+    expect(validateLeaguePriorities(context).allowed).toBe(true);
+  });
+
+  test('regular membership does not require a keep-or-leave for Junior Recreational', () => {
+    const context = contextWithLeagues(
+      [standard(1, { name: 'Junior Recreational', isJuniorRecreational: true })],
+      {
+        priorities: [],
+        desiredLeagueCount: null,
+        selections: [],
+      },
+    );
+    expect(validateLeaguePriorities(context).allowed).toBe(true);
+  });
+
+  test('Junior Recreational membership skips keep-or-leave for other last-session leagues', () => {
+    const context = contextWithLeagues([standard(1), standard(2)], {
+      membershipOption: 'junior_recreational',
+      priorities: [],
+      desiredLeagueCount: null,
+      selections: [],
+    });
+    expect(validateLeaguePriorities(context).allowed).toBe(true);
+  });
+
   test('a league on sabbatical cannot also be on the priority list', () => {
     expectBlocked(
       contextWithLeagues([standard(1)], {

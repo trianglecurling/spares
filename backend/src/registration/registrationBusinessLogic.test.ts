@@ -564,6 +564,7 @@ describe('registration business logic', () => {
 
   test('Junior Recreational payment timing supports financial assistance review', () => {
     const junior = evaluateRegistrationDraft(membershipOnly({ membershipOption: 'junior_recreational' }));
+    expect(junior.priorityValidation.allowed).toBe(true);
     expect(junior.paymentDecision.outcome).toBe('immediate_payment');
 
     const assisted = evaluateRegistrationDraft(

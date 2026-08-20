@@ -29,7 +29,7 @@ import type {
   RegistrationContext,
   RegistrationSelectionInput,
 } from './registrationContext.js';
-import { listContinuingSabbaticalSummaries } from './registrationSabbaticalContinuity.js';
+import { isPriorityKeepOrLeaveLeague, listContinuingSabbaticalSummaries } from './registrationSabbaticalContinuity.js';
 import { omitLeaveBehindSelectionsForListedLeagues } from './leaguePriorityRules.js';
 import { evaluateRegistrantPlayInEntry, type RegistrantPlayInEntrySummary } from './leagueEntryService.js';
 
@@ -244,12 +244,7 @@ async function buildPlayInEntrySummaries(context: RegistrationContext): Promise<
  */
 function priorSeasonLeagueIds(context: RegistrationContext): number[] {
   return Object.values(context.leagues)
-    .filter(
-      (league) =>
-        league.predecessorLeagueId != null &&
-        league.isJuniorRecreational !== true &&
-        context.participatedLeagueIds.includes(league.predecessorLeagueId),
-    )
+    .filter((league) => isPriorityKeepOrLeaveLeague(league, context.participatedLeagueIds))
     .map((league) => league.id);
 }
 

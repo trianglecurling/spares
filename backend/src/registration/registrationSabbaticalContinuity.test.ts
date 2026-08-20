@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   canChooseNoMembership,
+  isPriorityKeepOrLeaveLeague,
   listContinuingSabbaticalSummaries,
   listLeaguesRequiringPriorSessionDecision,
   validateContinuingSabbaticalDecisions,
@@ -95,6 +96,39 @@ describe('registrationSabbaticalContinuity', () => {
 
     expect(listContinuingSabbaticalSummaries(context)).toEqual([]);
     expect(listLeaguesRequiringPriorSessionDecision(context).map((item) => item.id)).toEqual([100]);
+  });
+
+  test('Junior Recreational is not a priority-list keep-or-leave league', () => {
+    const junior = league({ id: 100, isJuniorRecreational: true, predecessorLeagueId: 90 });
+    const tuesday = league({ id: 101, predecessorLeagueId: 91 });
+    expect(isPriorityKeepOrLeaveLeague(junior, [90, 91])).toBe(false);
+    expect(isPriorityKeepOrLeaveLeague(tuesday, [90, 91])).toBe(true);
+  });
+
+  test('Junior Recreational membership does not require continuing sabbatical answers', () => {
+    const context = registrationContext({
+      registrationState: 'priority',
+      membershipOption: 'junior_recreational',
+      participatedLeagueIds: [],
+      existingSabbaticals: [
+        {
+          id: 7,
+          originalLeagueId: 90,
+          currentLeagueId: 90,
+          firstSabbaticalLeagueId: 90,
+          firstSabbaticalStartDate: '2026-10-01',
+          status: 'active',
+        },
+      ],
+      leagues: {
+        100: league({ id: 100, predecessorLeagueId: 90, lastDayOfPlay: '2029-10-01' }),
+      },
+      selections: [],
+      priorities: [],
+      desiredLeagueCount: null,
+    });
+
+    expect(validateContinuingSabbaticalDecisions(context)).toEqual([]);
   });
 
   test('requires a prior-session decision for continuing sabbaticals', () => {
