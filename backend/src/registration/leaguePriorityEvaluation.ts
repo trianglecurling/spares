@@ -219,8 +219,8 @@ function validateRanks(context: RegistrationContext, blockingErrors: DecisionMes
   if (!isPriorityOrderClamped(context.priorities, context.leagues)) {
     blockingErrors.push(
       blockingError(
-        'byot_must_outrank_standard_leagues',
-        'Bring-your-own-team leagues must be ranked above your other leagues.',
+        'play_in_must_outrank_other_leagues',
+        'Play-in leagues must be ranked above your other leagues.',
       ),
     );
   }

@@ -82,7 +82,7 @@ On first load the flow seeds:
   or 1 if they did not play any.
 - **List** = those same leagues, plus any league the registrant currently has an
   active waitlist entry for. Waitlisted leagues are placed at the highest ranks
-  the bring-your-own-team ordering rule allows.
+  the play-in ordering rule allows.
 
 The registrant may change all of it.
 
@@ -269,16 +269,18 @@ as subject to availability, and Wednesday is superfluous. Monday and Wednesday
 in the Tuesday-first count-2 row stay waitlisted because only one guarantee
 sits above them; Thursday remains the fallback.
 
-## Bring-your-own-team ordering
+## Play-in ordering
 
-Bring-your-own-team leagues must be ranked above every standard league. Team
-rosters are committed as a unit, so a BYOT entry cannot sit behind a league that
-might displace it.
+Play-in leagues must be ranked above every other league. Play-in teams are
+committed as a unit, so a play-in entry cannot sit behind a league that might
+displace it. Bring-your-own-team leagues that are not play-in based may sit
+anywhere on the list.
 
-The registration flow enforces this by construction: adding a BYOT league places
-it at the end of the BYOT block rather than the end of the list, and reordering
-cannot move a BYOT entry below a standard entry or a standard entry above a BYOT
-entry. The API re-checks the ordering and rejects a payload that violates it.
+The registration flow enforces this by construction: adding a play-in league
+places it at the end of the play-in block rather than the end of the list, and
+reordering cannot move a play-in entry below another league or another league
+above a play-in entry. The API re-checks the ordering and rejects a payload that
+violates it.
 
 ## Team rosters
 

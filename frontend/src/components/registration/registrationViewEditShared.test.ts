@@ -130,12 +130,16 @@ describe('priority list ordering', () => {
     expect(reorderPriorities(dragged, allLeagues)).toEqual(ranked(3, 1, 2));
   });
 
-  test('a team league is lifted above every standard league', () => {
-    expect(normalizePriorityOrder(ranked(1, 2, 4), allLeagues)).toEqual(ranked(4, 1, 2));
+  test('a play-in league is lifted above every other league', () => {
+    expect(normalizePriorityOrder(ranked(1, 2, 5), allLeagues)).toEqual(ranked(5, 1, 2));
   });
 
-  test('lifting team leagues preserves the order within each block', () => {
-    expect(normalizePriorityOrder(ranked(1, 5, 2, 4), allLeagues)).toEqual(ranked(5, 4, 1, 2));
+  test('a bring-your-own-team league that is not play-in based stays in place', () => {
+    expect(normalizePriorityOrder(ranked(1, 2, 4), allLeagues)).toEqual(ranked(1, 2, 4));
+  });
+
+  test('lifting play-in leagues preserves the order within each block', () => {
+    expect(normalizePriorityOrder(ranked(1, 5, 2, 4), allLeagues)).toEqual(ranked(5, 1, 2, 4));
   });
 
   test('roster edits are attached to the right league only', () => {
@@ -193,8 +197,12 @@ describe('seeding the priority list', () => {
     ).toEqual(ranked(1, 2));
   });
 
-  test('seeding still respects the team-league clamp', () => {
-    expect(seedPriorityList({ ...basePayload, priorSeasonLeagueIds: [1, 4] })).toEqual(ranked(4, 1));
+  test('seeding still respects the play-in clamp', () => {
+    expect(seedPriorityList({ ...basePayload, priorSeasonLeagueIds: [1, 5] })).toEqual(ranked(5, 1));
+  });
+
+  test('seeding does not lift a bring-your-own-team league that is not play-in based', () => {
+    expect(seedPriorityList({ ...basePayload, priorSeasonLeagueIds: [1, 4] })).toEqual(ranked(1, 4));
   });
 
   test('desired league count defaults to prior-session play only', () => {
@@ -316,42 +324,50 @@ describe('seeding the priority list', () => {
     expect(isFreeLeague(standardA)).toBe(false);
   });
 
-  test('drag drop targets stay within the BYOT or standard block', () => {
-    expect(canReorderPriorityDrop({ leagueId: 4, priorityRank: 1 }, { leagueId: 5, priorityRank: 2 }, allLeagues)).toBe(
-      true,
-    );
+  test('drag drop targets stay within the play-in or other block', () => {
     expect(canReorderPriorityDrop({ leagueId: 1, priorityRank: 1 }, { leagueId: 2, priorityRank: 2 }, allLeagues)).toBe(
       true,
     );
     expect(canReorderPriorityDrop({ leagueId: 4, priorityRank: 1 }, { leagueId: 1, priorityRank: 2 }, allLeagues)).toBe(
-      false,
+      true,
     );
     expect(canReorderPriorityDrop({ leagueId: 1, priorityRank: 2 }, { leagueId: 4, priorityRank: 1 }, allLeagues)).toBe(
+      true,
+    );
+    expect(canReorderPriorityDrop({ leagueId: 5, priorityRank: 1 }, { leagueId: 1, priorityRank: 2 }, allLeagues)).toBe(
+      false,
+    );
+    expect(canReorderPriorityDrop({ leagueId: 1, priorityRank: 2 }, { leagueId: 5, priorityRank: 1 }, allLeagues)).toBe(
+      false,
+    );
+    expect(canReorderPriorityDrop({ leagueId: 5, priorityRank: 1 }, { leagueId: 4, priorityRank: 2 }, allLeagues)).toBe(
       false,
     );
   });
 
   test('move up and down buttons stay inside each block', () => {
-    const list = ranked(4, 5, 1, 2);
-    expect(canMovePriority(list, 5, 'up', allLeagues)).toBe(true);
+    const list = ranked(5, 4, 1, 2);
     expect(canMovePriority(list, 5, 'down', allLeagues)).toBe(false);
-    expect(canMovePriority(list, 1, 'up', allLeagues)).toBe(false);
+    expect(canMovePriority(list, 4, 'up', allLeagues)).toBe(false);
+    expect(canMovePriority(list, 4, 'down', allLeagues)).toBe(true);
+    expect(canMovePriority(list, 1, 'up', allLeagues)).toBe(true);
     expect(canMovePriority(list, 1, 'down', allLeagues)).toBe(true);
-    expect(movePriorityInList(list, 5, 'up', allLeagues).map((priority) => priority.leagueId)).toEqual([5, 4, 1, 2]);
-    expect(movePriorityInList(list, 1, 'down', allLeagues).map((priority) => priority.leagueId)).toEqual([4, 5, 2, 1]);
+    expect(movePriorityInList(list, 4, 'down', allLeagues).map((priority) => priority.leagueId)).toEqual([5, 1, 4, 2]);
+    expect(movePriorityInList(list, 1, 'up', allLeagues).map((priority) => priority.leagueId)).toEqual([5, 1, 4, 2]);
     expect(movePriorityInList(list, 5, 'down', allLeagues)).toBe(list);
   });
 
-  test('disabled move tooltips explain the BYOT boundary only', () => {
-    const list = ranked(4, 5, 1, 2);
+  test('disabled move tooltips explain the play-in boundary only', () => {
+    const list = ranked(5, 4, 1, 2);
     expect(priorityMoveButtonTitle(list, 5, 'down', allLeagues, 'Competitive')).toBe(
-      'Cannot move down. Bring-your-own-team leagues must be prioritized higher than standard leagues.',
+      'Cannot move down. Play-in leagues must be prioritized higher than other leagues.',
     );
-    expect(priorityMoveButtonTitle(list, 1, 'up', allLeagues, 'Monday')).toBe(
-      'Cannot move up. Bring-your-own-team leagues must be prioritized higher than standard leagues.',
+    expect(priorityMoveButtonTitle(list, 4, 'up', allLeagues, 'Sunday Doubles')).toBe(
+      'Cannot move up. Play-in leagues must be prioritized higher than other leagues.',
     );
-    expect(priorityMoveButtonTitle(list, 4, 'up', allLeagues, 'Sunday Doubles')).toBeUndefined();
-    expect(priorityMoveButtonTitle(list, 5, 'up', allLeagues, 'Competitive')).toBe('Move Competitive up');
+    expect(priorityMoveButtonTitle(list, 5, 'up', allLeagues, 'Competitive')).toBeUndefined();
+    expect(priorityMoveButtonTitle(list, 4, 'down', allLeagues, 'Sunday Doubles')).toBe('Move Sunday Doubles down');
+    expect(priorityMoveButtonTitle(list, 1, 'up', allLeagues, 'Monday')).toBe('Move Monday up');
   });
 });
 

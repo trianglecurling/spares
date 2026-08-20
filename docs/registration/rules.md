@@ -410,8 +410,6 @@ BYOT rules:
   returning. That entry is allowed on the priority list, but it is only labeled
   **guaranteed return** when every declared teammate also holds a return right
   for the league. Mixed or new teams are waitlisted (or subject to availability).
-- BYOT entries must be ranked above every standard league on the priority list.
-  See `league-priority.md`.
 - A BYOT entry requires a full roster: exactly 4 players for team leagues, 2 for
   doubles.
 - BYOT leagues do not use the sabbatical system.
@@ -436,8 +434,9 @@ Play-in rules:
   and deletes the declaration when no other teammate has registered onto it.
 - The top teams by combined TLINE points are granted automatic entry. The
   remaining `playInSpotCount` spots (default 2) are decided by playdowns.
-- A play-in league sits on the priority list like any other league. A complete
-  roster that clears the TLINE bar earns a Guaranteed return label and is billed
+- A play-in league sits on the priority list like any other league, except it
+  must be ranked above every other league on that list. A complete roster that
+  clears the TLINE bar earns a Guaranteed return label and is billed
   immediately; anything else is Subject to availability and defers payment.
 - A play-in entry never receives a Guaranteed fallback label, because a team
   that misses the bar goes to playdowns rather than into a held spot.

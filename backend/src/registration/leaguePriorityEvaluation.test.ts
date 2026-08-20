@@ -513,14 +513,28 @@ describe('fee range', () => {
   });
 });
 
-describe('bring-your-own-team ordering', () => {
+describe('play-in ordering', () => {
   const leagues = {
     1: standard(1),
     2: standard(2, { leagueType: 'bring_your_own_team', format: 'doubles' }),
     3: standard(3),
+    4: standard(4, { isPlayInBased: true, leagueType: 'bring_your_own_team', format: 'teams' }),
   };
 
-  test('clamping lifts every team league above the standard ones', () => {
+  test('clamping lifts every play-in league above the others', () => {
+    const clamped = clampPriorityOrder(
+      [
+        priority({ leagueId: 1, priorityRank: 1 }),
+        priority({ leagueId: 4, priorityRank: 2 }),
+        priority({ leagueId: 3, priorityRank: 3 }),
+      ],
+      leagues,
+    );
+    expect(clamped.map((entry) => entry.leagueId)).toEqual([4, 1, 3]);
+    expect(clamped.map((entry) => entry.priorityRank)).toEqual([1, 2, 3]);
+  });
+
+  test('clamping does not lift a bring-your-own-team league that is not play-in based', () => {
     const clamped = clampPriorityOrder(
       [
         priority({ leagueId: 1, priorityRank: 1 }),
@@ -529,8 +543,7 @@ describe('bring-your-own-team ordering', () => {
       ],
       leagues,
     );
-    expect(clamped.map((entry) => entry.leagueId)).toEqual([2, 1, 3]);
-    expect(clamped.map((entry) => entry.priorityRank)).toEqual([1, 2, 3]);
+    expect(clamped.map((entry) => entry.leagueId)).toEqual([1, 2, 3]);
   });
 
   test('clamping preserves relative order within each block', () => {
@@ -538,26 +551,33 @@ describe('bring-your-own-team ordering', () => {
       [
         priority({ leagueId: 3, priorityRank: 1 }),
         priority({ leagueId: 1, priorityRank: 2 }),
-        priority({ leagueId: 2, priorityRank: 3 }),
+        priority({ leagueId: 4, priorityRank: 3 }),
+        priority({ leagueId: 2, priorityRank: 4 }),
       ],
       leagues,
     );
-    expect(clamped.map((entry) => entry.leagueId)).toEqual([2, 3, 1]);
+    expect(clamped.map((entry) => entry.leagueId)).toEqual([4, 3, 1, 2]);
   });
 
   test('an order that already satisfies the clamp is reported as clamped', () => {
     expect(
       isPriorityOrderClamped(
-        [priority({ leagueId: 2, priorityRank: 1 }), priority({ leagueId: 1, priorityRank: 2 })],
+        [priority({ leagueId: 4, priorityRank: 1 }), priority({ leagueId: 1, priorityRank: 2 })],
         leagues,
       ),
     ).toBe(true);
     expect(
       isPriorityOrderClamped(
-        [priority({ leagueId: 1, priorityRank: 1 }), priority({ leagueId: 2, priorityRank: 2 })],
+        [priority({ leagueId: 1, priorityRank: 1 }), priority({ leagueId: 4, priorityRank: 2 })],
         leagues,
       ),
     ).toBe(false);
+    expect(
+      isPriorityOrderClamped(
+        [priority({ leagueId: 1, priorityRank: 1 }), priority({ leagueId: 2, priorityRank: 2 })],
+        leagues,
+      ),
+    ).toBe(true);
   });
 });
 
@@ -600,19 +620,47 @@ describe('validation', () => {
     );
   });
 
-  test('a team league ranked below a standard league is rejected', () => {
+  test('a play-in league ranked below another league is rejected', () => {
     expectBlocked(
-      contextWithLeagues([standard(1), standard(2, { leagueType: 'bring_your_own_team', format: 'doubles' })], {
-        priorities: [
-          priority({ leagueId: 1, priorityRank: 1 }),
-          priority({
-            leagueId: 2,
-            priorityRank: 2,
-            teamRosterPlacements: [{ memberId: 20 }, { memberId: 21 }],
-          }),
+      contextWithLeagues(
+        [
+          standard(1),
+          standard(2, { isPlayInBased: true, leagueType: 'bring_your_own_team', format: 'teams' }),
         ],
-      }),
-      'byot_must_outrank_standard_leagues',
+        {
+          priorities: [
+            priority({ leagueId: 1, priorityRank: 1 }),
+            priority({
+              leagueId: 2,
+              priorityRank: 2,
+              teamRosterPlacements: [{ memberId: 20 }, { memberId: 21 }, { memberId: 22 }],
+            }),
+          ],
+          playInEntry: { 2: playInEntryContext(false) },
+        },
+      ),
+      'play_in_must_outrank_other_leagues',
+    );
+  });
+
+  test('a bring-your-own-team league ranked below a standard league is allowed', () => {
+    const result = validateLeaguePriorities(
+      contextWithLeagues(
+        [standard(1), standard(2, { leagueType: 'bring_your_own_team', format: 'doubles' })],
+        {
+          priorities: [
+            priority({ leagueId: 1, priorityRank: 1 }),
+            priority({
+              leagueId: 2,
+              priorityRank: 2,
+              teamRosterPlacements: [{ memberId: 20 }, { memberId: 21 }],
+            }),
+          ],
+        },
+      ),
+    );
+    expect(result.blockingErrors.map((error) => String(error.code))).not.toContain(
+      'play_in_must_outrank_other_leagues',
     );
   });
 

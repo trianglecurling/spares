@@ -90,8 +90,6 @@ payment timing, so it contributes to the confirmed total.
 
 If the coordinator later determines the registrant is not placed, staff handles refund/correction manually.
 
-BYOT entries must be ranked above every standard league on the priority list.
-
 ## Entries below the desired count
 
 Entries ranked below a registrant's desired league count never affect the floor

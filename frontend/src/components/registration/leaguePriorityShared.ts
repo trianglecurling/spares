@@ -1,8 +1,8 @@
 /**
  * Client half of the league priority model. The guarantee-label algorithm and
- * the bring-your-own-team ordering clamp are imported from the same module the
- * server uses, so the chips the registrant sees while reordering cannot drift
- * from the labels the server assigns on save.
+ * the play-in ordering clamp are imported from the same module the server uses,
+ * so the chips the registrant sees while reordering cannot drift from the
+ * labels the server assigns on save.
  */
 import {
   clampPriorityOrder,
@@ -224,7 +224,7 @@ export function evaluatePriorityList(input: {
   });
 }
 
-/** Renumbers ranks from 1 and re-applies the bring-your-own-team clamp. */
+/** Renumbers ranks from 1 and re-applies the play-in clamp. */
 export function normalizePriorityOrder(
   priorities: LeaguePriorityInput[],
   leagues: LeagueCatalogItem[],
@@ -299,7 +299,7 @@ export function seedableWaitlistLeagueIds(payload: RegistrationLeagueCatalogPayl
 
 /**
  * Inserts any active/offered waitlist leagues that are missing from the list,
- * ahead of existing entries (then re-applies the bring-your-own-team clamp).
+ * ahead of existing entries (then re-applies the play-in clamp).
  * Returns the same array reference when nothing needs to be added.
  */
 export function mergeActiveWaitlistLeagues(
@@ -413,7 +413,7 @@ export function addPriority(
   return normalizePriorityOrder([...priorities, { leagueId, priorityRank: priorities.length + 1 }], leagues);
 }
 
-/** Puts a league at the top of the priority list (BYOT clamp may still lift team leagues). */
+/** Puts a league at the top of the priority list (play-in clamp may still lift play-in leagues). */
 export function addPriorityAtTop(
   priorities: LeaguePriorityInput[],
   leagueId: number,
@@ -675,8 +675,9 @@ export function incompletePlayInLeagueNames(
 }
 
 /**
- * Bring-your-own-team (and play-in) leagues must stay above standard leagues.
- * Used by drag-and-drop so the live preview cannot cross that boundary.
+ * Play-in leagues must stay above every other league. Used by drag-and-drop so
+ * the live preview cannot cross that boundary. Bring-your-own-team leagues that
+ * are not play-in based may mix with standard leagues.
  */
 export function canReorderPriorityDrop(
   active: LeaguePriorityInput,
@@ -684,12 +685,12 @@ export function canReorderPriorityDrop(
   leagues: LeagueCatalogItem[],
 ): boolean {
   const byId = leagueById(leagues);
-  const activeIsByot = byId[active.leagueId]?.leagueType === 'bring_your_own_team';
-  const overIsByot = byId[over.leagueId]?.leagueType === 'bring_your_own_team';
-  return activeIsByot === overIsByot;
+  const activeIsPlayIn = byId[active.leagueId]?.isPlayInBased === true;
+  const overIsPlayIn = byId[over.leagueId]?.isPlayInBased === true;
+  return activeIsPlayIn === overIsPlayIn;
 }
 
-/** Whether a priority entry can move one step in the given direction without crossing the BYOT boundary. */
+/** Whether a priority entry can move one step in the given direction without crossing the play-in boundary. */
 export function canMovePriority(
   priorities: LeaguePriorityInput[],
   leagueId: number,
@@ -703,12 +704,11 @@ export function canMovePriority(
   return canReorderPriorityDrop(priorities[index]!, priorities[swapIndex]!, leagues);
 }
 
-const BYOT_ORDER_TOOLTIP =
-  'Bring-your-own-team leagues must be prioritized higher than standard leagues.';
+const PLAY_IN_ORDER_TOOLTIP = 'Play-in leagues must be prioritized higher than other leagues.';
 
 /**
- * Hover text for the move up/down control. Explains the BYOT boundary when that
- * is what blocks the move; otherwise omit a tooltip on disabled buttons.
+ * Hover text for the move up/down control. Explains the play-in boundary when
+ * that is what blocks the move; otherwise omit a tooltip on disabled buttons.
  */
 export function priorityMoveButtonTitle(
   priorities: LeaguePriorityInput[],
@@ -728,8 +728,8 @@ export function priorityMoveButtonTitle(
     return direction === 'up' ? `Move ${leagueName} up` : `Move ${leagueName} down`;
   }
   return direction === 'up'
-    ? `Cannot move up. ${BYOT_ORDER_TOOLTIP}`
-    : `Cannot move down. ${BYOT_ORDER_TOOLTIP}`;
+    ? `Cannot move up. ${PLAY_IN_ORDER_TOOLTIP}`
+    : `Cannot move down. ${PLAY_IN_ORDER_TOOLTIP}`;
 }
 
 /** Swaps a priority entry one step up or down when the move stays inside its block. */

@@ -1,7 +1,7 @@
 /**
  * The parts of league priority evaluation that the registration page and the
- * server must agree on exactly: the bring-your-own-team ordering clamp, the
- * roster arithmetic, and the guarantee-label algorithm.
+ * server must agree on exactly: the play-in ordering clamp, the roster
+ * arithmetic, and the guarantee-label algorithm.
  *
  * This module is imported by the browser, so it must stay free of database,
  * config, and other Node-only dependencies. Anything that needs to look up
@@ -162,27 +162,27 @@ export function priorityRosterAllReturning(
 }
 
 // ---------------------------------------------------------------------------
-// Bring-your-own-team ordering
+// Play-in ordering
 // ---------------------------------------------------------------------------
 
-function isByotLeague(league: PriorityLeagueShape | undefined): boolean {
-  return league?.leagueType === 'bring_your_own_team';
+function isPlayInBasedLeague(league: PriorityLeagueShape | undefined): boolean {
+  return league?.isPlayInBased === true;
 }
 
 /**
- * Bring-your-own-team leagues must outrank every standard league, because a team
- * roster is committed as a unit and cannot sit behind a league that might
- * displace it. Stable within each block so the registrant's relative ordering
- * survives.
+ * Play-in leagues must outrank every other league, because a play-in team is
+ * committed as a unit and cannot sit behind a league that might displace it.
+ * Bring-your-own-team leagues that are not play-in based may sit anywhere.
+ * Stable within each block so the registrant's relative ordering survives.
  */
 export function clampPriorityOrder<T extends RankedPriority>(
   priorities: T[],
   leagues: Record<number, PriorityLeagueShape | undefined>,
 ): T[] {
   const sorted = [...priorities].sort((a, b) => a.priorityRank - b.priorityRank);
-  const byot = sorted.filter((priority) => isByotLeague(leagues[priority.leagueId]));
-  const standard = sorted.filter((priority) => !isByotLeague(leagues[priority.leagueId]));
-  return [...byot, ...standard].map((priority, index) => ({ ...priority, priorityRank: index + 1 }));
+  const playIn = sorted.filter((priority) => isPlayInBasedLeague(leagues[priority.leagueId]));
+  const other = sorted.filter((priority) => !isPlayInBasedLeague(leagues[priority.leagueId]));
+  return [...playIn, ...other].map((priority, index) => ({ ...priority, priorityRank: index + 1 }));
 }
 
 export function isPriorityOrderClamped(
@@ -190,12 +190,12 @@ export function isPriorityOrderClamped(
   leagues: Record<number, PriorityLeagueShape | undefined>,
 ): boolean {
   const sorted = [...priorities].sort((a, b) => a.priorityRank - b.priorityRank);
-  let seenStandard = false;
+  let seenOther = false;
   for (const priority of sorted) {
-    if (isByotLeague(leagues[priority.leagueId])) {
-      if (seenStandard) return false;
+    if (isPlayInBasedLeague(leagues[priority.leagueId])) {
+      if (seenOther) return false;
     } else {
-      seenStandard = true;
+      seenOther = true;
     }
   }
   return true;

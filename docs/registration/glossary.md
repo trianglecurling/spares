@@ -26,7 +26,6 @@ BYOT leagues:
 
 - Have team-based capacity.
 - Do not use the sabbatical system.
-- Must be ranked above every standard league on the priority list.
 - Require a full team roster on the priority entry.
 - Are treated as guaranteed for payment purposes, although staff may later manually refund or adjust if a curler is not placed.
 
@@ -300,6 +299,8 @@ Pending names contribute zero TLINE points until staff link them to a member acc
 A league whose roster is decided by TLINE points and playdowns instead of guaranteed returns and waitlists.
 
 The top teams by combined TLINE points receive automatic entry. The remaining spots are decided by playdowns.
+
+Play-in leagues must be ranked above every other league on the priority list.
 
 ## Play-in entry
 

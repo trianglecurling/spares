@@ -152,7 +152,8 @@ leave the uncommitted points pool used to stack hypothetical opposing teams.
 
 1. A play-in league is added to the priority list from the league picker, and is
    seeded there when the registrant played its predecessor or is already on a
-   declared entry team.
+   declared entry team. Play-in leagues are always ranked above every other
+   league on the list.
 2. The entry expands to collect the team: at least two players (member
    autocomplete plus "Manually add by name" for future members), or attaching to
    and extending an existing incomplete declared team. Continuing with an

@@ -13,7 +13,7 @@ export type RegistrationReasonCode =
   | 'regular_membership_required'
   | 'spare_only_requires_regular_membership'
   | 'byot_requires_full_roster'
-  | 'byot_must_outrank_standard_leagues'
+  | 'play_in_must_outrank_other_leagues'
   | 'byot_play_in_requires_full_roster'
   | 'byot_play_in_requires_minimum_roster'
   | 'play_in_not_enabled'

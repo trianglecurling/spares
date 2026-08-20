@@ -230,7 +230,7 @@ desired league count. Displacement is decided at placement time. See
 - The list must be at least as long as the desired league count.
 - The desired league count is between 1 and 5.
 - Every league on the list must pass the general league eligibility rules above.
-- Bring-your-own-team leagues must be ranked above every standard league.
+- Play-in leagues must be ranked above every other league.
 - A league may appear on the list at most once.
 
 ## BYOT eligibility
@@ -242,6 +242,5 @@ BYOT leagues:
 - Require each curler to register individually.
 - Require a full team roster on the priority entry: exactly 4 for team leagues,
   2 for doubles.
-- Must be ranked above every standard league on the priority list.
 - Do not use sabbaticals.
 - Are treated as guaranteed for payment timing, subject to later manual staff correction if the coordinator does not place the registrant.
