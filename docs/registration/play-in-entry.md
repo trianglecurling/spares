@@ -95,20 +95,26 @@ guaranteed—regardless of TLINE points. Incomplete teams always defer payment.
 When the roster is complete:
 
 1. Take every member's points that are not on an active declared team
-   (the uncommitted pool), sorted high → low.
-2. Form the strongest possible opposing teams by taking the next four players
-   for each team (padding a partial final team with zero-point newcomers).
-3. Combine those hypothetical totals with already-declared active team totals
-   (teams already marked entered permanently occupy a top spot).
-4. Sort opposing totals high → low. The `autoEntryCount`-th total is the
-   **guaranteed-entry threshold** (the bar). A team whose total strictly
-   exceeds that bar — and that meets the returning-member rule without
-   relying on the waiver — is guaranteed.
+   (the uncommitted pool).
+2. Already-declared active teams are locked at their current totals (teams
+   already marked entered permanently occupy a top spot).
+3. From the uncommitted pool, find the largest total `T` such that the
+   remaining auto-entry spots can still be filled by disjoint teams of
+   `teamSize` that each reach `T` (padding a short pool with zero-point
+   newcomers). That `T` is the **guaranteed-entry threshold**.
+4. A team whose total strictly exceeds that bar — and that meets the
+   returning-member rule without relying on the waiver — is guaranteed.
 
-Example with 18 auto-entry spots and no teams declared yet: the threshold is
-the total of players ranked #69–#72 in the points pool. A team above that
-total cannot be pushed out of the top 18 by any stronger stacking of the
-remaining players.
+This is a worst-case packing, not leftover stacking of the strongest remaining
+players. Consecutive high-to-low chunks make a weaker 18th team than a balanced
+regrouping, so they understate the bar. Example with 2 auto-entry spots and
+players `20, 20, 20, 20, 12, 12, 12, 12`: stacking calls the second team 48, but
+two mixed teams of 64 can form, so a 50-point team is not guaranteed.
+
+Example with 18 auto-entry spots, nobody declared yet, and a full prior-season
+TLINE table (20 finishing places × 4 curlers): leftover stacking of players
+#69–#72 is four 6-point curlers (24). Those same top 72 curlers can be mixed
+into 18 teams of 59, so the true bar is 59.
 
 The threshold is shown on the staff report and to registrants as
 "more than X points."
@@ -117,7 +123,7 @@ During registration, the entry-status notice (guarantee / playdown) is shown
 only after a full team roster is selected. Incomplete rosters show that
 guaranteed entry and payment are unavailable until the team is full. Until a
 full roster is selected the threshold can appear to move as drafted members
-leave the uncommitted points pool used to stack hypothetical opposing teams.
+leave the uncommitted points pool used to pack worst-case opposing teams.
 
 ## 6. Payment implications
 

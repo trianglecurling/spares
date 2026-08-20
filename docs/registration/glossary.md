@@ -108,7 +108,7 @@ A full spot is different from a temporary sabbatical-fill spot.
 
 ## Guarantee threshold
 
-The auto-entry cutoff for a play-in based league: the combined TLINE total of the `autoEntryCount`-th strongest opposing team (already-declared teams plus the strongest teams formable by stacking the uncommitted points pool).
+The auto-entry cutoff for a play-in based league: the largest combined TLINE total `T` such that `autoEntryCount` opposing teams can each reach `T`. Declared teams are locked at their current totals; uncommitted players are regrouped in the worst case (the packing that maximizes that `autoEntryCount`-th team), padding a short pool with zero-point newcomers.
 
 A registering team is guaranteed automatic entry when its total strictly exceeds this threshold (and it meets the returning-member rule).
 

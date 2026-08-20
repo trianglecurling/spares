@@ -758,7 +758,29 @@ export default function LeagueDetail() {
   const loadAll = async () => {
     setLoading(true);
     try {
-      const leaguesResponse = await get('/leagues');
+      const [
+        leaguesResponse,
+        divisionsResponse,
+        teamsResponse,
+        rosterResponse,
+        managersResponse,
+        sabbaticalsResponse,
+        settingsResponse,
+      ] = await Promise.all([
+        get('/leagues'),
+        get('/leagues/{id}/divisions', undefined, { id: String(numericLeagueId) }),
+        get('/leagues/{id}/teams', undefined, { id: String(numericLeagueId) }),
+        get('/leagues/{id}/roster', undefined, { id: String(numericLeagueId) }),
+        get('/leagues/{id}/managers', undefined, { id: String(numericLeagueId) }),
+        get('/leagues/{id}/sabbaticals', undefined, { id: String(numericLeagueId) }),
+        (
+          get as (
+            path: string,
+            query?: unknown,
+            pathParams?: Record<string, string>
+          ) => Promise<{ collectByeRequests?: boolean }>
+        )('/leagues/{id}/settings', undefined, { id: String(numericLeagueId) }),
+      ]);
       setAllLeagues(leaguesResponse);
       const currentLeague = leaguesResponse.find((l: League) => l.id === numericLeagueId);
       if (!currentLeague) {
@@ -767,22 +789,6 @@ export default function LeagueDetail() {
         return;
       }
       setLeague(currentLeague);
-
-      const [divisionsResponse, teamsResponse, rosterResponse, managersResponse, sabbaticalsResponse, settingsResponse] =
-        await Promise.all([
-          get('/leagues/{id}/divisions', undefined, { id: String(numericLeagueId) }),
-          get('/leagues/{id}/teams', undefined, { id: String(numericLeagueId) }),
-          get('/leagues/{id}/roster', undefined, { id: String(numericLeagueId) }),
-          get('/leagues/{id}/managers', undefined, { id: String(numericLeagueId) }),
-          get('/leagues/{id}/sabbaticals', undefined, { id: String(numericLeagueId) }),
-          (
-            get as (
-              path: string,
-              query?: unknown,
-              pathParams?: Record<string, string>
-            ) => Promise<{ collectByeRequests?: boolean }>
-          )('/leagues/{id}/settings', undefined, { id: String(numericLeagueId) }),
-        ]);
 
       setDivisions(divisionsResponse);
       setTeams(teamsResponse);

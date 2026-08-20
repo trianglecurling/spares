@@ -114,6 +114,10 @@ export async function ensureJuniorRecreationalRosterForMember(memberId: number):
  * Places billed subject-to-availability registrants onto this league when they
  * were charged at submit but never rostered. Waitlisted and play-in-miss
  * entries are left off until staff place them.
+ *
+ * Do not call this from league roster GET handlers. It rebuilds a full
+ * registration context (including play-in packing) for every unrostered
+ * registrant who listed the league, which made league pages take many seconds.
  */
 export async function ensureImmediateChargeRosterForLeague(leagueId: number): Promise<void> {
   const { db, schema } = getDrizzleDb();

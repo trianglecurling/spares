@@ -51,6 +51,7 @@ import {
   normalizeExtraDrawInputs,
   type LeagueExtraDrawInput,
 } from '../utils/leagueSchedule.js';
+import { invalidatePlayInEvaluationCache } from '../registration/playInEvaluationCache.js';
 
 
 const leaguesListQuerySchemaJson = {
@@ -1616,6 +1617,7 @@ export async function leagueRoutes(fastify: FastifyInstance) {
         .update(schema.leagues)
         .set(updateData)
         .where(eq(schema.leagues.id, leagueId));
+      invalidatePlayInEvaluationCache(leagueId);
     }
 
     const nextIsJuniorRecreational =
@@ -1846,6 +1848,7 @@ export async function leagueRoutes(fastify: FastifyInstance) {
     }
 
     await db.delete(schema.leagues).where(eq(schema.leagues.id, leagueId));
+    invalidatePlayInEvaluationCache(leagueId);
 
       return { success: true };
     }
@@ -2015,6 +2018,7 @@ export async function leagueRoutes(fastify: FastifyInstance) {
             updated_at: sql`CURRENT_TIMESTAMP`,
           })
           .where(eq(schema.leagues.id, leagueId));
+        invalidatePlayInEvaluationCache(leagueId);
 
         // Delete existing draw times
         await db

@@ -9,9 +9,8 @@ import {
   aggregateMemberPoints,
   entryTeamToEvaluationInput,
   evaluatePlayInLeague,
-  loadLeagueEntryPoints,
-  loadLeagueEntryTeams,
   loadPlayInLeagueConfig,
+  loadPlayInLeagueSource,
   numberToPointsHalf,
   playInAutoEntryCount,
   playInTeamSize,
@@ -21,6 +20,7 @@ import {
   type PlayInLeagueEvaluation,
   type PlayInTeamForEvaluation,
 } from './playInEntryService.js';
+import { invalidatePlayInEvaluationCache } from './playInEvaluationCache.js';
 
 export class LeagueEntryValidationError extends Error {
   details: Record<string, string>;
@@ -168,10 +168,11 @@ export async function evaluateRegistrantPlayInEntry(input: {
   if (input.memberId != null) {
     await releaseStaleEntryTeamLinksForMember({ memberId: input.memberId });
   }
-  const league = await loadPlayInLeagueConfig(input.leagueId);
-  if (!league) {
+  const source = await loadPlayInLeagueSource(input.leagueId);
+  if (!source) {
     throw new LeagueEntryValidationError({ league: 'League was not found.' });
   }
+  const league = source.league;
   requirePlayInBasedLeague(league);
   const config = {
     autoEntryCount: playInAutoEntryCount({
@@ -183,11 +184,8 @@ export async function evaluateRegistrantPlayInEntry(input: {
     playInSpotCount: league.playInSpotCount,
   };
 
-  const [pointsRows, teams] = await Promise.all([
-    loadLeagueEntryPoints(input.leagueId),
-    loadLeagueEntryTeams(input.leagueId),
-  ]);
-  const memberPoints = aggregateMemberPoints(pointsRows);
+  const memberPoints = aggregateMemberPoints(source.points);
+  const teams = source.teams;
   const activeTeams = teams.filter((team) => isActiveEntryTeamStatus(team.status));
 
   const draftedMemberIds = new Set<number>();
@@ -482,6 +480,7 @@ export async function syncRegistrationEntryTeams(input: {
       registrationId: input.registrationId,
     });
   }
+  invalidatePlayInEvaluationCache();
 }
 
 function findIncompleteEntryTeamCoveredByDraft(input: {
@@ -771,6 +770,7 @@ export async function releaseEntryTeamsForCancelledRegistration(input: {
     executor,
     registrationId: input.registrationId,
   });
+  invalidatePlayInEvaluationCache();
 }
 
 /**
@@ -817,6 +817,9 @@ export async function releaseStaleEntryTeamLinksForMember(input: {
   }
   for (const registrationId of touchedRegistrationIds) {
     await deleteOrphanEntryTeamsCreatedByRegistration({ executor, registrationId });
+  }
+  if (staleRows.length > 0) {
+    invalidatePlayInEvaluationCache();
   }
 }
 
@@ -977,11 +980,11 @@ export type LeagueEntryReport = {
 };
 
 export async function getLeagueEntryReport(leagueId: number): Promise<LeagueEntryReport> {
-  const league = await loadPlayInLeagueConfig(leagueId);
-  if (!league) {
+  const source = await loadPlayInLeagueSource(leagueId);
+  if (!source) {
     throw new LeagueEntryValidationError({ league: 'League was not found.' });
   }
-  const [pointsRows, teams] = await Promise.all([loadLeagueEntryPoints(leagueId), loadLeagueEntryTeams(leagueId)]);
+  const { league, points: pointsRows, teams } = source;
   const memberPoints = aggregateMemberPoints(pointsRows);
   const memberPointsById = new Map(memberPoints.map((entry) => [entry.memberId, entry]));
   const config = {
@@ -1141,6 +1144,7 @@ export async function saveManualLeagueEntryPoints(input: {
         updated_at: sql`CURRENT_TIMESTAMP`,
       })
       .where(eq(schema.leagueEntryPoints.id, existing.id));
+    invalidatePlayInEvaluationCache(input.leagueId);
     return { id: existing.id };
   }
 
@@ -1156,6 +1160,7 @@ export async function saveManualLeagueEntryPoints(input: {
       created_by_member_id: input.actorMemberId,
     })
     .returning({ id: schema.leagueEntryPoints.id });
+  invalidatePlayInEvaluationCache(input.leagueId);
   return { id: inserted.id };
 }
 
@@ -1172,6 +1177,7 @@ export async function deleteLeagueEntryPointsRow(input: { leagueId: number; poin
     throw new LeagueEntryValidationError({ points: 'Points entry was not found.' });
   }
   await db.delete(schema.leagueEntryPoints).where(eq(schema.leagueEntryPoints.id, input.pointsId));
+  invalidatePlayInEvaluationCache(input.leagueId);
 }
 
 // --- Staff team management ------------------------------------------------------
@@ -1270,6 +1276,7 @@ export async function createLeagueEntryTeamStaff(input: {
       pending_name: member.pendingName,
     }))
   );
+  invalidatePlayInEvaluationCache(input.leagueId);
   return { id: team.id };
 }
 
@@ -1365,6 +1372,7 @@ export async function updateLeagueEntryTeamStaff(input: {
       triggerDeferredPayments: true,
     });
   }
+  invalidatePlayInEvaluationCache(team.league_id);
 }
 
 /**
@@ -1529,6 +1537,7 @@ export async function linkEntryTeamPendingMember(input: {
       updated_at: sql`CURRENT_TIMESTAMP`,
     })
     .where(eq(schema.leagueEntryTeamMembers.id, input.teamMemberId));
+  invalidatePlayInEvaluationCache(team.league_id);
 }
 
 // --- Outcome recording (grant entry / not entered) -------------------------------
@@ -1788,6 +1797,7 @@ export async function recordLeagueEntryTeamOutcome(input: {
     }
   }
 
+  invalidatePlayInEvaluationCache(team.league_id);
   return {
     teamId: input.teamId,
     status: input.outcome,
