@@ -313,6 +313,16 @@ still list a mixed or new team â€” that entry is allowed on the priority list â€
 but it is labeled waitlisted (or subject to availability) rather than
 guaranteed.
 
+A non-play-in BYOT entry that does earn **Guaranteed return** is shown as
+**Guaranteed return*** with a note below the list:
+
+- Doubles: Doubles partner must also choose this league as their first or
+  second priority.
+- Teams: All teammates must also choose this league as their first or second
+  priority.
+
+Play-in guaranteed returns do not use this asterisk.
+
 ## Leaving a league behind
 
 A league the registrant played last session that does not appear in the priority

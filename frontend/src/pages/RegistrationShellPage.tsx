@@ -24,8 +24,11 @@ import RegistrationParentAssociationFields from '../components/registration/Regi
 import LeaguePriorityIntroStep from '../components/registration/LeaguePriorityIntroStep';
 import LeaguePriorityStep from '../components/registration/LeaguePriorityStep';
 import {
+  byotGuaranteedReturnFootnoteId,
+  byotGuaranteedReturnFootnotes,
   evaluatePriorityList,
   guaranteeChipLabel,
+  isByotGuaranteedReturnCaveat,
   omitLeaveBehindDecisionsForListedLeagues,
   pendingRosterNames,
   shouldShowGuaranteeChip,
@@ -1027,6 +1030,7 @@ export default function RegistrationShellPage() {
   const experienceInputId = useId();
   const discountsInputId = useId();
   const membershipCommitteeCommentsInputId = useId();
+  const byotReturnCaveatIdPrefix = useId();
 
   const memberOptionById = useMemo(
     () => new Map(memberOptions.options.map((option) => [option.id, option])),
@@ -1130,6 +1134,21 @@ export default function RegistrationShellPage() {
   );
 
   const priorityReviewEntries = priorityEvaluation.entries;
+  const priorityReviewLeagueById = useMemo(
+    () => new Map((leaguePayload?.leagues ?? []).map((league) => [league.id, league])),
+    [leaguePayload?.leagues],
+  );
+  const byotReturnFootnotes = useMemo(
+    () =>
+      byotGuaranteedReturnFootnotes(
+        priorityReviewEntries.map((entry) => ({
+          label: entry.label,
+          league: priorityReviewLeagueById.get(entry.leagueId),
+        })),
+        byotReturnCaveatIdPrefix,
+      ),
+    [byotReturnCaveatIdPrefix, priorityReviewEntries, priorityReviewLeagueById],
+  );
 
   const hideDroppedPriorLeagueDecisions =
     membershipPayment?.selection.membershipOption === 'social' ||
@@ -4726,6 +4745,7 @@ export default function RegistrationShellPage() {
               <div className="mt-2 space-y-2">
                 {priorityReviewEntries.map((entry, index) => {
                   const rosterText = priorityRosterTextByLeagueId.get(entry.leagueId);
+                  const league = priorityReviewLeagueById.get(entry.leagueId);
                   return (
                     <div key={entry.leagueId} className="rounded-xl bg-gray-50 p-3">
                       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -4733,8 +4753,15 @@ export default function RegistrationShellPage() {
                           {index + 1}. {leagueName(entry.leagueId)}
                         </p>
                         {shouldShowGuaranteeChip(entry.label) ? (
-                          <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-primary-teal shadow-sm">
-                            {guaranteeChipLabel(entry.label)}
+                          <span
+                            className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-primary-teal shadow-sm"
+                            aria-describedby={
+                              isByotGuaranteedReturnCaveat(entry.label, league)
+                                ? byotGuaranteedReturnFootnoteId(league, byotReturnCaveatIdPrefix)
+                                : undefined
+                            }
+                          >
+                            {guaranteeChipLabel(entry.label, league)}
                           </span>
                         ) : null}
                       </div>
@@ -4743,6 +4770,15 @@ export default function RegistrationShellPage() {
                   );
                 })}
               </div>
+              {byotReturnFootnotes.length > 0 ? (
+                <div className="mt-3 space-y-1">
+                  {byotReturnFootnotes.map((footnote) => (
+                    <p key={footnote.id} id={footnote.id} className="text-gray-600">
+                      {footnote.text}
+                    </p>
+                  ))}
+                </div>
+              ) : null}
               {priorLeagueDecisionSummary.length > 0 ? (
                 <ul className="mt-3 list-disc space-y-1 pl-5 text-gray-600">
                   {priorLeagueDecisionSummary.map((line) => (

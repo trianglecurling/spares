@@ -749,8 +749,62 @@ export function movePriorityInList(
   return reorderPriorities(next, leagues);
 }
 
-export function guaranteeChipLabel(label: LeaguePriorityGuaranteeLabel): string {
-  return LEAGUE_PRIORITY_GUARANTEE_LABEL_TEXT[label];
+type ByotGuaranteedReturnCaveatLeague = Pick<
+  LeagueCatalogItem,
+  'leagueType' | 'isPlayInBased' | 'format'
+>;
+
+/** Non-play-in BYOT guaranteed returns carry a teammate-priority caveat. */
+export function isByotGuaranteedReturnCaveat(
+  label: LeaguePriorityGuaranteeLabel | null | undefined,
+  league: ByotGuaranteedReturnCaveatLeague | undefined,
+): league is ByotGuaranteedReturnCaveatLeague {
+  return (
+    label === 'guaranteed_return' &&
+    league?.leagueType === 'bring_your_own_team' &&
+    league.isPlayInBased !== true
+  );
+}
+
+export function byotGuaranteedReturnFootnote(league: Pick<LeagueCatalogItem, 'format'>): string {
+  return league.format === 'doubles'
+    ? '* Doubles partner must also choose this league as their first or second priority.'
+    : '* All teammates must also choose this league as their first or second priority.';
+}
+
+export function byotGuaranteedReturnFootnoteId(
+  league: Pick<LeagueCatalogItem, 'format'>,
+  idPrefix: string,
+): string {
+  return `${idPrefix}-${league.format === 'doubles' ? 'doubles' : 'teams'}`;
+}
+
+/** One footnote per doubles/teams caveat that appears on the current list. */
+export function byotGuaranteedReturnFootnotes(
+  entries: Array<{
+    label: LeaguePriorityGuaranteeLabel | null | undefined;
+    league: ByotGuaranteedReturnCaveatLeague | undefined;
+  }>,
+  idPrefix: string,
+): Array<{ id: string; text: string }> {
+  const seen = new Set<string>();
+  const footnotes: Array<{ id: string; text: string }> = [];
+  for (const entry of entries) {
+    if (!entry.league || !isByotGuaranteedReturnCaveat(entry.label, entry.league)) continue;
+    const id = byotGuaranteedReturnFootnoteId(entry.league, idPrefix);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    footnotes.push({ id, text: byotGuaranteedReturnFootnote(entry.league) });
+  }
+  return footnotes;
+}
+
+export function guaranteeChipLabel(
+  label: LeaguePriorityGuaranteeLabel,
+  league?: ByotGuaranteedReturnCaveatLeague,
+): string {
+  const text = LEAGUE_PRIORITY_GUARANTEE_LABEL_TEXT[label];
+  return isByotGuaranteedReturnCaveat(label, league) ? `${text}*` : text;
 }
 
 /** Leftover spots without a waitlist or guarantee still show their derived status. */

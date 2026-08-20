@@ -36,6 +36,9 @@ import {
   omitLeaveBehindDecisionsForListedLeagues,
   MAX_DESIRED_LEAGUE_COUNT,
   MIN_PLAY_IN_ROSTER_SIZE,
+  byotGuaranteedReturnFootnoteId,
+  byotGuaranteedReturnFootnotes,
+  isByotGuaranteedReturnCaveat,
   canReorderPriorityDrop,
   movePriorityInList,
   omittedWaitlistLeagues,
@@ -178,6 +181,7 @@ export default function LeaguePriorityStep({
   const listLabelId = useId();
   const sabbaticalsLabelId = useId();
   const paidReturnLabelId = useId();
+  const byotReturnCaveatIdPrefix = useId();
   const restrictHydratedRef = useRef(restrictToFreeLeagues);
   const sabbaticalOnlyHydratedRef = useRef(sabbaticalOnly);
 
@@ -291,6 +295,18 @@ export default function LeaguePriorityStep({
   const labelByLeagueId = useMemo(
     () => new Map(evaluation.entries.map((entry) => [entry.leagueId, entry.label])),
     [evaluation.entries],
+  );
+
+  const byotReturnFootnotes = useMemo(
+    () =>
+      byotGuaranteedReturnFootnotes(
+        evaluation.entries.map((entry) => ({
+          label: entry.label,
+          league: leagueById.get(entry.leagueId),
+        })),
+        byotReturnCaveatIdPrefix,
+      ),
+    [byotReturnCaveatIdPrefix, evaluation.entries, leagueById],
   );
 
   const eligibleLeagues = useMemo(
@@ -836,8 +852,15 @@ export default function LeaguePriorityStep({
                             <span className="text-sm font-semibold text-gray-500">{index + 1}.</span>
                             <span className="font-medium text-gray-900">{league.name}</span>
                             {shouldShowGuaranteeChip(label) ? (
-                              <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${guaranteeChipClassName(label)}`}>
-                                {guaranteeChipLabel(label)}
+                              <span
+                                className={`rounded-full px-2 py-0.5 text-xs font-medium ${guaranteeChipClassName(label)}`}
+                                aria-describedby={
+                                  isByotGuaranteedReturnCaveat(label, league)
+                                    ? byotGuaranteedReturnFootnoteId(league, byotReturnCaveatIdPrefix)
+                                    : undefined
+                                }
+                              >
+                                {guaranteeChipLabel(label, league)}
                               </span>
                             ) : null}
                           </div>
@@ -910,6 +933,16 @@ export default function LeaguePriorityStep({
                 }}
               />
             )}
+
+            {byotReturnFootnotes.length > 0 ? (
+              <div className="space-y-1">
+                {byotReturnFootnotes.map((footnote) => (
+                  <p key={footnote.id} id={footnote.id} className="text-sm text-gray-600">
+                    {footnote.text}
+                  </p>
+                ))}
+              </div>
+            ) : null}
 
             {removalPrompt ? (
               <ConfirmDialog

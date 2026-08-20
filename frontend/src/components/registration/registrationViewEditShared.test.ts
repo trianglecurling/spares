@@ -20,6 +20,8 @@ import {
   formatConjunctionList,
   paidPriorLeaguesOffList,
   priorityMoveButtonTitle,
+  byotGuaranteedReturnFootnote,
+  byotGuaranteedReturnFootnotes,
   removePriority,
   reorderPriorities,
   seedPriorityList,
@@ -562,6 +564,46 @@ describe('guarantee labels shown while reordering', () => {
     expect(shouldShowGuaranteeChip('superfluous')).toBe(true);
     expect(shouldShowGuaranteeChip('waitlisted')).toBe(true);
     expect(shouldShowGuaranteeChip('available')).toBe(true);
+  });
+
+  test('a non-play-in BYOT guaranteed return adds an asterisk and teammate-priority footnote', () => {
+    const teamsByot = catalogLeague({
+      id: 8,
+      name: 'Thursday Teams',
+      leagueType: 'bring_your_own_team',
+      format: 'teams',
+      allowsWaitlist: false,
+    });
+    expect(guaranteeChipLabel('guaranteed_return', teamLeague)).toBe('Guaranteed return*');
+    expect(guaranteeChipLabel('guaranteed_return', teamsByot)).toBe('Guaranteed return*');
+    expect(guaranteeChipLabel('guaranteed_return', playInLeague)).toBe('Guaranteed return');
+    expect(guaranteeChipLabel('guaranteed_fallback', teamLeague)).toBe('Guaranteed fallback');
+    expect(byotGuaranteedReturnFootnote(teamLeague)).toBe(
+      '* Doubles partner must also choose this league as their first or second priority.',
+    );
+    expect(byotGuaranteedReturnFootnote(teamsByot)).toBe(
+      '* All teammates must also choose this league as their first or second priority.',
+    );
+    expect(
+      byotGuaranteedReturnFootnotes(
+        [
+          { label: 'guaranteed_return', league: teamLeague },
+          { label: 'guaranteed_return', league: teamsByot },
+          { label: 'guaranteed_return', league: playInLeague },
+          { label: 'guaranteed_return', league: standardA },
+        ],
+        'caveat',
+      ),
+    ).toEqual([
+      {
+        id: 'caveat-doubles',
+        text: '* Doubles partner must also choose this league as their first or second priority.',
+      },
+      {
+        id: 'caveat-teams',
+        text: '* All teammates must also choose this league as their first or second priority.',
+      },
+    ]);
   });
 
   test('open registration uses vacancy labels instead of return guarantees', () => {
