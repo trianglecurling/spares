@@ -868,6 +868,32 @@ describe('derived downstream state', () => {
     expect(validateLeaguePriorities(context).allowed).toBe(true);
   });
 
+  test('waitlists above a fallback stay waitlisted after a guaranteed return', () => {
+    // Rank 1 is a prior league. Ranks 2–3 try waitlisted leagues. Rank 4 is the
+    // other prior league, held as the second protected spot. The waitlists must
+    // not be billed as subject to availability or they would fill the desired
+    // count and mark the fallback superfluous.
+    const context = contextWithLeagues(
+      [
+        standard(1),
+        standard(2, { predecessorLeagueId: null }),
+        standard(3, { predecessorLeagueId: null }),
+        standard(4),
+      ],
+      { desiredLeagueCount: 2 },
+    );
+    expect(labelsFor(context)).toEqual([
+      'guaranteed_return',
+      'waitlisted',
+      'waitlisted',
+      'guaranteed_fallback',
+    ]);
+    expect(waitlistedPriorityEntries(evaluateLeaguePriorities(context)).map((entry) => entry.leagueId)).toEqual([
+      2, 3,
+    ]);
+    expect(validateLeaguePriorities(context).allowed).toBe(true);
+  });
+
   test('every waitlisted leftover defers payment', () => {
     const context = contextWithLeagues([
       standard(1, { predecessorLeagueId: null }),

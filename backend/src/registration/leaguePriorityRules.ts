@@ -376,12 +376,14 @@ function markSuperfluousEntries(entries: LabeledPriorityEntry[], desiredLeagueCo
  * — but never on a play-in league, which sends a team that misses the bar to
  * playdowns rather than into a held spot.
  *
- * Leftovers join a waitlist only while fewer than two spots are guaranteed, or
- * when the leftover sits in the top two ranks (trying to switch into a higher
- * league while holding a fallback). Once two spots are already guaranteed,
- * extra leagues further down the list are subject to availability even if the
- * league has a waitlist. Subject-to-availability standard leagues (except
- * play-in misses) are billed now and do not consume the guarantee budget.
+ * Leftovers join a waitlist while fewer than two guarantees sit above them —
+ * including waitlists at rank 3+ that sit above a fallback further down the
+ * list. Counting total grants (including those later fallbacks) would label
+ * the leftover subject to availability, bill it, and then mark the fallback
+ * superfluous. Once two spots above are already guaranteed, extra leagues
+ * further down the list are subject to availability even if the league has a
+ * waitlist. Subject-to-availability standard leagues (except play-in misses)
+ * are billed now and do not consume the guarantee budget.
  * Instructional programs ignore that leftover rule: remaining space is
  * Available and billed now; a full program is subject to availability and
  * payment waits.
@@ -501,12 +503,15 @@ export function labelPriorityEntries(input: {
         labelInstructionalByVacancies(entry);
         continue;
       }
-      // Waitlists fill protected spots. Rank 1–2 leftovers can still waitlist
-      // (switch-with-fallback). Once two guarantees are granted, ranks 3+ are
-      // subject to availability even when the league has a waitlist.
-      const waitlistToFillProtectedSpots =
-        entry.allowsWaitlist &&
-        (granted < MAX_PROTECTED_CLAIMS || entry.priorityRank <= MAX_PROTECTED_CLAIMS);
+      // Waitlists fill protected spots. Count guarantees above this leftover,
+      // not later fallbacks: a rank-3 waitlist above a rank-4 fallback is still
+      // switching into a higher league. Once two spots above are guaranteed,
+      // ranks below that are subject to availability even when the league has
+      // a waitlist.
+      const guaranteesAbove = entries.filter(
+        (other) => other.guaranteed && other.priorityRank < entry.priorityRank,
+      ).length;
+      const waitlistToFillProtectedSpots = entry.allowsWaitlist && guaranteesAbove < MAX_PROTECTED_CLAIMS;
       entry.label = waitlistToFillProtectedSpots ? 'waitlisted' : 'subject_to_availability';
     }
   }

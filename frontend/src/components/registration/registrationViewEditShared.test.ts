@@ -367,6 +367,22 @@ describe('guarantee labels shown while reordering', () => {
     expect(result.entries.map((entry) => entry.label)).toEqual(['waitlisted', 'waitlisted', 'guaranteed_fallback']);
   });
 
+  test('waitlists above a fallback stay waitlisted after a guaranteed return', () => {
+    const thursday = catalogLeague({ id: 7, name: 'Thursday' });
+    const result = evaluate({
+      priorities: ranked(1, 3, 7, 2),
+      desiredLeagueCount: 2,
+      returnRightLeagueIds: [1, 2],
+      leagues: [...allLeagues, thursday],
+    });
+    expect(result.entries.map((entry) => entry.label)).toEqual([
+      'guaranteed_return',
+      'waitlisted',
+      'waitlisted',
+      'guaranteed_fallback',
+    ]);
+  });
+
   test('a league with no waitlist and no return right is subject to availability', () => {
     const result = evaluate({ priorities: ranked(4), desiredLeagueCount: 1 });
     expect(result.entries[0]?.label).toBe('subject_to_availability');

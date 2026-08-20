@@ -197,7 +197,7 @@ for entry with no label:
         entry.label = awaiting_roster_entry
     else if instructional:
         entry.label = available if vacancies else subject_to_availability
-    else if league.allowsWaitlist and (granted < 2 or rank <= 2):
+    else if league.allowsWaitlist and guarantees above this rank < 2:
         entry.label = waitlisted
     else:
         entry.label = subject_to_availability
@@ -211,13 +211,16 @@ for entry in rank order:
         secured += 1
 ```
 
-Waitlists fill protected spots. A leftover in ranks 1–2 can still waitlist when
-the registrant is trying to switch into a higher league while holding a
-fallback. Once two spots are already guaranteed, further leftovers are subject
-to availability only while they still fill a remaining desired-count slot.
-Anything below an already-filled desired count is superfluous: the registrant
-may add a league in order to move it higher (switch with fallback), but cannot
-continue until those extra rows are removed or reordered.
+Waitlists fill protected spots. A leftover can still waitlist when fewer than
+two guarantees sit above it — including a rank-3 waitlist while a fallback is
+held further down the list. Counting total grants (including those later
+fallbacks) would bill the leftover as subject to availability and then mark the
+fallback superfluous. Once two spots above are already guaranteed, further
+leftovers are subject to availability only while they still fill a remaining
+desired-count slot. Anything below an already-filled desired count is
+superfluous: the registrant may add a league in order to move it higher
+(switch with fallback), but cannot continue until those extra rows are removed
+or reordered.
 
 ### Instructional programs
 
@@ -254,14 +257,17 @@ Registrant played Tuesday and Thursday last session.
 | 2 | Tuesday, Thursday | Guaranteed return, Guaranteed return |
 | 2 | Monday, Tuesday, Thursday | Waitlisted, Guaranteed return, Guaranteed fallback |
 | 2 | Monday, Wednesday, Tuesday, Thursday | Waitlisted, Waitlisted, Guaranteed fallback, Guaranteed fallback |
+| 2 | Tuesday, Monday, Wednesday, Thursday | Guaranteed return, Waitlisted, Waitlisted, Guaranteed fallback |
 | 1 | Monday, Tuesday, Thursday | Waitlisted, Guaranteed return, (none — budget spent) |
 | 3 | Monday, Tuesday, Thursday | Waitlisted, Guaranteed return, Guaranteed fallback |
 | 3 | Tuesday, Thursday, Monday, Wednesday | Guaranteed return, Guaranteed return, Subject to availability, Superfluous |
 
-In the fourth row the budget is `min(2, 1) = 1`, so Thursday gets no guarantee
+In the fifth row the budget is `min(2, 1) = 1`, so Thursday gets no guarantee
 even though the registrant has a return right for it. In the last row both
 protected spots are already guaranteed, Monday fills the third wanted league
-as subject to availability, and Wednesday is superfluous.
+as subject to availability, and Wednesday is superfluous. Monday and Wednesday
+in the Tuesday-first count-2 row stay waitlisted because only one guarantee
+sits above them; Thursday remains the fallback.
 
 ## Bring-your-own-team ordering
 
@@ -353,9 +359,10 @@ submitted.
 
 Subject-to-availability on a standard league means the leftover is not joining
 a waitlist. That includes leagues with no waitlist, and extra leagues below two
-already-granted protected spots. We assume there will be room, take payment,
-and do not consume a protected guarantee spot. A full instructional program is
-also labeled subject to availability, but payment waits until placement.
+protected spots already granted above them. We assume there will be room, take
+payment, and do not consume a protected guarantee spot. A full instructional
+program is also labeled subject to availability, but payment waits until
+placement.
 
 - **Confirmed total** = membership and other fixed fees, plus the sum of
   `registrationFeeMinor` for every guaranteed entry and every
