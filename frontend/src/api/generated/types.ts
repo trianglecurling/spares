@@ -13120,7 +13120,7 @@ export interface paths {
                 query?: never;
                 header?: never;
                 path: {
-                    lineType: "regular_membership_fee" | "social_membership_fee" | "junior_recreational_fee" | "league_fee" | "spare_only_fee" | "sabbatical_fee" | "replacement_name_tag_fee";
+                    lineType: "regular_membership_fee" | "social_membership_fee" | "junior_recreational_fee" | "league_fee" | "spare_only_fee" | "sabbatical_fee" | "replacement_name_tag_fee" | "student_discount" | "student_league_discount" | "reciprocal_discount" | "winter_only_discount" | "sabbatical_fill_discount";
                 };
                 cookie?: never;
             };

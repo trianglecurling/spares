@@ -315,6 +315,7 @@ export type RegistrationInvoiceLineKindSqlite =
   | 'junior_recreational_fee'
   | 'replacement_name_tag_fee'
   | 'student_discount'
+  | 'student_league_discount'
   | 'reciprocal_discount'
   | 'winter_only_discount'
   | 'sabbatical_fill_discount'
@@ -691,7 +692,12 @@ export type RegistrationPaymentItemLineTypeSqlite =
   | 'league_fee'
   | 'spare_only_fee'
   | 'sabbatical_fee'
-  | 'replacement_name_tag_fee';
+  | 'replacement_name_tag_fee'
+  | 'student_discount'
+  | 'student_league_discount'
+  | 'reciprocal_discount'
+  | 'winter_only_discount'
+  | 'sabbatical_fill_discount';
 
 export const registrationPaymentItemNamesSqlite = sqliteTable('registration_payment_item_names', {
   line_type: text('line_type').primaryKey().notNull().$type<RegistrationPaymentItemLineTypeSqlite>(),

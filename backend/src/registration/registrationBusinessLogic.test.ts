@@ -313,7 +313,24 @@ describe('registration business logic', () => {
     expect(fees.lineItems.find((item) => item.lineType === 'regular_membership_fee')?.amountMinor).toBe(10000);
     expect(fees.lineItems.find((item) => item.lineType === 'league_fee')?.amountMinor).toBe(30000);
     expect(fees.discountLineItems.find((item) => item.lineType === 'student_discount')?.amountMinor).toBe(-10000);
+    expect(fees.discountLineItems.find((item) => item.lineType === 'student_league_discount')).toBeUndefined();
     expect(fees.totalDueMinor).toBe(30000);
+  });
+
+  test('percent student discount is sent as separate membership and league lines', () => {
+    const fees = calculateRegistrationFees(
+      registrationContext({
+        discountClaims: { student: { claimed: true, institution: 'NCSU' } },
+        discountSettings: {
+          student: { amountType: 'percent', amountValue: 10 },
+          reciprocal: { amountType: 'percent', amountValue: 0 },
+          winterOnly: { amountType: 'dollar', amountValue: 0 },
+        },
+      }),
+    );
+    expect(fees.discountLineItems.find((item) => item.lineType === 'student_discount')?.amountMinor).toBe(-1000);
+    expect(fees.discountLineItems.find((item) => item.lineType === 'student_league_discount')?.amountMinor).toBe(-3000);
+    expect(fees.totalDueMinor).toBe(36000);
   });
 
   test('dollar discounts apply before percentage discounts', () => {

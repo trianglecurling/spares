@@ -14,7 +14,12 @@ export type RegistrationPaymentItemLineType =
   | 'league_fee'
   | 'spare_only_fee'
   | 'sabbatical_fee'
-  | 'replacement_name_tag_fee';
+  | 'replacement_name_tag_fee'
+  | 'student_discount'
+  | 'student_league_discount'
+  | 'reciprocal_discount'
+  | 'winter_only_discount'
+  | 'sabbatical_fill_discount';
 
 export type RegistrationPaymentItemNameDefinition = {
   lineType: RegistrationPaymentItemLineType;
@@ -57,6 +62,31 @@ export const REGISTRATION_PAYMENT_ITEM_NAME_DEFINITIONS: RegistrationPaymentItem
     lineType: 'replacement_name_tag_fee',
     label: 'Replacement name tag',
     defaultItemName: 'Replacement name tag',
+  },
+  {
+    lineType: 'student_discount',
+    label: 'Student discount (membership)',
+    defaultItemName: 'Student discount (membership)',
+  },
+  {
+    lineType: 'student_league_discount',
+    label: 'Student discount (leagues)',
+    defaultItemName: 'Student discount (leagues)',
+  },
+  {
+    lineType: 'reciprocal_discount',
+    label: 'Reciprocal discount',
+    defaultItemName: 'Reciprocal discount',
+  },
+  {
+    lineType: 'winter_only_discount',
+    label: 'Winter-only discount',
+    defaultItemName: 'Winter-only discount',
+  },
+  {
+    lineType: 'sabbatical_fill_discount',
+    label: 'Temporary sabbatical-fill discount',
+    defaultItemName: 'Temporary sabbatical-fill discount',
   },
 ];
 

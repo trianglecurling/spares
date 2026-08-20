@@ -55,6 +55,11 @@ const registrationItemLineTypeParamSchema = z.object({
     'spare_only_fee',
     'sabbatical_fee',
     'replacement_name_tag_fee',
+    'student_discount',
+    'student_league_discount',
+    'reciprocal_discount',
+    'winter_only_discount',
+    'sabbatical_fill_discount',
   ]),
 });
 
@@ -427,6 +432,11 @@ export async function paymentRoutes(fastify: FastifyInstance): Promise<void> {
                 'spare_only_fee',
                 'sabbatical_fee',
                 'replacement_name_tag_fee',
+                'student_discount',
+                'student_league_discount',
+                'reciprocal_discount',
+                'winter_only_discount',
+                'sabbatical_fill_discount',
               ],
             },
           },

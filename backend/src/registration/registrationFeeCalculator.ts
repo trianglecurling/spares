@@ -88,18 +88,29 @@ function addReplacementNameTagCharge(context: RegistrationContext, lineItems: Re
   });
 }
 
+type DiscountApplicationScope = 'eligible_invoice_items' | 'regular_membership' | 'eligible_non_membership';
+
+function lineItemMatchesDiscountScope(
+  lineItem: RegistrationFeeLineItem,
+  scope: DiscountApplicationScope,
+): boolean {
+  if (!lineItem.discountEligible) return false;
+  if (scope === 'regular_membership') return lineItem.lineType === 'regular_membership_fee';
+  if (scope === 'eligible_non_membership') return lineItem.lineType !== 'regular_membership_fee';
+  return true;
+}
+
 function applyDiscountToRemaining(input: {
   remainingByIndex: Map<number, number>;
   lineItems: RegistrationFeeLineItem[];
-  scope: 'eligible_invoice_items' | 'regular_membership';
+  scope: DiscountApplicationScope;
   requestedAmountMinor: number;
 }): number {
   let remainingDiscount = positiveMinor(input.requestedAmountMinor);
   let applied = 0;
   for (let index = 0; index < input.lineItems.length && remainingDiscount > 0; index += 1) {
     const lineItem = input.lineItems[index];
-    if (!lineItem.discountEligible) continue;
-    if (input.scope === 'regular_membership' && lineItem.lineType !== 'regular_membership_fee') continue;
+    if (!lineItemMatchesDiscountScope(lineItem, input.scope)) continue;
 
     const currentRemaining = input.remainingByIndex.get(index) ?? 0;
     const lineDiscount = Math.min(currentRemaining, remainingDiscount);
@@ -113,11 +124,10 @@ function applyDiscountToRemaining(input: {
 function remainingSubtotalForScope(
   lineItems: RegistrationFeeLineItem[],
   remainingByIndex: Map<number, number>,
-  scope: 'eligible_invoice_items' | 'regular_membership'
+  scope: DiscountApplicationScope,
 ): number {
   return lineItems.reduce((sum, lineItem, index) => {
-    if (!lineItem.discountEligible) return sum;
-    if (scope === 'regular_membership' && lineItem.lineType !== 'regular_membership_fee') return sum;
+    if (!lineItemMatchesDiscountScope(lineItem, scope)) return sum;
     return sum + (remainingByIndex.get(index) ?? 0);
   }, 0);
 }
@@ -129,17 +139,26 @@ function addOrdinaryDiscounts(context: RegistrationContext, lineItems: Registrat
     remainingByIndex.set(index, lineItem.discountEligible ? lineItem.amountMinor : 0);
   });
 
+  const studentClaimed = context.discountClaims.student?.claimed === true;
+  const studentValid = Boolean(context.discountClaims.student?.institution?.trim());
+  const studentSlot = context.discountSettings.student;
+
   const ordinaryDiscounts = [
     {
-      claimed: context.discountClaims.student?.claimed === true,
-      valid: Boolean(context.discountClaims.student?.institution?.trim()),
+      claimed: studentClaimed,
+      valid: studentValid,
       lineType: 'student_discount' as const,
-      description: 'Student discount',
-      scope:
-        context.discountSettings.student.amountType === 'dollar'
-          ? ('regular_membership' as const)
-          : ('eligible_invoice_items' as const),
-      slot: context.discountSettings.student,
+      description: 'Student discount (membership)',
+      scope: 'regular_membership' as const,
+      slot: studentSlot,
+    },
+    {
+      claimed: studentClaimed && studentSlot.amountType === 'percent',
+      valid: studentValid,
+      lineType: 'student_league_discount' as const,
+      description: 'Student discount (leagues)',
+      scope: 'eligible_non_membership' as const,
+      slot: studentSlot,
     },
     {
       claimed: context.discountClaims.reciprocal?.claimed === true,
