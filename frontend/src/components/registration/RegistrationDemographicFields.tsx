@@ -48,8 +48,53 @@ type DemographicScalarField = Exclude<
   | 'usaCurlingCompetitionGender'
 >;
 
+const DEMOGRAPHIC_SCALAR_FIELDS: DemographicScalarField[] = [
+  'firstName',
+  'lastName',
+  'dateOfBirth',
+  'email',
+  'phone',
+  'emergencyContactName',
+  'emergencyContactPhone',
+];
+
+const MAILING_AUTOCOMPLETE_FIELDS: Array<[string, keyof RegistrationDemographicsFormFields]> = [
+  ['address-line1', 'mailingAddressLine1'],
+  ['address-line2', 'mailingAddressLine2'],
+  ['address-level2', 'mailingCity'],
+  ['address-level1', 'mailingState'],
+  ['country-name', 'mailingCountry'],
+  ['country', 'mailingCountry'],
+  ['postal-code', 'mailingPostalCode'],
+];
+
 function normalizeRegistrationEmail(email: string): string {
   return email.toLowerCase().trim();
+}
+
+function readInputValueById(id: string): string | null {
+  const el = document.getElementById(id);
+  if (el instanceof HTMLInputElement) return el.value;
+  return null;
+}
+
+/** Prefer mounted DOM values so autofill and unsynced controlled inputs are included on submit. */
+function mergeVisibleDomValues(
+  draft: RegistrationDemographicsFormFields,
+  idPrefix: string,
+  root: HTMLElement | null,
+): RegistrationDemographicsFormFields {
+  const next = { ...draft };
+  for (const field of DEMOGRAPHIC_SCALAR_FIELDS) {
+    const fromDom = readInputValueById(`${idPrefix}-${field}`);
+    if (fromDom != null) next[field] = fromDom;
+  }
+  if (!root) return next;
+  for (const [autoComplete, field] of MAILING_AUTOCOMPLETE_FIELDS) {
+    const el = root.querySelector(`input[autocomplete="${autoComplete}"]`);
+    if (el instanceof HTMLInputElement) next[field] = el.value;
+  }
+  return next;
 }
 
 function mailingFromForm(form: RegistrationDemographicsFormFields): StructuredPostalAddress {
@@ -187,41 +232,53 @@ const RegistrationDemographicFields = forwardRef<
   },
   ref,
 ) {
+  const rootRef = useRef<HTMLDivElement>(null);
   const draftRef = useRef<RegistrationDemographicsFormFields>({ ...initialValue });
   const onSubmitterEmailMatchRef = useRef(onSubmitterEmailMatch);
   const onCommitRef = useRef(onCommit);
+  const idPrefixRef = useRef(idPrefix);
+  const lockEmailRef = useRef(lockCurlerEmailToSubmitter);
+  const submitterEmailRef = useRef(submitterEmailForCurler);
   onSubmitterEmailMatchRef.current = onSubmitterEmailMatch;
   onCommitRef.current = onCommit;
+  idPrefixRef.current = idPrefix;
+  lockEmailRef.current = lockCurlerEmailToSubmitter;
+  submitterEmailRef.current = submitterEmailForCurler;
+
+  const [formDateOfBirth, setFormDateOfBirth] = useState(initialValue.dateOfBirth);
+  const [preferredPronouns, setPreferredPronouns] = useState(initialValue.preferredPronouns);
+  const [usaCurlingCompetitionGender, setUsaCurlingCompetitionGender] = useState(
+    initialValue.usaCurlingCompetitionGender || 'Unspecified',
+  );
+
+  const readCurrentValue = useCallback((): RegistrationDemographicsFormFields => {
+    let next = { ...draftRef.current };
+    if (lockEmailRef.current && submitterEmailRef.current) {
+      next = { ...next, email: submitterEmailRef.current };
+    }
+    next = mergeVisibleDomValues(next, idPrefixRef.current, rootRef.current);
+    draftRef.current = next;
+    return { ...next };
+  }, []);
 
   useEffect(() => {
-    draftRef.current = { ...initialValue };
-  }, [initialValue]);
-
-  useEffect(() => {
-    setFormDateOfBirth(initialValue.dateOfBirth);
-  }, [initialValue.dateOfBirth]);
-
-  useEffect(() => {
-    setPreferredPronouns(initialValue.preferredPronouns);
-  }, [initialValue.preferredPronouns]);
-
-  useEffect(() => {
-    setUsaCurlingCompetitionGender(initialValue.usaCurlingCompetitionGender);
-  }, [initialValue.usaCurlingCompetitionGender]);
+    if (!lockCurlerEmailToSubmitter || !submitterEmailForCurler) return;
+    draftRef.current = { ...draftRef.current, email: submitterEmailForCurler };
+  }, [lockCurlerEmailToSubmitter, submitterEmailForCurler]);
 
   useImperativeHandle(
     ref,
     () => ({
-      getValue: () => ({ ...draftRef.current }),
+      getValue: () => readCurrentValue(),
     }),
-    [],
+    [readCurrentValue],
   );
 
   useEffect(() => {
     return () => {
-      onCommitRef.current?.({ ...draftRef.current });
+      onCommitRef.current?.(readCurrentValue());
     };
-  }, []);
+  }, [readCurrentValue]);
 
   const handleFieldChange = useCallback((field: DemographicScalarField, value: string) => {
     draftRef.current = { ...draftRef.current, [field]: value };
@@ -239,11 +296,6 @@ const RegistrationDemographicFields = forwardRef<
     draftRef.current = applyMailingToDraft(draftRef.current, structured);
   }, []);
 
-  const [formDateOfBirth, setFormDateOfBirth] = useState(initialValue.dateOfBirth);
-  const [preferredPronouns, setPreferredPronouns] = useState(initialValue.preferredPronouns);
-  const [usaCurlingCompetitionGender, setUsaCurlingCompetitionGender] = useState(
-    initialValue.usaCurlingCompetitionGender || 'Unspecified',
-  );
   const effectiveDateOfBirth = curlerDateOfBirth || formDateOfBirth || null;
   const emergencyFieldsDisabled = isMemberMinor(effectiveDateOfBirth);
   const collectDateOfBirth = !curlerDateOfBirth;
@@ -290,7 +342,7 @@ const RegistrationDemographicFields = forwardRef<
   };
 
   return (
-    <div className="grid gap-4 sm:col-span-2 sm:grid-cols-6">
+    <div ref={rootRef} className="grid gap-4 sm:col-span-2 sm:grid-cols-6">
       {renderScalarField('firstName', 'First name', 'given-name', nameFieldSpan)}
       {renderScalarField('lastName', 'Last name', 'family-name', nameFieldSpan)}
       {collectDateOfBirth

@@ -32,7 +32,7 @@ interface AuthContextType {
     redirectTo?: string,
     options?: { suppressNavigation?: boolean },
   ) => Promise<void>;
-  logout: () => void;
+  logout: (redirectTo?: string) => void;
   updateMember: (member: AuthenticatedMember) => void;
   isLoading: boolean;
   /** True once the initial session verify attempt has finished (or was skipped). */
@@ -201,7 +201,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const logout = () => {
+  const logout = (redirectTo?: string) => {
     const refreshToken = getRefreshToken();
     api.post('/auth/logout', { refreshToken }).catch(() => {});
     clearAuthTokens();
@@ -209,7 +209,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setMember(null);
     setSessionSettled(true);
     clearAccountSwitchState();
-    navigate('/login');
+    navigate(redirectTo || '/login');
   };
 
   const updateMember = (updatedMember: AuthenticatedMember) => {

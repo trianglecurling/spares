@@ -371,6 +371,10 @@ function errorMessage(error: unknown, fallback: string): string {
   return editValidationErrorMessage(error, fallback);
 }
 
+function isRegistrationInProgressConflict(error: unknown): boolean {
+  return axios.isAxiosError(error) && error.response?.status === 409;
+}
+
 function formatRegistrationDiscountOffPhrase(slot: RegistrationDiscountSlot): string {
   if (slot.amountType === 'percent') {
     return `${slot.value}% off`;
@@ -406,6 +410,12 @@ function renderMembershipChoiceContent(label: string, description: string, feeMi
 
 function hasClubExperienceRecord(knownExperienceYears: number | undefined | null): boolean {
   return (knownExperienceYears ?? 0) > 0;
+}
+
+function membershipUsesLeagueExperience(
+  membershipOption: RegistrationMembershipPaymentPayload['selection']['membershipOption'] | null | undefined,
+): boolean {
+  return membershipOption !== 'social' && membershipOption !== 'junior_recreational';
 }
 
 function isSelfReportedExperienceType(
@@ -496,6 +506,17 @@ function isMinorDate(dateOfBirth: string): boolean {
 function isJuniorRecreationalEligibleDate(dateOfBirth: string): boolean {
   const age = ageFromDateOfBirth(dateOfBirth);
   return age !== null && age <= 21;
+}
+
+function signedInMemberFullName(
+  member: { name: string } | null,
+  submitter?: Pick<MemberSummary, 'firstName' | 'lastName'> | null,
+): string {
+  const first = submitter?.firstName?.trim() ?? '';
+  const last = submitter?.lastName?.trim() ?? '';
+  const combined = `${first} ${last}`.trim();
+  if (combined) return combined;
+  return member?.name?.trim() ?? '';
 }
 
 function demographicsFromMember(member: MemberSummary | null): DemographicsForm {
@@ -858,7 +879,7 @@ export default function RegistrationShellPage() {
   const priorityEditCurlerMemberId = priorityEditState?.curlerMemberId;
   const [searchParams] = useSearchParams();
   const { step: stepParam } = useParams<{ step: string }>();
-  const { member, login, isLoading: authLoading } = useAuth();
+  const { member, login, logout, isLoading: authLoading } = useAuth();
   const { confirm } = useConfirm();
   const { showAlert } = useAlert();
   const memberOptions = useMemberOptions({ autoLoad: Boolean(member) });
@@ -1242,7 +1263,9 @@ export default function RegistrationShellPage() {
     const { id, ...shell } = data;
     setRegistrationId(id);
     setPayload(shell as RegistrationShellPayload);
-    setDemographics(demographicsFromMember(data.curler));
+    if (data.curler) {
+      setDemographics(demographicsFromMember(data.curler));
+    }
     setGuardian({
       firstName: data.registration.guardian_first_name || '',
       lastName: data.registration.guardian_last_name || '',
@@ -1320,7 +1343,7 @@ export default function RegistrationShellPage() {
         buildGuestDraftBase(windowState, {
           registeringForSelf,
           sameEmail,
-          demographics: demographicsRef.current,
+          demographics: identityDemographicFieldsRef.current?.getValue() ?? demographicsRef.current,
           guardian,
           nameTagName: nameTagNameRef.current,
           nameTagIncludePronouns: nameTagIncludePronounsRef.current,
@@ -1602,9 +1625,15 @@ export default function RegistrationShellPage() {
 
   function handleSameEmailChange(value: 'same' | 'different') {
     setSameEmail(value);
+    const live = identityDemographicFieldsRef.current?.getValue();
     if (value === 'same' && submitterEmailForCurler) {
-      setDemographics((current) => ({ ...current, email: submitterEmailForCurler }));
+      setDemographics((current) => ({
+        ...(live ?? current),
+        email: submitterEmailForCurler,
+      }));
+      return;
     }
+    if (live) setDemographics(live);
   }
 
   useEffect(() => {
@@ -1634,6 +1663,16 @@ export default function RegistrationShellPage() {
       setReturningRegistrarProfileChoice(null);
     }
   }, [currentStep, member, payload?.registration.returning_member_answer]);
+
+  useEffect(() => {
+    if (!member?.id) return;
+    setReturningGuestLoginPhase(null);
+    setReturningLoginEmail('');
+    setReturningLoginCode('');
+    setReturningLoginMultipleMembers([]);
+    setReturningLoginTempToken('');
+    setReturningLoginUnrecognizedChoice(null);
+  }, [member?.id]);
 
   useEffect(() => {
     if (currentStep !== 'membership') return;
@@ -1780,6 +1819,10 @@ export default function RegistrationShellPage() {
       return;
     }
     if (suppressExperienceAutoSkipRef.current) return;
+    if (!membershipUsesLeagueExperience(membershipPayment?.selection.membershipOption)) {
+      navigate('/registration/review', { replace: true });
+      return;
+    }
 
     let canceled = false;
     (async () => {
@@ -2277,6 +2320,10 @@ export default function RegistrationShellPage() {
     try {
       await login(accessToken, refreshToken, normalized, '/registration/identity', { suppressNavigation: true });
 
+      if (await continueExistingServerDraftFromMe()) {
+        return;
+      }
+
       const createResponse = await api.post('/registration/drafts', {
         seasonId: windowState.season.id,
         sessionId: windowState.session.id,
@@ -2292,6 +2339,9 @@ export default function RegistrationShellPage() {
       resetReturningGuestLoginFlow();
       navigate('/registration/identity');
     } catch (err) {
+      if (isRegistrationInProgressConflict(err) && (await continueExistingServerDraftFromMe().catch(() => false))) {
+        return;
+      }
       setError(errorMessage(err, 'Unable to finish signing you in.'));
     } finally {
       setLoading(false);
@@ -2469,6 +2519,18 @@ export default function RegistrationShellPage() {
     }
   }
 
+  function handleIdentityLogout() {
+    clearLocalDraft();
+    resetRegistrationFormState();
+    setResumeOffer('none');
+    setServerResume(null);
+    setReturningAnswer(null);
+    resetReturningGuestLoginFlow();
+    setReturningIdentityAuxMode(null);
+    setReturningRegistrarProfileChoice(null);
+    logout('/registration/start');
+  }
+
   const navigateRegistrationBack = useCallback(
     (path: string) => {
       registrationNavigationIntentRef.current = 'back';
@@ -2572,6 +2634,19 @@ export default function RegistrationShellPage() {
     setResumeOffer('none');
   }
 
+  async function continueExistingServerDraftFromMe(): Promise<boolean> {
+    const { data } = await api.get<{ draft: (RegistrationShellPayload & { id: number }) | null }>(
+      '/registration/drafts/me',
+    );
+    if (!data.draft) return false;
+    hydrateFromServerPayload(data.draft);
+    const target = await resolveResumeStepForDraft(data.draft);
+    resetReturningGuestLoginFlow();
+    setResumeOffer('none');
+    navigate(`/registration/${target}`, { replace: true });
+    return true;
+  }
+
   async function startDraft(answer: 'yes' | 'no') {
     if (!windowState) return;
     if (answer === 'yes' && !member) return;
@@ -2579,6 +2654,9 @@ export default function RegistrationShellPage() {
     setError('');
     resetRegistrationFormState();
     try {
+      if (member && (await continueExistingServerDraftFromMe())) {
+        return;
+      }
       if (answer === 'yes') {
         const response = await api.post('/registration/drafts', {
           seasonId: windowState.season.id,
@@ -2608,6 +2686,9 @@ export default function RegistrationShellPage() {
       );
       navigate('/registration/identity');
     } catch (err) {
+      if (member && isRegistrationInProgressConflict(err) && (await continueExistingServerDraftFromMe().catch(() => false))) {
+        return;
+      }
       setError(errorMessage(err, 'Unable to start registration.'));
     } finally {
       setLoading(false);
@@ -2935,6 +3016,7 @@ export default function RegistrationShellPage() {
         // Self-reported years raise `knownExperienceYears`. Only returning members
         // with a club record (and no self-report) skip the experience question.
         if (
+          membershipUsesLeagueExperience(data.selection.membershipOption) &&
           !isSelfReportedExperienceType(data.selection.experienceType) &&
           hasClubExperienceRecord(data.knownExperienceYears)
         ) {
@@ -3663,7 +3745,7 @@ export default function RegistrationShellPage() {
             <h1 className="mt-3 text-3xl font-bold text-[#121033]">Start registration</h1>
             <p className="mt-3 text-gray-600">This registration is for one curler for the {seasonSessionLabel} session.</p>
             <div className="mt-8 min-h-[280px]">
-          {!returningGuestLoginPhase ? (
+          {member || !returningGuestLoginPhase ? (
             <>
               <FormField label="Is the curler a returning member?" required tone="public">
                 <ChoiceInput
@@ -3951,6 +4033,19 @@ export default function RegistrationShellPage() {
         <RegistrationCard>
           <RegistrationFlowHeader />
           <h1 className="text-3xl font-bold text-[#121033]">Who are you registering?</h1>
+          {member ? (
+            <p className="mt-3 text-gray-600">
+              You are currently signed in as {signedInMemberFullName(member, payload.submitter)}. If this is not you,{' '}
+              <button
+                type="button"
+                className="font-medium text-primary-teal-link underline underline-offset-2 hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/30 rounded-sm"
+                onClick={handleIdentityLogout}
+              >
+                log out
+              </button>{' '}
+              to continue.
+            </p>
+          ) : null}
           {!member ? (
             <Button className="mt-6" onClick={() => navigate('/login', { state: { from: { pathname: '/registration/identity' } } })}>
               Log in to continue

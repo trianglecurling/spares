@@ -529,6 +529,22 @@ describe('registration business logic', () => {
     expectReason(withSpareOnly, 'junior_recreational_exclusive');
   });
 
+  test('Junior Recreational ignores standard discounts at checkout', () => {
+    const fees = calculateRegistrationFees(
+      membershipOnly({
+        membershipOption: 'junior_recreational',
+        discountClaims: {
+          student: { claimed: true, institution: 'UNC' },
+          reciprocal: { claimed: true, clubName: 'Charlotte' },
+        },
+      }),
+    );
+    expect(fees.blockingErrors).toHaveLength(0);
+    expect(fees.discountLineItems.filter((item) => item.lineType !== 'financial_assistance_discount')).toHaveLength(0);
+    expect(fees.lineItems.map((item) => item.lineType)).toEqual(['junior_recreational_fee']);
+    expect(fees.totalDueMinor).toBe(7500);
+  });
+
   test('Junior Recreational payment timing supports financial assistance review', () => {
     const junior = evaluateRegistrationDraft(membershipOnly({ membershipOption: 'junior_recreational' }));
     expect(junior.paymentDecision.outcome).toBe('immediate_payment');

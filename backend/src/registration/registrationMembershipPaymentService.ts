@@ -1068,7 +1068,7 @@ async function buildRegistrationContextFromSourceRow(
     selections,
     priorities,
     discountClaims:
-      membershipOption === 'social'
+      membershipOption === 'social' || membershipOption === 'junior_recreational'
         ? {}
         : {
             student: {
@@ -1446,7 +1446,7 @@ export async function updateDiscounts(registrationId: number, actor: Member, inp
     throw new RegistrationMembershipPaymentValidationError({ discounts: 'Social membership cannot receive discounts.' });
   }
   if (registration.membership_option === 'junior_recreational') {
-    throw new RegistrationMembershipPaymentValidationError({ discounts: 'Junior Recreational cannot receive standard discounts.' });
+    return getRegistrationMembershipPaymentPayload(registrationId, actor);
   }
 
   const studentClaimed = input.studentDiscountClaimed === true;
@@ -1476,11 +1476,8 @@ export async function updateExperience(registrationId: number, actor: Member, in
   await requireRegistrationAccess(registrationId, actor);
   const registration = await loadFullRegistration(registrationId);
   await assertEditableForMembershipPayment(registration, actor);
-  if (registration.membership_option === 'social') {
-    throw new RegistrationMembershipPaymentValidationError({ experience: 'Social membership does not require curling experience.' });
-  }
-  if (registration.membership_option === 'junior_recreational') {
-    throw new RegistrationMembershipPaymentValidationError({ experience: 'Junior Recreational does not use normal league experience.' });
+  if (registration.membership_option === 'social' || registration.membership_option === 'junior_recreational') {
+    return getRegistrationMembershipPaymentPayload(registrationId, actor);
   }
   if (input.experienceType === 'specified_years') {
     if (!Number.isFinite(input.experienceSelfReportedYears) || input.experienceSelfReportedYears < 0) {

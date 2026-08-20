@@ -299,7 +299,9 @@ function computePreview(
   temporaryFillLeagueIds: number[] = [],
 ): RegistrationFeePreview {
   const lineItems: RegistrationFeeLineItem[] = [];
-  const blockingErrors = validateDiscountClaims(context).blockingErrors;
+  const skipOrdinaryDiscounts =
+    context.membershipOption === 'junior_recreational' || context.membershipOption === 'social';
+  const blockingErrors = skipOrdinaryDiscounts ? [] : validateDiscountClaims(context).blockingErrors;
 
   if (context.membershipOption === 'regular' || context.membershipOption === 'regular_spare_only') {
     addCharge(lineItems, {
@@ -339,7 +341,8 @@ function computePreview(
   addLeagueCharges(context, lineItems, chargedLeagueIds);
   addReplacementNameTagCharge(context, lineItems);
 
-  const ordinaryDiscounts = context.isSocialToRegularUpgrade ? [] : addOrdinaryDiscounts(context, lineItems);
+  const ordinaryDiscounts =
+    context.isSocialToRegularUpgrade || skipOrdinaryDiscounts ? [] : addOrdinaryDiscounts(context, lineItems);
   const sabbaticalFillDiscounts = addSabbaticalFillDiscounts(
     context,
     chargedLeagueIds,
