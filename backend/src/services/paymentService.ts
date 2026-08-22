@@ -304,6 +304,22 @@ export interface ProviderRefundResult {
 
 export type ExpireHostedCheckoutResult = 'expired' | 'already_expired' | 'already_paid';
 
+export type CompletePaidProviderOrderStatus = 'completed' | 'already_completed' | 'skipped';
+
+export interface CompletePaidProviderOrderInput {
+  providerOrderId: string | null;
+  metadata?: Record<string, unknown> | null;
+  /** Provider-native order id when already known (Square order id from payment.order_id). */
+  nativeOrderId?: string | null;
+  dryRun?: boolean;
+}
+
+export interface CompletePaidProviderOrderResult {
+  status: CompletePaidProviderOrderStatus;
+  reason?: string;
+  providerNativeOrderId?: string | null;
+}
+
 export interface PaymentProviderAdapter {
   readonly provider: PaymentProvider;
   createHostedCheckoutSession(input: CreateCheckoutInput): Promise<HostedCheckoutSession>;
@@ -312,6 +328,11 @@ export interface PaymentProviderAdapter {
   fetchRefundStatus(providerRefundId: string): Promise<RefundStatus | null>;
   createRefund(input: CreateRefundInput): Promise<ProviderRefundResult>;
   expireHostedCheckoutSession?(providerOrderId: string): Promise<ExpireHostedCheckoutResult>;
+  /**
+   * Mark the provider-side order complete after a full payment.
+   * Square payment-link orders stay OPEN unless this is called.
+   */
+  completePaidProviderOrder?(input: CompletePaidProviderOrderInput): Promise<CompletePaidProviderOrderResult>;
 }
 
 function buildStripeCheckoutLineItems(input: CreateCheckoutInput): Stripe.Checkout.SessionCreateParams.LineItem[] {
@@ -760,6 +781,30 @@ export interface ReconcilePendingPaymentsSummary {
   maxPendingAgeThresholdIso: string | null;
   results: ReconcilePaymentOrderResult[];
 }
+
+export interface CompletePaidProviderOrderSummaryRow {
+  paymentOrderId: number;
+  provider: PaymentProvider;
+  providerNativeOrderId: string | null;
+  status: CompletePaidProviderOrderStatus | 'failed';
+  reason?: string;
+}
+
+export interface CompletePaidProviderOrdersSummary {
+  checked: number;
+  completed: number;
+  alreadyCompleted: number;
+  skipped: number;
+  failed: number;
+  results: CompletePaidProviderOrderSummaryRow[];
+}
+
+const FULLY_PAID_ORDER_STATUSES: ReadonlySet<PaymentOrderStatus> = new Set([
+  'succeeded',
+  'pending_refund',
+  'refunded',
+  'partially_refunded',
+]);
 
 export interface CreateRefundForOrderInput {
   orderId: number;
@@ -1329,6 +1374,148 @@ export class PaymentService {
     await this.syncOrderRefundStatus(orderId);
   }
 
+  async completePaidProviderOrderForPaymentOrder(
+    orderId: number,
+    options?: { dryRun?: boolean; nativeOrderId?: string | null }
+  ): Promise<CompletePaidProviderOrderSummaryRow> {
+    const [order] = await this.db
+      .select({
+        id: this.schema.paymentOrders.id,
+        provider: this.schema.paymentOrders.provider,
+        provider_order_id: this.schema.paymentOrders.provider_order_id,
+        metadata: this.schema.paymentOrders.metadata,
+        status: this.schema.paymentOrders.status,
+      })
+      .from(this.schema.paymentOrders)
+      .where(eq(this.schema.paymentOrders.id, orderId))
+      .limit(1);
+    if (!order) {
+      return {
+        paymentOrderId: orderId,
+        provider: this.defaultProvider,
+        providerNativeOrderId: options?.nativeOrderId ?? null,
+        status: 'failed',
+        reason: 'payment_order_not_found',
+      };
+    }
+
+    const provider = order.provider as PaymentProvider;
+    const adapter = this.adapters[provider];
+    if (!adapter?.completePaidProviderOrder) {
+      return {
+        paymentOrderId: orderId,
+        provider,
+        providerNativeOrderId: options?.nativeOrderId ?? null,
+        status: 'skipped',
+        reason: 'provider_does_not_complete_orders',
+      };
+    }
+
+    const metadata = safeJsonParseObject(order.metadata);
+    try {
+      const result = await adapter.completePaidProviderOrder({
+        providerOrderId: order.provider_order_id ?? null,
+        metadata,
+        nativeOrderId: options?.nativeOrderId ?? null,
+        dryRun: options?.dryRun === true,
+      });
+
+      const resolvedNativeOrderId = result.providerNativeOrderId ?? options?.nativeOrderId ?? asString(metadata.squareOrderId);
+      if (
+        !options?.dryRun
+        && resolvedNativeOrderId
+        && asString(metadata.squareOrderId) !== resolvedNativeOrderId
+      ) {
+        await this.db
+          .update(this.schema.paymentOrders)
+          .set({
+            metadata: safeJsonStringify({
+              ...metadata,
+              squareOrderId: resolvedNativeOrderId,
+            }),
+            updated_at: sql`CURRENT_TIMESTAMP`,
+          })
+          .where(eq(this.schema.paymentOrders.id, orderId));
+      }
+
+      await logEvent({
+        eventType: 'payment.provider_order.complete',
+        relatedId: orderId,
+        meta: {
+          provider,
+          status: result.status,
+          reason: result.reason ?? null,
+          providerNativeOrderId: resolvedNativeOrderId,
+          dryRun: options?.dryRun === true,
+        },
+      });
+
+      return {
+        paymentOrderId: orderId,
+        provider,
+        providerNativeOrderId: resolvedNativeOrderId,
+        status: result.status,
+        reason: result.reason,
+      };
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'Unknown error';
+      await logEvent({
+        eventType: 'payment.provider_order.complete_failed',
+        relatedId: orderId,
+        meta: {
+          provider,
+          error: reason,
+        },
+      });
+      return {
+        paymentOrderId: orderId,
+        provider,
+        providerNativeOrderId: options?.nativeOrderId ?? asString(metadata.squareOrderId),
+        status: 'failed',
+        reason,
+      };
+    }
+  }
+
+  async completePaidProviderOrdersForFullyPaidPayments(input?: {
+    dryRun?: boolean;
+    delayMs?: number;
+    provider?: PaymentProvider;
+  }): Promise<CompletePaidProviderOrdersSummary> {
+    const provider = input?.provider ?? 'square';
+    const delayMs = Math.max(0, input?.delayMs ?? 100);
+    const rows = await this.db
+      .select({
+        id: this.schema.paymentOrders.id,
+        status: this.schema.paymentOrders.status,
+      })
+      .from(this.schema.paymentOrders)
+      .where(
+        and(
+          eq(this.schema.paymentOrders.provider, provider),
+          inArray(this.schema.paymentOrders.status, [...FULLY_PAID_ORDER_STATUSES])
+        )
+      )
+      .orderBy(this.schema.paymentOrders.id);
+
+    const results: CompletePaidProviderOrderSummaryRow[] = [];
+    for (const [index, row] of rows.entries()) {
+      if (index > 0 && delayMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+      results.push(await this.completePaidProviderOrderForPaymentOrder(row.id, { dryRun: input?.dryRun === true }));
+    }
+
+    return {
+      checked: results.length,
+      completed: results.filter((result) => result.status === 'completed').length,
+      alreadyCompleted: results.filter((result) => result.status === 'already_completed').length,
+      skipped: results.filter((result) => result.status === 'skipped').length,
+      failed: results.filter((result) => result.status === 'failed').length,
+      results,
+    };
+  }
+
   async expirePendingCheckout(orderId: number, reason = 'expired-unconfirmed-league-invoice'): Promise<{
     orderId: number;
     checkout: ExpireHostedCheckoutResult | 'no_provider_session';
@@ -1452,6 +1639,7 @@ export class PaymentService {
     if ((providerStatus === 'succeeded' || currentStatus === 'succeeded') && !changed) {
       await this.confirmCurlingRegistrationForSucceededOrder(orderId);
       await this.confirmEventRegistrationForSucceededOrder(orderId);
+      await this.completePaidProviderOrderForPaymentOrder(orderId);
     }
 
     await this.reconcileRefundsForOrder(orderId);
@@ -1834,9 +2022,9 @@ export class PaymentService {
         .where(eq(this.schema.paymentEvents.id, eventId!));
 
       if (transitionedToSucceeded) {
-        await this.runSucceededOrderSideEffects(order.id);
+        await this.runSucceededOrderSideEffects(order.id, verified.orderLookup.providerOrderId);
       } else if (verified.nextStatus === 'succeeded') {
-        await this.runSucceededOrderSideEffects(order.id);
+        await this.runSucceededOrderSideEffects(order.id, verified.orderLookup.providerOrderId);
       }
 
       if (transitionedToFailed) {
@@ -1887,10 +2075,11 @@ export class PaymentService {
     }
   }
 
-  private async runSucceededOrderSideEffects(orderId: number): Promise<void> {
+  private async runSucceededOrderSideEffects(orderId: number, nativeOrderId?: string | null): Promise<void> {
     await this.sendDonationReceiptForSucceededOrder(orderId);
     await this.confirmEventRegistrationForSucceededOrder(orderId);
     await this.confirmCurlingRegistrationForSucceededOrder(orderId);
+    await this.completePaidProviderOrderForPaymentOrder(orderId, { nativeOrderId });
     dispatchWebhookEvent('payment.received', { orderId }).catch(() => {});
     const [orderSubject] = await this.db
       .select({ subjectType: this.schema.paymentOrders.subject_type })
@@ -1904,6 +2093,7 @@ export class PaymentService {
 
   private async runRefundedOrderSideEffects(orderId: number): Promise<void> {
     await this.cancelEventRegistrationForRefundedOrder(orderId);
+    await this.completePaidProviderOrderForPaymentOrder(orderId);
     dispatchWebhookEvent('payment.refunded', { orderId }).catch(() => {});
   }
 

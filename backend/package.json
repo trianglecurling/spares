@@ -36,7 +36,8 @@
     "db:delete-all-permalinks": "bun run src/scripts/delete-all-permalinks.ts",
     "db:migrate-minutes-to-drive": "bun run src/scripts/migrate-minutes-to-drive.ts",
     "db:export-board-meeting-minutes": "bun run src/scripts/export-board-meeting-minutes.ts",
-    "db:import-board-meeting-minutes-json": "bun run src/scripts/import-board-meeting-minutes-json.ts"
+    "db:import-board-meeting-minutes-json": "bun run src/scripts/import-board-meeting-minutes-json.ts",
+    "square:complete-paid-orders": "bun run src/scripts/complete-paid-square-orders.ts"
   },
   "dependencies": {
     "@azure/communication-email": "^1.0.0",

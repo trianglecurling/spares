@@ -4,6 +4,8 @@ import type { Currency } from 'square';
 import { config } from '../config.js';
 import type {
   CheckoutLineItem,
+  CompletePaidProviderOrderInput,
+  CompletePaidProviderOrderResult,
   CreateCheckoutInput,
   CreateRefundInput,
   ExpireHostedCheckoutResult,
@@ -94,6 +96,81 @@ function resolveSquareOrderPaymentStatusFromRecord(order: unknown): PaymentOrder
   }
 
   return null;
+}
+
+const TERMINAL_SQUARE_ORDER_STATES = new Set(['COMPLETED', 'CANCELED', 'CANCELLED']);
+const TERMINAL_SQUARE_FULFILLMENT_STATES = new Set(['COMPLETED', 'CANCELED', 'CANCELLED', 'FAILED']);
+
+export function isSquareOrderFullyPaid(order: unknown): boolean {
+  if (!isRecord(order)) return false;
+  const netAmountDue = moneyAmountMinor(order.netAmountDueMoney ?? order.net_amount_due_money);
+  const tenders = Array.isArray(order.tenders) ? order.tenders : [];
+  return netAmountDue === 0 && tenders.length > 0;
+}
+
+export type SquareOrderCompletionPlan =
+  | { action: 'already_completed'; orderId: string | null }
+  | { action: 'skip'; reason: string; orderId: string | null }
+  | {
+      action: 'complete';
+      orderId: string;
+      version: number;
+      locationId: string | null;
+      fulfillments: Array<{ uid: string; state: 'COMPLETED' }>;
+    };
+
+export function planSquareOrderCompletion(order: unknown): SquareOrderCompletionPlan {
+  if (!isRecord(order)) {
+    return { action: 'skip', reason: 'missing_order', orderId: null };
+  }
+
+  const orderId = asString(order.id);
+  const state = (asString(order.state) ?? '').toUpperCase();
+  if (state === 'COMPLETED') {
+    return { action: 'already_completed', orderId };
+  }
+  if (TERMINAL_SQUARE_ORDER_STATES.has(state)) {
+    return { action: 'skip', reason: 'canceled', orderId };
+  }
+  if (!isSquareOrderFullyPaid(order)) {
+    return { action: 'skip', reason: 'not_fully_paid', orderId };
+  }
+
+  const version = asNumber(order.version);
+  if (version == null) {
+    return { action: 'skip', reason: 'missing_version', orderId };
+  }
+  if (!orderId) {
+    return { action: 'skip', reason: 'missing_order_id', orderId: null };
+  }
+
+  const fulfillments: Array<{ uid: string; state: 'COMPLETED' }> = [];
+  const rawFulfillments = Array.isArray(order.fulfillments) ? order.fulfillments : [];
+  for (const fulfillment of rawFulfillments) {
+    if (!isRecord(fulfillment)) continue;
+    const uid = asString(fulfillment.uid);
+    if (!uid) continue;
+    const fulfillmentState = (asString(fulfillment.state) ?? '').toUpperCase();
+    if (!TERMINAL_SQUARE_FULFILLMENT_STATES.has(fulfillmentState)) {
+      fulfillments.push({ uid, state: 'COMPLETED' });
+    }
+  }
+
+  return {
+    action: 'complete',
+    orderId,
+    version,
+    locationId: asString(order.locationId ?? order.location_id),
+    fulfillments,
+  };
+}
+
+function isSquareVersionMismatch(error: unknown): boolean {
+  if (!(error instanceof SquareError)) return false;
+  return (error.errors ?? []).some((bodyError) => {
+    const code = (bodyError.code ?? '').toUpperCase();
+    return code === 'VERSION_MISMATCH' || code === 'CONFLICT';
+  });
 }
 
 async function resolveSquareOrderPaymentStatus(
@@ -490,6 +567,86 @@ export class SquarePaymentProviderAdapter implements PaymentProviderAdapter {
       if (/not found|NOT_FOUND|already/i.test(message)) return 'already_expired';
       throw error;
     }
+  }
+
+  async completePaidProviderOrder(input: CompletePaidProviderOrderInput): Promise<CompletePaidProviderOrderResult> {
+    const client = this.requireClient();
+    const squareOrderId = await this.resolveSquareOrderId(client, input);
+    if (!squareOrderId) {
+      return { status: 'skipped', reason: 'missing_square_order_id', providerNativeOrderId: null };
+    }
+
+    return this.completeSquareOrderById(client, squareOrderId, input.dryRun === true);
+  }
+
+  private async completeSquareOrderById(
+    client: SquareClient,
+    squareOrderId: string,
+    dryRun: boolean,
+    remainingVersionRetries = 1
+  ): Promise<CompletePaidProviderOrderResult> {
+    const orderResponse = await callSquare(() => client.orders.get({ orderId: squareOrderId }));
+    const plan = planSquareOrderCompletion(orderResponse.order);
+    if (plan.action === 'already_completed') {
+      return { status: 'already_completed', providerNativeOrderId: plan.orderId ?? squareOrderId };
+    }
+    if (plan.action === 'skip') {
+      return { status: 'skipped', reason: plan.reason, providerNativeOrderId: plan.orderId ?? squareOrderId };
+    }
+    if (dryRun) {
+      return { status: 'completed', reason: 'dry_run', providerNativeOrderId: plan.orderId };
+    }
+
+    try {
+      await callSquare(() =>
+        client.orders.update({
+          orderId: plan.orderId,
+          idempotencyKey: `complete-paid-order:${plan.orderId}:v${plan.version}`,
+          order: {
+            version: plan.version,
+            state: 'COMPLETED',
+            locationId: plan.locationId ?? this.requireLocationId(),
+            fulfillments: plan.fulfillments.length > 0 ? plan.fulfillments : undefined,
+          },
+        })
+      );
+    } catch (error) {
+      if (remainingVersionRetries > 0 && isSquareVersionMismatch(error)) {
+        return this.completeSquareOrderById(client, squareOrderId, dryRun, remainingVersionRetries - 1);
+      }
+      throw error;
+    }
+
+    return { status: 'completed', providerNativeOrderId: plan.orderId };
+  }
+
+  private async resolveSquareOrderId(
+    client: SquareClient,
+    input: CompletePaidProviderOrderInput
+  ): Promise<string | null> {
+    const metadata = input.metadata ?? {};
+    const candidates = [
+      asString(input.nativeOrderId),
+      asString(metadata.squareOrderId),
+      asString(metadata.square_order_id),
+    ].filter((value): value is string => value != null);
+
+    if (candidates.length > 0) {
+      return candidates[0];
+    }
+
+    const providerOrderId = asString(input.providerOrderId);
+    if (!providerOrderId) return null;
+
+    try {
+      const linkResponse = await client.checkout.paymentLinks.get({ id: providerOrderId });
+      const fromLink = asString(linkResponse.paymentLink?.orderId);
+      if (fromLink) return fromLink;
+    } catch {
+      // providerOrderId may already be a Square order id.
+    }
+
+    return providerOrderId;
   }
 
   async createRefund(input: CreateRefundInput): Promise<ProviderRefundResult> {
