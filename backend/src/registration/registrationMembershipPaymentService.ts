@@ -67,9 +67,13 @@ import { sendWaitlistEntryJoinedNotifications } from './waitlistJoinedNotificati
 import type { Member } from '../types.js';
 import { memberCanManageRegistrations } from '../utils/registrationStaffAccess.js';
 import { sendManualRegistrationUpdateEmail } from './registrationStaffCommunicationService.js';
+import {
+  staffCanRequestDeferredPayment,
+  unpaidImmediateRegistrationCanDefer,
+} from './registrationUnpaidImmediateDeferral.js';
 
 export const REGISTRATION_IMMEDIATE_PAYMENT_CONFIRMATION_MESSAGE =
-  'After making these changes to your registration, your league placements no longer rely on waitlists, so payment can be taken immediately. Click continue to proceed to checkout. Your registration updates will be confirmed after payment is received.';
+  'After making these changes to your registration, your league placements are now confirmed, so payment can be taken immediately. Click continue to proceed to checkout. Your registration updates will be confirmed after payment is received.';
 
 const DEFERRED_REGISTRATION_STATUSES = new Set([
   'awaiting_placement',
@@ -2631,6 +2635,102 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
   };
 }
 
+export async function convertUnpaidImmediateRegistrationToAwaitingPlacement(input: {
+  registrationId: number;
+  actorMemberId: number;
+}): Promise<{
+  registrationId: number;
+  invoiceId: number;
+  expiredOrderId: number | null;
+  checkoutExpired: boolean;
+  deferralReasons: string[];
+  totalDueMinor: number;
+}> {
+  const registration = await loadFullRegistration(input.registrationId);
+  if (!registration.curler_member_id) {
+    throw new RegistrationMembershipPaymentValidationError({ curler: 'The curler is required.' });
+  }
+  const existingInvoice = await loadLatestRegistrationInvoice(input.registrationId);
+  if (
+    !unpaidImmediateRegistrationCanDefer({
+      registrationStatus: registration.status,
+      invoiceStatus: existingInvoice?.status ?? null,
+      invoiceDeferred: existingInvoice?.deferred ?? 0,
+    })
+  ) {
+    throw new RegistrationMembershipPaymentValidationError({
+      registration: 'This registration is not an unpaid immediate invoice that can be deferred.',
+    });
+  }
+
+  const context = await buildRegistrationContextForDraft(input.registrationId);
+  const evaluation = evaluateRegistrationDraft(context);
+  if (evaluation.paymentDecision.outcome !== 'deferred_payment') {
+    throw new RegistrationMembershipPaymentValidationError({
+      registration: 'Current placement rules still require immediate payment for this registration.',
+    });
+  }
+
+  let expiredOrderId: number | null = existingInvoice?.payment_order_id ?? null;
+  let checkoutExpired = false;
+  if (expiredOrderId) {
+    const paymentService = createPaymentService();
+    const expired = await paymentService.expirePendingCheckout(
+      expiredOrderId,
+      'expired-unconfirmed-league-invoice',
+    );
+    checkoutExpired = expired.checkout === 'expired' || expired.checkout === 'already_expired';
+  }
+
+  const { db, schema } = getDrizzleDb();
+  const invoiceId = await createInvoiceSnapshot({
+    registrationId: input.registrationId,
+    payerMemberId: registration.submitted_by_member_id ?? input.actorMemberId,
+    feePreview: evaluation.feePreview,
+    paymentDecision: evaluation.paymentDecision,
+    existingInvoiceId: existingInvoice?.id ?? null,
+  });
+  await db
+    .update(schema.registrationInvoices)
+    .set({
+      payment_order_id: null,
+      stripe_checkout_session_id: null,
+      updated_at: sql`CURRENT_TIMESTAMP`,
+    })
+    .where(eq(schema.registrationInvoices.id, invoiceId));
+  await db
+    .update(schema.curlingRegistrations)
+    .set({
+      status: 'awaiting_placement',
+      last_fee_preview_json: dbValue(jsonStorageValue(evaluation.feePreview)),
+      payment_decision_json: dbValue(jsonStorageValue(evaluation.paymentDecision)),
+      updated_at: sql`CURRENT_TIMESTAMP`,
+    })
+    .where(eq(schema.curlingRegistrations.id, input.registrationId));
+  await syncRegistrationRosterPlacements({
+    registrationId: input.registrationId,
+    curlerMemberId: registration.curler_member_id,
+    placements: rosterPlacementsForRegistration(context, evaluation.priorityEvaluation),
+    registrationStatus: 'awaiting_placement',
+  });
+  await safeSendRegistrationEmail({
+    registrationId: input.registrationId,
+    messageType: 'registration_submitted_deferred_payment',
+    payload: {
+      amountDueMinor: evaluation.feePreview.totalDueMinor,
+      summaryLines: await registrationSummaryLines(context),
+    },
+  });
+  return {
+    registrationId: input.registrationId,
+    invoiceId,
+    expiredOrderId,
+    checkoutExpired,
+    deferralReasons: evaluation.paymentDecision.deferralReasons,
+    totalDueMinor: evaluation.feePreview.totalDueMinor,
+  };
+}
+
 export async function triggerDeferredRegistrationPayment(input: {
   registrationId: number;
   actorMemberId: number;
@@ -2639,6 +2739,11 @@ export async function triggerDeferredRegistrationPayment(input: {
   const registration = await loadFullRegistration(input.registrationId);
   if (!registration.curler_member_id) {
     throw new RegistrationMembershipPaymentValidationError({ curler: 'The curler is required.' });
+  }
+  if (!staffCanRequestDeferredPayment(registration.status)) {
+    throw new RegistrationMembershipPaymentValidationError({
+      registration: 'Payment can be requested only after registration is awaiting placement or staff review.',
+    });
   }
   const paymentContext = await buildRegistrationContextForDraft(input.registrationId);
   const { db, schema } = getDrizzleDb();

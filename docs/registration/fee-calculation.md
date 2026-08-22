@@ -196,8 +196,10 @@ Charges:
 - Regular membership
 - League fee for the subject-to-availability league
 
-Subject-to-availability leagues have no waitlist. They are billed immediately
-and do not consume a protected guarantee spot.
+Subject-to-availability leagues have no waitlist and are not yet confirmed.
+They do not consume a protected guarantee spot. Payment is deferred until
+staff places the curler; the league fee sits on the estimate ceiling, not
+the confirmed floor.
 
 ### Sabbatical-only
 

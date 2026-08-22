@@ -6,6 +6,7 @@ import type {
   CheckoutLineItem,
   CreateCheckoutInput,
   CreateRefundInput,
+  ExpireHostedCheckoutResult,
   HostedCheckoutSession,
   PaymentOrderStatus,
   PaymentProviderAdapter,
@@ -467,6 +468,28 @@ export class SquarePaymentProviderAdapter implements PaymentProviderAdapter {
 
     const orderResponse = await callSquare(() => client.orders.get({ orderId: squareOrderId }));
     return resolveSquareOrderPaymentStatus(client, orderResponse.order);
+  }
+
+  async expireHostedCheckoutSession(providerOrderId: string): Promise<ExpireHostedCheckoutResult> {
+    const client = this.requireClient();
+    try {
+      const status = await this.fetchPaymentStatus(providerOrderId);
+      if (status === 'succeeded') return 'already_paid';
+      if (status === 'failed') return 'already_expired';
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      if (/not found|NOT_FOUND/i.test(message)) return 'already_expired';
+      throw error;
+    }
+
+    try {
+      await callSquare(() => client.checkout.paymentLinks.delete({ id: providerOrderId }));
+      return 'expired';
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      if (/not found|NOT_FOUND|already/i.test(message)) return 'already_expired';
+      throw error;
+    }
   }
 
   async createRefund(input: CreateRefundInput): Promise<ProviderRefundResult> {

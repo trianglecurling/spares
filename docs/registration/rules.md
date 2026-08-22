@@ -837,8 +837,8 @@ All waitlist changes, manual or automatic, must be audited.
 
 For standard leagues, after priority registration closes, placement priority is:
 
-1. Guaranteed returns, guaranteed fallbacks, sabbatical returns, and billed
-   subject-to-availability entries are resolved first. These are already
+1. Guaranteed returns, guaranteed fallbacks, sabbatical returns, and
+   available or temporary-fill entries are resolved first. These are already
    rostered at submit.
 2. Remaining permanent spots are offered to the waitlist in queue order.
 3. Temporary sabbatical-fill spots are offered separately to the waitlist.
@@ -867,8 +867,8 @@ Placement into a third or later league may still be manual or handled outside
 the application. The exact mechanism, such as lottery or staff decision, is not
 part of V1 app automation.
 
-Non-guaranteed waitlist and play-in-pending entries defer payment.
-Subject-to-availability leagues (no waitlist) are billed immediately.
+Non-guaranteed waitlist, play-in-pending, and subject-to-availability
+entries defer payment until placement is confirmed.
 
 ## 19. Discounts
 

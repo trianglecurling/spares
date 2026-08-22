@@ -273,8 +273,8 @@ Examples include:
 - Some BYOT placement outcomes, although BYOT is treated as guaranteed for payment purposes.
 - Junior Recreational assistance review.
 
-Non-guaranteed waitlist and play-in-pending items cause payment to be deferred.
-Subject-to-availability leagues (no waitlist) are billed immediately.
+Non-guaranteed waitlist, play-in-pending, and subject-to-availability items
+cause payment to be deferred until placement is confirmed.
 
 ## Open registration
 

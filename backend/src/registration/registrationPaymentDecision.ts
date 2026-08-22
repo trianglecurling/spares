@@ -21,8 +21,9 @@ export type RegistrationPaymentDecision = BusinessDecision<RegistrationPaymentOu
 
 /**
  * Payment can be collected now when billed-now leagues (guarantees plus
- * subject-to-availability entries) fill the desired league count. Waitlists,
- * incomplete rosters, and play-in misses still leave the amount unresolved.
+ * available and temporary-fill entries) fill the desired league count.
+ * Waitlists, incomplete rosters, play-in misses, and subject-to-availability
+ * leftovers still leave the amount unresolved.
  */
 function leagueDeferralReasons(context: RegistrationContext): RegistrationReasonCode[] {
   return leaguePlacementDeferralReasons(evaluateLeaguePriorities(context));

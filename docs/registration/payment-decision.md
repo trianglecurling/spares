@@ -21,7 +21,7 @@ Payment is immediate when:
 - Registration is otherwise valid.
 - There is an amount due.
 - Billed-now leagues (guaranteed entries, available instructional programs, and
-  standard subject-to-availability entries)
+  open-registration available or temporary-fill spots)
   fill the desired league count, so nothing about the league outcome is still
   unresolved.
 - No staff review is required.
@@ -33,8 +33,6 @@ Examples:
 - Regular membership, desired league count of 2, with two guaranteed entries.
 - Regular membership, desired league count of 1, with one guaranteed entry, even
   if the priority list has four more leagues on it.
-- Regular membership, desired league count of 1, with one subject-to-availability
-  league (no waitlist; assumed to have room).
 - Regular membership plus spare-only fee.
 - Sabbatical-only registration.
 - Junior Recreational without financial assistance.
@@ -47,6 +45,8 @@ Deferral reasons include:
 
 - Fewer billed-now leagues on the priority list than the desired league count.
 - Full instructional program with remaining desired-count slots.
+- Subject-to-availability leftover still needed to fill the desired count,
+  including a third league below two guaranteed returns.
 - Waitlist placement still needed to fill the desired count.
 - Play-in entry that has not cleared the TLINE guarantee bar.
 - Junior Recreational financial assistance request.
@@ -62,8 +62,8 @@ A deferred registration is quoted as a range, not a single total:
 
 - **Floor** — the confirmed total: membership and other fixed fees plus the
   league fees for every guaranteed entry, every available instructional
-  program, and every billed subject-to-availability standard league filling a
-  remaining desired-count slot.
+  program, and every available or temporary-fill spot filling a remaining
+  desired-count slot.
 - **Ceiling** — the floor plus the remaining desired-count slots' most
   expensive unbilled entries on the priority list.
 
@@ -109,8 +109,9 @@ After the decision:
 
 If the registration is sabbatical-only and no deferral reason exists, payment is immediate.
 
-If the registration includes sabbatical plus a waitlist, incomplete roster, or
-play-in miss, the entire payment is deferred.
+If the registration includes sabbatical plus a waitlist, incomplete roster,
+play-in miss, or subject-to-availability leftover, the entire payment is
+deferred.
 
 ## Voluntary pay later
 
@@ -122,14 +123,14 @@ Pay later:
 - Creates a hosted checkout payment link via the configured payment provider and emails it immediately (`registration_submitted_immediate_payment`).
 - Does not redirect the browser to checkout; the registrant continues to the success page.
 - Warns that payment must be completed by the configured payment deadline (Registration schedule admin), or **before leagues begin** when no deadline is set, to secure league selections.
-- Guaranteed league selections and billed subject-to-availability leagues are placed on the roster while payment is outstanding (same as other submitted unpaid statuses). Staff removes non-payers and may promote from the waitlist.
+- Guaranteed league selections and available or temporary-fill spots are placed on the roster while payment is outstanding (same as other submitted unpaid statuses). Staff removes non-payers and may promote from the waitlist.
 
 ## Failed or incomplete immediate payment
 
 If immediate payment fails or is not completed:
 
 - Registration is not confirmed as paid.
-- Guaranteed and billed subject-to-availability roster placements may already exist from submission; staff handles cleanup for non-payers.
+- Guaranteed and available or temporary-fill roster placements may already exist from submission; staff handles cleanup for non-payers.
 - Staff may help resolve the issue manually.
 
 ## Required payment decision output

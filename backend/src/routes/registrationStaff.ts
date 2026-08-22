@@ -6,6 +6,7 @@ import { RegistrationPriorityEditValidationError } from '../registration/registr
 import {
   RegistrationMembershipPaymentValidationError,
   submitStaffRegistrationEdits,
+  triggerDeferredRegistrationPayment,
 } from '../registration/registrationMembershipPaymentService.js';
 import { resolveFrontendBaseUrl } from '../utils/frontendUrl.js';
 import {
@@ -116,6 +117,21 @@ export async function protectedRegistrationStaffRoutes(fastify: FastifyInstance)
         actor: (request as AuthenticatedRequest).member,
         changedSummary: body.changedSummary,
         confirmImmediatePayment: body.confirmImmediatePayment,
+        frontendBaseUrl: resolveFrontendBaseUrl(request),
+      });
+    } catch (error) {
+      if (handleStaffRegistrationError(reply, error)) return;
+      throw error;
+    }
+  });
+
+  fastify.post('/registration/staff/registrations/:id/request-payment', async (request, reply) => {
+    if (!requireRegistrationManage(request, reply)) return;
+    try {
+      const params = idParamsSchema.parse(request.params);
+      return await triggerDeferredRegistrationPayment({
+        registrationId: params.id,
+        actorMemberId: (request as AuthenticatedRequest).member.id,
         frontendBaseUrl: resolveFrontendBaseUrl(request),
       });
     } catch (error) {

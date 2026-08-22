@@ -5,6 +5,7 @@ import { memberCanManageRegistrations } from '../utils/registrationStaffAccess.j
 import { listCurlingRegistrationPaymentActivity } from '../domains/payments/queries/paymentSummaries.js';
 import { getMemberRegistrationDetail, registrationAmountDueMinor } from './registrationMemberService.js';
 import { getDefaultRegistrationWindow } from './registrationShellService.js';
+import { staffCanRequestDeferredPayment } from './registrationUnpaidImmediateDeferral.js';
 
 export class RegistrationStaffValidationError extends Error {
   constructor(public details: Record<string, string>) {
@@ -218,6 +219,7 @@ export async function getStaffRegistrationDetail(registrationId: number, actor: 
     ...detail,
     canEdit: detail.registration.registrationStatus !== 'cancelled',
     canCancel: detail.registration.registrationStatus !== 'cancelled',
+    canRequestPayment: staffCanRequestDeferredPayment(detail.registration.registrationStatus),
     submittedBy: submitter
       ? {
           id: submitter.id,

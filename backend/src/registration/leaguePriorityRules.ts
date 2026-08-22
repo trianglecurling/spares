@@ -290,19 +290,17 @@ export function leagueHasTemporaryFillVacancy(league: {
 
 /**
  * Leagues billed today: protected guarantees, open-registration available
- * spots, instructional programs with remaining space, plus non-waitlist
- * standard leagues we assume have room. Play-in misses and full instructional
- * programs stay unlabeled as subject to availability and are not charged until
- * placement settles.
+ * spots, and instructional programs with remaining space. Subject-to-availability
+ * entries — including no-waitlist leftovers and a third league below two
+ * guarantees — stay unconfirmed until staff places them.
  */
 export function isImmediateChargeEntry(entry: LabeledPriorityEntry): boolean {
-  if (entry.guaranteed || entry.label === 'available' || entry.label === 'temporary_spot_available') return true;
-  return entry.label === 'subject_to_availability' && !entry.isPlayInBased && !entry.isInstructional;
+  return entry.guaranteed || entry.label === 'available' || entry.label === 'temporary_spot_available';
 }
 
 /**
- * Guaranteed entries are always billed. Subject-to-availability entries fill
- * remaining desired-count slots in rank order, and only among ranks at or
+ * Guaranteed entries are always billed. Available and temporary-fill entries
+ * fill remaining desired-count slots in rank order, and only among ranks at or
  * above the desired count so backups below that line stay off the floor.
  */
 export function immediateChargeEntries(
@@ -310,10 +308,10 @@ export function immediateChargeEntries(
 ): LabeledPriorityEntry[] {
   const guaranteed = result.entries.filter((entry) => entry.guaranteed);
   const remaining = Math.max(0, result.desiredLeagueCount - guaranteed.length);
-  const subjectToAvailability = result.entries.filter(
+  const availableNow = result.entries.filter(
     (entry) => isImmediateChargeEntry(entry) && !entry.guaranteed && entry.priorityRank <= result.desiredLeagueCount,
   );
-  return [...guaranteed, ...subjectToAvailability.slice(0, remaining)].sort(
+  return [...guaranteed, ...availableNow.slice(0, remaining)].sort(
     (left, right) => left.priorityRank - right.priorityRank,
   );
 }
@@ -329,10 +327,11 @@ export function guaranteeBudgetFor(desiredLeagueCount: number): number {
 
 /**
  * An entry that already counts toward the desired league count: a held
- * guarantee, an available or temporary fill, or a billed subject-to-availability
- * league. Waitlists, incomplete rosters, and play-in misses do not secure a
- * slot — we cannot guarantee return until a roster is complete — so later
- * entries can still be necessary.
+ * guarantee, an available or temporary fill, or a subject-to-availability
+ * leftover that still fills a remaining wanted slot. That last case shapes
+ * the list (later rows become superfluous) without billing or rostering the
+ * unconfirmed league. Waitlists, incomplete rosters, and play-in misses do
+ * not secure a slot, so later entries can still be necessary.
  */
 function entrySecuresDesiredSlot(entry: LabeledPriorityEntry): boolean {
   if (entry.guaranteed || entry.label === 'available' || entry.label === 'temporary_spot_available') {
@@ -379,20 +378,20 @@ function markSuperfluousEntries(entries: LabeledPriorityEntry[], desiredLeagueCo
  * Leftovers join a waitlist while fewer than two guarantees sit above them —
  * including waitlists at rank 3+ that sit above a fallback further down the
  * list. Counting total grants (including those later fallbacks) would label
- * the leftover subject to availability, bill it, and then mark the fallback
- * superfluous. Once two spots above are already guaranteed, extra leagues
- * further down the list are subject to availability even if the league has a
- * waitlist. Subject-to-availability standard leagues (except play-in misses)
- * are billed now and do not consume the guarantee budget.
+ * the leftover subject to availability and then mark the fallback superfluous.
+ * Once two spots above are already guaranteed, extra leagues further down the
+ * list are subject to availability even if the league has a waitlist. Those
+ * leftovers do not consume the guarantee budget, and they are not billed or
+ * rostered until staff confirms placement.
  * Instructional programs ignore that leftover rule: remaining space is
  * Available and billed now; a full program is subject to availability and
  * payment waits.
  *
- * Once guaranteed spots plus billed subject-to-availability entries already
- * fill the desired league count, every later entry is `superfluous`. Those
- * rows are not waitlisted or billed. A registrant can still add a league and
- * move it above a guaranteed spot to try a switch with fallback; until they
- * do, the extra row blocks continue.
+ * Once guaranteed spots plus available, temporary-fill, or subject-to-availability
+ * entries already fill the desired league count, every later entry is
+ * `superfluous`. Those rows are not waitlisted or billed. A registrant can
+ * still add a league and move it above a guaranteed spot to try a switch
+ * with fallback; until they do, the extra row blocks continue.
  *
  * Sabbaticals do not consume this budget. A registrant may hold two guaranteed
  * priority spots and still take sabbatical from other prior leagues.

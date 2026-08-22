@@ -10,8 +10,8 @@ type DbExecutor = Pick<
 >;
 
 /**
- * A league spot committed at submit. Guaranteed returns/fallbacks and billed
- * subject-to-availability entries come from the priority list. Junior
+ * A league spot committed at submit. Guaranteed returns/fallbacks and
+ * available or temporary-fill entries come from the priority list. Junior
  * Recreational uses `new_placement` because that program never goes through
  * the priority list.
  */
@@ -111,9 +111,9 @@ export async function ensureJuniorRecreationalRosterForMember(memberId: number):
 }
 
 /**
- * Places billed subject-to-availability registrants onto this league when they
- * were charged at submit but never rostered. Waitlisted and play-in-miss
- * entries are left off until staff place them.
+ * Places available and temporary-fill registrants onto this league when they
+ * were charged at submit but never rostered. Waitlisted, play-in-miss, and
+ * subject-to-availability entries are left off until staff place them.
  *
  * Do not call this from league roster GET handlers. It rebuilds a full
  * registration context (including play-in packing) for every unrostered
@@ -231,7 +231,7 @@ export function juniorRecreationalPlacements(
   return [{ leagueId, placementType: 'new_placement' }];
 }
 
-function billedSubjectToAvailabilityPlacements(
+function availableNowPlacements(
   evaluation: Pick<PriorityLabelResult, 'entries' | 'desiredLeagueCount'>,
 ): GuaranteedPlacement[] {
   return immediateChargeEntries(evaluation)
@@ -251,7 +251,7 @@ export function rosterPlacementsForRegistration(
 ): GuaranteedPlacement[] {
   return [
     ...guaranteedPlacementsFromEvaluation(evaluation),
-    ...billedSubjectToAvailabilityPlacements(evaluation),
+    ...availableNowPlacements(evaluation),
     ...juniorRecreationalPlacements(context),
   ];
 }

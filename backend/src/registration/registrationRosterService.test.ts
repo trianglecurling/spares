@@ -80,7 +80,7 @@ describe('roster placements derived from the priority list', () => {
     ]);
   });
 
-  test('a billed subject-to-availability league is rostered as a new placement', () => {
+  test('a subject-to-availability league is not rostered until staff places it', () => {
     const context = registrationContext({
       desiredLeagueCount: 1,
       participatedLeagueIds: [],
@@ -89,9 +89,7 @@ describe('roster placements derived from the priority list', () => {
         50: league({ id: 50, predecessorLeagueId: null, allowsWaitlist: false, name: 'Junior Advanced Commitment' }),
       },
     });
-    expect(rosterPlacementsForRegistration(context, evaluateLeaguePriorities(context))).toEqual([
-      { leagueId: 50, placementType: 'new_placement' },
-    ]);
+    expect(rosterPlacementsForRegistration(context, evaluateLeaguePriorities(context))).toEqual([]);
   });
 
   test('a waitlisted leftover is not rostered', () => {
@@ -119,9 +117,7 @@ describe('roster placements derived from the priority list', () => {
         51: league({ id: 51, predecessorLeagueId: null, allowsWaitlist: false }),
       },
     });
-    expect(rosterPlacementsForRegistration(context, evaluateLeaguePriorities(context))).toEqual([
-      { leagueId: 50, placementType: 'new_placement' },
-    ]);
+    expect(rosterPlacementsForRegistration(context, evaluateLeaguePriorities(context))).toEqual([]);
   });
 });
 

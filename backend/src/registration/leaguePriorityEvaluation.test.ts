@@ -114,8 +114,9 @@ describe('guarantee labeling', () => {
     ]);
     expect(labelsFor(context)).toEqual(['subject_to_availability']);
     expect(evaluateLeaguePriorities(context).guaranteedCount).toBe(0);
-    expect(evaluateLeaguePriorities(context).confirmedLeagueFeeMinor).toBe(30000);
-    expect(validateLeaguePriorities(context).deferralReasonCodes).toEqual([]);
+    expect(evaluateLeaguePriorities(context).confirmedLeagueFeeMinor).toBe(0);
+    expect(evaluateLeaguePriorities(context).maximumLeagueFeeMinor).toBe(30000);
+    expect(validateLeaguePriorities(context).deferralReasonCodes).toContain('non_guaranteed_league_defers_payment');
   });
 
   test('an instructional program with remaining space is available and billed now', () => {
@@ -340,6 +341,9 @@ describe('guarantee labeling', () => {
       { registrationState: 'open', desiredLeagueCount: 3 },
     );
     expect(labelsFor(context)).toEqual(['available', 'available', 'subject_to_availability']);
+    expect(evaluateLeaguePriorities(context).confirmedLeagueFeeMinor).toBe(60000);
+    expect(evaluateLeaguePriorities(context).maximumLeagueFeeMinor).toBe(90000);
+    expect(validateLeaguePriorities(context).deferralReasonCodes).toContain('non_guaranteed_league_defers_payment');
   });
 
   test('open registration labels a vacant instructional program available even as a third choice', () => {
@@ -488,17 +492,17 @@ describe('fee range', () => {
     expect(evaluation.maximumLeagueFeeMinor).toBe(60000);
   });
 
-  test('a subject-to-availability league is on the floor, not the ceiling', () => {
+  test('a subject-to-availability league is on the ceiling, not the floor', () => {
     const context = contextWithLeagues(
       [standard(1, { predecessorLeagueId: null, allowsWaitlist: false })],
       { desiredLeagueCount: 1 },
     );
     const evaluation = evaluateLeaguePriorities(context);
-    expect(evaluation.confirmedLeagueFeeMinor).toBe(30000);
+    expect(evaluation.confirmedLeagueFeeMinor).toBe(0);
     expect(evaluation.maximumLeagueFeeMinor).toBe(30000);
   });
 
-  test('a guaranteed league plus a subject-to-availability league quotes a single amount', () => {
+  test('a guaranteed league plus a subject-to-availability league quotes a range', () => {
     const context = contextWithLeagues(
       [
         standard(1),
@@ -508,8 +512,25 @@ describe('fee range', () => {
     );
     const evaluation = evaluateLeaguePriorities(context);
     expect(labelsFor(context)).toEqual(['guaranteed_return', 'subject_to_availability']);
-    expect(evaluation.confirmedLeagueFeeMinor).toBe(60000);
+    expect(evaluation.confirmedLeagueFeeMinor).toBe(30000);
     expect(evaluation.maximumLeagueFeeMinor).toBe(60000);
+    expect(validateLeaguePriorities(context).deferralReasonCodes).toContain('non_guaranteed_league_defers_payment');
+  });
+
+  test('two guaranteed returns plus a third subject-to-availability league defers payment', () => {
+    const context = contextWithLeagues(
+      [
+        standard(1),
+        standard(2),
+        standard(3, { predecessorLeagueId: null, allowsWaitlist: false }),
+      ],
+      { desiredLeagueCount: 3 },
+    );
+    const evaluation = evaluateLeaguePriorities(context);
+    expect(labelsFor(context)).toEqual(['guaranteed_return', 'guaranteed_return', 'subject_to_availability']);
+    expect(evaluation.confirmedLeagueFeeMinor).toBe(60000);
+    expect(evaluation.maximumLeagueFeeMinor).toBe(90000);
+    expect(validateLeaguePriorities(context).deferralReasonCodes).toContain('non_guaranteed_league_defers_payment');
   });
 });
 
@@ -991,7 +1012,7 @@ describe('derived downstream state', () => {
     expect(validateLeaguePriorities(context).deferralReasonCodes).toEqual([]);
   });
 
-  test('a subject-to-availability list defers nothing', () => {
+  test('a subject-to-availability list defers payment', () => {
     const context = contextWithLeagues(
       [
         standard(1, { predecessorLeagueId: null, allowsWaitlist: false }),
@@ -999,7 +1020,7 @@ describe('derived downstream state', () => {
       ],
       { desiredLeagueCount: 2 },
     );
-    expect(validateLeaguePriorities(context).deferralReasonCodes).toEqual([]);
+    expect(validateLeaguePriorities(context).deferralReasonCodes).toContain('non_guaranteed_league_defers_payment');
   });
 
   test('a play-in miss still defers payment', () => {

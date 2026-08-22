@@ -302,6 +302,8 @@ export interface ProviderRefundResult {
   rawResponse: unknown;
 }
 
+export type ExpireHostedCheckoutResult = 'expired' | 'already_expired' | 'already_paid';
+
 export interface PaymentProviderAdapter {
   readonly provider: PaymentProvider;
   createHostedCheckoutSession(input: CreateCheckoutInput): Promise<HostedCheckoutSession>;
@@ -309,6 +311,7 @@ export interface PaymentProviderAdapter {
   fetchPaymentStatus(providerOrderId: string): Promise<PaymentOrderStatus>;
   fetchRefundStatus(providerRefundId: string): Promise<RefundStatus | null>;
   createRefund(input: CreateRefundInput): Promise<ProviderRefundResult>;
+  expireHostedCheckoutSession?(providerOrderId: string): Promise<ExpireHostedCheckoutResult>;
 }
 
 function buildStripeCheckoutLineItems(input: CreateCheckoutInput): Stripe.Checkout.SessionCreateParams.LineItem[] {
@@ -501,6 +504,25 @@ class StripePaymentProviderAdapter implements PaymentProviderAdapter {
     if (session.status === 'expired') return 'failed';
     if (session.status === 'complete') return 'pending';
     return 'pending';
+  }
+
+  async expireHostedCheckoutSession(providerOrderId: string): Promise<ExpireHostedCheckoutResult> {
+    const stripe = this.requireClient();
+    const session = await stripe.checkout.sessions.retrieve(providerOrderId);
+    if (session.payment_status === 'paid') return 'already_paid';
+    if (session.status === 'expired') return 'already_expired';
+    if (session.status === 'complete') {
+      return session.payment_status === 'paid' ? 'already_paid' : 'already_expired';
+    }
+    try {
+      await stripe.checkout.sessions.expire(providerOrderId);
+      return 'expired';
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      if (/already expired|expired/i.test(message)) return 'already_expired';
+      if (/complete|paid/i.test(message)) return 'already_paid';
+      throw error;
+    }
   }
 
   async createRefund(input: CreateRefundInput): Promise<ProviderRefundResult> {
@@ -1308,6 +1330,50 @@ export class PaymentService {
     }
 
     await this.syncOrderRefundStatus(orderId);
+  }
+
+  async expirePendingCheckout(orderId: number, reason = 'expired-unconfirmed-league-invoice'): Promise<{
+    orderId: number;
+    checkout: ExpireHostedCheckoutResult | 'no_provider_session';
+  }> {
+    const [order] = await this.db
+      .select({
+        id: this.schema.paymentOrders.id,
+        status: this.schema.paymentOrders.status,
+        provider: this.schema.paymentOrders.provider,
+        provider_order_id: this.schema.paymentOrders.provider_order_id,
+      })
+      .from(this.schema.paymentOrders)
+      .where(eq(this.schema.paymentOrders.id, orderId))
+      .limit(1);
+    if (!order) {
+      throw new PaymentServiceError(`Payment order ${orderId} not found`, 404);
+    }
+    const currentStatus = order.status as PaymentOrderStatus;
+    if (currentStatus === 'succeeded') {
+      throw new PaymentServiceError('This payment has already been completed.', 409);
+    }
+    if (currentStatus !== 'created' && currentStatus !== 'pending') {
+      return { orderId, checkout: 'already_expired' };
+    }
+
+    let checkout: ExpireHostedCheckoutResult | 'no_provider_session' = 'no_provider_session';
+    const providerOrderId = order.provider_order_id;
+    if (providerOrderId) {
+      const adapter = this.adapters[order.provider as PaymentProvider];
+      if (!adapter?.expireHostedCheckoutSession) {
+        throw new PaymentServiceError(`Payment provider ${order.provider} cannot expire checkout sessions.`, 501);
+      }
+      checkout = await adapter.expireHostedCheckoutSession(providerOrderId);
+      if (checkout === 'already_paid') {
+        throw new PaymentServiceError('This payment has already been completed.', 409);
+      }
+    }
+
+    if (currentStatus === 'created' || currentStatus === 'pending') {
+      await this.transitionOrderStatus(orderId, 'failed', reason);
+    }
+    return { orderId, checkout };
   }
 
   async reconcilePaymentOrder(orderId: number, reason = 'manual-reconcile'): Promise<ReconcilePaymentOrderResult> {

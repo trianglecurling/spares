@@ -405,8 +405,8 @@ describe('guarantee labels shown while reordering', () => {
     const result = evaluate({ priorities: ranked(4), desiredLeagueCount: 1 });
     expect(result.entries[0]?.label).toBe('subject_to_availability');
     expect(result.guaranteedCount).toBe(0);
-    expect(result.confirmedLeagueFeeMinor).toBe(result.entries[0]?.feeMinor);
-    expect(result.maximumLeagueFeeMinor).toBe(result.confirmedLeagueFeeMinor);
+    expect(result.confirmedLeagueFeeMinor).toBe(0);
+    expect(result.maximumLeagueFeeMinor).toBe(result.entries[0]?.feeMinor);
   });
 
   test('an instructional program with remaining space reads as available and is billed now', () => {

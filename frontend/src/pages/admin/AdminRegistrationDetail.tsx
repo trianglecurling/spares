@@ -113,6 +113,7 @@ type RegistrationDetail = {
   }>;
   canEdit: boolean;
   canCancel: boolean;
+  canRequestPayment: boolean;
 };
 
 function label(value: string | null | undefined) {
@@ -273,6 +274,7 @@ export default function AdminRegistrationDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [requestingPayment, setRequestingPayment] = useState(false);
   const [activeEditModal, setActiveEditModal] = useState<RegistrationEditModalKind>(null);
 
   const load = useCallback(async () => {
@@ -347,6 +349,43 @@ export default function AdminRegistrationDetail() {
         'warning',
         'Balance due',
       );
+    }
+  }
+
+  async function requestPayment() {
+    const ok = await confirm({
+      title: 'Request payment?',
+      message:
+        'This sends a payment link for the leagues this curler currently holds. Use this after placement is settled, or when they will not receive additional leagues.',
+      confirmText: 'Request payment',
+      cancelText: 'Not now',
+    });
+    if (!ok) return;
+    setRequestingPayment(true);
+    try {
+      const response = await api.post<{
+        outcome: string;
+        checkoutUrl?: string;
+        totalDueMinor?: number;
+      }>(`/registration/staff/registrations/${numericId}/request-payment`, {});
+      if (response.data.outcome === 'immediate_payment' && response.data.checkoutUrl) {
+        showAlert(
+          `Payment link sent for ${formatCurrency(response.data.totalDueMinor ?? 0)}.`,
+          'success',
+          'Payment requested',
+        );
+      } else {
+        showAlert(
+          'No payment is due for the leagues this curler currently holds.',
+          'info',
+          'Payment requested',
+        );
+      }
+      await load();
+    } catch (err) {
+      showAlert(getApiErrorMessage(err, 'Unable to request payment.'), 'error', 'Request failed');
+    } finally {
+      setRequestingPayment(false);
     }
   }
 
@@ -434,6 +473,13 @@ export default function AdminRegistrationDetail() {
                     Open payment link
                   </a>
                 </p>
+              ) : null}
+              {detail.canRequestPayment ? (
+                <div>
+                  <Button type="button" variant="secondary" disabled={requestingPayment} onClick={() => void requestPayment()}>
+                    Request payment
+                  </Button>
+                </div>
               ) : null}
             </Section>
 

@@ -98,7 +98,7 @@ live as the registrant reorders, adds, or removes leagues.
 | Available | The league currently has vacancies. Billed immediately. Open registration, or instructional programs in any registration state. |
 | Temporary spot available | A sabbatical has left a temporary fill vacancy. Billed immediately, minus the sabbatical fee. Open registration only. |
 | Waitlisted | Queued on the league waitlist. Payment deferred. |
-| Subject to availability | Wanted, not waitlisted. Standard leagues are assumed to have room and billed immediately. A full instructional program defers payment. |
+| Subject to availability | Wanted, not waitlisted, and not yet confirmed. Payment waits until staff places the curler. Includes a third league below two guaranteed returns, a leftover with no waitlist, and a full instructional program. |
 | Superfluous | Below leagues that already fill the desired count. Not waitlisted or billed. Must be removed or moved higher before continuing. |
 
 ### Return eligibility
@@ -207,14 +207,14 @@ secured = 0
 for entry in rank order:
     if secured >= desiredLeagueCount:
         entry.label = superfluous
-    else if entry is guaranteed, available, temporary fill, or billed subject-to-availability:
+    else if entry is guaranteed, available, temporary fill, or subject-to-availability:
         secured += 1
 ```
 
 Waitlists fill protected spots. A leftover can still waitlist when fewer than
 two guarantees sit above it — including a rank-3 waitlist while a fallback is
 held further down the list. Counting total grants (including those later
-fallbacks) would bill the leftover as subject to availability and then mark the
+fallbacks) would label the leftover as subject to availability and then mark the
 fallback superfluous. Once two spots above are already guaranteed, further
 leftovers are subject to availability only while they still fill a remaining
 desired-count slot. Anything below an already-filled desired count is
@@ -362,27 +362,27 @@ See `waitlists.md` for offer and placement behavior.
 
 ## Billing
 
-Guaranteed entries, open-registration available entries, instructional
-programs with remaining space, and subject-to-availability **standard**
-leagues are billed now.
-Waitlisted entries, incomplete rosters, play-in misses, full instructional
-programs, and superfluous entries are not. Superfluous entries also cannot be
-submitted.
+Guaranteed entries, open-registration available entries, and instructional
+programs with remaining space are billed now.
+Waitlisted entries, incomplete rosters, play-in misses, subject-to-availability
+leftovers, full instructional programs, and superfluous entries are not.
+Superfluous entries also cannot be submitted.
 
 Subject-to-availability on a standard league means the leftover is not joining
-a waitlist. That includes leagues with no waitlist, and extra leagues below two
-protected spots already granted above them. We assume there will be room, take
-payment, and do not consume a protected guarantee spot. A full instructional
-program is also labeled subject to availability, but payment waits until
-placement.
+a waitlist and is not yet confirmed. That includes leagues with no waitlist,
+and extra leagues below two protected spots already granted above them — for
+example a third-league request after two guaranteed returns. Those leftovers
+do not consume a protected guarantee spot, and payment waits until staff
+confirms placement. A full instructional program uses the same label and the
+same deferred payment.
 
 - **Confirmed total** = membership and other fixed fees, plus the sum of
-  `registrationFeeMinor` for every guaranteed entry and every
-  subject-to-availability entry that fills a remaining desired-count slot.
+  `registrationFeeMinor` for every guaranteed entry and every available or
+  temporary-fill entry that fills a remaining desired-count slot.
 - **Immediate payment** when billed-now leagues fill the desired league count,
   and no unrelated deferral applies (for example a pending junior financial
-  assistance request, a waitlist still needed to fill the count, or a play-in
-  miss).
+  assistance request, a waitlist still needed to fill the count, a play-in
+  miss, or a subject-to-availability leftover).
 - **Deferred payment** otherwise, quoted as a range. The floor is the confirmed
   total. The ceiling adds the remaining desired-count slots' most expensive
   unbilled entries — most expensive rather than next-by-priority, so the quoted
@@ -392,9 +392,9 @@ See `payment-decision.md` and `fee-calculation.md`.
 
 ## Placement
 
-Guaranteed returns, guaranteed fallbacks, and billed subject-to-availability
-entries are placed on the league roster at submit. Waitlisted entries and
-play-in misses are resolved after priority registration closes, in the order
-described in `staff-operations.md`. Entries ranked below a registrant's desired
-count are only placed if room remains after everyone's higher-priority demand
-has been satisfied.
+Guaranteed returns, guaranteed fallbacks, and available or temporary-fill
+entries are placed on the league roster at submit. Waitlisted entries,
+play-in misses, and subject-to-availability leftovers are resolved after
+priority registration closes, in the order described in `staff-operations.md`.
+Entries ranked below a registrant's desired count are only placed if room
+remains after everyone's higher-priority demand has been satisfied.

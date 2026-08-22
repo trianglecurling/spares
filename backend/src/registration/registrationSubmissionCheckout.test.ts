@@ -53,6 +53,22 @@ describe('Phase 7 submission and checkout decisions', () => {
           90: league({ id: 90, predecessorLeagueId: null }),
         },
       }),
+      registrationContext({
+        priorities: [
+          priority({ leagueId: 100, priorityRank: 1 }),
+          priority({ leagueId: 101, priorityRank: 2 }),
+          priority({ leagueId: 102, priorityRank: 3 }),
+        ],
+        desiredLeagueCount: 3,
+        leagues: {
+          100: league({ id: 100, predecessorLeagueId: 90 }),
+          101: league({ id: 101, predecessorLeagueId: 91 }),
+          102: league({ id: 102, predecessorLeagueId: null, allowsWaitlist: false }),
+          90: league({ id: 90, predecessorLeagueId: null }),
+          91: league({ id: 91, predecessorLeagueId: null }),
+        },
+        participatedLeagueIds: [90, 91],
+      }),
       membershipOnly({
         membershipOption: 'junior_recreational',
         juniorAssistance: { requestedPercent: 50, status: 'pending' },

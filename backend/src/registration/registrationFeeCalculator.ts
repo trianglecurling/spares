@@ -410,9 +410,9 @@ function computePreview(
 
 /**
  * Fees for what the registrant is committed to today: membership, sabbaticals,
- * guaranteed leagues, and subject-to-availability leagues (assumed to have
- * room). Waitlisted and play-in-pending leagues are not billed; they only
- * widen `estimatedMaximumTotalDueMinor`.
+ * guaranteed leagues, and available or temporary-fill spots. Waitlisted,
+ * play-in-pending, and subject-to-availability leagues are not billed; they
+ * only widen `estimatedMaximumTotalDueMinor`.
  */
 export function calculateRegistrationFees(
   context: RegistrationContext,

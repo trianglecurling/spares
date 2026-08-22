@@ -181,7 +181,7 @@ export type RegistrationMembershipPaymentPayload = {
 };
 
 export const REGISTRATION_IMMEDIATE_PAYMENT_CONFIRMATION_MESSAGE =
-  'After making these changes to your registration, your league placements no longer rely on waitlists, so payment can be taken immediately. Click continue to proceed to checkout. Your registration updates will be confirmed after payment is received.';
+  'After making these changes to your registration, your league placements are now confirmed, so payment can be taken immediately. Click continue to proceed to checkout. Your registration updates will be confirmed after payment is received.';
 
 export function registrationWasPaymentDeferred(input: {
   registrationStatus?: string | null;

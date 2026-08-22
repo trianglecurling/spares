@@ -525,9 +525,9 @@ export function validateLeaguePriorities(context: RegistrationContext): Priority
 }
 
 /**
- * Waitlists, incomplete rosters, and play-in misses still leave the bill
- * unresolved. Subject-to-availability leagues are assumed to have room, so they
- * fill desired-count slots the same way guarantees do for payment timing.
+ * Waitlists, incomplete rosters, play-in misses, and subject-to-availability
+ * leftovers still leave the bill unresolved. Payment waits until billed-now
+ * leagues fill the desired count.
  */
 export function leaguePlacementDeferralReasons(evaluation: LeaguePriorityEvaluation): RegistrationReasonCode[] {
   const billed = immediateChargeEntries(evaluation);

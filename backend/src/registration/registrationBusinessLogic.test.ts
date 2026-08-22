@@ -594,7 +594,7 @@ describe('registration business logic', () => {
     expectReason(deferred.paymentDecision, 'waitlist_placement_pending');
   });
 
-  test('a subject-to-availability league is billed immediately', () => {
+  test('a subject-to-availability league defers payment until placement is confirmed', () => {
     const context = registrationContext({
       leagues: { 100: league({ id: 100, predecessorLeagueId: null, allowsWaitlist: false }) },
       participatedLeagueIds: [],
@@ -602,13 +602,45 @@ describe('registration business logic', () => {
       desiredLeagueCount: 1,
     });
     const draft = evaluateRegistrationDraft(context);
-    expect(draft.paymentDecision.outcome).toBe('immediate_payment');
+    expect(draft.paymentDecision.outcome).toBe('deferred_payment');
+    expectReason(draft.paymentDecision, 'non_guaranteed_league_defers_payment');
+    expect(draft.feePreview.lineItems.map((item) => item.lineType)).toEqual(['regular_membership_fee']);
+    expect(draft.feePreview.totalDueMinor).toBe(10000);
+    expect(draft.feePreview.estimatedMaximumTotalDueMinor).toBe(40000);
+  });
+
+  test('two guaranteed returns plus a third subject-to-availability league defers payment', () => {
+    const context = registrationContext({
+      leagues: {
+        100: league({ id: 100, predecessorLeagueId: 90 }),
+        101: league({ id: 101, predecessorLeagueId: 91 }),
+        102: league({ id: 102, predecessorLeagueId: null, allowsWaitlist: false }),
+        90: league({ id: 90, predecessorLeagueId: null }),
+        91: league({ id: 91, predecessorLeagueId: null }),
+      },
+      participatedLeagueIds: [90, 91],
+      priorities: [
+        priority({ leagueId: 100, priorityRank: 1 }),
+        priority({ leagueId: 101, priorityRank: 2 }),
+        priority({ leagueId: 102, priorityRank: 3 }),
+      ],
+      desiredLeagueCount: 3,
+    });
+    const draft = evaluateRegistrationDraft(context);
+    expect(draft.priorityValidation.evaluation.entries.map((entry) => entry.label)).toEqual([
+      'guaranteed_return',
+      'guaranteed_return',
+      'subject_to_availability',
+    ]);
+    expect(draft.paymentDecision.outcome).toBe('deferred_payment');
+    expectReason(draft.paymentDecision, 'non_guaranteed_league_defers_payment');
     expect(draft.feePreview.lineItems.map((item) => item.lineType)).toEqual([
       'regular_membership_fee',
       'league_fee',
+      'league_fee',
     ]);
-    expect(draft.feePreview.totalDueMinor).toBe(40000);
-    expect(draft.feePreview.estimatedMaximumTotalDueMinor).toBe(40000);
+    expect(draft.feePreview.totalDueMinor).toBe(70000);
+    expect(draft.feePreview.estimatedMaximumTotalDueMinor).toBe(100000);
   });
 
   test('a waitlist-only registration owes nothing today but quotes what a placement would cost', () => {

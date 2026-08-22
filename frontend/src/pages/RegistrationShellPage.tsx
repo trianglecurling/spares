@@ -3682,8 +3682,9 @@ export default function RegistrationShellPage() {
         return 'One or more leagues on your list are not guaranteed yet, so payment waits until placement settles.';
       case 'play_in_placement_pending':
         return 'A play-in league choice depends on play-in results before payment can be finalized.';
+      case 'non_guaranteed_league_defers_payment':
       case 'return_subject_to_availability':
-        return 'One or more league choices is subject to availability.';
+        return 'One or more league choices is subject to availability, so payment waits until placement is confirmed.';
       case 'junior_financial_assistance_requires_review':
         return 'Junior Recreational financial assistance needs staff review.';
       case 'staff_review_required':
