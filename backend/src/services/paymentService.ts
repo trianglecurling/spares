@@ -510,10 +510,7 @@ class StripePaymentProviderAdapter implements PaymentProviderAdapter {
     const stripe = this.requireClient();
     const session = await stripe.checkout.sessions.retrieve(providerOrderId);
     if (session.payment_status === 'paid') return 'already_paid';
-    if (session.status === 'expired') return 'already_expired';
-    if (session.status === 'complete') {
-      return session.payment_status === 'paid' ? 'already_paid' : 'already_expired';
-    }
+    if (session.status === 'expired' || session.status === 'complete') return 'already_expired';
     try {
       await stripe.checkout.sessions.expire(providerOrderId);
       return 'expired';
