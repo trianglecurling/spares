@@ -4,6 +4,7 @@ import {
   defaultUsaCurlingMembershipOptIn,
   defaultUswcaMembershipOptIn,
   membershipAppliesParentAssociations,
+  shouldCollectParentAssociationOptIns,
   sqliteFlagFromBoolean,
 } from './parentAssociationMemberships.js';
 
@@ -15,6 +16,14 @@ describe('parent association memberships', () => {
     expect(membershipAppliesParentAssociations('junior_recreational')).toBe(true);
     expect(membershipAppliesParentAssociations('none')).toBe(false);
     expect(membershipAppliesParentAssociations(null)).toBe(false);
+  });
+
+  test('lifetime members always collect parent association opt-ins', () => {
+    expect(shouldCollectParentAssociationOptIns(null, true)).toBe(true);
+    expect(shouldCollectParentAssociationOptIns('none', true)).toBe(true);
+    expect(shouldCollectParentAssociationOptIns('regular', true)).toBe(true);
+    expect(shouldCollectParentAssociationOptIns(null, false)).toBe(false);
+    expect(shouldCollectParentAssociationOptIns('regular', false)).toBe(true);
   });
 
   test('USA Curling is opted in by default', () => {

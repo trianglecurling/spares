@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import api from '../../utils/api';
+import {
+  defaultUsaCurlingMembershipOptIn,
+  defaultUswcaMembershipOptIn,
+  membershipAppliesParentAssociations,
+  shouldCollectParentAssociationOptIns,
+} from '../../utils/parentAssociationMemberships';
 import Button from '../Button';
 import ChoiceInput from '../ChoiceInput';
 import FormCheckbox from '../FormCheckbox';
@@ -7,6 +13,7 @@ import FormField from '../FormField';
 import InlineStateMessage from '../InlineStateMessage';
 import Modal from '../Modal';
 import RegistrationImmediatePaymentConfirmationModal from './RegistrationImmediatePaymentConfirmationModal';
+import RegistrationParentAssociationFields from './RegistrationParentAssociationFields';
 import LeaguePriorityStep from './LeaguePriorityStep';
 import type {
   LeaguePrioritySavePayload,
@@ -101,6 +108,9 @@ function MembershipEditModal({ registrationId, isOpen, onClose, onSaved, finaliz
   const [experienceChoice, setExperienceChoice] = useState<'none_or_minimal' | 'specified_years'>('none_or_minimal');
   const [experienceYears, setExperienceYears] = useState('');
   const [icePrivilegesChoice, setIcePrivilegesChoice] = useState<IcePrivilegesChoice | null>(null);
+  const [preferredPronouns, setPreferredPronouns] = useState<string | null>(null);
+  const [usaCurlingMembershipOptIn, setUsaCurlingMembershipOptIn] = useState(defaultUsaCurlingMembershipOptIn);
+  const [uswcaMembershipOptIn, setUswcaMembershipOptIn] = useState(false);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -113,6 +123,7 @@ function MembershipEditModal({ registrationId, isOpen, onClose, onSaved, finaliz
         setMembershipPayment(context.membership);
         setWindowState(context.window);
         setCurlerDateOfBirth(context.curler?.dateOfBirth ?? null);
+        setPreferredPronouns(context.curler?.preferredPronouns ?? null);
         const membershipOption = context.membership.selection.membershipOption;
         setMembershipChoice(
           membershipOption === 'junior_recreational' ? 'junior_recreational' : membershipOption === 'social' ? 'social' : 'regular',
@@ -126,6 +137,16 @@ function MembershipEditModal({ registrationId, isOpen, onClose, onSaved, finaliz
         );
         setExperienceYears(context.membership.selection.experienceSelfReportedYears?.toString() ?? '');
         setIcePrivilegesChoice(context.membership.icePrivilegesChoice ?? null);
+        setUsaCurlingMembershipOptIn(
+          typeof context.membership.selection.usaCurlingMembershipOptIn === 'boolean'
+            ? context.membership.selection.usaCurlingMembershipOptIn
+            : defaultUsaCurlingMembershipOptIn(),
+        );
+        setUswcaMembershipOptIn(
+          typeof context.membership.selection.uswcaMembershipOptIn === 'boolean'
+            ? context.membership.selection.uswcaMembershipOptIn
+            : defaultUswcaMembershipOptIn(context.curler?.preferredPronouns),
+        );
       })
       .catch((err) => {
         if (!canceled) setError(editValidationErrorMessage(err, 'Unable to load membership details.'));
@@ -184,6 +205,10 @@ function MembershipEditModal({ registrationId, isOpen, onClose, onSaved, finaliz
 
   const showRegularFields = membershipChoice === 'regular';
   const showExperience = showRegularFields && !hasClubExperienceRecord(membershipPayment?.knownExperienceYears);
+  const showParentAssociations = shouldCollectParentAssociationOptIns(
+    membershipChoice,
+    membershipPayment?.hasLifetimeMembership === true,
+  );
 
   async function handleSave() {
     setSaving(true);
@@ -193,6 +218,9 @@ function MembershipEditModal({ registrationId, isOpen, onClose, onSaved, finaliz
         membershipOption: membershipChoice,
         basicIcePrivileges: false,
         juniorAssistancePercent: membershipChoice === 'junior_recreational' ? Number(juniorAssistancePercent) : 0,
+        ...(showParentAssociations
+          ? { usaCurlingMembershipOptIn, uswcaMembershipOptIn }
+          : {}),
       });
 
       if (membershipChoice === 'social' || membershipChoice === 'junior_recreational') {
@@ -269,7 +297,23 @@ function MembershipEditModal({ registrationId, isOpen, onClose, onSaved, finaliz
               inputId={membershipInputId}
               layout="block"
               value={membershipChoice}
-              onChange={(value) => setMembershipChoice(value as 'regular' | 'social' | 'junior_recreational')}
+              onChange={(value) => {
+                const resolved = value as 'regular' | 'social' | 'junior_recreational';
+                const wasShowingParentAssociations = membershipAppliesParentAssociations(membershipChoice);
+                setMembershipChoice(resolved);
+                if (membershipAppliesParentAssociations(resolved) && !wasShowingParentAssociations) {
+                  setUsaCurlingMembershipOptIn(
+                    typeof membershipPayment?.selection.usaCurlingMembershipOptIn === 'boolean'
+                      ? membershipPayment.selection.usaCurlingMembershipOptIn
+                      : defaultUsaCurlingMembershipOptIn(),
+                  );
+                  setUswcaMembershipOptIn(
+                    typeof membershipPayment?.selection.uswcaMembershipOptIn === 'boolean'
+                      ? membershipPayment.selection.uswcaMembershipOptIn
+                      : defaultUswcaMembershipOptIn(preferredPronouns),
+                  );
+                }
+              }}
               options={membershipOptions}
             />
           </FormField>
@@ -297,6 +341,16 @@ function MembershipEditModal({ registrationId, isOpen, onClose, onSaved, finaliz
                 ]}
               />
             </FormField>
+          ) : null}
+
+          {showParentAssociations ? (
+            <RegistrationParentAssociationFields
+              tone="app"
+              usaCurlingOptIn={usaCurlingMembershipOptIn}
+              uswcaOptIn={uswcaMembershipOptIn}
+              onUsaCurlingChange={setUsaCurlingMembershipOptIn}
+              onUswcaChange={setUswcaMembershipOptIn}
+            />
           ) : null}
 
           {showRegularFields ? (

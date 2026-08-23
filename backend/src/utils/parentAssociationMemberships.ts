@@ -11,6 +11,15 @@ export function membershipAppliesParentAssociations(
   );
 }
 
+/** Lifetime members skip the membership-type picker but still choose parent-org opt-ins. */
+export function shouldCollectParentAssociationOptIns(
+  choice: 'regular' | 'social' | 'junior_recreational' | 'none' | 'regular_spare_only' | null | undefined,
+  hasLifetimeMembership?: boolean,
+): boolean {
+  if (hasLifetimeMembership) return true;
+  return membershipAppliesParentAssociations(choice);
+}
+
 export function defaultUsaCurlingMembershipOptIn(): boolean {
   return true;
 }

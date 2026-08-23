@@ -239,6 +239,7 @@ export type RegistrationShellCurler = {
   id: number;
   name: string;
   dateOfBirth: string | null;
+  preferredPronouns?: string | null;
 };
 
 export function isPlayInBasedLeague(league: Pick<LeagueCatalogItem, 'isPlayInBased'>): boolean {

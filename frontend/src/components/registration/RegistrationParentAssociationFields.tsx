@@ -1,4 +1,5 @@
 import { useId, type ReactNode } from 'react';
+import type { FormFieldTone } from '../FormFieldMessage';
 import FormSection from '../FormSection';
 import HelpCallout from '../HelpCallout';
 
@@ -28,6 +29,7 @@ type RegistrationParentAssociationFieldsProps = {
   uswcaOptIn: boolean;
   onUsaCurlingChange: (checked: boolean) => void;
   onUswcaChange: (checked: boolean) => void;
+  tone?: FormFieldTone;
 };
 
 function OrgMention({
@@ -51,10 +53,12 @@ function MembershipOptInToggle({
   organization,
   checked,
   onChange,
+  tone,
 }: {
   organization: string;
   checked: boolean;
   onChange: (checked: boolean) => void;
+  tone: FormFieldTone;
 }) {
   const id = useId();
 
@@ -69,8 +73,11 @@ function MembershipOptInToggle({
         className={[
           'relative mt-0.5 inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors',
           'focus:outline-none focus:ring-2 focus:ring-primary-teal focus:ring-offset-2',
-          checked ? 'bg-primary-teal' : 'bg-gray-200',
-        ].join(' ')}
+          tone === 'app' ? 'dark:focus:ring-offset-gray-800' : null,
+          checked ? 'bg-primary-teal' : tone === 'app' ? 'bg-gray-200 dark:bg-gray-600' : 'bg-gray-200',
+        ]
+          .filter(Boolean)
+          .join(' ')}
       >
         <span
           className={[
@@ -80,7 +87,14 @@ function MembershipOptInToggle({
           aria-hidden
         />
       </button>
-      <label htmlFor={id} className="cursor-pointer text-sm font-medium text-gray-700">
+      <label
+        htmlFor={id}
+        className={
+          tone === 'app'
+            ? 'cursor-pointer text-sm font-medium text-gray-700 dark:text-gray-300'
+            : 'cursor-pointer text-sm font-medium text-gray-700'
+        }
+      >
         I {checked ? <strong>want</strong> : <strong>do not want</strong>} to be a member of {organization}
       </label>
     </div>
@@ -92,10 +106,17 @@ export default function RegistrationParentAssociationFields({
   uswcaOptIn,
   onUsaCurlingChange,
   onUswcaChange,
+  tone = 'public',
 }: RegistrationParentAssociationFieldsProps) {
   return (
-    <FormSection title="Parent association memberships" tone="public">
-      <div className="text-sm leading-relaxed text-gray-600">
+    <FormSection title="Parent association memberships" tone={tone}>
+      <div
+        className={
+          tone === 'app'
+            ? 'text-sm leading-relaxed text-gray-600 dark:text-gray-400'
+            : 'text-sm leading-relaxed text-gray-600'
+        }
+      >
         Your Triangle Curling membership includes a membership to{' '}
         <OrgMention name="USA Curling" help={USA_CURLING_HELP} helpLabel="About USA Curling" />, the{' '}
         <OrgMention name="GNCC" help={GNCC_HELP} helpLabel="About the GNCC" />, and{' '}
@@ -109,11 +130,13 @@ export default function RegistrationParentAssociationFields({
           organization="USA Curling"
           checked={usaCurlingOptIn}
           onChange={onUsaCurlingChange}
+          tone={tone}
         />
         <MembershipOptInToggle
           organization="US Women's Curling Association"
           checked={uswcaOptIn}
           onChange={onUswcaChange}
+          tone={tone}
         />
       </div>
     </FormSection>

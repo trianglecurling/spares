@@ -61,6 +61,7 @@ import {
   defaultUsaCurlingMembershipOptIn,
   defaultUswcaMembershipOptIn,
   membershipAppliesParentAssociations,
+  shouldCollectParentAssociationOptIns,
 } from '../utils/parentAssociationMemberships';
 import {
   defaultNameTagPrintName,
@@ -1831,7 +1832,7 @@ export default function RegistrationShellPage() {
         } else if (membershipOption === 'regular' || membershipOption === 'regular_spare_only') {
           setMembershipChoice('regular');
         }
-        if (membershipAppliesParentAssociations(membershipOption)) {
+        if (shouldCollectParentAssociationOptIns(membershipOption, data.hasLifetimeMembership)) {
           setUsaCurlingMembershipOptIn(
             data.selection.usaCurlingMembershipOptIn ?? defaultUsaCurlingMembershipOptIn(),
           );
@@ -3020,12 +3021,15 @@ export default function RegistrationShellPage() {
     setError('');
     try {
       if (member && registrationId !== null) {
-        const appliesParentAssociations = membershipAppliesParentAssociations(selectedMembership);
+        const appliesParentAssociations = shouldCollectParentAssociationOptIns(
+          selectedMembership,
+          isLifetimeMember,
+        );
         const response = await api.patch(`/registration/drafts/${registrationId}/membership`, {
           membershipOption: selectedMembership,
           basicIcePrivileges: false,
           juniorAssistancePercent: selectedMembership === 'junior_recreational' ? Number(juniorAssistancePercent) : 0,
-          ...(appliesParentAssociations && !isLifetimeMember
+          ...(appliesParentAssociations
             ? { usaCurlingMembershipOptIn, uswcaMembershipOptIn }
             : {}),
         });
@@ -4485,7 +4489,7 @@ export default function RegistrationShellPage() {
               />
             </FormField>
           ) : null}
-          {!isLifetimeMember && membershipAppliesParentAssociations(membershipChoice) ? (
+          {shouldCollectParentAssociationOptIns(membershipChoice, isLifetimeMember) ? (
             <RegistrationParentAssociationFields
               usaCurlingOptIn={usaCurlingMembershipOptIn}
               uswcaOptIn={uswcaMembershipOptIn}
