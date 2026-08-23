@@ -1,6 +1,13 @@
 import { useId, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import Button from '../../components/Button';
 import InlineStateMessage from '../../components/InlineStateMessage';
+import {
+  registrationListHref,
+  registrationStaffQuery,
+  registrationStaffRule,
+  type RegistrationStaffQuery,
+} from './registrationStaffQuery';
 
 export type AdminRegistrationSessionStatsPayload = {
   sessionId: number;
@@ -98,6 +105,36 @@ function StatGroup({ title, children }: { title: string; children: ReactNode }) 
   );
 }
 
+const JUNIOR_AGE = 21;
+
+function filterQuery(
+  ...rules: Array<[field: string, operator: string, value?: unknown]>
+): RegistrationStaffQuery {
+  return registrationStaffQuery(rules.map(([field, operator, value]) => registrationStaffRule(field, operator, value)));
+}
+
+function FilterLink({
+  sessionId,
+  query,
+  label,
+  children,
+}: {
+  sessionId: number;
+  query?: RegistrationStaffQuery;
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <Link
+      to={registrationListHref(sessionId, query)}
+      className="text-primary-teal-link hover:underline"
+      aria-label={label}
+    >
+      {children}
+    </Link>
+  );
+}
+
 export default function AdminRegistrationSessionStats({
   stats,
   loading,
@@ -135,7 +172,7 @@ export default function AdminRegistrationSessionStats({
         </h2>
         <p className="app-section-subtitle">
           {stats.seasonName} / {stats.sessionName}. Counts use submitted registrations for this session and ignore table
-          filters. Canceled registrations are listed separately.
+          filters. Canceled registrations are listed separately. Linked counts open the matching filtered list.
         </p>
       </div>
 
@@ -156,23 +193,90 @@ export default function AdminRegistrationSessionStats({
         <StatGroup title="Registrations">
           <Stat
             label="Submitted"
-            value={stats.registrations.total}
+            value={
+              <FilterLink sessionId={stats.sessionId} label="Show submitted registrations">
+                {stats.registrations.total}
+              </FilterLink>
+            }
             detail={
-              stats.registrations.inProgressDrafts > 0
-                ? `${stats.registrations.inProgressDrafts} draft${stats.registrations.inProgressDrafts === 1 ? '' : 's'} still in progress`
-                : 'No in-progress drafts'
+              stats.registrations.inProgressDrafts > 0 ? (
+                <>
+                  <FilterLink
+                    sessionId={stats.sessionId}
+                    query={filterQuery(['isDraft', 'eq', true])}
+                    label="Show in-progress draft registrations"
+                  >
+                    {stats.registrations.inProgressDrafts}
+                  </FilterLink>
+                  {` draft${stats.registrations.inProgressDrafts === 1 ? '' : 's'} still in progress`}
+                </>
+              ) : (
+                'No in-progress drafts'
+              )
             }
           />
           <Stat
             label="Paid"
-            value={ratio(stats.payment.paid, stats.registrations.total)}
-            detail={`${stats.payment.unpaid} unpaid`}
+            value={
+              <>
+                <FilterLink
+                  sessionId={stats.sessionId}
+                  query={filterQuery(['paymentStatus', 'eq', 'paid'])}
+                  label="Show registrations with a paid invoice"
+                >
+                  {stats.payment.paid}
+                </FilterLink>
+                {` of ${stats.registrations.total}`}
+              </>
+            }
+            detail={
+              <>
+                <FilterLink
+                  sessionId={stats.sessionId}
+                  query={filterQuery(['paymentStatus', 'neq', 'paid'])}
+                  label="Show registrations that are not paid"
+                >
+                  {stats.payment.unpaid}
+                </FilterLink>{' '}
+                unpaid
+              </>
+            }
           />
-          <Stat label="Canceled" value={stats.registrations.canceled} />
+          <Stat
+            label="Canceled"
+            value={
+              <FilterLink
+                sessionId={stats.sessionId}
+                query={filterQuery(['status', 'eq', 'cancelled'])}
+                label="Show canceled registrations"
+              >
+                {stats.registrations.canceled}
+              </FilterLink>
+            }
+          />
           <Stat
             label="Confirmed"
-            value={stats.registrations.byStatus.confirmed}
-            detail={`${stats.registrations.byStatus.paid} marked paid`}
+            value={
+              <FilterLink
+                sessionId={stats.sessionId}
+                query={filterQuery(['status', 'eq', 'confirmed'])}
+                label="Show confirmed registrations"
+              >
+                {stats.registrations.byStatus.confirmed}
+              </FilterLink>
+            }
+            detail={
+              <>
+                <FilterLink
+                  sessionId={stats.sessionId}
+                  query={filterQuery(['status', 'eq', 'paid'])}
+                  label="Show registrations marked paid"
+                >
+                  {stats.registrations.byStatus.paid}
+                </FilterLink>{' '}
+                marked paid
+              </>
+            }
           />
         </StatGroup>
 
@@ -185,47 +289,188 @@ export default function AdminRegistrationSessionStats({
           <Stat label="Outstanding" value={money(stats.payment.outstandingMinor)} />
           <Stat
             label="Deferred"
-            value={stats.payment.deferred}
+            value={
+              <FilterLink
+                sessionId={stats.sessionId}
+                query={filterQuery(['paymentDeferred', 'eq', true])}
+                label="Show registrations with deferred payment"
+              >
+                {stats.payment.deferred}
+              </FilterLink>
+            }
             detail="Active registrations still waiting on a final charge"
           />
           <Stat
             label="Awaiting payment"
-            value={stats.registrations.byStatus.awaitingPayment + stats.registrations.byStatus.paymentStarted}
-            detail={`${stats.registrations.byStatus.paymentStarted} checkout started`}
+            value={
+              <FilterLink
+                sessionId={stats.sessionId}
+                query={filterQuery(['status', 'in', ['awaiting_payment', 'payment_started']])}
+                label="Show registrations awaiting payment"
+              >
+                {stats.registrations.byStatus.awaitingPayment + stats.registrations.byStatus.paymentStarted}
+              </FilterLink>
+            }
+            detail={
+              <>
+                <FilterLink
+                  sessionId={stats.sessionId}
+                  query={filterQuery(['status', 'eq', 'payment_started'])}
+                  label="Show registrations with checkout started"
+                >
+                  {stats.registrations.byStatus.paymentStarted}
+                </FilterLink>{' '}
+                checkout started
+              </>
+            }
           />
         </StatGroup>
 
         <StatGroup title="Membership">
           <Stat
             label="Regular"
-            value={stats.membership.regular}
+            value={
+              <FilterLink
+                sessionId={stats.sessionId}
+                query={filterQuery(['membershipOption', 'in', ['regular', 'regular_spare_only']])}
+                label="Show regular membership registrations"
+              >
+                {stats.membership.regular}
+              </FilterLink>
+            }
             detail={
-              stats.membership.spareOnly > 0
-                ? `${stats.membership.spareOnly} spare-only ice privileges`
-                : 'Includes spare-only ice privileges'
+              stats.membership.spareOnly > 0 ? (
+                <>
+                  <FilterLink
+                    sessionId={stats.sessionId}
+                    query={filterQuery(['membershipOption', 'eq', 'regular_spare_only'])}
+                    label="Show spare-only ice privilege registrations"
+                  >
+                    {stats.membership.spareOnly}
+                  </FilterLink>{' '}
+                  spare-only ice privileges
+                </>
+              ) : (
+                'Includes spare-only ice privileges'
+              )
             }
           />
-          <Stat label="Social" value={stats.membership.social} />
+          <Stat
+            label="Social"
+            value={
+              <FilterLink
+                sessionId={stats.sessionId}
+                query={filterQuery(['membershipOption', 'eq', 'social'])}
+                label="Show social membership registrations"
+              >
+                {stats.membership.social}
+              </FilterLink>
+            }
+          />
           <Stat
             label="Junior recreational"
-            value={stats.membership.juniorRecreational}
+            value={
+              <FilterLink
+                sessionId={stats.sessionId}
+                query={filterQuery(['membershipOption', 'eq', 'junior_recreational'])}
+                label="Show junior recreational membership registrations"
+              >
+                {stats.membership.juniorRecreational}
+              </FilterLink>
+            }
             detail={
-              stats.membership.none > 0 ? `${stats.membership.none} with no membership selected` : undefined
+              stats.membership.none > 0 ? (
+                <>
+                  <FilterLink
+                    sessionId={stats.sessionId}
+                    query={filterQuery(['membershipOption', 'eq', 'none'])}
+                    label="Show registrations with no membership selected"
+                  >
+                    {stats.membership.none}
+                  </FilterLink>{' '}
+                  with no membership selected
+                </>
+              ) : undefined
             }
           />
           <Stat
             label="New vs returning"
-            value={`${stats.members.newMembers} / ${stats.members.returningMembers}`}
-            detail={stats.members.unknown > 0 ? `${stats.members.unknown} not specified` : 'Based on the returning-member answer'}
+            value={
+              <>
+                <FilterLink
+                  sessionId={stats.sessionId}
+                  query={filterQuery(['returningMember', 'eq', 'new'])}
+                  label="Show new member registrations"
+                >
+                  {stats.members.newMembers}
+                </FilterLink>
+                {' / '}
+                <FilterLink
+                  sessionId={stats.sessionId}
+                  query={filterQuery(['returningMember', 'eq', 'returning'])}
+                  label="Show returning member registrations"
+                >
+                  {stats.members.returningMembers}
+                </FilterLink>
+              </>
+            }
+            detail={
+              stats.members.unknown > 0 ? (
+                <>
+                  <FilterLink
+                    sessionId={stats.sessionId}
+                    query={filterQuery(['returningMember', 'is_empty'])}
+                    label="Show registrations with no returning-member answer"
+                  >
+                    {stats.members.unknown}
+                  </FilterLink>{' '}
+                  not specified
+                </>
+              ) : (
+                'Based on the returning-member answer'
+              )
+            }
           />
         </StatGroup>
 
         <StatGroup title="Age">
-          <Stat label="Under 21" value={stats.age.junior} detail="Age today" />
-          <Stat label="Adult" value={stats.age.adult} detail="21 and over" />
+          <Stat
+            label="Under 21"
+            value={
+              <FilterLink
+                sessionId={stats.sessionId}
+                query={filterQuery(['age', 'lt', JUNIOR_AGE])}
+                label="Show registrations under 21"
+              >
+                {stats.age.junior}
+              </FilterLink>
+            }
+            detail="Age today"
+          />
+          <Stat
+            label="Adult"
+            value={
+              <FilterLink
+                sessionId={stats.sessionId}
+                query={filterQuery(['age', 'gte', JUNIOR_AGE])}
+                label="Show registrations 21 and over"
+              >
+                {stats.age.adult}
+              </FilterLink>
+            }
+            detail="21 and over"
+          />
           <Stat
             label="Unknown"
-            value={stats.age.unknown}
+            value={
+              <FilterLink
+                sessionId={stats.sessionId}
+                query={filterQuery(['age', 'is_empty'])}
+                label="Show registrations with no date of birth"
+              >
+                {stats.age.unknown}
+              </FilterLink>
+            }
             detail="No date of birth on the curler record"
           />
         </StatGroup>
@@ -240,19 +485,105 @@ export default function AdminRegistrationSessionStats({
           <Stat label="Open" value={stats.leagues.openSpots} detail="Permanent vacancies from waitlist capacity" />
           <Stat
             label="Waitlist"
-            value={stats.leagues.waitlistEntries}
-            detail={`${stats.leagues.pendingOffers} pending offer${stats.leagues.pendingOffers === 1 ? '' : 's'}`}
+            value={
+              <FilterLink
+                sessionId={stats.sessionId}
+                query={filterQuery(['hasWaitlist', 'eq', true])}
+                label="Show registrations on a waitlist"
+              >
+                {stats.leagues.waitlistEntries}
+              </FilterLink>
+            }
+            detail={
+              <>
+                <FilterLink
+                  sessionId={stats.sessionId}
+                  query={filterQuery(['hasPendingOffer', 'eq', true])}
+                  label="Show registrations with a pending waitlist offer"
+                >
+                  {stats.leagues.pendingOffers}
+                </FilterLink>
+                {` pending offer${stats.leagues.pendingOffers === 1 ? '' : 's'}`}
+              </>
+            }
           />
         </StatGroup>
 
         <StatGroup title="Needs attention">
-          <Stat label="Staff review" value={stats.attention.awaitingStaffReview} />
-          <Stat label="Awaiting placement" value={stats.attention.awaitingPlacement} />
-          <Stat label="Financial assistance" value={stats.attention.pendingFinancialAssistance} detail="Pending requests" />
+          <Stat
+            label="Staff review"
+            value={
+              <FilterLink
+                sessionId={stats.sessionId}
+                query={filterQuery(['status', 'eq', 'awaiting_staff_review'])}
+                label="Show registrations awaiting staff review"
+              >
+                {stats.attention.awaitingStaffReview}
+              </FilterLink>
+            }
+          />
+          <Stat
+            label="Awaiting placement"
+            value={
+              <FilterLink
+                sessionId={stats.sessionId}
+                query={filterQuery(['status', 'eq', 'awaiting_placement'])}
+                label="Show registrations awaiting placement"
+              >
+                {stats.attention.awaitingPlacement}
+              </FilterLink>
+            }
+          />
+          <Stat
+            label="Financial assistance"
+            value={
+              <FilterLink
+                sessionId={stats.sessionId}
+                query={filterQuery(['financialAssistanceStatus', 'eq', 'pending'])}
+                label="Show registrations with pending financial assistance"
+              >
+                {stats.attention.pendingFinancialAssistance}
+              </FilterLink>
+            }
+            detail="Pending requests"
+          />
           <Stat
             label="Discounts claimed"
-            value={stats.attention.studentDiscounts + stats.attention.reciprocalDiscounts}
-            detail={`${stats.attention.studentDiscounts} student, ${stats.attention.reciprocalDiscounts} reciprocal`}
+            value={
+              <FilterLink
+                sessionId={stats.sessionId}
+                query={registrationStaffQuery(
+                  [
+                    registrationStaffRule('studentDiscountClaimed', 'eq', true),
+                    registrationStaffRule('reciprocalDiscountClaimed', 'eq', true),
+                  ],
+                  'any',
+                )}
+                label="Show registrations that claimed a student or reciprocal discount"
+              >
+                {stats.attention.studentDiscounts + stats.attention.reciprocalDiscounts}
+              </FilterLink>
+            }
+            detail={
+              <>
+                <FilterLink
+                  sessionId={stats.sessionId}
+                  query={filterQuery(['studentDiscountClaimed', 'eq', true])}
+                  label="Show registrations that claimed a student discount"
+                >
+                  {stats.attention.studentDiscounts}
+                </FilterLink>{' '}
+                student,{' '}
+                <FilterLink
+                  sessionId={stats.sessionId}
+                  query={filterQuery(['reciprocalDiscountClaimed', 'eq', true])}
+                  label="Show registrations that claimed a reciprocal discount"
+                >
+                  {stats.attention.reciprocalDiscounts}
+                </FilterLink>{' '}
+                reciprocal
+              </>
+            }
           />
         </StatGroup>
       </div>

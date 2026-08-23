@@ -129,6 +129,7 @@ export interface RegistrationEmailPayload {
   paymentReference?: string | null;
   paymentDetailsUrl?: string | null;
   refundIssued?: boolean | null;
+  refundSkipped?: boolean | null;
   amountRefundedMinor?: number | null;
   sabbaticalFeeStatus?: string | null;
   durationLimitWarning?: string | null;
@@ -635,6 +636,7 @@ export function renderRegistrationEmail(messageType: RegistrationMessageType, pa
       const receiptText = payload.paymentDetailsUrl
         ? `${receiptLinkLabel}: ${payload.paymentDetailsUrl}`
         : '';
+      const refundSkipped = payload.refundSkipped === true;
       const refundHtml = refundIssued
         ? `
           <p><strong>Refund amount:</strong> ${money(payload.amountRefundedMinor)}</p>
@@ -642,10 +644,14 @@ export function renderRegistrationEmail(messageType: RegistrationMessageType, pa
           <p>A refund has been issued and should appear on your original payment method within a few business days.</p>
           ${receiptHtml}
         `
-        : `<p>No refund was issued because no completed payment was on file for this registration.</p>${receiptHtml}`;
+        : refundSkipped
+          ? `<p>No refund was issued. The payment on file was left in place.</p>${receiptHtml}`
+          : `<p>No refund was issued because no completed payment was on file for this registration.</p>${receiptHtml}`;
       const refundText = refundIssued
         ? `Refund amount: ${money(payload.amountRefundedMinor)}\n${payload.paymentReference ? `Payment reference: ${payload.paymentReference}\n` : ''}A refund has been issued and should appear on your original payment method within a few business days.${receiptText ? `\n${receiptText}` : ''}`
-        : `No refund was issued because no completed payment was on file for this registration.${receiptText ? `\n${receiptText}` : ''}`;
+        : refundSkipped
+          ? `No refund was issued. The payment on file was left in place.${receiptText ? `\n${receiptText}` : ''}`
+          : `No refund was issued because no completed payment was on file for this registration.${receiptText ? `\n${receiptText}` : ''}`;
       return {
         subject: `Registration canceled for ${season}`,
         htmlBody: `
@@ -722,6 +728,7 @@ function memberDisplayName(row: { name?: string | null; first_name?: string | nu
 export async function sendRegistrationCancelledByMemberEmail(input: {
   registrationId: number;
   refundIssued: boolean;
+  refundSkipped?: boolean;
   amountRefundedMinor?: number | null;
   paymentReference?: string | null;
   paymentDetailsUrl?: string | null;
@@ -787,6 +794,7 @@ export async function sendRegistrationCancelledByMemberEmail(input: {
         seasonName: season?.name ?? null,
         sessionName: session?.name ?? null,
         refundIssued: input.refundIssued,
+        refundSkipped: input.refundSkipped === true,
         amountRefundedMinor: input.amountRefundedMinor ?? null,
         paymentReference: input.paymentReference ?? null,
         paymentDetailsUrl: resolvedPaymentDetailsUrl,

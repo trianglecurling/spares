@@ -14,6 +14,8 @@ type PageTabsProps = {
   items: PageTabItem[];
   className?: string;
   navClassName?: string;
+  /** Accessible name for the tab list. Defaults to "Page sections". */
+  ariaLabel?: string;
 };
 
 function joinClasses(...parts: Array<string | false | null | undefined>): string {
@@ -31,12 +33,17 @@ function tabClassName(isActive: boolean, disabled: boolean | undefined): string 
   );
 }
 
-export default function PageTabs({ items, className, navClassName }: PageTabsProps) {
+export default function PageTabs({
+  items,
+  className,
+  navClassName,
+  ariaLabel = 'Page sections',
+}: PageTabsProps) {
   if (items.length === 0) return null;
 
   return (
     <div className={joinClasses('border-b border-gray-200 dark:border-gray-600 mb-6', className)}>
-      <nav className={joinClasses('flex flex-wrap gap-4', navClassName)} aria-label="Page sections">
+      <nav className={joinClasses('flex flex-wrap gap-4', navClassName)} aria-label={ariaLabel}>
         {items.map((item) => {
           if (item.to) {
             return (

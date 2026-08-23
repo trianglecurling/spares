@@ -14,7 +14,6 @@ import { useConfirm } from '../../contexts/ConfirmContext';
 import { del, get, patch, post } from '../../api/client';
 import api, { formatApiError } from '../../utils/api';
 import { memberHasScope } from '../../utils/permissions';
-import AdminRegistrationCommunicationsPanel from './AdminRegistrationCommunicationsPanel';
 import AdminRegistrationsList from './AdminRegistrationsList';
 import type { paths } from '../../api/generated/types';
 
@@ -92,9 +91,18 @@ interface PaymentDeadline {
   paymentDeadlineAt: string;
 }
 
-type TabKey = 'registrations' | 'seasons' | 'sessions' | 'periods' | 'prices' | 'discounts' | 'communications';
+type PrimaryTab = 'summary' | 'list' | 'settings';
+type TabKey = 'seasons' | 'sessions' | 'periods' | 'prices' | 'discounts';
 
-const CONFIG_TAB_KEYS = ['seasons', 'sessions', 'periods', 'prices', 'discounts', 'communications'] as const;
+const CONFIG_TAB_KEYS = ['seasons', 'sessions', 'periods', 'prices', 'discounts'] as const;
+
+const SETTINGS_TAB_LABELS: Record<TabKey, string> = {
+  seasons: 'Seasons',
+  sessions: 'Sessions',
+  periods: 'Registration schedule',
+  prices: 'Prices',
+  discounts: 'Discounts',
+};
 
 const REGISTRATION_STATE_OPTIONS: ChoiceOption<RegistrationState>[] = [
   { value: 'closed', label: 'Closed' },
@@ -218,17 +226,25 @@ export default function AdminRegistrationConfig() {
   });
   const earlyAccessPasswordId = useId();
 
-  const activeTab = useMemo<TabKey>(() => {
+  const { primaryTab, activeTab } = useMemo(() => {
     const segments = location.pathname.split('/').filter(Boolean);
-    const last = segments.at(-1);
-    if (last === 'seasons' || last === 'sessions' || last === 'periods' || last === 'prices' || last === 'discounts') {
-      return last;
+    const after = segments.slice(2);
+    if (after[0] === 'list') {
+      return { primaryTab: 'list' as PrimaryTab, activeTab: 'seasons' as TabKey };
     }
-    if (last === 'communications') return 'communications';
-    return 'registrations';
+    if (after[0] === 'settings') {
+      const next = after[1];
+      if (next === 'seasons' || next === 'sessions' || next === 'periods' || next === 'prices' || next === 'discounts') {
+        return { primaryTab: 'settings' as PrimaryTab, activeTab: next };
+      }
+      return { primaryTab: 'settings' as PrimaryTab, activeTab: 'seasons' as TabKey };
+    }
+    return { primaryTab: 'summary' as PrimaryTab, activeTab: 'seasons' as TabKey };
   }, [location.pathname]);
 
-  const isConfigTab = (CONFIG_TAB_KEYS as readonly string[]).includes(activeTab);
+  const isConfigTab = primaryTab === 'settings';
+  const sessionIdParam = new URLSearchParams(location.search).get('sessionId');
+  const sessionQuery = sessionIdParam ? `?sessionId=${encodeURIComponent(sessionIdParam)}` : '';
 
   const seasonOptions = useMemo<ChoiceOption<number>[]>(
     () => seasons.map((season) => ({ value: season.id, label: season.name })),
@@ -586,51 +602,63 @@ export default function AdminRegistrationConfig() {
     }
   };
 
-  if (!canManageConfig && activeTab !== 'registrations') {
+  if (!canManageConfig && primaryTab === 'settings') {
     return <Navigate to="/admin/registrations" replace />;
   }
 
-  const tabs = [
-    { key: 'registrations', label: 'Registrations', to: '/admin/registrations', isActive: activeTab === 'registrations' },
+  const primaryTabs = [
+    {
+      key: 'summary',
+      label: 'Summary',
+      to: primaryTab === 'summary' ? `${location.pathname}${location.search}` : `/admin/registrations${sessionQuery}`,
+      isActive: primaryTab === 'summary',
+    },
+    {
+      key: 'registrations',
+      label: 'Registrations',
+      to: primaryTab === 'list' ? `${location.pathname}${location.search}` : `/admin/registrations/list${sessionQuery}`,
+      isActive: primaryTab === 'list',
+    },
     ...(canManageConfig
       ? [
-          { key: 'seasons', label: 'Seasons', to: '/admin/registrations/seasons', isActive: activeTab === 'seasons' },
-          { key: 'sessions', label: 'Sessions', to: '/admin/registrations/sessions', isActive: activeTab === 'sessions' },
           {
-            key: 'periods',
-            label: 'Registration schedule',
-            to: '/admin/registrations/periods',
-            isActive: activeTab === 'periods',
-          },
-          { key: 'prices', label: 'Prices', to: '/admin/registrations/prices', isActive: activeTab === 'prices' },
-          {
-            key: 'discounts',
-            label: 'Discounts',
-            to: '/admin/registrations/discounts',
-            isActive: activeTab === 'discounts',
-          },
-          {
-            key: 'communications',
-            label: 'Communications',
-            to: '/admin/registrations/communications',
-            isActive: activeTab === 'communications',
+            key: 'settings',
+            label: 'Settings',
+            to:
+              primaryTab === 'settings'
+                ? `/admin/registrations/settings/${activeTab}`
+                : '/admin/registrations/settings/seasons',
+            isActive: primaryTab === 'settings',
           },
         ]
       : []),
   ];
 
+  const settingsTabs = CONFIG_TAB_KEYS.map((key) => ({
+    key,
+    label: SETTINGS_TAB_LABELS[key],
+    to: `/admin/registrations/settings/${key}`,
+    isActive: activeTab === key,
+  }));
+
+  const description =
+    primaryTab === 'summary'
+      ? 'Review session registration totals. Select a count to open the matching filtered list.'
+      : primaryTab === 'list'
+        ? 'Search and filter registrations for the selected session.'
+        : 'Configure seasons, sessions, registration schedule, and pricing.';
+
   return (
     <>
       <AppPage>
-        <AppPageHeader
-          title="Registration management"
-          description="View submitted registrations and configure seasons, sessions, registration schedule, and pricing."
-        />
+        <AppPageHeader title="Registration management" description={description} />
 
-        <PageTabs items={tabs} />
+        <PageTabs items={primaryTabs} ariaLabel="Registration sections" />
 
-        {activeTab === 'registrations' ? <AdminRegistrationsList /> : null}
-        {activeTab === 'communications' ? <AdminRegistrationCommunicationsPanel /> : null}
+        {primaryTab === 'summary' ? <AdminRegistrationsList mode="summary" /> : null}
+        {primaryTab === 'list' ? <AdminRegistrationsList mode="list" /> : null}
+
+        {isConfigTab ? <PageTabs items={settingsTabs} ariaLabel="Registration settings" /> : null}
 
         {isConfigTab && loading ? (
           <AppStateCard title="Loading registration configuration" description="Fetching the latest staff configuration." />

@@ -5,12 +5,19 @@ import AppStateCard from '../../components/AppStateCard';
 import Button from '../../components/Button';
 import ChoiceInput from '../../components/ChoiceInput';
 import FormField from '../../components/FormField';
+import QueryBuilder, { type QueryBuilderField } from '../../components/QueryBuilder';
 import DataTable from '../../components/table/DataTable';
 import type { DataTableColumn } from '../../components/table/tableTypes';
 import api, { getApiErrorMessage } from '../../utils/api';
+import AdminRegistrationsExportDialog from './AdminRegistrationsExportDialog';
 import AdminRegistrationSessionStats, {
   type AdminRegistrationSessionStatsPayload,
 } from './AdminRegistrationSessionStats';
+import {
+  parseRegistrationStaffQueryParam,
+  serializeRegistrationStaffQuery,
+  type RegistrationStaffQuery,
+} from './registrationStaffQuery';
 
 type RegistrationSession = {
   id: number;
@@ -35,18 +42,13 @@ type RegistrationSummary = {
   updatedAt: string | null;
 };
 
+type RegistrationFilterFieldsResponse = {
+  matchOperators: Array<{ value: 'all' | 'any'; label: string }>;
+  operators: Array<{ value: string; label: string }>;
+  fields: QueryBuilderField[];
+};
+
 const PAGE_SIZE = 50;
-const STATUS_OPTIONS = [
-  { value: '', label: 'All statuses' },
-  { value: 'submitted', label: 'Submitted' },
-  { value: 'awaiting_staff_review', label: 'Awaiting staff review' },
-  { value: 'awaiting_placement', label: 'Awaiting placement' },
-  { value: 'awaiting_payment', label: 'Awaiting payment' },
-  { value: 'payment_started', label: 'Payment started' },
-  { value: 'paid', label: 'Paid' },
-  { value: 'confirmed', label: 'Confirmed' },
-  { value: 'cancelled', label: 'Canceled' },
-];
 
 function label(value: string | null | undefined) {
   if (!value) return 'Not available';
@@ -59,26 +61,37 @@ function money(minor: number | null) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(minor / 100);
 }
 
-export default function AdminRegistrationsList() {
+type AdminRegistrationsListProps = {
+  mode: 'summary' | 'list';
+};
+
+export default function AdminRegistrationsList({ mode }: AdminRegistrationsListProps) {
   const navigate = useNavigate();
   const sessionFieldId = useId();
-  const statusFieldId = useId();
   const searchFieldId = useId();
   const [sessions, setSessions] = useState<RegistrationSession[]>([]);
   const [defaultSessionId, setDefaultSessionId] = useState<number | null>(null);
   const [registrations, setRegistrations] = useState<RegistrationSummary[]>([]);
   const [total, setTotal] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(mode === 'list');
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState<AdminRegistrationSessionStatsPayload | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
   const [statsError, setStatsError] = useState<string | null>(null);
+  const [fields, setFields] = useState<QueryBuilderField[]>([]);
+  const [matchOptions, setMatchOptions] = useState<Array<{ value: 'all' | 'any'; label: string }>>([]);
+  const [operatorLabels, setOperatorLabels] = useState<Array<{ value: string; label: string }>>([]);
+  const [fieldsLoading, setFieldsLoading] = useState(false);
+  const [fieldsError, setFieldsError] = useState<string | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
 
   const [searchParams, setSearchParams] = useSearchParams();
   const sessionId = Number(searchParams.get('sessionId')) || defaultSessionId;
   const page = Math.max(1, Number(searchParams.get('page')) || 1);
   const search = searchParams.get('search') ?? '';
   const status = searchParams.get('status') ?? '';
+  const q = searchParams.get('q') ?? '';
+  const query = useMemo(() => parseRegistrationStaffQueryParam(q), [q]);
 
   const setQuery = useCallback(
     (updates: Record<string, string>) => {
@@ -90,6 +103,25 @@ export default function AdminRegistrationsList() {
       setSearchParams(next, { replace: true });
     },
     [searchParams, setSearchParams],
+  );
+
+  const [searchDraft, setSearchDraft] = useState(search);
+  const [searchDraftSource, setSearchDraftSource] = useState(search);
+  if (searchDraftSource !== search) {
+    setSearchDraft(search);
+    setSearchDraftSource(search);
+  }
+
+  const applyQuery = useCallback(
+    (nextQuery: RegistrationStaffQuery) => {
+      setQuery({
+        q: serializeRegistrationStaffQuery(nextQuery),
+        search: searchDraft,
+        status: '',
+        page: '1',
+      });
+    },
+    [searchDraft, setQuery],
   );
 
   const loadSessions = useCallback(async () => {
@@ -120,8 +152,30 @@ export default function AdminRegistrationsList() {
     }
   }, [sessionId]);
 
-  const loadRegistrations = useCallback(async () => {
+  const loadFilterFields = useCallback(async () => {
     if (!sessionId) return;
+    setFieldsLoading(true);
+    setFieldsError(null);
+    try {
+      const response = await api.get<RegistrationFilterFieldsResponse>('/registration/staff/filter-fields', {
+        params: { sessionId },
+      });
+      setFields(response.data.fields);
+      setMatchOptions(response.data.matchOperators);
+      setOperatorLabels(response.data.operators);
+    } catch (err) {
+      setFields([]);
+      setFieldsError(getApiErrorMessage(err, 'Unable to load filter fields.'));
+    } finally {
+      setFieldsLoading(false);
+    }
+  }, [sessionId]);
+
+  const loadRegistrations = useCallback(async () => {
+    if (!sessionId) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
@@ -135,6 +189,7 @@ export default function AdminRegistrationsList() {
           sessionId,
           search: search || undefined,
           status: status || undefined,
+          q: q || undefined,
           page,
           pageSize: PAGE_SIZE,
         },
@@ -146,24 +201,44 @@ export default function AdminRegistrationsList() {
     } finally {
       setLoading(false);
     }
-  }, [sessionId, search, status, page]);
+  }, [sessionId, search, status, q, page]);
 
   useEffect(() => {
     void loadSessions().catch((err) => setError(getApiErrorMessage(err, 'Unable to load sessions.')));
   }, [loadSessions]);
 
   useEffect(() => {
-    void loadRegistrations();
-  }, [loadRegistrations]);
+    if (mode !== 'list' || !status || q) return;
+    applyQuery({
+      match: 'all',
+      rules: [{ field: 'status', operator: 'eq', value: status }],
+    });
+  }, [applyQuery, mode, q, status]);
 
   useEffect(() => {
+    if (mode !== 'list') return;
+    void loadRegistrations();
+  }, [mode, loadRegistrations]);
+
+  useEffect(() => {
+    if (mode !== 'list') return;
+    if (!sessionId) {
+      setFields([]);
+      setFieldsError(null);
+      return;
+    }
+    void loadFilterFields();
+  }, [mode, sessionId, loadFilterFields]);
+
+  useEffect(() => {
+    if (mode !== 'summary') return;
     if (!sessionId) {
       setStats(null);
       setStatsError(null);
       return;
     }
     void loadStats();
-  }, [sessionId, loadStats]);
+  }, [mode, sessionId, loadStats]);
 
   const sessionOptions = useMemo(
     () =>
@@ -218,14 +293,23 @@ export default function AdminRegistrationsList() {
     <>
       <AppPageControlsRow
         right={
-          <Button
-            type="button"
-            onClick={() =>
-              navigate(sessionId ? `/admin/registrations/new?sessionId=${sessionId}` : '/admin/registrations/new')
-            }
-          >
-            Create registration
-          </Button>
+          mode === 'list' ? (
+            <>
+              <span title={!sessionId ? 'Select a session to export' : undefined}>
+                <Button type="button" variant="secondary" onClick={() => setExportOpen(true)} disabled={!sessionId}>
+                  Export
+                </Button>
+              </span>
+              <Button
+                type="button"
+                onClick={() =>
+                  navigate(sessionId ? `/admin/registrations/new?sessionId=${sessionId}` : '/admin/registrations/new')
+                }
+              >
+                Create registration
+              </Button>
+            </>
+          ) : undefined
         }
         left={
           <>
@@ -236,38 +320,51 @@ export default function AdminRegistrationsList() {
                 value={sessionId ? String(sessionId) : ''}
                 onChange={(value) => {
                   const next = Array.isArray(value) ? value[0] : value;
-                  if (next) setQuery({ sessionId: next, page: '1' });
+                  if (!next) return;
+                  if (mode === 'list') setQuery({ sessionId: next, page: '1', q: '', status: '' });
+                  else setQuery({ sessionId: next });
                 }}
                 options={sessionOptions}
                 placeholder="Select session"
               />
             </FormField>
-            <FormField label="Status" htmlFor={statusFieldId}>
-              <ChoiceInput
-                inputId={statusFieldId}
-                layout="popover"
-                value={status}
-                onChange={(value) => {
-                  const next = Array.isArray(value) ? value[0] : value;
-                  setQuery({ status: next ?? '', page: '1' });
-                }}
-                options={STATUS_OPTIONS}
-              />
-            </FormField>
-            <FormField label="Search" htmlFor={searchFieldId}>
-              <input
-                id={searchFieldId}
-                className="app-input"
-                value={search}
-                onChange={(event) => setQuery({ search: event.target.value, page: '1' })}
-                placeholder="Name, email, or registration ID"
-              />
-            </FormField>
+            {mode === 'list' ? (
+              <FormField label="Search" htmlFor={searchFieldId}>
+                <input
+                  id={searchFieldId}
+                  className="app-input"
+                  value={searchDraft}
+                  onChange={(event) => setSearchDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key !== 'Enter') return;
+                    event.preventDefault();
+                    applyQuery(query);
+                  }}
+                  placeholder="Name, email, or registration ID"
+                />
+              </FormField>
+            ) : null}
           </>
         }
       />
 
-      {sessionId ? (
+      {mode === 'summary' && error ? (
+        <AppStateCard
+          title="Unable to load sessions"
+          description={error}
+          action={
+            <Button
+              onClick={() =>
+                void loadSessions().catch((err) => setError(getApiErrorMessage(err, 'Unable to load sessions.')))
+              }
+            >
+              Try again
+            </Button>
+          }
+        />
+      ) : null}
+
+      {mode === 'summary' && sessionId ? (
         <AdminRegistrationSessionStats
           stats={stats}
           loading={statsLoading}
@@ -276,8 +373,32 @@ export default function AdminRegistrationsList() {
         />
       ) : null}
 
-      {loading ? <AppStateCard title="Loading registrations" description="Gathering session registrations." /> : null}
-      {error ? (
+      {mode === 'list' && sessionId ? (
+        <>
+          {fieldsError ? (
+            <AppStateCard
+              compact
+              title="Unable to load filter fields"
+              description={fieldsError}
+              action={<Button onClick={() => void loadFilterFields()}>Try again</Button>}
+            />
+          ) : null}
+          <QueryBuilder
+            query={query}
+            onChange={applyQuery}
+            fields={fields}
+            matchOptions={matchOptions}
+            operatorLabels={operatorLabels}
+            disabled={!sessionId}
+            loading={fieldsLoading}
+          />
+        </>
+      ) : null}
+
+      {mode === 'list' && loading ? (
+        <AppStateCard title="Loading registrations" description="Gathering session registrations." />
+      ) : null}
+      {mode === 'list' && error ? (
         <AppStateCard
           title="Unable to load registrations"
           description={error}
@@ -285,7 +406,7 @@ export default function AdminRegistrationsList() {
         />
       ) : null}
 
-      {!loading && !error ? (
+      {mode === 'list' && !loading && !error ? (
         <DataTable
           columns={columns}
           rows={registrations}
@@ -294,7 +415,7 @@ export default function AdminRegistrationsList() {
             <AppStateCard
               compact
               title="No registrations found"
-              description="Try another session, status filter, or search term."
+              description="Try another session, filter, or search term."
             />
           }
           pagination={{
@@ -306,6 +427,15 @@ export default function AdminRegistrationsList() {
           }}
         />
       ) : null}
+
+      <AdminRegistrationsExportDialog
+        isOpen={exportOpen}
+        sessionId={sessionId}
+        search={search}
+        status={status}
+        q={q}
+        onClose={() => setExportOpen(false)}
+      />
     </>
   );
 }

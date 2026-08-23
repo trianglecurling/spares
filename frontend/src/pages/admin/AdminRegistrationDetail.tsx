@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
 import AppStateCard from '../../components/AppStateCard';
 import BackButton from '../../components/BackButton';
 import Button from '../../components/Button';
+import Modal from '../../components/Modal';
 import RecordOfflinePaymentModal from '../../components/registration/RecordOfflinePaymentModal';
 import RegistrationViewEditModals, {
   type RegistrationEditModalKind,
@@ -311,6 +312,7 @@ export default function AdminRegistrationDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [cancelModalOpen, setCancelModalOpen] = useState(false);
   const [requestingPayment, setRequestingPayment] = useState(false);
   const [recordingPayment, setRecordingPayment] = useState(false);
   const [offlinePaymentOpen, setOfflinePaymentOpen] = useState(false);
@@ -448,19 +450,18 @@ export default function AdminRegistrationDetail() {
     }
   }
 
-  async function cancelRegistration() {
-    const ok = await confirm({
-      title: 'Cancel registration?',
-      message:
-        'This will cancel the registration, remove related waitlist entries, and issue a refund when a completed payment is on file.',
-      confirmText: 'Cancel registration',
-      cancelText: 'Keep registration',
-      variant: 'danger',
-    });
-    if (!ok) return;
+  const hasCompletedPayment =
+    detail?.invoice?.status === 'paid' ||
+    (detail?.payment.amountPaidMinor != null && detail.payment.amountPaidMinor > 0);
+
+  async function cancelRegistration(refund: boolean) {
+    if (deleting) return;
     setDeleting(true);
     try {
-      const response = await api.post<{ refundIssued: boolean }>(`/registration/staff/registrations/${numericId}/cancel`, {});
+      const response = await api.post<{ refundIssued: boolean }>(
+        `/registration/staff/registrations/${numericId}/cancel`,
+        { refund },
+      );
       showAlert(
         response.data.refundIssued
           ? 'Registration canceled and refund issued.'
@@ -468,11 +469,12 @@ export default function AdminRegistrationDetail() {
         'success',
         'Registration canceled',
       );
-      navigate('/admin/registrations', { replace: true });
+      navigate('/admin/registrations/list', { replace: true });
     } catch (err) {
       showAlert(getApiErrorMessage(err, 'Unable to cancel registration.'), 'error', 'Cancel failed');
     } finally {
       setDeleting(false);
+      setCancelModalOpen(false);
     }
   }
 
@@ -488,7 +490,7 @@ export default function AdminRegistrationDetail() {
           }
           actions={
             detail?.canCancel ? (
-              <Button type="button" variant="outline-danger" disabled={deleting} onClick={() => void cancelRegistration()}>
+              <Button type="button" variant="outline-danger" disabled={deleting} onClick={() => setCancelModalOpen(true)}>
                 Cancel registration
               </Button>
             ) : undefined
@@ -496,7 +498,7 @@ export default function AdminRegistrationDetail() {
         />
 
         <div className="mb-4">
-          <BackButton to="/admin/registrations" label="Back to registrations" />
+          <BackButton to="/admin/registrations/list" label="Back to registrations" />
         </div>
 
         {loading ? <AppStateCard title="Loading registration" description="Gathering registration details." /> : null}
@@ -806,9 +808,6 @@ export default function AdminRegistrationDetail() {
                   </div>
                 ))}
               </div>
-              <Link to="/admin/registrations/communications" className="text-sm text-primary-teal-link hover:underline">
-                Open registration communications
-              </Link>
             </Section>
 
             <RegistrationViewEditModals
@@ -822,6 +821,60 @@ export default function AdminRegistrationDetail() {
           </div>
         ) : null}
       </AppPage>
+      <Modal
+        isOpen={cancelModalOpen && detail != null}
+        onClose={() => {
+          if (deleting) return;
+          setCancelModalOpen(false);
+        }}
+        title="Cancel registration?"
+        size="md"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-700 dark:text-gray-300">
+            This will cancel the registration
+            {detail ? ` for ${detail.registration.curlerName}` : ''} and remove related waitlist entries.
+          </p>
+          {hasCompletedPayment ? (
+            <p className="text-sm text-gray-700 dark:text-gray-300">
+              A completed payment is on file. Canceling can refund that payment, or leave it in place if it was
+              applied to another registration.
+            </p>
+          ) : null}
+          <div className="flex flex-wrap justify-end gap-2 pt-2">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setCancelModalOpen(false)}
+              disabled={deleting}
+            >
+              Keep registration
+            </Button>
+            {hasCompletedPayment ? (
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => void cancelRegistration(false)}
+                disabled={deleting}
+              >
+                Cancel without refunding
+              </Button>
+            ) : null}
+            <Button
+              type="button"
+              variant="danger"
+              onClick={() => void cancelRegistration(hasCompletedPayment)}
+              disabled={deleting}
+            >
+              {deleting
+                ? 'Canceling...'
+                : hasCompletedPayment
+                  ? 'Cancel and refund'
+                  : 'Cancel registration'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
       <RecordOfflinePaymentModal
         isOpen={offlinePaymentOpen}
         saving={recordingPayment}

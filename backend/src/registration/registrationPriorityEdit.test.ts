@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  invoiceStatusAfterRegistrationCancel,
   isPriorityCancellableRegistrationStatus,
   isPriorityEditableRegistrationStatus,
 } from './registrationPriorityEdit.js';
@@ -20,5 +21,15 @@ describe('registration priority edit eligibility', () => {
       expect(isPriorityCancellableRegistrationStatus(status)).toBe(false);
       expect(isPriorityEditableRegistrationStatus(status)).toBe(false);
     }
+  });
+});
+
+describe('invoiceStatusAfterRegistrationCancel', () => {
+  test('marks the invoice refunded only when a refund was issued', () => {
+    expect(invoiceStatusAfterRegistrationCancel({ refundIssued: true, currentStatus: 'paid' })).toBe('refunded');
+    expect(invoiceStatusAfterRegistrationCancel({ refundIssued: false, currentStatus: 'paid' })).toBe('paid');
+    expect(invoiceStatusAfterRegistrationCancel({ refundIssued: false, currentStatus: 'awaiting_payment' })).toBe(
+      'cancelled',
+    );
   });
 });

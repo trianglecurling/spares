@@ -173,9 +173,20 @@ export async function assertRegistrationEditableForLeagueOrMembership(
   await assertPriorityEditableRegistration(actor, registration);
 }
 
+export function invoiceStatusAfterRegistrationCancel(input: {
+  refundIssued: boolean;
+  currentStatus: string;
+}): 'refunded' | 'cancelled' | 'paid' {
+  if (input.refundIssued) return 'refunded';
+  if (input.currentStatus === 'paid') return 'paid';
+  if (input.currentStatus === 'refunded') return 'refunded';
+  return 'cancelled';
+}
+
 export async function cancelStaffRegistration(input: {
   registrationId: number;
   actor: Member;
+  issueRefund?: boolean;
 }): Promise<{ registrationId: number; refundIssued: boolean }> {
   if (!memberCanManageRegistrations(input.actor)) {
     throw new RegistrationPriorityEditValidationError({ registration: 'Registration was not found.' });
@@ -208,12 +219,14 @@ export async function cancelMemberRegistration(input: {
 async function cancelMemberRegistrationCore(input: {
   registrationId: number;
   actor: Member;
+  issueRefund?: boolean;
 }): Promise<{ registrationId: number; refundIssued: boolean }> {
   const registration = await getRegistrationById(input.registrationId);
   if (!registration) {
     throw new RegistrationPriorityEditValidationError({ registration: 'Registration was not found.' });
   }
 
+  const issueRefund = input.issueRefund !== false;
   const { db, schema } = getDrizzleDb();
   const [invoice] = await db
     .select()
@@ -223,6 +236,7 @@ async function cancelMemberRegistrationCore(input: {
     .limit(1);
 
   let refundIssued = false;
+  let hadSucceededPayment = false;
   let amountRefundedMinor: number | null = null;
   let paymentReference: string | null = null;
   let resolvedPaymentDetailsUrl: string | null = null;
@@ -233,30 +247,33 @@ async function cancelMemberRegistrationCore(input: {
       .where(eq(schema.paymentOrders.id, invoice.payment_order_id))
       .limit(1);
     if (order?.status === 'succeeded') {
-      amountRefundedMinor = order.amount_minor;
+      hadSucceededPayment = true;
       paymentReference = `Payment order ${order.id}`;
       if (order.order_token) {
         resolvedPaymentDetailsUrl = paymentDetailsUrl(order.order_token);
       }
-      try {
-        await createPaymentService().createRefundForOrder({
-          orderId: order.id,
-          amountMinor: order.amount_minor,
-          reason: 'Registration canceled during priority registration',
-          requestedByMemberId: input.actor.id,
-        });
-        refundIssued = true;
-      } catch {
-        await db.insert(schema.refunds).values({
-          payment_order_id: order.id,
-          provider: order.provider,
-          amount_minor: order.amount_minor,
-          currency: order.currency,
-          reason: 'Registration canceled during priority registration',
-          status: 'requested',
-          requested_by_member_id: input.actor.id,
-        });
-        refundIssued = true;
+      if (issueRefund) {
+        amountRefundedMinor = order.amount_minor;
+        try {
+          await createPaymentService().createRefundForOrder({
+            orderId: order.id,
+            amountMinor: order.amount_minor,
+            reason: 'Registration canceled during priority registration',
+            requestedByMemberId: input.actor.id,
+          });
+          refundIssued = true;
+        } catch {
+          await db.insert(schema.refunds).values({
+            payment_order_id: order.id,
+            provider: order.provider,
+            amount_minor: order.amount_minor,
+            currency: order.currency,
+            reason: 'Registration canceled during priority registration',
+            status: 'requested',
+            requested_by_member_id: input.actor.id,
+          });
+          refundIssued = true;
+        }
       }
     }
   }
@@ -360,7 +377,10 @@ async function cancelMemberRegistrationCore(input: {
       await tx
         .update(schema.registrationInvoices)
         .set({
-          status: refundIssued ? 'refunded' : invoice.status === 'paid' ? 'refunded' : 'cancelled',
+          status: invoiceStatusAfterRegistrationCancel({
+            refundIssued,
+            currentStatus: invoice.status,
+          }),
           updated_at: sql`CURRENT_TIMESTAMP`,
         })
         .where(eq(schema.registrationInvoices.id, invoice.id));
@@ -418,6 +438,7 @@ async function cancelMemberRegistrationCore(input: {
   await sendRegistrationCancelledByMemberEmail({
     registrationId: input.registrationId,
     refundIssued,
+    refundSkipped: hadSucceededPayment && !refundIssued,
     amountRefundedMinor,
     paymentReference,
     paymentDetailsUrl: resolvedPaymentDetailsUrl,

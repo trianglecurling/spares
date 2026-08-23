@@ -153,9 +153,23 @@ describe('Phase 9 registration email rendering', () => {
       refundIssued: false,
     });
 
-    expect(rendered.textBody).toContain('No refund was issued');
+    expect(rendered.textBody).toContain('No refund was issued because no completed payment was on file');
     expect(rendered.textBody).not.toContain('Refund amount');
     expect(rendered.subject).toContain('Registration canceled');
+  });
+
+  test('registration cancellation email explains when staff left the payment in place', () => {
+    const rendered = renderRegistrationEmail('registration_cancelled_by_member', {
+      curlerName: 'Alex Curler',
+      seasonName: '2026-27',
+      sessionName: 'Fall',
+      refundIssued: false,
+      refundSkipped: true,
+    });
+
+    expect(rendered.textBody).toContain('The payment on file was left in place');
+    expect(rendered.textBody).not.toContain('no completed payment was on file');
+    expect(rendered.textBody).not.toContain('Refund amount');
   });
 
   test('deferred registration email includes teammate summary lines when provided', () => {

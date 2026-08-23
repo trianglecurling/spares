@@ -2576,7 +2576,7 @@ export default function RegistrationShellPage() {
       resetReturningGuestLoginFlow();
       setReturningIdentityAuxMode(null);
       setReturningRegistrarProfileChoice(null);
-      navigate(isStaffCreate ? '/admin/registrations' : '/registration/start', { replace: true });
+      navigate(isStaffCreate ? '/admin/registrations/list' : '/registration/start', { replace: true });
     } catch (err) {
       setError(errorMessage(err, 'Unable to clear registration.'));
     } finally {
@@ -3480,7 +3480,7 @@ export default function RegistrationShellPage() {
 
     if (isStaffCreate && (currentStep === 'identity' || currentStep === 'policies' || currentStep === 'demographics')) {
       if (currentStep === 'identity') {
-        return { label: 'Back to registrations', onClick: () => navigate('/admin/registrations') };
+        return { label: 'Back to registrations', onClick: () => navigate('/admin/registrations/list') };
       }
     }
 

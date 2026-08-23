@@ -174,7 +174,6 @@ const SPA_ROUTE_RULES: SpaRouteRule[] = [
   { pattern: /^\/admin\/events\/[^/]+\/[^/]+$/ },
   { pattern: /^\/admin\/events\/[^/]+\/registrations\/[^/]+$/ },
   { pattern: /^\/admin\/registration$/ },
-  { pattern: /^\/admin\/registration\/communications$/ },
   { pattern: /^\/admin\/registration\/[^/]+$/ },
   { pattern: /^\/waitlists$/ },
   { pattern: /^\/waitlists\/[^/]+$/ },

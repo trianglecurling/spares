@@ -134,6 +134,9 @@ function RegistrationViewIndexRedirect() {
 
 function RedirectAdminRegistrationTab() {
   const { tab } = useParams();
+  if (tab === 'seasons' || tab === 'sessions' || tab === 'periods' || tab === 'prices' || tab === 'discounts') {
+    return <Navigate to={`/admin/registrations/settings/${tab}`} replace />;
+  }
   return <Navigate to={tab ? `/admin/registrations/${tab}` : '/admin/registrations'} replace />;
 }
 
@@ -663,7 +666,7 @@ function App() {
                       <Route path="/admin/registration" element={<Navigate to="/admin/registrations" replace />} />
                       <Route
                         path="/admin/registration/communications"
-                        element={<Navigate to="/admin/registrations/communications" replace />}
+                        element={<Navigate to="/admin/registrations" replace />}
                       />
                       <Route path="/admin/registration/:tab" element={<RedirectAdminRegistrationTab />} />
                       <Route
@@ -684,6 +687,7 @@ function App() {
                       />
                       <Route path="/admin/registrations" element={<AdminRegistrationRoute />} />
                       <Route path="/admin/registrations/:segment" element={<AdminRegistrationRoute />} />
+                      <Route path="/admin/registrations/:segment/:subsegment" element={<AdminRegistrationRoute />} />
                       <Route path="/admin/payments" element={<AdminPaymentsRoute />} />
                       <Route path="/admin/payments/:segment" element={<AdminPaymentsRoute />} />
                       <Route

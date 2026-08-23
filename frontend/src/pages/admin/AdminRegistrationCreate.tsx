@@ -163,7 +163,10 @@ export default function AdminRegistrationCreate() {
         description="Start a curling registration on behalf of a member. Use this when someone cannot complete the online form, such as a mailed check."
       />
       <div className="mb-4">
-        <BackButton to="/admin/registrations" label="Back to registrations" />
+        <BackButton
+          to={sessionId ? `/admin/registrations/list?sessionId=${sessionId}` : '/admin/registrations/list'}
+          label="Back to registrations"
+        />
       </div>
 
       {loadingSessions ? (
@@ -289,7 +292,14 @@ export default function AdminRegistrationCreate() {
             <Button type="submit" disabled={submitting}>
               {submitting ? 'Starting registration' : 'Continue registration'}
             </Button>
-            <Button type="button" variant="secondary" disabled={submitting} onClick={() => navigate('/admin/registrations')}>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={submitting}
+              onClick={() =>
+                navigate(sessionId ? `/admin/registrations/list?sessionId=${sessionId}` : '/admin/registrations/list')
+              }
+            >
               Cancel
             </Button>
           </div>

@@ -18,6 +18,14 @@ import {
   listStaffRegistrationSessions,
   RegistrationStaffValidationError,
 } from '../registration/registrationStaffService.js';
+import {
+  exportStaffRegistrations,
+  registrationExportColumnCatalog,
+} from '../registration/registrationStaffExport.js';
+import {
+  loadRegistrationStaffFilterFields,
+  RegistrationQueryValidationError,
+} from '../registration/registrationStaffQuery.js';
 import { RegistrationShellValidationError } from '../registration/registrationShellService.js';
 import type { Member } from '../types.js';
 import { memberCanManageRegistrations } from '../utils/registrationStaffAccess.js';
@@ -41,6 +49,10 @@ function requireRegistrationManage(request: FastifyRequest, reply: FastifyReply)
 
 function handleStaffRegistrationError(reply: FastifyReply, error: unknown): boolean {
   if (error instanceof RegistrationStaffValidationError) {
+    sendValidationError(reply, error.message, error.details);
+    return true;
+  }
+  if (error instanceof RegistrationQueryValidationError) {
     sendValidationError(reply, error.message, error.details);
     return true;
   }
@@ -68,8 +80,12 @@ const listQuerySchema = z.object({
   sessionId: z.coerce.number().int().positive(),
   search: z.string().optional(),
   status: z.string().optional(),
+  q: z.string().max(8000).optional(),
   page: z.coerce.number().int().positive().optional(),
   pageSize: z.coerce.number().int().positive().max(100).optional(),
+});
+const filterFieldsQuerySchema = z.object({
+  sessionId: z.coerce.number().int().positive(),
 });
 const statsQuerySchema = z.object({
   sessionId: z.coerce.number().int().positive(),
@@ -101,6 +117,11 @@ const staffCreateSchema = z
 const staffOfflinePaymentSchema = z.object({
   note: z.string().trim().min(1, 'Enter a check number or other explanation.').max(500),
 });
+const exportRegistrationsSchema = listQuerySchema
+  .omit({ page: true, pageSize: true })
+  .extend({
+    columns: z.array(z.string().min(1)).min(1).max(80),
+  });
 
 export async function protectedRegistrationStaffRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.get('/registration/staff/sessions', async (request, reply) => {
@@ -130,6 +151,17 @@ export async function protectedRegistrationStaffRoutes(fastify: FastifyInstance)
     }
   });
 
+  fastify.get('/registration/staff/filter-fields', async (request, reply) => {
+    if (!requireRegistrationManage(request, reply)) return;
+    try {
+      const query = filterFieldsQuerySchema.parse(request.query);
+      return await loadRegistrationStaffFilterFields(query.sessionId);
+    } catch (error) {
+      if (handleStaffRegistrationError(reply, error)) return;
+      throw error;
+    }
+  });
+
   fastify.get('/registration/staff/registrations', async (request, reply) => {
     if (!requireRegistrationManage(request, reply)) return;
     try {
@@ -138,6 +170,33 @@ export async function protectedRegistrationStaffRoutes(fastify: FastifyInstance)
         actor: (request as AuthenticatedRequest).member,
         ...query,
       });
+    } catch (error) {
+      if (handleStaffRegistrationError(reply, error)) return;
+      throw error;
+    }
+  });
+
+  fastify.get('/registration/staff/export-columns', async (request, reply) => {
+    if (!requireRegistrationManage(request, reply)) return;
+    return { columns: registrationExportColumnCatalog() };
+  });
+
+  fastify.post('/registration/staff/registrations/export', async (request, reply) => {
+    if (!requireRegistrationManage(request, reply)) return;
+    try {
+      const body = exportRegistrationsSchema.parse(request.body);
+      const result = await exportStaffRegistrations({
+        actor: (request as AuthenticatedRequest).member,
+        sessionId: body.sessionId,
+        search: body.search,
+        status: body.status,
+        q: body.q,
+        columns: body.columns,
+      });
+      return reply
+        .header('Content-Type', 'text/csv; charset=utf-8')
+        .header('Content-Disposition', `attachment; filename="${result.filename}"`)
+        .send(result.csv);
     } catch (error) {
       if (handleStaffRegistrationError(reply, error)) return;
       throw error;
@@ -222,10 +281,11 @@ export async function protectedRegistrationStaffRoutes(fastify: FastifyInstance)
     if (!requireRegistrationManage(request, reply)) return;
     try {
       const params = idParamsSchema.parse(request.params);
-      staffCancelSchema.parse(request.body ?? {});
+      const body = staffCancelSchema.parse(request.body ?? {});
       return await cancelStaffRegistration({
         registrationId: params.id,
         actor: (request as AuthenticatedRequest).member,
+        issueRefund: body.refund,
       });
     } catch (error) {
       if (handleStaffRegistrationError(reply, error)) return;

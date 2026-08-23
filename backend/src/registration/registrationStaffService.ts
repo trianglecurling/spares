@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, or, sql, type SQL } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import type { Member } from '../types.js';
 import { memberCanManageRegistrations } from '../utils/registrationStaffAccess.js';
@@ -6,6 +6,12 @@ import { listCurlingRegistrationPaymentActivity } from '../domains/payments/quer
 import { getMemberRegistrationDetail, registrationAmountDueMinor } from './registrationMemberService.js';
 import { getDefaultRegistrationWindow } from './registrationShellService.js';
 import { staffCanRecordOfflinePayment, staffCanRequestDeferredPayment } from './registrationUnpaidImmediateDeferral.js';
+import {
+  LISTABLE_REGISTRATION_STATUSES,
+  compileRegistrationStaffQuery,
+  parseRegistrationStaffQuery,
+  queryRelaxesListableScope,
+} from './registrationStaffQuery.js';
 
 export class RegistrationStaffValidationError extends Error {
   constructor(public details: Record<string, string>) {
@@ -19,22 +25,11 @@ function memberName(row: { name?: string | null; first_name?: string | null; las
   return parts.length > 0 ? parts.join(' ') : row.name?.trim() || row.email?.trim() || 'Unknown curler';
 }
 
-function assertStaffAccess(actor: Member): void {
+export function assertStaffAccess(actor: Member): void {
   if (!memberCanManageRegistrations(actor)) {
     throw new RegistrationStaffValidationError({ registration: 'You do not have permission to manage registrations.' });
   }
 }
-
-const LISTABLE_REGISTRATION_STATUSES = [
-  'submitted',
-  'awaiting_staff_review',
-  'awaiting_placement',
-  'awaiting_payment',
-  'payment_started',
-  'paid',
-  'confirmed',
-  'cancelled',
-] as const;
 
 export async function listStaffRegistrationSessions() {
   const { db, schema } = getDrizzleDb();
@@ -65,30 +60,25 @@ export async function listStaffRegistrationSessions() {
   };
 }
 
-export async function listStaffRegistrations(input: {
-  actor: Member;
+export function buildStaffRegistrationListWhere(input: {
   sessionId: number;
   search?: string;
   status?: string;
-  page?: number;
-  pageSize?: number;
-}) {
-  assertStaffAccess(input.actor);
-  const page = Math.max(1, input.page ?? 1);
-  const pageSize = Math.min(100, Math.max(1, input.pageSize ?? 50));
-  const offset = (page - 1) * pageSize;
+  q?: string;
+}): { db: ReturnType<typeof getDrizzleDb>['db']; schema: ReturnType<typeof getDrizzleDb>['schema']; where: SQL | undefined } {
   const search = input.search?.trim().toLowerCase() ?? '';
+  const query = parseRegistrationStaffQuery(input.q);
+  if (input.status && query.rules.length === 0) {
+    query.rules.push({ field: 'status', operator: 'eq', value: input.status });
+  }
 
   const { db, schema } = getDrizzleDb();
-  const filters = [
-    eq(schema.curlingRegistrations.session_id, input.sessionId),
-    sql`${schema.curlingRegistrations.submitted_at} IS NOT NULL`,
-  ];
-  if (input.status) {
-    filters.push(eq(schema.curlingRegistrations.status, input.status as (typeof LISTABLE_REGISTRATION_STATUSES)[number]));
-  } else {
+  const filters: SQL[] = [eq(schema.curlingRegistrations.session_id, input.sessionId)];
+  if (!queryRelaxesListableScope(query)) {
+    filters.push(sql`${schema.curlingRegistrations.submitted_at} IS NOT NULL`);
     filters.push(inArray(schema.curlingRegistrations.status, [...LISTABLE_REGISTRATION_STATUSES]));
   }
+  filters.push(...compileRegistrationStaffQuery(query));
   if (search) {
     const pattern = `%${search}%`;
     filters.push(
@@ -102,7 +92,23 @@ export async function listStaffRegistrations(input: {
     );
   }
 
-  const whereClause = and(...filters);
+  return { db, schema, where: and(...filters) };
+}
+
+export async function listStaffRegistrations(input: {
+  actor: Member;
+  sessionId: number;
+  search?: string;
+  status?: string;
+  q?: string;
+  page?: number;
+  pageSize?: number;
+}) {
+  assertStaffAccess(input.actor);
+  const page = Math.max(1, input.page ?? 1);
+  const pageSize = Math.min(100, Math.max(1, input.pageSize ?? 50));
+  const offset = (page - 1) * pageSize;
+  const { db, schema, where: whereClause } = buildStaffRegistrationListWhere(input);
   const rows = await db
     .select({
       id: schema.curlingRegistrations.id,
