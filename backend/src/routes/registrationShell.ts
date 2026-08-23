@@ -84,11 +84,25 @@ interface AuthenticatedRequest extends FastifyRequest {
 }
 
 const idParamsSchema = z.object({ id: z.coerce.number().int().positive() });
-const submitRegistrationSchema = z.object({
-  confirmImmediatePayment: z.boolean().optional(),
-  payLater: z.boolean().optional(),
-  membershipCommitteeComments: z.string().trim().max(2000).nullable().optional(),
-});
+const submitRegistrationSchema = z
+  .object({
+    confirmImmediatePayment: z.boolean().optional(),
+    payLater: z.boolean().optional(),
+    membershipCommitteeComments: z.string().trim().max(2000).nullable().optional(),
+    recordOfflinePayment: z.boolean().optional(),
+    offlinePaymentNote: z.string().trim().max(500).nullable().optional(),
+  })
+  .superRefine((body, ctx) => {
+    if (!body.recordOfflinePayment) return;
+    const note = body.offlinePaymentNote?.trim() ?? '';
+    if (!note) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['offlinePaymentNote'],
+        message: 'Enter a check number or other explanation.',
+      });
+    }
+  });
 const windowQuerySchema = z.object({
   seasonId: z.coerce.number().int().positive().optional(),
   sessionId: z.coerce.number().int().positive().optional(),
@@ -1062,6 +1076,8 @@ export async function protectedRegistrationShellRoutes(fastify: FastifyInstance)
           confirmImmediatePayment: body.confirmImmediatePayment,
           payLater: body.payLater,
           membershipCommitteeComments: body.membershipCommitteeComments,
+          recordOfflinePayment: body.recordOfflinePayment,
+          offlinePaymentNote: body.offlinePaymentNote,
           frontendBaseUrl: resolveFrontendBaseUrl(request),
         });
       } catch (error) {

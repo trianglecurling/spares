@@ -68,6 +68,8 @@ import type { Member } from '../types.js';
 import { memberCanManageRegistrations } from '../utils/registrationStaffAccess.js';
 import { sendManualRegistrationUpdateEmail } from './registrationStaffCommunicationService.js';
 import {
+  parseOfflinePaymentNote,
+  staffCanRecordOfflinePayment,
   staffCanRequestDeferredPayment,
   unpaidImmediateRegistrationCanDefer,
 } from './registrationUnpaidImmediateDeferral.js';
@@ -179,6 +181,9 @@ type SubmitRegistrationInput = {
   staffEdit?: boolean;
   changedSummary?: string;
   frontendBaseUrl?: string;
+  /** Staff-only: mark the invoice paid without hosted checkout (check, cash, or other offline payment). */
+  recordOfflinePayment?: boolean;
+  offlinePaymentNote?: string | null;
 };
 
 const MEMBERSHIP_COMMITTEE_COMMENTS_MAX_LENGTH = 2000;
@@ -232,6 +237,7 @@ type SubmitRegistrationResult =
       checkoutUrl?: string;
       orderToken?: string;
       payLater?: boolean;
+      recordedOfflinePayment?: boolean;
       paymentAdjustment?: RegistrationPaymentAdjustmentResult;
     });
 
@@ -556,10 +562,12 @@ async function buildRegistrationPaymentConfirmationEmailPayload(input: {
     `Registration status: ${humanizeRegistrationToken(registration.status)}`,
   ];
   if (registration.student_discount_claimed === 1) {
-    registrationDetailLines.push('Student discount claimed');
+    const institution = registration.student_institution?.trim();
+    registrationDetailLines.push(institution ? `Student discount: ${institution}` : 'Student discount claimed');
   }
   if (registration.reciprocal_discount_claimed === 1) {
-    registrationDetailLines.push('Reciprocal club discount claimed');
+    const clubName = registration.reciprocal_club_name?.trim();
+    registrationDetailLines.push(clubName ? `Reciprocal club discount: ${clubName}` : 'Reciprocal club discount claimed');
   }
   if (summaryLines.length > 0) {
     registrationDetailLines.push('League and program choices:', ...summaryLines);
@@ -2114,6 +2122,169 @@ export function registrationSelectionStatusIsPreserved(status: string): boolean 
   return (PRESERVED_REGISTRATION_SELECTION_STATUSES as readonly string[]).includes(status);
 }
 
+function requireOfflinePaymentNote(note?: string | null): string {
+  const parsed = parseOfflinePaymentNote(note);
+  if (!parsed.ok) {
+    throw new RegistrationMembershipPaymentValidationError({ note: parsed.error });
+  }
+  return parsed.note;
+}
+
+export const STAFF_OFFLINE_PAYMENT_CHECKOUT_EXPIRE_REASON = 'expired-staff-offline-payment';
+
+export function offlinePaymentCheckoutExpireFailure(
+  error: unknown,
+): RegistrationMembershipPaymentValidationError | null {
+  if (!(error instanceof PaymentServiceError)) return null;
+  return new RegistrationMembershipPaymentValidationError({
+    payment:
+      error.statusCode === 409
+        ? 'This registration was already paid online. Refresh the page before recording an offline payment.'
+        : error.message || 'Unable to expire the existing payment link.',
+  });
+}
+
+async function expireOutstandingRegistrationCheckout(paymentOrderId: number | null | undefined): Promise<void> {
+  if (!paymentOrderId) return;
+  try {
+    await createPaymentService().expirePendingCheckout(
+      paymentOrderId,
+      STAFF_OFFLINE_PAYMENT_CHECKOUT_EXPIRE_REASON,
+    );
+  } catch (error) {
+    throw offlinePaymentCheckoutExpireFailure(error) ?? error;
+  }
+}
+
+async function confirmRegistrationInvoicePaidOffline(input: {
+  registrationId: number;
+  invoiceId: number;
+  note: string;
+  recordedByMemberId: number;
+}): Promise<void> {
+  const { db, schema } = getDrizzleDb();
+  const registration = await loadFullRegistration(input.registrationId);
+  const curlerMemberId = registration.curler_member_id;
+  if (!curlerMemberId) {
+    throw new RegistrationMembershipPaymentValidationError({ curler: 'The curler is required.' });
+  }
+  const [invoice] = await db
+    .select()
+    .from(schema.registrationInvoices)
+    .where(eq(schema.registrationInvoices.id, input.invoiceId))
+    .limit(1);
+  if (!invoice) {
+    throw new RegistrationMembershipPaymentValidationError({ payment: 'No registration invoice was found.' });
+  }
+  const [season] = await db
+    .select()
+    .from(schema.curlingSeasons)
+    .where(eq(schema.curlingSeasons.id, registration.season_id))
+    .limit(1);
+  if (!season) {
+    throw new RegistrationMembershipPaymentValidationError({ payment: 'The registration season was not found.' });
+  }
+
+  await expireOutstandingRegistrationCheckout(invoice.payment_order_id);
+
+  const paidAt = new Date();
+  const membershipGrantRef: { value: { memberId: number; seasonId: number } | null } = { value: null };
+  await db.transaction(async (tx) => {
+    await tx
+      .update(schema.registrationInvoices)
+      .set({
+        status: 'paid',
+        deferred: 0,
+        offline_payment_note: input.note,
+        offline_recorded_by_member_id: input.recordedByMemberId,
+        stripe_checkout_session_id: null,
+        paid_at: timestampColumnValue(paidAt),
+        updated_at: sql`CURRENT_TIMESTAMP`,
+      })
+      .where(eq(schema.registrationInvoices.id, input.invoiceId));
+    await tx
+      .update(schema.curlingRegistrations)
+      .set({
+        status: 'confirmed',
+        updated_at: sql`CURRENT_TIMESTAMP`,
+      })
+      .where(eq(schema.curlingRegistrations.id, input.registrationId));
+    await tx
+      .update(schema.registrationSelections)
+      .set({
+        status: 'confirmed',
+        updated_at: sql`CURRENT_TIMESTAMP`,
+      })
+      .where(
+        and(
+          eq(schema.registrationSelections.registration_id, input.registrationId),
+          sql`${schema.registrationSelections.selection_type} IN ('guaranteed_return', 'byot_request', 'play_in_request', 'instructional_join', 'sabbatical', 'spare_only', 'junior_recreational')`,
+          sql`${schema.registrationSelections.status} NOT IN ('dropped', 'not_placed', 'cancelled', 'declined')`,
+        ),
+      );
+    const grant = await applyConfirmedRegistrationEntitlementsInTx({
+      tx,
+      registrationId: input.registrationId,
+      registration,
+      invoiceId: input.invoiceId,
+      curlerMemberId,
+      season,
+      paymentOrderId: null,
+    });
+    if (grant) {
+      membershipGrantRef.value = { memberId: grant.memberId, seasonId: grant.seasonId };
+    }
+  });
+  if (membershipGrantRef.value) {
+    queueMembershipGrantSync(membershipGrantRef.value.memberId, membershipGrantRef.value.seasonId);
+  }
+}
+
+export async function recordStaffOfflineRegistrationPayment(input: {
+  registrationId: number;
+  actor: Member;
+  note: string;
+}): Promise<{ registrationId: number; invoiceId: number; totalDueMinor: number }> {
+  if (!memberCanManageRegistrations(input.actor)) {
+    throw new RegistrationMembershipPaymentValidationError({
+      payment: 'You do not have permission to record offline payment.',
+    });
+  }
+  const note = requireOfflinePaymentNote(input.note);
+  const registration = await getRegistrationById(input.registrationId);
+  if (!registration) {
+    throw new RegistrationMembershipPaymentValidationError({ registration: 'Registration was not found.' });
+  }
+  if (registration.status === 'cancelled') {
+    throw new RegistrationMembershipPaymentValidationError({
+      registration: 'Canceled registrations cannot record payment.',
+    });
+  }
+  const invoice = await loadLatestRegistrationInvoice(input.registrationId);
+  if (
+    !invoice ||
+    !staffCanRecordOfflinePayment({
+      registrationStatus: registration.status,
+      invoiceStatus: invoice.status,
+    })
+  ) {
+    throw new RegistrationMembershipPaymentValidationError({
+      payment: 'This registration does not have an unpaid invoice to record.',
+    });
+  }
+  await confirmRegistrationInvoicePaidOffline({
+    registrationId: input.registrationId,
+    invoiceId: invoice.id,
+    note,
+    recordedByMemberId: input.actor.id,
+  });
+  return {
+    registrationId: input.registrationId,
+    invoiceId: invoice.id,
+    totalDueMinor: invoice.total_minor,
+  };
+}
+
 export async function submitStaffRegistrationEdits(input: SubmitRegistrationInput & { changedSummary?: string }): Promise<SubmitRegistrationResult> {
   if (!memberCanManageRegistrations(input.actor)) {
     throw new RegistrationMembershipPaymentValidationError({ registration: 'You do not have permission to manage registrations.' });
@@ -2524,6 +2695,28 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
       addedBySource: 'registration_submission',
       registrationId: input.registrationId,
     });
+  }
+
+  if (input.recordOfflinePayment) {
+    if (!memberCanManageRegistrations(input.actor)) {
+      throw new RegistrationMembershipPaymentValidationError({
+        payment: 'You do not have permission to record offline payment.',
+      });
+    }
+    await confirmRegistrationInvoicePaidOffline({
+      registrationId: input.registrationId,
+      invoiceId,
+      note: requireOfflinePaymentNote(input.offlinePaymentNote),
+      recordedByMemberId: input.actor.id,
+    });
+    return {
+      outcome: evaluation.paymentDecision.outcome,
+      registrationId: input.registrationId,
+      invoiceId,
+      totalDueMinor: evaluation.feePreview.totalDueMinor,
+      deferralReasons: evaluation.paymentDecision.deferralReasons,
+      recordedOfflinePayment: true,
+    };
   }
 
   if (evaluation.paymentDecision.outcome === 'immediate_payment') {

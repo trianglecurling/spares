@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  parseOfflinePaymentNote,
+  staffCanRecordOfflinePayment,
   staffCanRequestDeferredPayment,
   unpaidImmediateRegistrationCanDefer,
 } from './registrationUnpaidImmediateDeferral.js';
@@ -53,5 +55,66 @@ describe('staffCanRequestDeferredPayment', () => {
     expect(staffCanRequestDeferredPayment('awaiting_staff_review')).toBe(true);
     expect(staffCanRequestDeferredPayment('awaiting_payment')).toBe(false);
     expect(staffCanRequestDeferredPayment('paid')).toBe(false);
+  });
+});
+
+describe('staffCanRecordOfflinePayment', () => {
+  test('allows unpaid invoice statuses and rejects settled ones', () => {
+    expect(
+      staffCanRecordOfflinePayment({
+        registrationStatus: 'awaiting_payment',
+        invoiceStatus: 'awaiting_payment',
+      }),
+    ).toBe(true);
+    expect(
+      staffCanRecordOfflinePayment({
+        registrationStatus: 'awaiting_placement',
+        invoiceStatus: 'deferred',
+      }),
+    ).toBe(true);
+    expect(
+      staffCanRecordOfflinePayment({
+        registrationStatus: 'payment_started',
+        invoiceStatus: 'checkout_started',
+      }),
+    ).toBe(true);
+    expect(
+      staffCanRecordOfflinePayment({
+        registrationStatus: 'awaiting_payment',
+        invoiceStatus: 'paid',
+      }),
+    ).toBe(false);
+    expect(
+      staffCanRecordOfflinePayment({
+        registrationStatus: 'awaiting_payment',
+        invoiceStatus: 'cancelled',
+      }),
+    ).toBe(false);
+    expect(
+      staffCanRecordOfflinePayment({
+        registrationStatus: 'awaiting_payment',
+        invoiceStatus: null,
+      }),
+    ).toBe(false);
+    expect(
+      staffCanRecordOfflinePayment({
+        registrationStatus: 'cancelled',
+        invoiceStatus: 'awaiting_payment',
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('parseOfflinePaymentNote', () => {
+  test('requires a non-empty comment and trims whitespace', () => {
+    expect(parseOfflinePaymentNote('')).toEqual({
+      ok: false,
+      error: 'Enter a check number or other explanation.',
+    });
+    expect(parseOfflinePaymentNote('   ')).toEqual({
+      ok: false,
+      error: 'Enter a check number or other explanation.',
+    });
+    expect(parseOfflinePaymentNote(' Check #1234 ')).toEqual({ ok: true, note: 'Check #1234' });
   });
 });

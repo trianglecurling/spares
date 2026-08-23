@@ -5,7 +5,7 @@ import { memberCanManageRegistrations } from '../utils/registrationStaffAccess.j
 import { listCurlingRegistrationPaymentActivity } from '../domains/payments/queries/paymentSummaries.js';
 import { getMemberRegistrationDetail, registrationAmountDueMinor } from './registrationMemberService.js';
 import { getDefaultRegistrationWindow } from './registrationShellService.js';
-import { staffCanRequestDeferredPayment } from './registrationUnpaidImmediateDeferral.js';
+import { staffCanRecordOfflinePayment, staffCanRequestDeferredPayment } from './registrationUnpaidImmediateDeferral.js';
 
 export class RegistrationStaffValidationError extends Error {
   constructor(public details: Record<string, string>) {
@@ -215,11 +215,29 @@ export async function getStaffRegistrationDetail(registrationId: number, actor: 
     .where(eq(schema.curlingRegistrations.id, registrationId))
     .limit(1);
 
+  const [offlineRecorder] = invoice?.offline_recorded_by_member_id
+    ? await db
+        .select({
+          id: schema.members.id,
+          name: schema.members.name,
+          first_name: schema.members.first_name,
+          last_name: schema.members.last_name,
+          email: schema.members.email,
+        })
+        .from(schema.members)
+        .where(eq(schema.members.id, invoice.offline_recorded_by_member_id))
+        .limit(1)
+    : [];
+
   return {
     ...detail,
     canEdit: detail.registration.registrationStatus !== 'cancelled',
     canCancel: detail.registration.registrationStatus !== 'cancelled',
     canRequestPayment: staffCanRequestDeferredPayment(detail.registration.registrationStatus),
+    canRecordOfflinePayment: staffCanRecordOfflinePayment({
+      registrationStatus: detail.registration.registrationStatus,
+      invoiceStatus: invoice?.status,
+    }),
     submittedBy: submitter
       ? {
           id: submitter.id,
@@ -236,6 +254,13 @@ export async function getStaffRegistrationDetail(registrationId: number, actor: 
           totalMinor: invoice.total_minor,
           deferredReason: invoice.deferred_reason,
           paidAt: invoice.paid_at,
+          offlinePaymentNote: invoice.offline_payment_note,
+          offlineRecordedBy: offlineRecorder
+            ? {
+                id: offlineRecorder.id,
+                name: memberName(offlineRecorder),
+              }
+            : null,
           lineItems,
         }
       : null,

@@ -3,18 +3,22 @@ import { z } from 'zod';
 import { sendValidationError } from '../api/errors.js';
 import { cancelStaffRegistration } from '../registration/registrationPriorityEdit.js';
 import { RegistrationPriorityEditValidationError } from '../registration/registrationPriorityEdit.js';
+import { createStaffRegistrationDraft } from '../registration/registrationStaffCreateService.js';
 import {
   RegistrationMembershipPaymentValidationError,
+  recordStaffOfflineRegistrationPayment,
   submitStaffRegistrationEdits,
   triggerDeferredRegistrationPayment,
 } from '../registration/registrationMembershipPaymentService.js';
 import { resolveFrontendBaseUrl } from '../utils/frontendUrl.js';
+import { getStaffRegistrationStats } from '../registration/registrationStaffStats.js';
 import {
   getStaffRegistrationDetail,
   listStaffRegistrations,
   listStaffRegistrationSessions,
   RegistrationStaffValidationError,
 } from '../registration/registrationStaffService.js';
+import { RegistrationShellValidationError } from '../registration/registrationShellService.js';
 import type { Member } from '../types.js';
 import { memberCanManageRegistrations } from '../utils/registrationStaffAccess.js';
 
@@ -37,6 +41,10 @@ function requireRegistrationManage(request: FastifyRequest, reply: FastifyReply)
 
 function handleStaffRegistrationError(reply: FastifyReply, error: unknown): boolean {
   if (error instanceof RegistrationStaffValidationError) {
+    sendValidationError(reply, error.message, error.details);
+    return true;
+  }
+  if (error instanceof RegistrationShellValidationError) {
     sendValidationError(reply, error.message, error.details);
     return true;
   }
@@ -63,12 +71,35 @@ const listQuerySchema = z.object({
   page: z.coerce.number().int().positive().optional(),
   pageSize: z.coerce.number().int().positive().max(100).optional(),
 });
+const statsQuerySchema = z.object({
+  sessionId: z.coerce.number().int().positive(),
+});
 const staffSubmitSchema = z.object({
   changedSummary: z.string().min(1).optional(),
   confirmImmediatePayment: z.boolean().optional(),
 });
 const staffCancelSchema = z.object({
   refund: z.boolean().optional(),
+});
+const staffCreateSchema = z
+  .object({
+    sessionId: z.number().int().positive(),
+    acceptPoliciesOnBehalf: z.literal(true),
+    curlerMemberId: z.number().int().positive().optional(),
+    newCurler: z
+      .object({
+        firstName: z.string().trim().min(1),
+        lastName: z.string().trim().min(1),
+        email: z.string().trim().email(),
+        phone: z.string().trim().optional(),
+      })
+      .optional(),
+  })
+  .refine((body) => Boolean(body.curlerMemberId) !== Boolean(body.newCurler), {
+    message: 'Choose either an existing member or a new curler.',
+  });
+const staffOfflinePaymentSchema = z.object({
+  note: z.string().trim().min(1, 'Enter a check number or other explanation.').max(500),
 });
 
 export async function protectedRegistrationStaffRoutes(fastify: FastifyInstance): Promise<void> {
@@ -82,6 +113,23 @@ export async function protectedRegistrationStaffRoutes(fastify: FastifyInstance)
     }
   });
 
+  fastify.post('/registration/staff/registrations', async (request, reply) => {
+    if (!requireRegistrationManage(request, reply)) return;
+    try {
+      const body = staffCreateSchema.parse(request.body);
+      return await createStaffRegistrationDraft({
+        actor: (request as AuthenticatedRequest).member,
+        sessionId: body.sessionId,
+        acceptPoliciesOnBehalf: body.acceptPoliciesOnBehalf,
+        curlerMemberId: body.curlerMemberId,
+        newCurler: body.newCurler,
+      });
+    } catch (error) {
+      if (handleStaffRegistrationError(reply, error)) return;
+      throw error;
+    }
+  });
+
   fastify.get('/registration/staff/registrations', async (request, reply) => {
     if (!requireRegistrationManage(request, reply)) return;
     try {
@@ -89,6 +137,20 @@ export async function protectedRegistrationStaffRoutes(fastify: FastifyInstance)
       return await listStaffRegistrations({
         actor: (request as AuthenticatedRequest).member,
         ...query,
+      });
+    } catch (error) {
+      if (handleStaffRegistrationError(reply, error)) return;
+      throw error;
+    }
+  });
+
+  fastify.get('/registration/staff/stats', async (request, reply) => {
+    if (!requireRegistrationManage(request, reply)) return;
+    try {
+      const query = statsQuerySchema.parse(request.query);
+      return await getStaffRegistrationStats({
+        actor: (request as AuthenticatedRequest).member,
+        sessionId: query.sessionId,
       });
     } catch (error) {
       if (handleStaffRegistrationError(reply, error)) return;
@@ -118,6 +180,22 @@ export async function protectedRegistrationStaffRoutes(fastify: FastifyInstance)
         changedSummary: body.changedSummary,
         confirmImmediatePayment: body.confirmImmediatePayment,
         frontendBaseUrl: resolveFrontendBaseUrl(request),
+      });
+    } catch (error) {
+      if (handleStaffRegistrationError(reply, error)) return;
+      throw error;
+    }
+  });
+
+  fastify.post('/registration/staff/registrations/:id/record-offline-payment', async (request, reply) => {
+    if (!requireRegistrationManage(request, reply)) return;
+    try {
+      const params = idParamsSchema.parse(request.params);
+      const body = staffOfflinePaymentSchema.parse(request.body ?? {});
+      return await recordStaffOfflineRegistrationPayment({
+        registrationId: params.id,
+        actor: (request as AuthenticatedRequest).member,
+        note: body.note,
       });
     } catch (error) {
       if (handleStaffRegistrationError(reply, error)) return;

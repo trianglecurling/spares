@@ -18,6 +18,11 @@ import type {
   VerifyWebhookInput,
 } from './paymentService.js';
 import { PaymentServiceError, PaymentSignatureError, truncateCheckoutText } from './paymentService.js';
+import {
+  buildSquareRefundReason,
+  checkoutLineItemsToRefundItems,
+  extractSquareOrderRefundLineItems,
+} from './squareRefundReason.js';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -655,6 +660,7 @@ export class SquarePaymentProviderAdapter implements PaymentProviderAdapter {
       const paymentId =
         input.providerPaymentId?.trim()
         || await this.resolvePaymentIdForRefund(client, input);
+      const reason = await this.buildRefundReason(client, input);
       const response = await callSquare(() => client.refunds.refundPayment({
         idempotencyKey: crypto.randomUUID(),
         paymentId,
@@ -662,7 +668,7 @@ export class SquarePaymentProviderAdapter implements PaymentProviderAdapter {
           amount: BigInt(input.amountMinor),
           currency: squareCurrency(input.currency),
         },
-        reason: input.reason?.trim() ? 'Requested by customer' : undefined,
+        reason: reason ?? undefined,
       }));
 
       const refund = response.refund;
@@ -705,6 +711,35 @@ export class SquarePaymentProviderAdapter implements PaymentProviderAdapter {
       if (paymentId) return paymentId;
     }
     return null;
+  }
+
+  private async loadSquareOrderRefundLineItems(
+    client: SquareClient,
+    input: CreateRefundInput
+  ): Promise<ReturnType<typeof extractSquareOrderRefundLineItems>> {
+    const squareOrderId = await this.resolveSquareOrderId(client, {
+      providerOrderId: input.providerOrderId,
+      metadata: input.metadata ?? null,
+    });
+    if (!squareOrderId) return [];
+    try {
+      const orderResponse = await callSquare(() => client.orders.get({ orderId: squareOrderId }));
+      return extractSquareOrderRefundLineItems(orderResponse.order);
+    } catch {
+      return [];
+    }
+  }
+
+  private async buildRefundReason(client: SquareClient, input: CreateRefundInput): Promise<string | null> {
+    const squareItems = await this.loadSquareOrderRefundLineItems(client, input);
+    const fallbackItems = checkoutLineItemsToRefundItems(input.lineItems);
+    return buildSquareRefundReason({
+      items: squareItems.length > 0 ? squareItems : fallbackItems,
+      refundAmountMinor: input.amountMinor,
+      orderAmountMinor: input.orderAmountMinor ?? null,
+      currency: input.currency,
+      staffReason: input.reason,
+    });
   }
 
   private async resolvePaymentIdForRefund(client: SquareClient, input: CreateRefundInput): Promise<string> {

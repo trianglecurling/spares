@@ -4,6 +4,7 @@ import { AppPage, AppPageHeader } from '../../components/AppPage';
 import AppStateCard from '../../components/AppStateCard';
 import BackButton from '../../components/BackButton';
 import Button from '../../components/Button';
+import RecordOfflinePaymentModal from '../../components/registration/RecordOfflinePaymentModal';
 import RegistrationViewEditModals, {
   type RegistrationEditModalKind,
 } from '../../components/registration/RegistrationViewEditModals';
@@ -18,6 +19,8 @@ import {
   shouldShowGuaranteeChip,
   type LeaguePriorityGuaranteeLabel,
 } from '../../components/registration/leaguePriorityShared';
+import RegistrationCollectedDetails from '../../components/registration/RegistrationCollectedDetails';
+import type { RegistrationCollectedDetailsFields } from '../../components/registration/registrationCollectedDetailsShared';
 import { playInEntryTeamMembersText } from '../../components/registration/RegistrationPlayInEntryPanel';
 import { useAlert } from '../../contexts/AlertContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
@@ -43,7 +46,20 @@ type RegistrationDetail = {
     submittedAt: string | null;
     updatedAt: string | null;
     studentDiscountClaimed: boolean;
+    studentInstitution: string | null;
     reciprocalDiscountClaimed: boolean;
+    reciprocalClubName: string | null;
+    usaCurlingMembershipOptIn: boolean | null;
+    uswcaMembershipOptIn: boolean | null;
+    nameTagName: string | null;
+    nameTagIncludePronouns: boolean | null;
+    nameTagReplacementQuantity: number | null;
+    icePrivilegesChoice: RegistrationCollectedDetailsFields['icePrivilegesChoice'];
+    experienceType: RegistrationCollectedDetailsFields['experienceType'];
+    experienceSelfReportedYears: number | null;
+    basicIceFallbackInterest: boolean | null;
+    financialAssistance: RegistrationCollectedDetailsFields['financialAssistance'];
+    guardian: RegistrationCollectedDetailsFields['guardian'];
     membershipCommitteeComments: string | null;
   };
   submittedBy: { id: number; name: string; email: string | null } | null;
@@ -90,6 +106,8 @@ type RegistrationDetail = {
     totalMinor: number;
     deferredReason: string | null;
     paidAt: string | null;
+    offlinePaymentNote: string | null;
+    offlineRecordedBy: { id: number; name: string } | null;
     lineItems: InvoiceLineItem[];
   } | null;
   communications: Array<{
@@ -114,6 +132,7 @@ type RegistrationDetail = {
   canEdit: boolean;
   canCancel: boolean;
   canRequestPayment: boolean;
+  canRecordOfflinePayment: boolean;
 };
 
 function label(value: string | null | undefined) {
@@ -142,17 +161,23 @@ const SETTLED_PAYMENT_STATUSES = new Set(['succeeded', 'partially_refunded', 're
 function invoicePaymentTotals(
   paymentActivity: RegistrationDetail['paymentActivity'],
   invoiceTotalMinor: number,
-): { paymentsMinor: number; balanceMinor: number } {
+  invoiceStatus?: string | null,
+): { paymentsMinor: number; balanceMinor: number; includesOfflinePayment: boolean } {
   const grossPaymentsMinor = paymentActivity
     .filter((entry) => entry.kind === 'payment' && SETTLED_PAYMENT_STATUSES.has(entry.status))
     .reduce((sum, entry) => sum + entry.amountMinor, 0);
   const refundsMinor = paymentActivity
     .filter((entry) => entry.kind === 'refund' && entry.status === 'succeeded')
     .reduce((sum, entry) => sum + entry.amountMinor, 0);
-  const netPaymentsMinor = grossPaymentsMinor - refundsMinor;
+  let netPaymentsMinor = grossPaymentsMinor - refundsMinor;
+  const includesOfflinePayment = invoiceStatus === 'paid' && netPaymentsMinor < invoiceTotalMinor;
+  if (includesOfflinePayment) {
+    netPaymentsMinor = invoiceTotalMinor;
+  }
   return {
     paymentsMinor: netPaymentsMinor,
     balanceMinor: invoiceTotalMinor - netPaymentsMinor,
+    includesOfflinePayment,
   };
 }
 
@@ -223,6 +248,18 @@ function balanceSummary(
   return { tone: 'balance-credit', hint: 'Overpaid or credit on file' };
 }
 
+function offlinePaymentDescription(invoice: NonNullable<RegistrationDetail['invoice']>): string {
+  const parts: string[] = [];
+  if (invoice.offlineRecordedBy?.name) {
+    parts.push(`Recorded by ${invoice.offlineRecordedBy.name}`);
+  }
+  if (invoice.offlinePaymentNote?.trim()) {
+    parts.push(invoice.offlinePaymentNote.trim());
+  }
+  if (parts.length > 0) return parts.join('. ');
+  return invoice.deferredReason || 'Recorded by staff';
+}
+
 function stripeDashboardUrl(providerReference: string | null): string | null {
   if (!providerReference) return null;
   const isTestMode = providerReference.startsWith('cs_test_') || providerReference.startsWith('pi_test_');
@@ -275,6 +312,9 @@ export default function AdminRegistrationDetail() {
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [requestingPayment, setRequestingPayment] = useState(false);
+  const [recordingPayment, setRecordingPayment] = useState(false);
+  const [offlinePaymentOpen, setOfflinePaymentOpen] = useState(false);
+  const [offlinePaymentError, setOfflinePaymentError] = useState<string | null>(null);
   const [activeEditModal, setActiveEditModal] = useState<RegistrationEditModalKind>(null);
 
   const load = useCallback(async () => {
@@ -301,7 +341,11 @@ export default function AdminRegistrationDetail() {
   const invoiceTotals =
     detail?.invoice != null
       ? (() => {
-          const totals = invoicePaymentTotals(detail.paymentActivity, detail.invoice.totalMinor);
+          const totals = invoicePaymentTotals(
+            detail.paymentActivity,
+            detail.invoice.totalMinor,
+            detail.invoice.status,
+          );
           if (
             detail.registration.registrationStatus === 'cancelled' ||
             detail.invoice.status === 'cancelled' ||
@@ -349,6 +393,21 @@ export default function AdminRegistrationDetail() {
         'warning',
         'Balance due',
       );
+    }
+  }
+
+  async function recordOfflinePayment(note: string) {
+    setRecordingPayment(true);
+    setOfflinePaymentError(null);
+    try {
+      await api.post(`/registration/staff/registrations/${numericId}/record-offline-payment`, { note });
+      setOfflinePaymentOpen(false);
+      showAlert('Payment recorded. The invoice is marked paid.', 'success', 'Payment recorded');
+      await load();
+    } catch (err) {
+      setOfflinePaymentError(getApiErrorMessage(err, 'Unable to record payment.'));
+    } finally {
+      setRecordingPayment(false);
     }
   }
 
@@ -459,6 +518,7 @@ export default function AdminRegistrationDetail() {
                 <p>Amount due: {money(detail.payment.amountDueMinor)}</p>
                 <p>Amount paid: {money(detail.payment.amountPaidMinor)}</p>
               </div>
+              <RegistrationCollectedDetails fields={detail.registration} />
               {detail.registration.membershipCommitteeComments ? (
                 <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm dark:border-gray-700 dark:bg-gray-900/40">
                   <p className="font-medium text-gray-900 dark:text-gray-100">Comments for the Membership Committee</p>
@@ -474,18 +534,56 @@ export default function AdminRegistrationDetail() {
                   </a>
                 </p>
               ) : null}
-              {detail.canRequestPayment ? (
-                <div>
-                  <Button type="button" variant="secondary" disabled={requestingPayment} onClick={() => void requestPayment()}>
-                    Request payment
-                  </Button>
+              {detail.invoice?.status === 'paid' &&
+              (detail.invoice.offlinePaymentNote ||
+                detail.invoice.offlineRecordedBy ||
+                detail.invoice.deferredReason) ? (
+                <p className="text-sm text-gray-600 dark:text-gray-300">
+                  {offlinePaymentDescription(detail.invoice)}
+                </p>
+              ) : null}
+              {detail.canRequestPayment || detail.canRecordOfflinePayment ? (
+                <div className="flex flex-wrap gap-3">
+                  {detail.canRequestPayment ? (
+                    <Button type="button" variant="secondary" disabled={requestingPayment} onClick={() => void requestPayment()}>
+                      Request payment
+                    </Button>
+                  ) : null}
+                  {detail.canRecordOfflinePayment ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      disabled={recordingPayment}
+                      onClick={() => {
+                        setOfflinePaymentError(null);
+                        setOfflinePaymentOpen(true);
+                      }}
+                    >
+                      Record payment received
+                    </Button>
+                  ) : null}
                 </div>
               ) : null}
             </Section>
 
             <Section title="Payments and refunds">
-              {detail.paymentActivity.length === 0 ? (
+              {detail.paymentActivity.length === 0 && !invoiceTotals?.includesOfflinePayment ? (
                 <p>No payments or refunds have been recorded for this registration yet.</p>
+              ) : detail.paymentActivity.length === 0 && invoiceTotals?.includesOfflinePayment ? (
+                <div className="rounded-lg border border-gray-200 p-3 text-sm dark:border-gray-700">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="font-medium text-gray-900 dark:text-gray-100">Offline payment</p>
+                      <p className="text-gray-600 dark:text-gray-300">
+                        {detail.invoice?.paidAt ? `${formatDateTime(detail.invoice.paidAt)} · ` : null}
+                        {detail.invoice ? offlinePaymentDescription(detail.invoice) : 'Recorded by staff'}
+                      </p>
+                    </div>
+                    <p className="whitespace-nowrap font-medium text-gray-900 dark:text-gray-100">
+                      {money(detail.invoice?.totalMinor ?? 0)}
+                    </p>
+                  </div>
+                </div>
               ) : (
                 <div className="space-y-3">
                   {detail.paymentActivity.map((entry) => {
@@ -583,7 +681,11 @@ export default function AdminRegistrationDetail() {
                   </div>
                   <InvoiceSummaryRow
                     label="Payments"
-                    hint="Net of successful charges and refunds"
+                    hint={
+                      invoiceTotals?.includesOfflinePayment
+                        ? 'Includes staff-recorded offline payment'
+                        : 'Net of successful charges and refunds'
+                    }
                     amount={money(invoiceTotals?.paymentsMinor ?? 0)}
                     tone="payment"
                   />
@@ -720,6 +822,20 @@ export default function AdminRegistrationDetail() {
           </div>
         ) : null}
       </AppPage>
+      <RecordOfflinePaymentModal
+        isOpen={offlinePaymentOpen}
+        saving={recordingPayment}
+        description="Marks this invoice as paid without creating a checkout link. Use this for a check, cash, or another offline payment."
+        confirmText="Record payment"
+        confirmBusyText="Recording payment"
+        error={offlinePaymentError}
+        onClose={() => {
+          if (recordingPayment) return;
+          setOfflinePaymentOpen(false);
+          setOfflinePaymentError(null);
+        }}
+        onSubmit={(note) => void recordOfflinePayment(note)}
+      />
     </>
   );
 }

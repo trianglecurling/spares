@@ -257,6 +257,10 @@ export function resolveResumeStepFromDraft(input: {
   return shellStep;
 }
 
+export function staffRegistrationSearch(staffRegistrationId: number | null | undefined): string {
+  return staffRegistrationId ? `?staffRegistrationId=${staffRegistrationId}` : '';
+}
+
 export function parseRegistrationResumePointer(raw: string | null): RegistrationResumePointerV1 | null {
   if (!raw) return null;
   try {

@@ -14,6 +14,7 @@ import FormField from '../components/FormField';
 import ChoiceInput from '../components/ChoiceInput';
 import Button from '../components/Button';
 import RegistrationImmediatePaymentConfirmationModal from '../components/registration/RegistrationImmediatePaymentConfirmationModal';
+import RecordOfflinePaymentModal from '../components/registration/RecordOfflinePaymentModal';
 import RegistrationPayLaterConfirmationModal from '../components/registration/RegistrationPayLaterConfirmationModal';
 import RegistrationDemographicFields, {
   type RegistrationDemographicFieldsHandle,
@@ -84,6 +85,7 @@ import {
   resolveResumeStepFromDraft,
   resumePointerMatchesDraft,
   resumePointerMatchesGuestDraft,
+  staffRegistrationSearch,
   type RegistrationResumePointerV1,
 } from '../utils/registrationResume';
 import { computeDiscountedRegularMembershipFeeMinor } from '../utils/registrationMembershipFees';
@@ -880,7 +882,7 @@ export default function RegistrationShellPage() {
   const isPriorityEdit = priorityEditState?.priorityEdit === true;
   const priorityEditReturnTo = priorityEditState?.returnTo ?? '/registration/view/1';
   const priorityEditCurlerMemberId = priorityEditState?.curlerMemberId;
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { step: stepParam } = useParams<{ step: string }>();
   const { member, login, logout, isLoading: authLoading } = useAuth();
   const { confirm } = useConfirm();
@@ -957,6 +959,7 @@ export default function RegistrationShellPage() {
   const [checkoutConfirmation, setCheckoutConfirmation] = useState<SubmitRegistrationEditsResult | null>(null);
   const [checkoutConfirmationMode, setCheckoutConfirmationMode] = useState<'submit' | 'priority-edit'>('submit');
   const [payLaterConfirmationOpen, setPayLaterConfirmationOpen] = useState(false);
+  const [offlinePaymentOpen, setOfflinePaymentOpen] = useState(false);
   const [confirmingPayLater, setConfirmingPayLater] = useState(false);
   const [confirmingCheckout, setConfirmingCheckout] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -1106,6 +1109,27 @@ export default function RegistrationShellPage() {
   const paymentOrderToken = searchParams.get('order_token');
   const paymentSessionId = searchParams.get('session_id')?.trim() || '';
   const registeringForSomeoneElse = searchParams.get('for') === 'other';
+  const staffRegistrationIdFromQuery = useMemo(() => {
+    const raw = searchParams.get('staffRegistrationId');
+    if (!raw) return null;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  }, [searchParams]);
+  const [staffRegistrationId, setStaffRegistrationId] = useState<number | null>(staffRegistrationIdFromQuery);
+  const isStaffCreate = staffRegistrationId != null;
+
+  useEffect(() => {
+    if (staffRegistrationIdFromQuery) setStaffRegistrationId(staffRegistrationIdFromQuery);
+  }, [staffRegistrationIdFromQuery]);
+
+  useEffect(() => {
+    if (!staffRegistrationId) return;
+    if (searchParams.get('staffRegistrationId') === String(staffRegistrationId)) return;
+    const next = new URLSearchParams(searchParams);
+    next.set('staffRegistrationId', String(staffRegistrationId));
+    setSearchParams(next, { replace: true });
+  }, [staffRegistrationId, searchParams, setSearchParams]);
+
   /** Logged-in users on new-curler identity setup are always registering someone else. */
   const identityRegisteringForOther =
     registeringForSomeoneElse || registeringForSelf === 'other' || Boolean(member);
@@ -1448,6 +1472,10 @@ export default function RegistrationShellPage() {
     };
 
     void (async () => {
+      if (staffRegistrationId) {
+        finishResumeCheck();
+        return;
+      }
       if (member) {
         try {
           const { data } = await api.get<{
@@ -1489,7 +1517,7 @@ export default function RegistrationShellPage() {
     return () => {
       resumeCheckGenerationRef.current += 1;
     };
-  }, [currentStep, member, windowState, authLoading, startBootstrapKey]);
+  }, [currentStep, member, windowState, authLoading, startBootstrapKey, staffRegistrationId]);
 
   useEffect(() => {
     if (!isPriorityEdit || !member || currentStep === 'start' || currentStep === 'success' || currentStep === 'cancel') return;
@@ -1564,6 +1592,11 @@ export default function RegistrationShellPage() {
     let canceled = false;
     (async () => {
       try {
+        if (staffRegistrationId) {
+          await hydrateDraftFromServerById(staffRegistrationId);
+          if (canceled) return;
+          return;
+        }
         const { data } = await api.get<{ draft: (RegistrationShellPayload & { id: number }) | null }>('/registration/drafts/me');
         if (canceled) return;
         if (!data.draft) {
@@ -1578,7 +1611,15 @@ export default function RegistrationShellPage() {
     return () => {
       canceled = true;
     };
-  }, [member?.id, currentStep, navigate, hydrateFromServerPayload, isPriorityEdit]);
+  }, [
+    member?.id,
+    currentStep,
+    navigate,
+    hydrateFromServerPayload,
+    hydrateDraftFromServerById,
+    isPriorityEdit,
+    staffRegistrationId,
+  ]);
 
   useEffect(() => {
     if (authLoading || !isGuestLocal || !windowState || ['start', 'success', 'cancel'].includes(currentStep)) return;
@@ -2498,10 +2539,11 @@ export default function RegistrationShellPage() {
 
   async function handleStartOver() {
     const accepted = await confirm({
-      title: 'Start over?',
-      message:
-        'This clears your in-progress registration and returns you to the registration start page. This cannot be undone.',
-      confirmText: 'Start over',
+      title: isStaffCreate ? 'Cancel this registration?' : 'Start over?',
+      message: isStaffCreate
+        ? 'This cancels the in-progress staff registration and returns you to registration management. This cannot be undone.'
+        : 'This clears your in-progress registration and returns you to the registration start page. This cannot be undone.',
+      confirmText: isStaffCreate ? 'Cancel registration' : 'Start over',
       variant: 'warning',
     });
     if (!accepted) return;
@@ -2510,9 +2552,13 @@ export default function RegistrationShellPage() {
     try {
       if (member) {
         try {
-          const { data } = await api.get<{ draft: { id: number } | null }>('/registration/drafts/me');
-          if (data.draft) {
-            await api.delete(`/registration/drafts/${data.draft.id}`);
+          if (staffRegistrationId) {
+            await api.delete(`/registration/drafts/${staffRegistrationId}`);
+          } else {
+            const { data } = await api.get<{ draft: { id: number } | null }>('/registration/drafts/me');
+            if (data.draft) {
+              await api.delete(`/registration/drafts/${data.draft.id}`);
+            }
           }
         } catch (err) {
           if (registrationId !== null) {
@@ -2530,7 +2576,7 @@ export default function RegistrationShellPage() {
       resetReturningGuestLoginFlow();
       setReturningIdentityAuxMode(null);
       setReturningRegistrarProfileChoice(null);
-      navigate('/registration/start', { replace: true });
+      navigate(isStaffCreate ? '/admin/registrations' : '/registration/start', { replace: true });
     } catch (err) {
       setError(errorMessage(err, 'Unable to clear registration.'));
     } finally {
@@ -2553,9 +2599,13 @@ export default function RegistrationShellPage() {
   const navigateRegistrationBack = useCallback(
     (path: string) => {
       registrationNavigationIntentRef.current = 'back';
+      if (staffRegistrationId && path.startsWith('/registration/')) {
+        navigate(`${path}${staffRegistrationSearch(staffRegistrationId)}`);
+        return;
+      }
       navigate(path);
     },
-    [navigate],
+    [navigate, staffRegistrationId],
   );
 
   const handleBackToRegistrationStart = useCallback(async () => {
@@ -3272,7 +3322,11 @@ export default function RegistrationShellPage() {
     }
   }
 
-  async function submitRegistration(options?: { payLater?: boolean }) {
+  async function submitRegistration(options?: {
+    payLater?: boolean;
+    recordOfflinePayment?: boolean;
+    offlinePaymentNote?: string;
+  }) {
     setLoading(true);
     setError('');
     try {
@@ -3280,12 +3334,26 @@ export default function RegistrationShellPage() {
         const result = await submitRegistrationEdits(registrationId, {
           payLater: options?.payLater,
           membershipCommitteeComments: membershipCommitteeComments.trim() || null,
+          recordOfflinePayment: options?.recordOfflinePayment,
+          offlinePaymentNote: options?.offlinePaymentNote,
         });
         if (result.requiresCheckoutConfirmation) {
           setPayLaterConfirmationOpen(false);
           setConfirmingPayLater(false);
           setCheckoutConfirmationMode('submit');
           setCheckoutConfirmation(result);
+          return;
+        }
+        if (result.recordedOfflinePayment || (isStaffCreate && !result.checkoutUrl)) {
+          setOfflinePaymentOpen(false);
+          showAlert(
+            result.recordedOfflinePayment
+              ? 'Registration submitted and payment recorded.'
+              : 'Registration submitted.',
+            'success',
+            'Registration submitted',
+          );
+          navigate(`/admin/registrations/${registrationId}`, { replace: true });
           return;
         }
         if (result.payLater) {
@@ -3387,6 +3455,15 @@ export default function RegistrationShellPage() {
     setPayLaterConfirmationOpen(true);
   }
 
+  function openStaffOfflinePayment() {
+    setError('');
+    setOfflinePaymentOpen(true);
+  }
+
+  async function submitStaffOfflinePayment(note: string) {
+    await submitRegistration({ recordOfflinePayment: true, offlinePaymentNote: note });
+  }
+
   const showStartOver =
     windowState &&
     windowState.state !== 'closed' &&
@@ -3399,6 +3476,12 @@ export default function RegistrationShellPage() {
 
     if (isPriorityEdit) {
       return { label: 'Back', onClick: () => navigate(priorityEditReturnTo) };
+    }
+
+    if (isStaffCreate && (currentStep === 'identity' || currentStep === 'policies' || currentStep === 'demographics')) {
+      if (currentStep === 'identity') {
+        return { label: 'Back to registrations', onClick: () => navigate('/admin/registrations') };
+      }
     }
 
     if (currentStep === 'identity') {
@@ -3567,33 +3650,46 @@ export default function RegistrationShellPage() {
     priorityEditReturnTo,
     returningIdentityAuxMode,
     handleBackToRegistrationStart,
+    isStaffCreate,
+    navigate,
   ]);
 
   function RegistrationFlowHeader() {
     if (currentStep === 'start') return null;
     const back = resolveRegistrationFlowBackAction();
     return (
-      <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-emerald-100 pb-4">
-        <div className="order-1 shrink-0">
-          {back ? (
-            <Button type="button" variant="secondary" className="text-sm" onClick={back.onClick}>
-              {back.label}
-            </Button>
-          ) : null}
-        </div>
-        {registrationFlowHeaderTitle ? (
-          <p className="order-3 w-full basis-full text-center text-sm font-medium text-gray-700 sm:order-2 sm:w-auto sm:flex-1 sm:basis-auto">
-            {registrationFlowHeaderTitle}
-          </p>
+      <>
+        {isStaffCreate ? (
+          <div className="mb-4 rounded-2xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950">
+            <p className="font-medium">Creating registration for {registeringCurlerName}</p>
+            <p className="mt-1">
+              You are completing this registration as staff. After you submit, you can record a check or cash payment
+              or send a payment link.
+            </p>
+          </div>
         ) : null}
-        <div className="order-2 ms-auto shrink-0 sm:order-3 sm:ms-0">
-          {showStartOver ? (
-            <Button type="button" variant="secondary" className="text-sm" disabled={loading} onClick={handleStartOver}>
-              Start over
-            </Button>
+        <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-emerald-100 pb-4">
+          <div className="order-1 shrink-0">
+            {back ? (
+              <Button type="button" variant="secondary" className="text-sm" onClick={back.onClick}>
+                {back.label}
+              </Button>
+            ) : null}
+          </div>
+          {registrationFlowHeaderTitle ? (
+            <p className="order-3 w-full basis-full text-center text-sm font-medium text-gray-700 sm:order-2 sm:w-auto sm:flex-1 sm:basis-auto">
+              {registrationFlowHeaderTitle}
+            </p>
           ) : null}
+          <div className="order-2 ms-auto shrink-0 sm:order-3 sm:ms-0">
+            {showStartOver ? (
+              <Button type="button" variant="secondary" className="text-sm" disabled={loading} onClick={handleStartOver}>
+                {isStaffCreate ? 'Cancel' : 'Start over'}
+              </Button>
+            ) : null}
+          </div>
         </div>
-      </div>
+      </>
     );
   }
 
@@ -4851,6 +4947,16 @@ export default function RegistrationShellPage() {
             <Button type="button" disabled={loading || !reviewQuoteReady || !membershipPayment} onClick={() => void submitRegistration()}>
               {reviewQuoteReady && membershipPayment?.paymentDecision.outcome === 'immediate_payment' ? 'Submit and pay' : 'Submit registration'}
             </Button>
+            {isStaffCreate && reviewQuoteReady && membershipPayment?.paymentDecision.outcome !== 'no_payment_required' ? (
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={loading || !reviewQuoteReady || !membershipPayment}
+                onClick={openStaffOfflinePayment}
+              >
+                Submit and record payment
+              </Button>
+            ) : null}
             {reviewQuoteReady && membershipPayment?.payLaterAvailable ? (
               <Button
                 type="button"
@@ -4966,6 +5072,19 @@ export default function RegistrationShellPage() {
           void submitRegistration();
         }}
         onSubmitWithoutPayment={() => void confirmPayLaterSubmission()}
+      />
+      <RecordOfflinePaymentModal
+        isOpen={offlinePaymentOpen}
+        saving={loading}
+        description="This submits the registration and marks the invoice as paid. Use this when payment was received by check, cash, or another offline method. No checkout link will be created."
+        confirmText="Record payment and submit"
+        confirmBusyText="Recording payment"
+        error={offlinePaymentOpen ? error || null : null}
+        onClose={() => {
+          if (loading) return;
+          setOfflinePaymentOpen(false);
+        }}
+        onSubmit={(note) => void submitStaffOfflinePayment(note)}
       />
     </PublicLayout>
   );

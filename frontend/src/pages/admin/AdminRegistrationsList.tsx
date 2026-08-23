@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useMemo, useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import AppPageControlsRow from '../../components/AppPageControlsRow';
 import AppStateCard from '../../components/AppStateCard';
 import Button from '../../components/Button';
@@ -8,6 +8,9 @@ import FormField from '../../components/FormField';
 import DataTable from '../../components/table/DataTable';
 import type { DataTableColumn } from '../../components/table/tableTypes';
 import api, { getApiErrorMessage } from '../../utils/api';
+import AdminRegistrationSessionStats, {
+  type AdminRegistrationSessionStatsPayload,
+} from './AdminRegistrationSessionStats';
 
 type RegistrationSession = {
   id: number;
@@ -57,6 +60,7 @@ function money(minor: number | null) {
 }
 
 export default function AdminRegistrationsList() {
+  const navigate = useNavigate();
   const sessionFieldId = useId();
   const statusFieldId = useId();
   const searchFieldId = useId();
@@ -66,6 +70,9 @@ export default function AdminRegistrationsList() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [stats, setStats] = useState<AdminRegistrationSessionStatsPayload | null>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [statsError, setStatsError] = useState<string | null>(null);
 
   const [searchParams, setSearchParams] = useSearchParams();
   const sessionId = Number(searchParams.get('sessionId')) || defaultSessionId;
@@ -95,6 +102,23 @@ export default function AdminRegistrationsList() {
       setQuery({ sessionId: String(response.data.defaultSessionId) });
     }
   }, [searchParams, setQuery]);
+
+  const loadStats = useCallback(async () => {
+    if (!sessionId) return;
+    setStats(null);
+    setStatsLoading(true);
+    setStatsError(null);
+    try {
+      const response = await api.get<AdminRegistrationSessionStatsPayload>('/registration/staff/stats', {
+        params: { sessionId },
+      });
+      setStats(response.data);
+    } catch (err) {
+      setStatsError(getApiErrorMessage(err, 'Unable to load session summary.'));
+    } finally {
+      setStatsLoading(false);
+    }
+  }, [sessionId]);
 
   const loadRegistrations = useCallback(async () => {
     if (!sessionId) return;
@@ -131,6 +155,15 @@ export default function AdminRegistrationsList() {
   useEffect(() => {
     void loadRegistrations();
   }, [loadRegistrations]);
+
+  useEffect(() => {
+    if (!sessionId) {
+      setStats(null);
+      setStatsError(null);
+      return;
+    }
+    void loadStats();
+  }, [sessionId, loadStats]);
 
   const sessionOptions = useMemo(
     () =>
@@ -184,6 +217,16 @@ export default function AdminRegistrationsList() {
   return (
     <>
       <AppPageControlsRow
+        right={
+          <Button
+            type="button"
+            onClick={() =>
+              navigate(sessionId ? `/admin/registrations/new?sessionId=${sessionId}` : '/admin/registrations/new')
+            }
+          >
+            Create registration
+          </Button>
+        }
         left={
           <>
             <FormField label="Session" htmlFor={sessionFieldId}>
@@ -223,6 +266,15 @@ export default function AdminRegistrationsList() {
           </>
         }
       />
+
+      {sessionId ? (
+        <AdminRegistrationSessionStats
+          stats={stats}
+          loading={statsLoading}
+          error={statsError}
+          onRetry={() => void loadStats()}
+        />
+      ) : null}
 
       {loading ? <AppStateCard title="Loading registrations" description="Gathering session registrations." /> : null}
       {error ? (

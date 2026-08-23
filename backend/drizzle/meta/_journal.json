@@ -414,6 +414,13 @@
       "when": 1780352498500,
       "tag": "0059_add_parent_association_memberships",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1780352498501,
+      "tag": "0060_add_registration_invoice_offline_payment",
+      "breakpoints": true
     }
   ]
 }

@@ -657,6 +657,10 @@ export const registrationInvoicesSqlite = sqliteTable('registration_invoices', {
   stripe_payment_intent_id: text('stripe_payment_intent_id'),
   payment_order_id: integer('payment_order_id'),
   paid_at: text('paid_at'),
+  offline_payment_note: text('offline_payment_note'),
+  offline_recorded_by_member_id: integer('offline_recorded_by_member_id').references(() => membersSqlite.id, {
+    onDelete: 'set null',
+  }),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
 }, (table) => ({
@@ -2836,6 +2840,10 @@ export const registrationInvoicesPg = pgTable('registration_invoices', {
   stripe_payment_intent_id: textPg('stripe_payment_intent_id'),
   payment_order_id: integerPg('payment_order_id'),
   paid_at: timestamp('paid_at', { withTimezone: false }),
+  offline_payment_note: textPg('offline_payment_note'),
+  offline_recorded_by_member_id: integerPg('offline_recorded_by_member_id').references(() => membersPg.id, {
+    onDelete: 'set null',
+  }),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
 }, (table) => ({

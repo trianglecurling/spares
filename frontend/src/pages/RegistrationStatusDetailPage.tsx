@@ -6,6 +6,8 @@ import Button from '../components/Button';
 import RegistrationViewEditModals, {
   type RegistrationEditModalKind,
 } from '../components/registration/RegistrationViewEditModals';
+import RegistrationCollectedDetails from '../components/registration/RegistrationCollectedDetails';
+import type { RegistrationCollectedDetailsFields } from '../components/registration/registrationCollectedDetailsShared';
 import type { RegistrationPlayInEntrySummary } from '../components/registration/registrationViewEditShared';
 import {
   guaranteeChipClassName,
@@ -73,7 +75,20 @@ type RegistrationDetail = {
     registrationStatus: string;
     membershipOption: string;
     studentDiscountClaimed: boolean;
+    studentInstitution: string | null;
     reciprocalDiscountClaimed: boolean;
+    reciprocalClubName: string | null;
+    usaCurlingMembershipOptIn: boolean | null;
+    uswcaMembershipOptIn: boolean | null;
+    nameTagName: string | null;
+    nameTagIncludePronouns: boolean | null;
+    nameTagReplacementQuantity: number | null;
+    icePrivilegesChoice: RegistrationCollectedDetailsFields['icePrivilegesChoice'];
+    experienceType: RegistrationCollectedDetailsFields['experienceType'];
+    experienceSelfReportedYears: number | null;
+    basicIceFallbackInterest: boolean | null;
+    financialAssistance: RegistrationCollectedDetailsFields['financialAssistance'];
+    guardian: RegistrationCollectedDetailsFields['guardian'];
     membershipCommitteeComments: string | null;
     submittedAt: string | null;
     updatedAt: string | null;
@@ -268,8 +283,7 @@ export default function RegistrationStatusDetailPage() {
                 <p>Payment status: {label(detail.payment.status)}</p>
                 <p>Amount due: {money(detail.payment.amountDueMinor)}</p>
               </div>
-              {detail.registration.studentDiscountClaimed ? <p>Student discount claimed.</p> : null}
-              {detail.registration.reciprocalDiscountClaimed ? <p>Reciprocal discount claimed.</p> : null}
+              <RegistrationCollectedDetails fields={detail.registration} />
               {detail.registration.membershipCommitteeComments ? (
                 <div className="rounded-lg border border-gray-200 bg-gray-50 p-3 text-sm dark:border-gray-700 dark:bg-gray-900/40">
                   <p className="font-medium text-gray-900 dark:text-gray-100">Comments for the Membership Committee</p>

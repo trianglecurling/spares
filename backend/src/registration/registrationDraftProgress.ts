@@ -44,3 +44,21 @@ export function pickMostRecentInProgressDraft<T extends { status: string; update
 export function hasBlockingInProgressDraft(existing: unknown | null | undefined): boolean {
   return existing != null;
 }
+
+/**
+ * Drafts that `/registration/drafts/me` may resume for the submitter.
+ * Staff-created on-behalf drafts are excluded unless the submitter can also
+ * act as that curler (self or delegated access).
+ */
+export function isSelfServiceResumeDraft(input: {
+  submittedByMemberId: number | null;
+  curlerMemberId: number | null;
+  registeringForSelf: number | null;
+  submitterCanImpersonateCurler: boolean;
+}): boolean {
+  if (input.curlerMemberId == null) return true;
+  if (input.submittedByMemberId == null) return true;
+  if (input.registeringForSelf === 1) return true;
+  if (input.curlerMemberId === input.submittedByMemberId) return true;
+  return input.submitterCanImpersonateCurler;
+}

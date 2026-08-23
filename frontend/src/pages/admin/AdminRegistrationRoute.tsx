@@ -1,10 +1,19 @@
 import { useParams } from 'react-router-dom';
 import { ProtectedRoute } from '../../components/ProtectedRoute';
 import AdminRegistrationConfig from './AdminRegistrationConfig';
+import AdminRegistrationCreate from './AdminRegistrationCreate';
 import AdminRegistrationDetail from './AdminRegistrationDetail';
 
 export default function AdminRegistrationRoute() {
   const { segment } = useParams<{ segment?: string }>();
+
+  if (segment === 'new') {
+    return (
+      <ProtectedRoute anyOfScopes={['registrations.manage', 'admin.manage']}>
+        <AdminRegistrationCreate />
+      </ProtectedRoute>
+    );
+  }
 
   if (segment && /^\d+$/.test(segment)) {
     return (

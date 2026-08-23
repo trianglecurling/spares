@@ -249,6 +249,8 @@ export const curlingRegistrationExtendedDDL = `
     stripe_payment_intent_id TEXT,
     payment_order_id INTEGER,
     paid_at DATETIME,
+    offline_payment_note TEXT,
+    offline_recorded_by_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
@@ -785,6 +787,14 @@ const waitlistOfferColumnsSQLite: { name: string; ddl: string }[] = [
   { name: 'staff_notes', ddl: 'staff_notes TEXT' },
 ];
 
+const registrationInvoiceColumnsSQLite: { name: string; ddl: string }[] = [
+  { name: 'offline_payment_note', ddl: 'offline_payment_note TEXT' },
+  {
+    name: 'offline_recorded_by_member_id',
+    ddl: 'offline_recorded_by_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL',
+  },
+];
+
 const registrationSelectionColumnsSQLite: { name: string; ddl: string }[] = [
   { name: 'team_roster_placements', ddl: 'team_roster_placements TEXT' },
 ];
@@ -863,6 +873,15 @@ async function sqliteEnsureRegistrationMembershipPaymentColumns(
 ): Promise<void> {
   for (const col of registrationMembershipPaymentColumnsSQLite) {
     await ensureSQLiteColumn(db, 'curling_registrations', col.name, col.ddl, execSQL);
+  }
+}
+
+async function sqliteEnsureRegistrationInvoiceColumns(
+  db: DatabaseAdapter,
+  execSQL: (d: DatabaseAdapter, s: string) => Promise<void>
+): Promise<void> {
+  for (const col of registrationInvoiceColumnsSQLite) {
+    await ensureSQLiteColumn(db, 'registration_invoices', col.name, col.ddl, execSQL);
   }
 }
 
@@ -949,6 +968,11 @@ const waitlistOfferColumnsPg: string[] = [
   'ALTER TABLE waitlist_offers ADD COLUMN IF NOT EXISTS cancellation_reason TEXT',
   'ALTER TABLE waitlist_offers ADD COLUMN IF NOT EXISTS staff_notes TEXT',
   'CREATE UNIQUE INDEX IF NOT EXISTS idx_waitlist_offers_response_token ON waitlist_offers(response_token)',
+];
+
+const registrationInvoiceColumnsPg: string[] = [
+  'ALTER TABLE registration_invoices ADD COLUMN IF NOT EXISTS offline_payment_note TEXT',
+  'ALTER TABLE registration_invoices ADD COLUMN IF NOT EXISTS offline_recorded_by_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL',
 ];
 
 const registrationSelectionColumnsPg: string[] = [
@@ -1066,6 +1090,12 @@ async function ensureWaitlistOfferPostgres(db: DatabaseAdapter, execSQL: (d: Dat
   }
 }
 
+async function ensureRegistrationInvoicePostgres(db: DatabaseAdapter, execSQL: (d: DatabaseAdapter, s: string) => Promise<void>) {
+  for (const ddl of registrationInvoiceColumnsPg) {
+    await execSQL(db, ddl);
+  }
+}
+
 async function ensureWaitlistEntryPostgres(db: DatabaseAdapter, execSQL: (d: DatabaseAdapter, s: string) => Promise<void>) {
   for (const ddl of waitlistEntryColumnsPg) {
     await execSQL(db, ddl);
@@ -1084,6 +1114,7 @@ export async function ensureCurlingRegistrationBootstrap(
   await execSQL(db, curlingRegistrationDDLForDialect(Boolean(db.isAsync?.())));
   if (db.isAsync()) {
     await ensureRegistrationMembershipPaymentPostgres(db, execSQL);
+    await ensureRegistrationInvoicePostgres(db, execSQL);
     await ensureWaitlistOfferPostgres(db, execSQL);
     await ensureWaitlistEntryPostgres(db, execSQL);
     for (const ddl of registrationSelectionColumnsPg) {
@@ -1094,6 +1125,7 @@ export async function ensureCurlingRegistrationBootstrap(
     await execSQL(db, leagueEntryDDLForDialect(true));
   } else {
     await sqliteEnsureRegistrationMembershipPaymentColumns(db, execSQL);
+    await sqliteEnsureRegistrationInvoiceColumns(db, execSQL);
     await sqliteEnsureWaitlistOfferColumns(db, execSQL);
     await sqliteEnsureWaitlistEntryColumns(db, execSQL);
     await sqliteEnsureRegistrationSelectionColumns(db, execSQL);
@@ -1129,6 +1161,15 @@ export function ensureCurlingRegistrationBootstrapSync(
     }
   }
   execSQLSync(db, `CREATE UNIQUE INDEX IF NOT EXISTS idx_waitlist_offers_response_token ON waitlist_offers(response_token)`);
+
+  const invoiceStmt = db.prepare<{ name?: string | null }>(`PRAGMA table_info(registration_invoices)`);
+  const invoiceCols = invoiceStmt.all() as { name?: string | null }[];
+  const invoiceNames = new Set(invoiceCols.map((c) => String(c.name)));
+  for (const col of registrationInvoiceColumnsSQLite) {
+    if (!invoiceNames.has(col.name)) {
+      execSQLSync(db, `ALTER TABLE registration_invoices ADD COLUMN ${col.ddl}`);
+    }
+  }
 
   const waitlistEntryStmt = db.prepare<{ name?: string | null }>(`PRAGMA table_info(waitlist_entries)`);
   const waitlistEntryCols = waitlistEntryStmt.all() as { name?: string | null }[];

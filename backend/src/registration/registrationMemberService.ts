@@ -3,6 +3,8 @@ import { getDrizzleDb } from '../db/drizzle-db.js';
 import { canActorImpersonateTarget, listAccountSwitchOptions } from '../services/accountAccess.js';
 import type { Member } from '../types.js';
 import { isAdmin, isServerAdmin } from '../utils/auth.js';
+import { nameTagIncludePronounsFromStored, normalizeNameTagName, parseNameTagReplacementQuantity } from '../utils/nameTag.js';
+import { booleanFromSqliteFlag } from '../utils/parentAssociationMemberships.js';
 import { canCancelRegistrationDuringPriority, canEditRegistrationDuringPriority } from './registrationPriorityEdit.js';
 import {
   canViewOrEditRegistration,
@@ -42,6 +44,29 @@ function memberName(row: { name?: string | null; first_name?: string | null; las
   if (!row) return 'Unknown curler';
   const parts = [row.first_name, row.last_name].map((part) => part?.trim()).filter(Boolean);
   return parts.length > 0 ? parts.join(' ') : row.name?.trim() || row.email?.trim() || 'Unknown curler';
+}
+
+function trimOrNull(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
+function guardianSummaryFromRegistration(registration: {
+  guardian_first_name: string | null;
+  guardian_last_name: string | null;
+  guardian_email: string | null;
+  guardian_phone: string | null;
+}) {
+  const guardian = {
+    firstName: trimOrNull(registration.guardian_first_name),
+    lastName: trimOrNull(registration.guardian_last_name),
+    email: trimOrNull(registration.guardian_email),
+    phone: trimOrNull(registration.guardian_phone),
+  };
+  if (!guardian.firstName && !guardian.lastName && !guardian.email && !guardian.phone) {
+    return null;
+  }
+  return guardian;
 }
 
 function parseOrderMetadata(metadata: unknown): Record<string, unknown> | null {
@@ -141,7 +166,7 @@ async function repairPayLaterAwaitingPaymentStatuses(input: {
   };
 }
 
-/** Remaining amount owed for a registration invoice. Canceled/refunded invoices are never due. */
+/** Remaining amount owed for a registration invoice. Canceled/refunded/paid invoices are never due. */
 export function registrationAmountDueMinor(input: {
   invoiceStatus?: string | null;
   invoiceTotalMinor?: number | null;
@@ -152,7 +177,8 @@ export function registrationAmountDueMinor(input: {
   if (
     registrationStatus === 'cancelled' ||
     invoiceStatus === 'cancelled' ||
-    invoiceStatus === 'refunded'
+    invoiceStatus === 'refunded' ||
+    invoiceStatus === 'paid'
   ) {
     return 0;
   }
@@ -630,6 +656,15 @@ export async function getMemberRegistrationDetail(registrationId: number, actor:
     .where(eq(schema.registrationInvoices.registration_id, registrationId))
     .orderBy(desc(schema.registrationInvoices.updated_at), desc(schema.registrationInvoices.id))
     .limit(1);
+  const [financialAssistance] = await db
+    .select({
+      requestedPercent: schema.financialAssistanceRequests.requested_percentage,
+      approvedPercent: schema.financialAssistanceRequests.approved_percentage,
+      status: schema.financialAssistanceRequests.status,
+    })
+    .from(schema.financialAssistanceRequests)
+    .where(eq(schema.financialAssistanceRequests.registration_id, registrationId))
+    .limit(1);
   const order = invoice?.payment_order_id
     ? (await db.select().from(schema.paymentOrders).where(eq(schema.paymentOrders.id, invoice.payment_order_id)).limit(1))[0]
     : null;
@@ -662,7 +697,38 @@ export async function getMemberRegistrationDetail(registrationId: number, actor:
       submittedAt: registration.submitted_at,
       updatedAt: registration.updated_at,
       studentDiscountClaimed: registration.student_discount_claimed === 1,
+      studentInstitution: trimOrNull(registration.student_institution),
       reciprocalDiscountClaimed: registration.reciprocal_discount_claimed === 1,
+      reciprocalClubName: trimOrNull(registration.reciprocal_club_name),
+      usaCurlingMembershipOptIn: booleanFromSqliteFlag(registration.usa_curling_membership_opt_in),
+      uswcaMembershipOptIn: booleanFromSqliteFlag(registration.uswca_membership_opt_in),
+      nameTagName: normalizeNameTagName(curler?.name_tag_name) || null,
+      nameTagIncludePronouns: nameTagIncludePronounsFromStored(curler?.name_tag_include_pronouns),
+      nameTagReplacementQuantity: parseNameTagReplacementQuantity(registration.name_tag_replacement_quantity),
+      icePrivilegesChoice: (registration.ice_privileges_choice ?? null) as
+        | 'none'
+        | 'league_play'
+        | 'basic_ice'
+        | null,
+      experienceType: (registration.experience_type ?? null) as
+        | 'none_or_minimal'
+        | 'specified_years'
+        | 'known_existing'
+        | null,
+      experienceSelfReportedYears:
+        registration.experience_self_reported_years == null
+          ? null
+          : Number(registration.experience_self_reported_years),
+      basicIceFallbackInterest: booleanFromSqliteFlag(registration.basic_ice_fallback_interest),
+      financialAssistance: financialAssistance
+        ? {
+            requestedPercent: Number(financialAssistance.requestedPercent),
+            approvedPercent:
+              financialAssistance.approvedPercent == null ? null : Number(financialAssistance.approvedPercent),
+            status: financialAssistance.status,
+          }
+        : null,
+      guardian: guardianSummaryFromRegistration(registration),
       membershipCommitteeComments: registration.membership_committee_comments?.trim()
         ? registration.membership_committee_comments.trim()
         : null,

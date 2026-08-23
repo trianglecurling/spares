@@ -4,6 +4,7 @@ import {
   SUBMITTED_CURLER_REGISTRATION_STATUSES,
   hasBlockingInProgressDraft,
   isDraftRegistrationStatus,
+  isSelfServiceResumeDraft,
   isSubmittedCurlerRegistrationStatus,
   pickMostRecentInProgressDraft,
 } from './registrationDraftProgress.js';
@@ -51,5 +52,43 @@ describe('registration draft progress', () => {
     expect(hasBlockingInProgressDraft(null)).toBe(false);
     expect(hasBlockingInProgressDraft(undefined)).toBe(false);
     expect(hasBlockingInProgressDraft({ id: 1, status: 'shell_complete' })).toBe(true);
+  });
+
+  test('isSelfServiceResumeDraft includes unfinished identity and self registrations', () => {
+    expect(
+      isSelfServiceResumeDraft({
+        submittedByMemberId: 10,
+        curlerMemberId: null,
+        registeringForSelf: null,
+        submitterCanImpersonateCurler: false,
+      }),
+    ).toBe(true);
+    expect(
+      isSelfServiceResumeDraft({
+        submittedByMemberId: 10,
+        curlerMemberId: 10,
+        registeringForSelf: 1,
+        submitterCanImpersonateCurler: false,
+      }),
+    ).toBe(true);
+  });
+
+  test('isSelfServiceResumeDraft includes delegated on-behalf drafts and excludes staff-created ones', () => {
+    expect(
+      isSelfServiceResumeDraft({
+        submittedByMemberId: 10,
+        curlerMemberId: 20,
+        registeringForSelf: 0,
+        submitterCanImpersonateCurler: true,
+      }),
+    ).toBe(true);
+    expect(
+      isSelfServiceResumeDraft({
+        submittedByMemberId: 10,
+        curlerMemberId: 20,
+        registeringForSelf: 0,
+        submitterCanImpersonateCurler: false,
+      }),
+    ).toBe(false);
   });
 });

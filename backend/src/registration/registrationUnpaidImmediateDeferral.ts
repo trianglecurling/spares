@@ -15,3 +15,34 @@ export function unpaidImmediateRegistrationCanDefer(input: {
 export function staffCanRequestDeferredPayment(registrationStatus: string): boolean {
   return REQUEST_PAYMENT_REGISTRATION_STATUSES.has(registrationStatus);
 }
+
+const RECORDABLE_OFFLINE_INVOICE_STATUSES = new Set([
+  'draft',
+  'deferred',
+  'awaiting_payment',
+  'checkout_started',
+  'failed',
+]);
+
+export const OFFLINE_PAYMENT_NOTE_MAX_LENGTH = 500;
+
+export function staffCanRecordOfflinePayment(input: {
+  registrationStatus: string;
+  invoiceStatus: string | null | undefined;
+}): boolean {
+  if (input.registrationStatus === 'cancelled') return false;
+  return Boolean(input.invoiceStatus && RECORDABLE_OFFLINE_INVOICE_STATUSES.has(input.invoiceStatus));
+}
+
+export function parseOfflinePaymentNote(
+  note: string | null | undefined,
+): { ok: true; note: string } | { ok: false; error: string } {
+  const trimmed = note?.trim() ?? '';
+  if (!trimmed) {
+    return { ok: false, error: 'Enter a check number or other explanation.' };
+  }
+  if (trimmed.length > OFFLINE_PAYMENT_NOTE_MAX_LENGTH) {
+    return { ok: false, error: `The payment comment must be ${OFFLINE_PAYMENT_NOTE_MAX_LENGTH} characters or fewer.` };
+  }
+  return { ok: true, note: trimmed };
+}

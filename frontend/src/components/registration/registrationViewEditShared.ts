@@ -214,6 +214,7 @@ export type SubmitRegistrationEditsResult = {
   message?: string;
   totalDueMinor?: number;
   payLater?: boolean;
+  recordedOfflinePayment?: boolean;
   paymentAdjustment?: RegistrationPaymentAdjustmentResult;
 };
 
@@ -529,6 +530,8 @@ export async function submitRegistrationEdits(
     confirmImmediatePayment?: boolean;
     payLater?: boolean;
     membershipCommitteeComments?: string | null;
+    recordOfflinePayment?: boolean;
+    offlinePaymentNote?: string | null;
   },
 ): Promise<SubmitRegistrationEditsResult> {
   const response = await api.post<{
@@ -538,11 +541,14 @@ export async function submitRegistrationEdits(
     message?: string;
     totalDueMinor?: number;
     payLater?: boolean;
+    recordedOfflinePayment?: boolean;
     paymentAdjustment?: RegistrationPaymentAdjustmentResult;
   }>(`/registration/drafts/${registrationId}/submit`, {
     confirmImmediatePayment: options?.confirmImmediatePayment ?? false,
     payLater: options?.payLater ?? false,
     membershipCommitteeComments: options?.membershipCommitteeComments,
+    recordOfflinePayment: options?.recordOfflinePayment ?? false,
+    offlinePaymentNote: options?.offlinePaymentNote,
   });
   return {
     checkoutUrl: response.data.checkoutUrl,
@@ -550,6 +556,7 @@ export async function submitRegistrationEdits(
     message: response.data.message,
     totalDueMinor: response.data.totalDueMinor,
     payLater: response.data.payLater,
+    recordedOfflinePayment: response.data.recordedOfflinePayment,
     paymentAdjustment: response.data.paymentAdjustment,
   };
 }

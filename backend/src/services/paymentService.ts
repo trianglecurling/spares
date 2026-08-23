@@ -294,6 +294,10 @@ export interface CreateRefundInput {
   amountMinor: number;
   currency: string;
   reason: string | null;
+  /** Original paid total, used to tell a full refund from a partial refund. */
+  orderAmountMinor?: number | null;
+  metadata?: Record<string, unknown> | null;
+  lineItems?: CheckoutLineItem[];
 }
 
 export interface ProviderRefundResult {
@@ -1138,6 +1142,8 @@ export class PaymentService {
         status: this.schema.paymentOrders.status,
         amount_minor: this.schema.paymentOrders.amount_minor,
         currency: this.schema.paymentOrders.currency,
+        subject_type: this.schema.paymentOrders.subject_type,
+        metadata: this.schema.paymentOrders.metadata,
       })
       .from(this.schema.paymentOrders)
       .where(eq(this.schema.paymentOrders.id, input.orderId))
@@ -1175,6 +1181,19 @@ export class PaymentService {
       )
       .limit(1);
 
+    const parsedMetadata = safeJsonParseObject(order.metadata);
+    const subjectType = order.subject_type as PaymentSubjectType;
+    const checkoutLineItems =
+      (await this.resolveCheckoutLineItems({
+        orderId: order.id,
+        subjectType,
+        amountMinor: order.amount_minor,
+        metadata: parsedMetadata,
+      })) ??
+      (subjectType === 'donation'
+        ? [{ description: defaultCheckoutDescription(subjectType, parsedMetadata), amountMinor: order.amount_minor }]
+        : undefined);
+
     const providerRefund = await adapter.createRefund({
       orderId: order.id,
       providerOrderId: order.provider_order_id ?? null,
@@ -1182,6 +1201,9 @@ export class PaymentService {
       amountMinor,
       currency: order.currency,
       reason: input.reason?.trim() || null,
+      orderAmountMinor: order.amount_minor,
+      metadata: parsedMetadata,
+      lineItems: checkoutLineItems,
     });
 
     const isTerminal = providerRefund.status === 'succeeded' || providerRefund.status === 'failed' || providerRefund.status === 'rejected';

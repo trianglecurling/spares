@@ -157,6 +157,7 @@ import {
   DRAFT_REGISTRATION_STATUSES,
   SUBMITTED_CURLER_REGISTRATION_STATUSES,
   hasBlockingInProgressDraft,
+  isSelfServiceResumeDraft,
 } from './registrationDraftProgress.js';
 
 export function validateDemographics(
@@ -395,9 +396,25 @@ export async function findActiveRegistrationForSubmitter(submittedByMemberId: nu
         inArray(schema.curlingRegistrations.status, [...DRAFT_REGISTRATION_STATUSES]),
       ),
     )
-    .orderBy(desc(schema.curlingRegistrations.updated_at))
-    .limit(1);
-  return rows[0] ? mapRegistration(rows[0]) : null;
+    .orderBy(desc(schema.curlingRegistrations.updated_at));
+  for (const row of rows) {
+    const mapped = mapRegistration(row);
+    const canImpersonate =
+      mapped.curler_member_id != null && mapped.curler_member_id !== submittedByMemberId
+        ? await canActorImpersonateTarget(submittedByMemberId, mapped.curler_member_id)
+        : false;
+    if (
+      isSelfServiceResumeDraft({
+        submittedByMemberId,
+        curlerMemberId: mapped.curler_member_id,
+        registeringForSelf: mapped.registering_for_self,
+        submitterCanImpersonateCurler: canImpersonate,
+      })
+    ) {
+      return mapped;
+    }
+  }
+  return null;
 }
 
 export async function findCompletedSelfRegistrationForWindow(
