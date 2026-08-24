@@ -76,6 +76,7 @@ import {
   evaluateRegistrantPlayInEntry,
   LeagueEntryValidationError,
 } from '../registration/leagueEntryService.js';
+import { WaitlistStaffValidationError } from '../registration/waitlistErrors.js';
 import { canActorImpersonateTarget } from '../services/accountAccess.js';
 import { memberCanManageRegistrations } from '../utils/registrationStaffAccess.js';
 
@@ -318,6 +319,12 @@ function handleRegistrationError(reply: FastifyReply, error: unknown) {
     return sendValidationError(reply, error.message, error.details);
   }
   if (error instanceof RegistrationMemberValidationError) {
+    return sendValidationError(reply, error.message, error.details);
+  }
+  if (error instanceof WaitlistStaffValidationError) {
+    return sendValidationError(reply, error.message, error.details);
+  }
+  if (error instanceof LeagueEntryValidationError) {
     return sendValidationError(reply, error.message, error.details);
   }
   if (error instanceof PaymentServiceError) {
@@ -989,9 +996,6 @@ export async function protectedRegistrationShellRoutes(fastify: FastifyInstance)
           pendingTeammateText: query.pendingNames ?? null,
         });
       } catch (error) {
-        if (error instanceof LeagueEntryValidationError) {
-          return sendValidationError(reply, error.message, error.details);
-        }
         return handleRegistrationError(reply, error);
       }
     },

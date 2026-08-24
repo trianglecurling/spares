@@ -46,6 +46,21 @@ export function countHybridRoster(input: {
   );
 }
 
+/**
+ * Registration stores teammates only; the registrant always occupies a roster
+ * spot. Waitlist persistence expects the primary member on the placement list,
+ * so add them when they were omitted.
+ */
+export function includePrimaryMemberOnWaitlistRoster(
+  placements: WaitlistTeamMemberPlacementInput[],
+  primaryMemberId: number,
+): WaitlistTeamMemberPlacementInput[] {
+  if (placements.some((placement) => placement.memberId === primaryMemberId)) {
+    return placements;
+  }
+  return [{ memberId: primaryMemberId }, ...placements];
+}
+
 export function parseTeamRosterPlacements(raw: string | null | undefined): WaitlistTeamMemberPlacementInput[] {
   if (!raw?.trim()) return [];
   try {
@@ -148,10 +163,15 @@ export async function normalizeAndValidateTeamRosterPlacements(input: {
       .filter((item): item is WaitlistTeamMemberPlacementInput => item != null);
   }
 
+  if (placements.length > 0 || pendingNames.length > 0) {
+    placements = includePrimaryMemberOnWaitlistRoster(placements, input.primaryMemberId);
+  }
+
   const rosterCounts = countHybridRoster({
     placements,
     pendingRosterText: placements.length > 0 ? input.pendingRosterText : null,
     teamRosterText: placements.length === 0 ? input.teamRosterText : null,
+    primaryMemberId: input.primaryMemberId,
   });
 
   if (expectedSize == null || rosterCounts.total !== expectedSize) {
@@ -239,7 +259,7 @@ export async function hydrateTeamRosterPlacementsForEntry(input: {
 }): Promise<WaitlistTeamMemberPlacement[]> {
   const parsed = parseTeamRosterPlacements(input.teamRosterPlacementsJson);
   if (parsed.length > 0) {
-    return enrichTeamRosterPlacements(parsed);
+    return enrichTeamRosterPlacements(includePrimaryMemberOnWaitlistRoster(parsed, input.primaryMemberId));
   }
 
   const names = waitlistRosterEntries(input.teamRosterText);
@@ -252,11 +272,9 @@ export async function hydrateTeamRosterPlacementsForEntry(input: {
     })
     .filter((item): item is WaitlistTeamMemberPlacementInput => item != null);
 
-  if (!fallbackPlacements.some((placement) => placement.memberId === input.primaryMemberId)) {
-    fallbackPlacements.unshift({ memberId: input.primaryMemberId });
-  }
-
-  return enrichTeamRosterPlacements(fallbackPlacements);
+  return enrichTeamRosterPlacements(
+    includePrimaryMemberOnWaitlistRoster(fallbackPlacements, input.primaryMemberId),
+  );
 }
 
 export function formatTeamRosterPlacementsDisplay(placements: WaitlistTeamMemberPlacement[]): string | null {

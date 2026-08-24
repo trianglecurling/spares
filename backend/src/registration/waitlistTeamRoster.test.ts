@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   buildTeamRosterText,
   countHybridRoster,
+  includePrimaryMemberOnWaitlistRoster,
   parseTeamRosterPlacements,
   serializeTeamRosterPlacements,
 } from './waitlistTeamRoster.js';
@@ -50,5 +51,29 @@ describe('waitlistTeamRoster', () => {
         pendingRosterText: 'A, B, C, D',
       }),
     ).toEqual({ memberCount: 0, pendingCount: 4, total: 4 });
+
+    // Registration stores teammates only; the registrant is an implicit roster spot.
+    expect(
+      countHybridRoster({
+        placements: [{ memberId: 21 }],
+        primaryMemberId: 20,
+      }),
+    ).toEqual({ memberCount: 2, pendingCount: 0, total: 2 });
+  });
+
+  test('adds the primary member when registration stored teammates only', () => {
+    expect(includePrimaryMemberOnWaitlistRoster([{ memberId: 21 }], 20)).toEqual([
+      { memberId: 20 },
+      { memberId: 21 },
+    ]);
+  });
+
+  test('leaves a roster that already includes the primary member unchanged', () => {
+    const placements = [{ memberId: 20 }, { memberId: 21 }];
+    expect(includePrimaryMemberOnWaitlistRoster(placements, 20)).toEqual(placements);
+  });
+
+  test('adds the primary member to a pending-name-only roster', () => {
+    expect(includePrimaryMemberOnWaitlistRoster([], 20)).toEqual([{ memberId: 20 }]);
   });
 });
