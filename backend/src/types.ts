@@ -59,6 +59,7 @@ export interface Member {
   theme_preference: string | null;
   baseline_other_club_experience_years?: number;
   baseline_club_experience_years?: number;
+  account_kind?: string | null;
   created_at: DbDate;
   updated_at: DbDate;
   authz?: AuthzClaims;

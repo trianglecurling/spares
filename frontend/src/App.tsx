@@ -72,6 +72,7 @@ const PublicMailingListPage = lazyRoute(() => import('./pages/PublicMailingListP
 const ClubGovernance = lazyRoute(() => import('./pages/ClubGovernance'));
 const AdminGovernance = lazyRoute(() => import('./pages/admin/AdminGovernance'));
 const AdminRoles = lazyRoute(() => import('./pages/admin/AdminRoles'));
+const AdminServiceAccounts = lazyRoute(() => import('./pages/admin/AdminServiceAccounts'));
 const AdminPaymentsRoute = lazyRoute(() => import('./pages/admin/AdminPaymentsRoute'));
 const AdminWebhooks = lazyRoute(() => import('./pages/admin/AdminWebhooks'));
 const AdminEvents = lazyRoute(() => import('./pages/admin/AdminEvents'));
@@ -601,6 +602,14 @@ function App() {
                         element={
                           <ProtectedRoute serverAdminOnly>
                             <AdminRoles />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
+                        path="/admin/service-accounts"
+                        element={
+                          <ProtectedRoute serverAdminOnly>
+                            <AdminServiceAccounts />
                           </ProtectedRoute>
                         }
                       />

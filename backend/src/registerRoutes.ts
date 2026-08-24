@@ -45,6 +45,7 @@ import { volunteeringRoutes } from './routes/volunteering.js';
 import { buildingAccessRoutes } from './routes/buildingAccess.js';
 import { memberCommunicationsRoutes } from './routes/memberCommunications.js';
 import { boardMeetingMinutesRoutes } from './routes/boardMeetingMinutes.js';
+import { serviceAccountRoutes } from './routes/serviceAccounts.js';
 
 export async function registerPublicApiRoutes(fastify: FastifyInstance): Promise<void> {
   await fastify.register(installRoutes, { prefix: '/api' });
@@ -101,4 +102,5 @@ export async function registerProtectedApiRoutes(fastify: FastifyInstance): Prom
   await fastify.register(buildingAccessRoutes, { prefix: '/api' });
   await fastify.register(memberCommunicationsRoutes, { prefix: '/api' });
   await fastify.register(boardMeetingMinutesRoutes, { prefix: '/api' });
+  await fastify.register(serviceAccountRoutes, { prefix: '/api' });
 }

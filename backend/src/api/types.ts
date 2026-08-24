@@ -38,6 +38,10 @@ export type AuthRefreshBody = {
   refreshToken: string;
 };
 
+export type AuthTokenBody = {
+  token: string;
+};
+
 export type AuthTokenPairResponse = {
   accessToken: string;
   refreshToken: string;

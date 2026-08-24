@@ -4,6 +4,7 @@ import { normalizeEmail } from '../utils/auth.js';
 import { isMemberMinor } from '../utils/memberAge.js';
 import { normalizeMemberDateOfBirth } from './memberDemographics.js';
 import type { JWTPayload } from '../types.js';
+import { ACCOUNT_KIND_PERSON, isServiceAccount } from '../utils/accountKind.js';
 
 export function jwtActorMemberId(payload: JWTPayload): number {
   return payload.actorMemberId ?? payload.memberId;
@@ -11,10 +12,14 @@ export function jwtActorMemberId(payload: JWTPayload): number {
 
 export async function fetchMemberEmailRow(
   memberId: number
-): Promise<{ id: number; email: string | null } | null> {
+): Promise<{ id: number; email: string | null; account_kind: string | null } | null> {
   const { db, schema } = getDrizzleDb();
   const rows = await db
-    .select({ id: schema.members.id, email: schema.members.email })
+    .select({
+      id: schema.members.id,
+      email: schema.members.email,
+      account_kind: schema.members.account_kind,
+    })
     .from(schema.members)
     .where(eq(schema.members.id, memberId))
     .limit(1);
@@ -107,6 +112,7 @@ export async function canActorImpersonateTarget(
   const actor = await fetchMemberEmailRow(actorMemberId);
   const target = await fetchMemberEmailRow(targetMemberId);
   if (!actor || !target) return false;
+  if (isServiceAccount(actor) || isServiceAccount(target)) return false;
   if (
     actor.email &&
     target.email &&
@@ -165,7 +171,7 @@ export async function listAccountSwitchOptions(
   return db
     .select({ id: schema.members.id, name: schema.members.name })
     .from(schema.members)
-    .where(inArray(schema.members.id, idList))
+    .where(and(inArray(schema.members.id, idList), eq(schema.members.account_kind, ACCOUNT_KIND_PERSON)))
     .orderBy(asc(schema.members.name));
 }
 

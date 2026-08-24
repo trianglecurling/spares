@@ -83,6 +83,14 @@ export const abuseRouteRateLimits = {
     keyGenerator: (request: FastifyRequest) => `auth-select:${clientIp(request)}`,
     errorResponseBuilder: rateLimitError('Too many login attempts. Please try again later.'),
   },
+  authToken: {
+    hook: 'preHandler' as const,
+    max: 10,
+    timeWindow: '15 minutes' as const,
+    allowList: shouldBypassIpLimit,
+    keyGenerator: (request: FastifyRequest) => `auth-token:${clientIp(request)}`,
+    errorResponseBuilder: rateLimitError('Too many login attempts. Please try again later.'),
+  },
   contact: {
     hook: 'preHandler' as const,
     max: 5,

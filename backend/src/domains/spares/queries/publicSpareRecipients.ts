@@ -2,6 +2,7 @@ import { and, eq, inArray, ne, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../../../db/drizzle-db.js';
 import { getCurrentDateStringAsync } from '../../../utils/time.js';
 import { memberIsNotSocialCondition } from '../../../services/memberMembershipStatusService.js';
+import { ACCOUNT_KIND_PERSON } from '../../../utils/accountKind.js';
 import type { Member } from '../../../types.js';
 import { normalizeDateString, normalizeTimeString } from '../spareDateTime.js';
 import {
@@ -231,6 +232,7 @@ export async function getPublicSpareRecipients(params: {
     eq(schema.memberAvailability.league_id, params.leagueId),
     eq(schema.memberAvailability.available, 1),
     eq(schema.members.email_subscribed, 1),
+    eq(schema.members.account_kind, ACCOUNT_KIND_PERSON),
     memberIsNotSocialCondition(schema, today),
     ne(schema.members.id, params.requesterId),
   ];
@@ -280,6 +282,7 @@ export async function getPublicSpareRecipients(params: {
             and(
               inArray(schema.members.id, byeMembersToLoad),
               eq(schema.members.email_subscribed, 1),
+              eq(schema.members.account_kind, ACCOUNT_KIND_PERSON),
               memberIsNotSocialCondition(schema, today),
             ),
           )) as PublicSpareRecipient[]);

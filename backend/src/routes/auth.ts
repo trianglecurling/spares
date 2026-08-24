@@ -40,6 +40,7 @@ import type {
   AuthSelectMemberBody,
   AuthVerifyCodeBody,
   AuthVerifyCodeResponse,
+  AuthVerifySuccessResponse,
   AuthVerifyTokenResponse,
 } from '../api/types.js';
 import { sendApiError } from '../api/errors.js';
@@ -47,6 +48,9 @@ import { logEvent } from '../services/observability.js';
 import { issueAuthSession, refreshAuthSession, revokeRefreshToken } from '../services/authSessionService.js';
 import { memberIsSocialMember, memberIsSpareOnly } from '../utils/memberMembershipHelpers.js';
 import { listOwnedEventIds } from '../services/eventService.js';
+import { personAccountsOnly } from '../utils/accountKind.js';
+import { findMemberByPersonalAccessToken } from '../services/personalAccessTokenService.js';
+import type { AuthTokenBody } from '../api/types.js';
 
 function normalizePhoneDigits10(input: string): string | null {
   const digits = input.replace(/\D/g, '');
@@ -91,7 +95,7 @@ async function findMembersForAuthContact(contact: string): Promise<{
     const normalized = normalizeEmail(contact);
     return {
       isEmail: true,
-      members: await findMembersByEmail(normalized),
+      members: personAccountsOnly(await findMembersByEmail(normalized)),
       authContactToStore: normalized,
     };
   }
@@ -101,7 +105,7 @@ async function findMembersForAuthContact(contact: string): Promise<{
   }
   return {
     isEmail: false,
-    members: await findMembersByPhoneDigits10(digits10),
+    members: personAccountsOnly(await findMembersByPhoneDigits10(digits10)),
     authContactToStore: phoneDigits10ToE164(digits10),
   };
 }
@@ -365,6 +369,30 @@ const authVerifyCodeResponseSchema = {
       required: ['accessToken', 'refreshToken', 'member'],
     },
   ],
+} as const;
+
+const authTokenZodSchema = z.object({
+  token: z.string().min(16).max(200),
+});
+
+const authTokenBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    token: { type: 'string', minLength: 16, maxLength: 200 },
+  },
+  required: ['token'],
+} as const;
+
+const authTokenExchangeResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    accessToken: { type: 'string' },
+    refreshToken: { type: 'string' },
+    member: authMemberResponseSchema,
+  },
+  required: ['accessToken', 'refreshToken', 'member'],
 } as const;
 
 const authSelectMemberBodySchema = {
@@ -855,6 +883,46 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
       };
     }
   );
+
+  fastify.post<{
+    Body: AuthTokenBody;
+    Reply: AuthVerifySuccessResponse<AuthenticatedMember> | ApiErrorResponse;
+  }>(
+    '/auth/token',
+    {
+      config: {
+        rateLimit: abuseRouteRateLimits.authToken,
+      },
+      schema: {
+        tags: ['auth'],
+        body: authTokenBodySchema,
+        response: {
+          200: authTokenExchangeResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const body = authTokenZodSchema.parse(request.body);
+      const clientIp = request.ip || 'unknown';
+      const bypassIpLimits = isIpLimitBypassed(clientIp);
+      const failKey = authVerifyFailKey(clientIp, 'access-token');
+      if (!bypassIpLimits && isAuthVerifyLockedOut(failKey)) {
+        return reply.code(429).send({ error: 'Too many failed attempts. Please try again later.' });
+      }
+      const member = await findMemberByPersonalAccessToken(body.token);
+      if (!member) {
+        if (!bypassIpLimits) recordAuthVerifyFailure(failKey);
+        return reply.code(401).send({ error: 'Invalid token' });
+      }
+      if (!bypassIpLimits) clearAuthVerifyFailures(failKey);
+      const session = await issueAuthSession(member);
+      logEvent({ eventType: 'auth.login_success', memberId: member.id }).catch(() => {});
+      return {
+        ...session,
+        member: await buildAuthenticatedMember(member),
+      };
+    }
+  );
 }
 
 export async function protectedAuthRoutes(fastify: FastifyInstance) {
@@ -1006,5 +1074,16 @@ export async function protectedAuthRoutes(fastify: FastifyInstance) {
         accountSwitchOptions: await listAccountSwitchOptions(actorId),
       };
     }
+  );
+
+  fastify.get(
+    '/openapi.json',
+    {
+      schema: {
+        tags: ['auth'],
+        hide: true,
+      },
+    },
+    async () => fastify.swagger()
   );
 }

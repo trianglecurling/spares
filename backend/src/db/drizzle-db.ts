@@ -10,6 +10,7 @@ type PgSchema = {
   members: typeof pgSchema.membersPg;
   authCodes: typeof pgSchema.authCodesPg;
   authTokens: typeof pgSchema.authTokensPg;
+  personalAccessTokens: typeof pgSchema.personalAccessTokensPg;
   roles: typeof pgSchema.rolesPg;
   roleScopeRules: typeof pgSchema.roleScopeRulesPg;
   memberRoleAssignments: typeof pgSchema.memberRoleAssignmentsPg;
@@ -154,6 +155,7 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       members: sqliteSchema.membersSqlite,
       authCodes: sqliteSchema.authCodesSqlite,
       authTokens: sqliteSchema.authTokensSqlite,
+      personalAccessTokens: sqliteSchema.personalAccessTokensSqlite,
       roles: sqliteSchema.rolesSqlite,
       roleScopeRules: sqliteSchema.roleScopeRulesSqlite,
       memberRoleAssignments: sqliteSchema.memberRoleAssignmentsSqlite,
@@ -289,6 +291,7 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       members: pgSchema.membersPg,
       authCodes: pgSchema.authCodesPg,
       authTokens: pgSchema.authTokensPg,
+      personalAccessTokens: pgSchema.personalAccessTokensPg,
       roles: pgSchema.rolesPg,
       roleScopeRules: pgSchema.roleScopeRulesPg,
       memberRoleAssignments: pgSchema.memberRoleAssignmentsPg,

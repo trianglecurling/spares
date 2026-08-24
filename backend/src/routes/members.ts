@@ -6,6 +6,7 @@ import { isAdmin, isServerAdmin, isSponsorAdmin } from '../utils/auth.js';
 import { loadGeneralAdminMemberIds, memberHasAdminAccess, setGeneralAdminRole } from '../utils/memberRoles.js';
 import { hasScope } from '../utils/rbac.js';
 import { Member } from '../types.js';
+import { ACCOUNT_KIND_PERSON } from '../utils/accountKind.js';
 import {
   bulkCreateResponseSchema,
   bulkDeleteResponseSchema,
@@ -942,6 +943,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
     const members = await db
       .select()
       .from(schema.members)
+      .where(eq(schema.members.account_kind, ACCOUNT_KIND_PERSON))
       .orderBy(schema.members.name) as Member[];
 
     const isCurrentUserAdmin = isAdmin(member);
@@ -1025,10 +1027,13 @@ export async function memberRoutes(fastify: FastifyInstance) {
     const page = Math.max(1, parsedQuery.page ?? 1);
     const pageSize = Math.max(1, Math.min(100, parsedQuery.pageSize ?? 50));
     const today = await getCurrentDateStringAsync();
-    const directoryVisibilityCondition = or(
-      eq(schema.members.lifetime_member, 1),
-      eq(schema.members.is_server_admin, 1),
-      memberHasActiveMembershipCondition(schema, today),
+    const directoryVisibilityCondition = and(
+      eq(schema.members.account_kind, ACCOUNT_KIND_PERSON),
+      or(
+        eq(schema.members.lifetime_member, 1),
+        eq(schema.members.is_server_admin, 1),
+        memberHasActiveMembershipCondition(schema, today),
+      ),
     );
     const searchTerm = search?.trim().toLowerCase() ?? '';
     const searchCondition =

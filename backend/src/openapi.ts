@@ -18,6 +18,16 @@ async function buildOpenApi(): Promise<void> {
         version: '1.0.0',
       },
       servers: [{ url: '/api' }],
+      components: {
+        securitySchemes: {
+          bearerAuth: {
+            type: 'http',
+            scheme: 'bearer',
+            bearerFormat: 'JWT',
+            description: 'JWT access token or personal access token (tbs_pat_…).',
+          },
+        },
+      },
     },
   });
 

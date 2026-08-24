@@ -38,6 +38,7 @@ export function getAdminLinks(member: AuthenticatedMember | null): MemberNavLink
     ...(canReadPayments ? [{ to: '/admin/payments', label: 'Manage payments' }] : []),
     ...(canManageWebhooks ? [{ to: '/admin/webhooks', label: 'Outbound webhooks' }] : []),
     ...(canManageServerConfig ? [{ to: '/admin/roles', label: 'Manage roles' }] : []),
+    ...(canManageServerConfig ? [{ to: '/admin/service-accounts', label: 'Service accounts' }] : []),
     ...(canManageServerConfig ? [{ to: '/admin/config', label: 'Server config' }] : []),
   ];
 }

@@ -54,11 +54,13 @@ export const membersSqlite = sqliteTable('members', {
   ),
   baseline_other_club_experience_years: real('baseline_other_club_experience_years').default(0).notNull(),
   baseline_club_experience_years: real('baseline_club_experience_years').default(0).notNull(),
+  account_kind: text('account_kind').default('person').notNull(),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
 }, (table) => ({
   emailIdx: index('idx_members_email').on(table.email),
   phoneIdx: index('idx_members_phone').on(table.phone),
+  accountKindIdx: index('idx_members_account_kind').on(table.account_kind),
 }));
 
 export const authCodesSqlite = sqliteTable('auth_codes', {
@@ -84,6 +86,22 @@ export const authTokensSqlite = sqliteTable('auth_tokens', {
   tokenIdx: index('idx_auth_tokens_token').on(table.token),
   memberIdIdx: index('idx_auth_tokens_member_id').on(table.member_id),
   actorMemberIdIdx: index('idx_auth_tokens_actor_member_id').on(table.actor_member_id),
+}));
+
+export const personalAccessTokensSqlite = sqliteTable('personal_access_tokens', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  member_id: integer('member_id').notNull().references(() => membersSqlite.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  token_hash: text('token_hash').notNull().unique(),
+  token_prefix: text('token_prefix').notNull(),
+  created_by_member_id: integer('created_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
+  last_used_at: text('last_used_at'),
+  expires_at: text('expires_at'),
+  revoked_at: text('revoked_at'),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  tokenHashIdx: index('idx_personal_access_tokens_token_hash').on(table.token_hash),
+  memberIdIdx: index('idx_personal_access_tokens_member_id').on(table.member_id),
 }));
 
 export const rolesSqlite = sqliteTable('roles', {
@@ -2444,11 +2462,13 @@ export const membersPg = pgTable('members', {
   ),
   baseline_other_club_experience_years: doublePrecision('baseline_other_club_experience_years').default(0).notNull(),
   baseline_club_experience_years: doublePrecision('baseline_club_experience_years').default(0).notNull(),
+  account_kind: textPg('account_kind').default('person').notNull(),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
 }, (table) => ({
   emailIdx: indexPg('idx_members_email').on(table.email),
   phoneIdx: indexPg('idx_members_phone').on(table.phone),
+  accountKindIdx: indexPg('idx_members_account_kind').on(table.account_kind),
 }));
 
 export const authCodesPg = pgTable('auth_codes', {
@@ -2474,6 +2494,22 @@ export const authTokensPg = pgTable('auth_tokens', {
   tokenIdx: indexPg('idx_auth_tokens_token').on(table.token),
   memberIdIdx: indexPg('idx_auth_tokens_member_id').on(table.member_id),
   actorMemberIdIdx: indexPg('idx_auth_tokens_actor_member_id').on(table.actor_member_id),
+}));
+
+export const personalAccessTokensPg = pgTable('personal_access_tokens', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  member_id: integerPg('member_id').notNull().references(() => membersPg.id, { onDelete: 'cascade' }),
+  name: textPg('name').notNull(),
+  token_hash: textPg('token_hash').notNull().unique(),
+  token_prefix: textPg('token_prefix').notNull(),
+  created_by_member_id: integerPg('created_by_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
+  last_used_at: timestamp('last_used_at', { withTimezone: false }),
+  expires_at: timestamp('expires_at', { withTimezone: false }),
+  revoked_at: timestamp('revoked_at', { withTimezone: false }),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  tokenHashIdx: indexPg('idx_personal_access_tokens_token_hash').on(table.token_hash),
+  memberIdIdx: indexPg('idx_personal_access_tokens_member_id').on(table.member_id),
 }));
 
 export const rolesPg = pgTable('roles', {
@@ -4549,6 +4585,7 @@ export const sqliteSchema = {
   members: membersSqlite,
   authCodes: authCodesSqlite,
   authTokens: authTokensSqlite,
+  personalAccessTokens: personalAccessTokensSqlite,
   roles: rolesSqlite,
   roleScopeRules: roleScopeRulesSqlite,
   memberRoleAssignments: memberRoleAssignmentsSqlite,
@@ -4667,6 +4704,7 @@ export const pgSchema = {
   members: membersPg,
   authCodes: authCodesPg,
   authTokens: authTokensPg,
+  personalAccessTokens: personalAccessTokensPg,
   roles: rolesPg,
   roleScopeRules: roleScopeRulesPg,
   memberRoleAssignments: memberRoleAssignmentsPg,

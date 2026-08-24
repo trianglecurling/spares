@@ -3,12 +3,15 @@ import { verifyToken } from '../utils/auth.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { Member } from '../types.js';
 import { eq } from 'drizzle-orm';
-import { isAdmin, isServerAdmin } from '../utils/auth.js';
 import { recordDailyActivity } from '../services/observability.js';
 import { buildAuthzClaimsForMember, buildAuthzClaimsForImpersonatedMember } from '../utils/rbac.js';
 import { getMemberMembershipStatus } from '../services/memberMembershipStatusService.js';
+import {
+  findMemberByPersonalAccessToken,
+  looksLikePersonalAccessToken,
+} from '../services/personalAccessTokenService.js';
 
-export async function authMiddleware(request: FastifyRequest, reply: FastifyReply) {
+function readBearerToken(request: FastifyRequest): string | undefined {
   const authHeader = request.headers.authorization;
   const tokenFromQuery = (() => {
     if (request.query && typeof request.query === 'object' && 'token' in request.query) {
@@ -16,17 +19,40 @@ export async function authMiddleware(request: FastifyRequest, reply: FastifyRepl
     }
     return undefined;
   })();
+  return authHeader?.replace('Bearer ', '') || tokenFromQuery;
+}
 
-  const token = authHeader?.replace('Bearer ', '') || tokenFromQuery;
+async function attachMember(
+  request: FastifyRequest,
+  member: Member,
+  actorMemberId: number
+): Promise<void> {
+  const isImpersonating = actorMemberId !== member.id;
+  member.impersonationSession = isImpersonating;
+  member.membershipStatus = await getMemberMembershipStatus(member.id, {
+    isLifetimeMember: (member.lifetime_member ?? 0) === 1,
+  });
+  member.authz = isImpersonating
+    ? await buildAuthzClaimsForImpersonatedMember(member)
+    : await buildAuthzClaimsForMember(member);
+  request.authz = member.authz;
+  request.actorMemberId = actorMemberId;
+  request.isImpersonating = isImpersonating;
+  request.member = member;
+  recordDailyActivity(member.id).catch(() => {});
+}
 
-  if (!token) {
-    return reply.code(401).send({ error: 'No token provided' });
+async function resolveAuthenticatedMember(
+  token: string
+): Promise<{ member: Member; actorMemberId: number } | null> {
+  if (looksLikePersonalAccessToken(token)) {
+    const member = await findMemberByPersonalAccessToken(token);
+    if (!member) return null;
+    return { member, actorMemberId: member.id };
   }
 
   const payload = verifyToken(token);
-  if (!payload) {
-    return reply.code(401).send({ error: 'Invalid token' });
-  }
+  if (!payload) return null;
 
   const { db, schema } = getDrizzleDb();
   const members = await db
@@ -34,32 +60,27 @@ export async function authMiddleware(request: FastifyRequest, reply: FastifyRepl
     .from(schema.members)
     .where(eq(schema.members.id, payload.memberId))
     .limit(1);
-  
   const member = members[0] as Member | undefined;
+  if (!member) return null;
 
-  if (!member) {
-    return reply.code(401).send({ error: 'Member not found' });
+  return {
+    member,
+    actorMemberId: payload.actorMemberId ?? payload.memberId,
+  };
+}
+
+export async function authMiddleware(request: FastifyRequest, reply: FastifyReply) {
+  const token = readBearerToken(request);
+  if (!token) {
+    return reply.code(401).send({ error: 'No token provided' });
   }
 
-  const actorMemberId = payload.actorMemberId ?? payload.memberId;
-  const isImpersonating = actorMemberId !== payload.memberId;
+  const resolved = await resolveAuthenticatedMember(token);
+  if (!resolved) {
+    return reply.code(401).send({ error: 'Invalid token' });
+  }
 
-  member.impersonationSession = isImpersonating;
-  member.membershipStatus = await getMemberMembershipStatus(member.id, {
-    isLifetimeMember: (member.lifetime_member ?? 0) === 1,
-  });
-  // Always rebuild from DB so role/scope changes take effect without waiting for token refresh.
-  member.authz = isImpersonating
-    ? await buildAuthzClaimsForImpersonatedMember(member)
-    : await buildAuthzClaimsForMember(member);
-  request.authz = member.authz;
-  request.actorMemberId = actorMemberId;
-  request.isImpersonating = isImpersonating;
-
-  request.member = member;
-
-  // Best-effort DAU tracking (do not block request)
-  recordDailyActivity(member.id).catch(() => {});
+  await attachMember(request, resolved.member, resolved.actorMemberId);
 }
 
 /**
@@ -67,46 +88,9 @@ export async function authMiddleware(request: FastifyRequest, reply: FastifyRepl
  * Missing or invalid auth leaves the request unauthenticated without an error response.
  */
 export async function optionalAuthMiddleware(request: FastifyRequest, _reply: FastifyReply) {
-  const authHeader = request.headers.authorization;
-  const tokenFromQuery = (() => {
-    if (request.query && typeof request.query === 'object' && 'token' in request.query) {
-      return (request.query as { token?: string }).token;
-    }
-    return undefined;
-  })();
-
-  const token = authHeader?.replace('Bearer ', '') || tokenFromQuery;
+  const token = readBearerToken(request);
   if (!token) return;
-
-  const payload = verifyToken(token);
-  if (!payload) return;
-
-  const { db, schema } = getDrizzleDb();
-  const members = await db
-    .select()
-    .from(schema.members)
-    .where(eq(schema.members.id, payload.memberId))
-    .limit(1);
-
-  const member = members[0] as Member | undefined;
-  if (!member) return;
-
-  const actorMemberId = payload.actorMemberId ?? payload.memberId;
-  const isImpersonating = actorMemberId !== payload.memberId;
-
-  member.impersonationSession = isImpersonating;
-  member.membershipStatus = await getMemberMembershipStatus(member.id, {
-    isLifetimeMember: (member.lifetime_member ?? 0) === 1,
-  });
-  // Always rebuild from DB so role/scope changes take effect without waiting for token refresh.
-  member.authz = isImpersonating
-    ? await buildAuthzClaimsForImpersonatedMember(member)
-    : await buildAuthzClaimsForMember(member);
-  request.authz = member.authz;
-  request.actorMemberId = actorMemberId;
-  request.isImpersonating = isImpersonating;
-
-  request.member = member;
-  recordDailyActivity(member.id).catch(() => {});
+  const resolved = await resolveAuthenticatedMember(token);
+  if (!resolved) return;
+  await attachMember(request, resolved.member, resolved.actorMemberId);
 }
-

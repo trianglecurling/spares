@@ -314,11 +314,13 @@ async function syncMembershipGrantInternal(memberId: number, seasonId: number): 
       firstName: schema.members.first_name,
       lastName: schema.members.last_name,
       name: schema.members.name,
+      accountKind: schema.members.account_kind,
     })
     .from(schema.members)
     .where(eq(schema.members.id, memberId))
     .limit(1);
   if (!member) return;
+  if (member.accountKind === 'service') return;
   const names = memberNames({
     firstName: member.firstName,
     lastName: member.lastName,

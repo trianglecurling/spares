@@ -421,6 +421,13 @@
       "when": 1780352498501,
       "tag": "0060_add_registration_invoice_offline_payment",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1780352498502,
+      "tag": "0061_add_service_accounts",
+      "breakpoints": true
     }
   ]
 }

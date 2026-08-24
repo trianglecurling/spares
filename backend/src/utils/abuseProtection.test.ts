@@ -65,6 +65,8 @@ describe('abuseProtection', () => {
   test('auth route rate limit configs match launch targets', () => {
     expect(abuseRouteRateLimits.authRequestCode.max).toBe(5);
     expect(abuseRouteRateLimits.authVerify.max).toBe(10);
+    expect(abuseRouteRateLimits.authToken.max).toBe(10);
+    expect(abuseRouteRateLimits.authToken.timeWindow).toBe('15 minutes');
     expect(abuseRouteRateLimits.contact.max).toBe(5);
     expect(abuseRouteRateLimits.mailingList.max).toBe(5);
     expect(abuseRouteRateLimits.feedback.max).toBe(5);

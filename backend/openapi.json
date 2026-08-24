@@ -5,6 +5,14 @@
     "version": "1.0.0"
   },
   "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "JWT access token or personal access token (tbs_pat_…)."
+      }
+    },
     "schemas": {}
   },
   "paths": {
@@ -1101,6 +1109,210 @@
                         "member"
                       ]
                     }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/token": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "minLength": 16,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "token"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "accessToken": {
+                      "type": "string"
+                    },
+                    "refreshToken": {
+                      "type": "string"
+                    },
+                    "member": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "number"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "email": {
+                          "type": [
+                            "null",
+                            "string"
+                          ]
+                        },
+                        "phone": {
+                          "type": [
+                            "null",
+                            "string"
+                          ]
+                        },
+                        "spareOnly": {
+                          "type": "boolean"
+                        },
+                        "socialMember": {
+                          "type": "boolean"
+                        },
+                        "isAdmin": {
+                          "type": "boolean"
+                        },
+                        "isServerAdmin": {
+                          "type": "boolean"
+                        },
+                        "isCalendarAdmin": {
+                          "type": "boolean"
+                        },
+                        "isContentAdmin": {
+                          "type": "boolean"
+                        },
+                        "isSponsorAdmin": {
+                          "type": "boolean"
+                        },
+                        "leagueManagerLeagueIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          }
+                        },
+                        "ownedEventIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          }
+                        },
+                        "isLeagueAdministrator": {
+                          "type": "boolean"
+                        },
+                        "isLeagueAdministratorGlobal": {
+                          "type": "boolean"
+                        },
+                        "roleCodes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "roleNames": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "scopeRules": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                              "scope": {
+                                "type": "string"
+                              },
+                              "effect": {
+                                "type": "string",
+                                "enum": [
+                                  "allow",
+                                  "deny"
+                                ]
+                              },
+                              "resourceType": {
+                                "type": [
+                                  "null",
+                                  "string"
+                                ]
+                              },
+                              "resourceId": {
+                                "type": [
+                                  "null",
+                                  "number"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "scope",
+                              "effect"
+                            ]
+                          }
+                        },
+                        "optedInSms": {
+                          "type": "boolean"
+                        },
+                        "emailSubscribed": {
+                          "type": "boolean"
+                        },
+                        "emailVisible": {
+                          "type": "boolean"
+                        },
+                        "phoneVisible": {
+                          "type": "boolean"
+                        },
+                        "themePreference": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "email",
+                        "phone",
+                        "spareOnly",
+                        "socialMember",
+                        "isAdmin",
+                        "isServerAdmin",
+                        "isCalendarAdmin",
+                        "isContentAdmin",
+                        "isSponsorAdmin",
+                        "leagueManagerLeagueIds",
+                        "ownedEventIds",
+                        "isLeagueAdministrator",
+                        "isLeagueAdministratorGlobal",
+                        "roleCodes",
+                        "roleNames",
+                        "scopeRules",
+                        "optedInSms",
+                        "emailSubscribed",
+                        "emailVisible",
+                        "phoneVisible",
+                        "themePreference"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "accessToken",
+                    "refreshToken",
+                    "member"
                   ]
                 }
               }
@@ -25944,6 +26156,49 @@
       }
     },
     "/registration/staff/registrations": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/registration/staff/filter-fields": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/registration/staff/export-columns": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/registration/staff/registrations/export": {
+      "post": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/registration/staff/stats": {
       "get": {
         "responses": {
           "200": {
@@ -25972,6 +26227,44 @@
       }
     },
     "/registration/staff/registrations/{id}/submit": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/registration/staff/registrations/{id}/record-offline-payment": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/registration/staff/registrations/{id}/request-payment": {
       "post": {
         "parameters": [
           {
@@ -28496,6 +28789,142 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/service-accounts": {
+      "get": {
+        "tags": [
+          "service-accounts"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "service-accounts"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/service-accounts/{id}": {
+      "patch": {
+        "tags": [
+          "service-accounts"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "service-accounts"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/service-accounts/{id}/tokens": {
+      "get": {
+        "tags": [
+          "service-accounts"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "service-accounts"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/service-accounts/{id}/tokens/{tokenId}": {
+      "delete": {
+        "tags": [
+          "service-accounts"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "tokenId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
           }
         }
       }
