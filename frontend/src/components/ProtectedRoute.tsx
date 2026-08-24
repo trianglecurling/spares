@@ -28,10 +28,10 @@ export function ProtectedRoute({
   anyOfScopes,
   unauthenticatedRedirectTo = '/login',
 }: ProtectedRouteProps) {
-  const { member, token, isLoading } = useAuth();
+  const { member, token, isLoading, isLikelyAuthenticated } = useAuth();
   const location = useLocation();
 
-  if (isLoading) {
+  if (isLoading || (!member && isLikelyAuthenticated)) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-gray-500">Loading...</div>

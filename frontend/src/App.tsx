@@ -156,10 +156,10 @@ function LegacyPublicLeaguesRedirect() {
 
 /** Logged-in members should use the member calendar; pair with ProtectedRoute's public fallback. */
 function PublicCalendarRoute() {
-  const { member, token, isLoading } = useAuth();
+  const { member, token, isLoading, isLikelyAuthenticated } = useAuth();
   const location = useLocation();
 
-  if (isLoading) {
+  if (isLoading || (isLikelyAuthenticated && !member)) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-gray-500">Loading...</div>

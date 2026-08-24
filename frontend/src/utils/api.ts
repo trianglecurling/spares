@@ -1,9 +1,11 @@
 import axios, { type AxiosError, type AxiosRequestConfig } from 'axios';
 import { isAccessTokenUsable } from './accessToken';
+import { classifyRefreshFailure, markTransientAuthFailure } from './authRequestFailure';
 import { clearCachedMemberDisplayName } from './memberDisplayCache';
 import { isPublicApiRequestUrl } from './publicApiPaths';
 import { isPublicLightPath } from './publicLightPaths';
 import { getRegistrationEarlyAccessUnlockToken } from './registrationEarlyAccess';
+import type { AccessTokenEnsureResult } from './restoreAuthSession';
 
 type RetriableRequestConfig = AxiosRequestConfig & { _retry?: boolean };
 
@@ -35,26 +37,31 @@ export function clearAuthTokens(): void {
   clearCachedMemberDisplayName();
 }
 
-let refreshPromise: Promise<string | null> | null = null;
+let refreshPromise: Promise<AccessTokenEnsureResult> | null = null;
 
 function hasRequiresInstallation(data: unknown): data is { requiresInstallation: boolean } {
   return typeof data === 'object' && data !== null && (data as { requiresInstallation?: unknown }).requiresInstallation === true;
 }
 
-async function refreshAccessToken(): Promise<string | null> {
+async function refreshAccessToken(): Promise<AccessTokenEnsureResult> {
   const refreshToken = getRefreshToken();
-  if (!refreshToken) return null;
+  if (!refreshToken) return { status: 'unauthenticated' };
 
   if (!refreshPromise) {
     refreshPromise = axios
       .post<{ accessToken: string; refreshToken: string }>('/api/auth/refresh', { refreshToken })
-      .then((response) => {
+      .then((response): AccessTokenEnsureResult => {
         storeAuthTokens(response.data.accessToken, response.data.refreshToken);
-        return response.data.accessToken;
+        return { status: 'ok', accessToken: response.data.accessToken };
       })
-      .catch(() => {
-        clearAuthTokens();
-        return null;
+      .catch((error: unknown): AccessTokenEnsureResult => {
+        // Only wipe the session when the server says the refresh token is invalid.
+        // 502/503/network errors during a deploy must not log the member out.
+        if (classifyRefreshFailure(error) === 'unauthenticated') {
+          clearAuthTokens();
+          return { status: 'unauthenticated' };
+        }
+        return { status: 'transient' };
       })
       .finally(() => {
         refreshPromise = null;
@@ -64,16 +71,21 @@ async function refreshAccessToken(): Promise<string | null> {
   return refreshPromise;
 }
 
-/** Return a non-expired access token, refreshing first when needed. */
-export async function ensureAccessToken(): Promise<string | null> {
+export async function ensureAccessTokenResult(): Promise<AccessTokenEnsureResult> {
   const token = getAccessToken();
-  if (isAccessTokenUsable(token)) {
-    return token;
+  if (token && isAccessTokenUsable(token)) {
+    return { status: 'ok', accessToken: token };
   }
   if (!getRefreshToken()) {
-    return null;
+    return { status: 'unauthenticated' };
   }
   return refreshAccessToken();
+}
+
+/** Return a non-expired access token, refreshing first when needed. */
+export async function ensureAccessToken(): Promise<string | null> {
+  const result = await ensureAccessTokenResult();
+  return result.status === 'ok' ? result.accessToken : null;
 }
 
 // Add auth token to requests (skip expired tokens so public guest flows are not blocked)
@@ -128,13 +140,17 @@ api.interceptors.response.use(
         getRefreshToken()
       ) {
         originalRequest._retry = true;
-        const newAccessToken = await refreshAccessToken();
-        if (newAccessToken) {
+        const refreshResult = await refreshAccessToken();
+        if (refreshResult.status === 'ok') {
           originalRequest.headers = {
             ...originalRequest.headers,
-            Authorization: `Bearer ${newAccessToken}`,
+            Authorization: `Bearer ${refreshResult.accessToken}`,
           };
           return api(originalRequest);
+        }
+        if (refreshResult.status === 'transient') {
+          markTransientAuthFailure(error);
+          return Promise.reject(error);
         }
       }
 

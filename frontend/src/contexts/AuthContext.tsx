@@ -1,16 +1,16 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
 import { get, post } from '../api/client';
 import api, {
   clearAuthTokens,
-  ensureAccessToken,
+  ensureAccessTokenResult,
   getAccessToken,
   getRefreshToken,
   storeAuthTokens,
 } from '../utils/api';
 import { getCachedMemberDisplayName, storeCachedMemberDisplayName } from '../utils/memberDisplayCache';
 import { isPublicLightPath } from '../utils/publicLightPaths';
+import { restoreAuthSession } from '../utils/restoreAuthSession';
 import type { AuthenticatedMember } from '../../../backend/src/types.ts';
 
 export type AccountSwitchOption = { id: number; name: string };
@@ -110,6 +110,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    const abort = new AbortController();
+
+    const sleep = (ms: number) =>
+      new Promise<void>((resolve) => {
+        if (abort.signal.aborted) {
+          resolve();
+          return;
+        }
+        const timeoutId = window.setTimeout(resolve, ms);
+        abort.signal.addEventListener(
+          'abort',
+          () => {
+            window.clearTimeout(timeoutId);
+            resolve();
+          },
+          { once: true },
+        );
+      });
+
     const verifyToken = async () => {
       const currentPath = window.location.pathname;
       const hasStoredSession = Boolean(getAccessToken() || getRefreshToken());
@@ -126,37 +145,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (hasStoredSession) {
-        try {
-          // Refresh expired access tokens before verify so the browser does not log a 401.
-          const usableToken = await ensureAccessToken();
-          if (!usableToken) {
-            clearAuthTokens();
-            setToken(null);
-            clearAccountSwitchState();
-          } else {
+        // Retry through brief API downtime (deploys) instead of treating it as logout.
+        const result = await restoreAuthSession({
+          ensureAccessToken: ensureAccessTokenResult,
+          verify: async () => {
             const response = await get('/auth/verify');
-            applySessionPayload({
+            return {
               member: response.member as AuthenticatedMember,
               actorMemberId: response.actorMemberId,
               isImpersonating: response.isImpersonating,
               accountSwitchOptions: response.accountSwitchOptions,
-            });
-            setToken(getAccessToken());
-          }
-        } catch (error: unknown) {
-          if (
-            axios.isAxiosError(error) &&
-            error.response?.status === 503 &&
-            error.response?.data?.requiresInstallation
-          ) {
-            // Database not configured - don't verify token, but don't clear it either
-          } else {
-            console.error('Token verification failed:', error);
-            clearAuthTokens();
-            setToken(null);
-            clearAccountSwitchState();
-          }
+            };
+          },
+          isCancelled: () => abort.signal.aborted,
+          sleep,
+        });
+
+        if (abort.signal.aborted) {
+          return;
         }
+
+        if (result.status === 'success') {
+          applySessionPayload(result.session);
+          setToken(getAccessToken());
+        } else if (result.status === 'unauthenticated') {
+          clearAuthTokens();
+          setToken(null);
+          clearAccountSwitchState();
+        }
+      }
+
+      if (abort.signal.aborted) {
+        return;
       }
 
       setSessionSettled(true);
@@ -167,6 +187,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     void verifyToken();
+    return () => abort.abort();
   }, [applySessionPayload, clearAccountSwitchState]);
 
   const login = async (

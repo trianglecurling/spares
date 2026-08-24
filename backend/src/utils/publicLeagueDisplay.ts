@@ -30,7 +30,7 @@ export function buildPublicLeagueTypeText(league: PublicLeagueFormationInput): s
     parts.push('Competitive; entry into the league determined by playdowns as needed.');
   }
 
-  if (!league.allowsDropIns) {
+  if (!league.allowsDropIns && league.format !== 'instructional') {
     if (league.leagueType === 'bring_your_own_team') {
       parts.push('Build your own team.');
     } else if (league.teamFormation === 'skips_draft') {

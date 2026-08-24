@@ -2273,49 +2273,69 @@ export default function LeagueDetail() {
                   </div>
 
                   <div className="grid gap-4 sm:grid-cols-2">
-                    <div>
-                      <label htmlFor="leagueCfgLeagueType" className="app-label">
-                        League type
-                      </label>
-                      <ChoiceInput<'standard' | 'bring_your_own_team'>
-                        inputId="leagueCfgLeagueType"
-                        options={LEAGUE_TYPE_SELECT_OPTIONS}
-                        value={leagueForm.leagueType}
-                        onChange={(next) => {
-                          if (next != null && !Array.isArray(next)) {
-                            setLeagueForm({
-                              ...leagueForm,
-                              leagueType: next,
-                              ...(next === 'bring_your_own_team'
-                                ? {
-                                    capacityType: 'team' as const,
-                                    allowsSabbatical: false,
-                                  }
-                                : { capacityType: 'individual' as const }),
-                            });
-                          }
-                        }}
-                        listboxLabel="League type"
-                      />
-                    </div>
-
-                    {leagueForm.leagueType === 'standard' ? (
-                      <div>
-                        <label htmlFor="leagueCfgTeamFormation" className="app-label">
-                          Team formation
-                        </label>
-                        <ChoiceInput<'coordinator' | 'skips_draft'>
-                          inputId="leagueCfgTeamFormation"
-                          options={TEAM_FORMATION_SELECT_OPTIONS}
-                          value={leagueForm.teamFormation}
+                    <FormField
+                      label="League type"
+                      htmlFor="leagueCfgLeagueType"
+                      state={leagueForm.format === 'instructional' ? 'disabled' : 'default'}
+                      stateMessage={
+                        leagueForm.format === 'instructional'
+                          ? 'Does not apply to instructional programs.'
+                          : undefined
+                      }
+                    >
+                      {({ describedBy }) => (
+                        <ChoiceInput<'standard' | 'bring_your_own_team'>
+                          inputId="leagueCfgLeagueType"
+                          options={LEAGUE_TYPE_SELECT_OPTIONS}
+                          value={leagueForm.leagueType}
                           onChange={(next) => {
                             if (next != null && !Array.isArray(next)) {
-                              setLeagueForm({ ...leagueForm, teamFormation: next });
+                              setLeagueForm({
+                                ...leagueForm,
+                                leagueType: next,
+                                ...(next === 'bring_your_own_team'
+                                  ? {
+                                      capacityType: 'team' as const,
+                                      allowsSabbatical: false,
+                                    }
+                                  : { capacityType: 'individual' as const }),
+                              });
                             }
                           }}
-                          listboxLabel="Team formation"
+                          listboxLabel="League type"
+                          disabled={leagueForm.format === 'instructional'}
+                          ariaDescribedBy={describedBy}
                         />
-                      </div>
+                      )}
+                    </FormField>
+
+                    {leagueForm.leagueType === 'standard' ? (
+                      <FormField
+                        label="Team formation"
+                        htmlFor="leagueCfgTeamFormation"
+                        state={leagueForm.format === 'instructional' ? 'disabled' : 'default'}
+                        stateMessage={
+                          leagueForm.format === 'instructional'
+                            ? 'Does not apply to instructional programs.'
+                            : undefined
+                        }
+                      >
+                        {({ describedBy }) => (
+                          <ChoiceInput<'coordinator' | 'skips_draft'>
+                            inputId="leagueCfgTeamFormation"
+                            options={TEAM_FORMATION_SELECT_OPTIONS}
+                            value={leagueForm.teamFormation}
+                            onChange={(next) => {
+                              if (next != null && !Array.isArray(next)) {
+                                setLeagueForm({ ...leagueForm, teamFormation: next });
+                              }
+                            }}
+                            listboxLabel="Team formation"
+                            disabled={leagueForm.format === 'instructional'}
+                            ariaDescribedBy={describedBy}
+                          />
+                        )}
+                      </FormField>
                     ) : null}
 
                     <div>
