@@ -1123,7 +1123,7 @@ export type GuestMembershipPaymentPreviewInput = {
   seasonId: number;
   sessionId: number;
   curlerDateOfBirth: string;
-  membershipChoice: 'regular' | 'social';
+  membershipChoice: 'regular' | 'social' | 'junior_recreational';
   basicIcePrivileges: boolean;
   studentDiscountClaimed: boolean;
   studentInstitution: string | null;
@@ -1133,21 +1133,31 @@ export type GuestMembershipPaymentPreviewInput = {
   experienceSelfReportedYears: number | null;
   usaCurlingMembershipOptIn?: boolean | null;
   uswcaMembershipOptIn?: boolean | null;
+  juniorAssistancePercent?: number | null;
   desiredLeagueCount?: number | null;
   priorities?: LeaguePriorityInput[];
 };
 
+function guestMembershipSkipsLeaguePlay(
+  membershipChoice: GuestMembershipPaymentPreviewInput['membershipChoice'],
+): boolean {
+  return membershipChoice === 'social' || membershipChoice === 'junior_recreational';
+}
+
 function guestSyntheticSourceRow(input: GuestMembershipPaymentPreviewInput): RegistrationMembershipPaymentSourceRow {
-  const membershipOption: CurlingMembershipOptionSqlite =
-    input.membershipChoice === 'social' ? 'social' : input.basicIcePrivileges ? 'regular_spare_only' : 'regular';
-  const experienceTypeResolved: CurlingExperienceTypeSqlite | null =
-    input.membershipChoice === 'social'
-      ? null
-      : input.experienceType === 'known_existing'
-        ? 'none_or_minimal'
-        : input.experienceType;
+  const skipLeaguePlay = guestMembershipSkipsLeaguePlay(input.membershipChoice);
+  const membershipOption: CurlingMembershipOptionSqlite = skipLeaguePlay
+    ? input.membershipChoice
+    : input.basicIcePrivileges
+      ? 'regular_spare_only'
+      : 'regular';
+  const experienceTypeResolved: CurlingExperienceTypeSqlite | null = skipLeaguePlay
+    ? null
+    : input.experienceType === 'known_existing'
+      ? 'none_or_minimal'
+      : input.experienceType;
   const experienceYears =
-    input.membershipChoice === 'social' || input.experienceType !== 'specified_years' ? null : input.experienceSelfReportedYears;
+    skipLeaguePlay || input.experienceType !== 'specified_years' ? null : input.experienceSelfReportedYears;
 
   return {
     season_id: input.seasonId,
@@ -1157,13 +1167,13 @@ function guestSyntheticSourceRow(input: GuestMembershipPaymentPreviewInput): Reg
     submitted_by_member_id: null,
     status: 'shell_complete',
     membership_option: membershipOption,
-    student_discount_claimed: input.membershipChoice === 'social' ? 0 : input.studentDiscountClaimed ? 1 : 0,
-    student_institution: input.membershipChoice === 'social' ? null : input.studentInstitution,
-    reciprocal_discount_claimed: input.membershipChoice === 'social' ? 0 : input.reciprocalDiscountClaimed ? 1 : 0,
-    reciprocal_club_name: input.membershipChoice === 'social' ? null : input.reciprocalClubName,
+    student_discount_claimed: skipLeaguePlay ? 0 : input.studentDiscountClaimed ? 1 : 0,
+    student_institution: skipLeaguePlay ? null : input.studentInstitution,
+    reciprocal_discount_claimed: skipLeaguePlay ? 0 : input.reciprocalDiscountClaimed ? 1 : 0,
+    reciprocal_club_name: skipLeaguePlay ? null : input.reciprocalClubName,
     experience_type: experienceTypeResolved,
     experience_self_reported_years: experienceYears,
-    desired_league_count: input.desiredLeagueCount ?? null,
+    desired_league_count: skipLeaguePlay ? null : input.desiredLeagueCount ?? null,
     usa_curling_membership_opt_in: sqliteFlagFromBoolean(input.usaCurlingMembershipOptIn),
     uswca_membership_opt_in: sqliteFlagFromBoolean(input.uswcaMembershipOptIn),
   };
@@ -1187,10 +1197,16 @@ export async function getGuestMembershipPaymentPreview(input: GuestMembershipPay
   }
 
   const base = await buildGuestRegistrationContext(input, { includeSessionLeagues: true });
+  const skipLeaguePlay = guestMembershipSkipsLeaguePlay(input.membershipChoice);
+  const requestedAssistance = input.juniorAssistancePercent ?? 0;
   const context: RegistrationContext = {
     ...base,
-    desiredLeagueCount: input.desiredLeagueCount ?? base.desiredLeagueCount,
-    priorities: input.priorities ?? base.priorities,
+    desiredLeagueCount: skipLeaguePlay ? null : input.desiredLeagueCount ?? base.desiredLeagueCount,
+    priorities: skipLeaguePlay ? [] : input.priorities ?? base.priorities,
+    juniorAssistance:
+      input.membershipChoice === 'junior_recreational' && requestedAssistance > 0
+        ? { requestedPercent: requestedAssistance, status: 'pending' }
+        : undefined,
   };
   const evaluation = evaluateRegistrationDraft(context);
   const deadlineFields = await paymentDeadlineFieldsForSeasonSession(

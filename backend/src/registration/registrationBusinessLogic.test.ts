@@ -562,6 +562,25 @@ describe('registration business logic', () => {
     expect(fees.totalDueMinor).toBe(7500);
   });
 
+  test('Junior Recreational program fee is not combined with that league’s registration fee', () => {
+    const juniorLeague = league({
+      id: 9,
+      name: 'Junior Recreational',
+      isJuniorRecreational: true,
+      registrationFeeMinor: 10000,
+      predecessorLeagueId: null,
+    });
+    const fees = calculateRegistrationFees(
+      membershipOnly({
+        membershipOption: 'junior_recreational',
+        leagues: { 9: juniorLeague },
+      }),
+      { chargedLeagueIds: [9] },
+    );
+    expect(fees.lineItems.map((item) => item.lineType)).toEqual(['junior_recreational_fee']);
+    expect(fees.totalDueMinor).toBe(7500);
+  });
+
   test('Junior Recreational payment timing supports financial assistance review', () => {
     const junior = evaluateRegistrationDraft(membershipOnly({ membershipOption: 'junior_recreational' }));
     expect(junior.priorityValidation.allowed).toBe(true);

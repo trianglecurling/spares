@@ -666,6 +666,18 @@ describe('add picker and prior-league decisions', () => {
       }),
     ).toEqual([3]);
   });
+
+  test('Junior Recreational last-session play does not require a keep-or-leave', () => {
+    const juniorLeague = catalogLeague({ id: 9, name: 'Junior Recreational', isJuniorRecreational: true });
+    expect(
+      undecidedPriorLeagueIds({
+        priorSeasonLeagueIds: [9, 1],
+        priorities: ranked(1),
+        priorLeagueDecisions: [],
+        leagues: [...allLeagues, juniorLeague],
+      }),
+    ).toEqual([]);
+  });
 });
 
 describe('sabbatical list', () => {
@@ -972,6 +984,25 @@ describe('Junior Recreational program league', () => {
         membershipOption: 'regular',
       }),
     ).toBe(false);
+  });
+
+  test('is not seeded onto a returning-member priority list', () => {
+    const juniorLeague = catalogLeague({ id: 9, name: 'Junior Recreational', isJuniorRecreational: true });
+    expect(
+      hydratePriorityList({
+        leagues: [...allLeagues, juniorLeague],
+        priorities: [],
+        desiredLeagueCount: null,
+        maxDesiredLeagueCount: 5,
+        priorSeasonLeagueIds: [9, 1],
+        priorLeagueDecisions: [],
+        activeLeagueIds: [],
+        participatedLeagueIds: [9, 1],
+        returnRightLeagueIds: [9, 1],
+        basicIceFallbackInterest: null,
+        collectBasicIceFallback: false,
+      }).map((priority) => priority.leagueId),
+    ).toEqual([1]);
   });
 });
 

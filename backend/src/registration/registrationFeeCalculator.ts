@@ -227,7 +227,7 @@ function addLeagueCharges(
 ): void {
   for (const leagueId of chargedLeagueIds) {
     const league = getLeague(context, leagueId);
-    if (!league) continue;
+    if (!league || league.isJuniorRecreational === true) continue;
     addCharge(lineItems, {
       lineType: 'league_fee',
       description: `${league.name} league fee`,

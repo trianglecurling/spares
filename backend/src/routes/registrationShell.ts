@@ -232,7 +232,7 @@ const guestPreviewSchema = z.object({
   seasonId: z.number().int().positive(),
   sessionId: z.number().int().positive(),
   curlerDateOfBirth: z.string().min(1),
-  membershipChoice: z.enum(['regular', 'social']),
+  membershipChoice: z.enum(['regular', 'social', 'junior_recreational']),
   basicIcePrivileges: z.boolean(),
   studentDiscountClaimed: z.boolean(),
   studentInstitution: z.string().nullable(),
@@ -242,6 +242,7 @@ const guestPreviewSchema = z.object({
   experienceSelfReportedYears: z.coerce.number().nullable(),
   usaCurlingMembershipOptIn: z.boolean().nullable().optional(),
   uswcaMembershipOptIn: z.boolean().nullable().optional(),
+  juniorAssistancePercent: z.number().int().refine((value) => [0, 25, 50, 75].includes(value)).optional(),
 });
 
 const guestPreviewLeagueCatalogSchema = guestPreviewSchema.extend({
@@ -259,7 +260,7 @@ const guestSubmitSchema = z.object({
   nameTagName: z.string().trim().min(1).max(NAME_TAG_NAME_MAX_LENGTH),
   nameTagIncludePronouns: z.boolean(),
   guardian: guardianSchema.optional(),
-  membershipChoice: z.enum(['regular', 'social']),
+  membershipChoice: z.enum(['regular', 'social', 'junior_recreational']),
   basicIcePrivileges: z.boolean(),
   studentDiscountClaimed: z.boolean(),
   studentInstitution: z.string().nullable(),
@@ -269,6 +270,7 @@ const guestSubmitSchema = z.object({
   experienceSelfReportedYears: z.coerce.number().nullable(),
   usaCurlingMembershipOptIn: z.boolean().optional(),
   uswcaMembershipOptIn: z.boolean().optional(),
+  juniorAssistancePercent: z.number().int().refine((value) => [0, 25, 50, 75].includes(value)).optional(),
   payLater: z.boolean().optional(),
   membershipCommitteeComments: z.string().trim().max(2000).nullable().optional(),
   icePrivilegesChoice: z.enum(['none', 'league_play', 'basic_ice']).optional(),

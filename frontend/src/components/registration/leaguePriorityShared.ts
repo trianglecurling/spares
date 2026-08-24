@@ -122,9 +122,13 @@ export function isFreeLeague(league: Pick<LeagueCatalogItem, 'registrationFeeMin
 
 /** Standard leagues that allow a sabbatical. Bring-your-own-team leagues never do. */
 export function isSabbaticalEligibleLeague(
-  league: Pick<LeagueCatalogItem, 'allowsSabbatical' | 'leagueType'> | undefined,
+  league: Pick<LeagueCatalogItem, 'allowsSabbatical' | 'leagueType' | 'isJuniorRecreational'> | undefined,
 ): boolean {
-  return league?.allowsSabbatical === true && league.leagueType !== 'bring_your_own_team';
+  return (
+    league?.allowsSabbatical === true &&
+    league.leagueType !== 'bring_your_own_team' &&
+    league.isJuniorRecreational !== true
+  );
 }
 
 export type PriorityListOptions = {
@@ -132,9 +136,16 @@ export type PriorityListOptions = {
   freeLeaguesOnly?: boolean;
 };
 
+function isSelectablePriorityLeague(league: LeagueCatalogItem): boolean {
+  return league.isJuniorRecreational !== true;
+}
+
 function allowedLeagueIds(leagues: LeagueCatalogItem[], freeLeaguesOnly: boolean | undefined): Set<number> | null {
-  if (!freeLeaguesOnly) return null;
-  return new Set(leagues.filter(isFreeLeague).map((league) => league.id));
+  const selectable = leagues.filter(isSelectablePriorityLeague);
+  if (!freeLeaguesOnly) {
+    return selectable.length === leagues.length ? null : new Set(selectable.map((league) => league.id));
+  }
+  return new Set(selectable.filter(isFreeLeague).map((league) => league.id));
 }
 
 export function filterPrioritiesToAllowedLeagues(
@@ -241,8 +252,9 @@ export function seedPriorityList(
   payload: RegistrationLeagueCatalogPayload,
   options?: PriorityListOptions,
 ): LeaguePriorityInput[] {
-  const priorSeasonLeagueIds = options?.freeLeaguesOnly
-    ? payload.priorSeasonLeagueIds.filter((leagueId) => isFreeLeague(leagueById(payload.leagues)[leagueId]))
+  const allowed = allowedLeagueIds(payload.leagues, options?.freeLeaguesOnly);
+  const priorSeasonLeagueIds = allowed
+    ? payload.priorSeasonLeagueIds.filter((leagueId) => allowed.has(leagueId))
     : payload.priorSeasonLeagueIds;
   return mergeActiveWaitlistLeagues(
     normalizePriorityOrder(
@@ -389,9 +401,12 @@ export function defaultDesiredLeagueCount(
   options?: PriorityListOptions,
 ): number | null {
   const leagues = leagueById(payload.leagues);
-  const priorSeasonLeagueIds = options?.freeLeaguesOnly
-    ? payload.priorSeasonLeagueIds.filter((leagueId) => isFreeLeague(leagues[leagueId]))
-    : payload.priorSeasonLeagueIds;
+  const priorSeasonLeagueIds = payload.priorSeasonLeagueIds.filter((leagueId) => {
+    const league = leagues[leagueId];
+    if (!league || league.isJuniorRecreational === true) return false;
+    if (options?.freeLeaguesOnly && !isFreeLeague(league)) return false;
+    return true;
+  });
   if (payload.desiredLeagueCount != null) {
     if (!options?.freeLeaguesOnly) return payload.desiredLeagueCount;
     const freeSavedCount = payload.priorities.filter((priority) => isFreeLeague(leagues[priority.leagueId])).length;
@@ -472,12 +487,18 @@ export function undecidedPriorLeagueIds(input: {
   priorSeasonLeagueIds: number[];
   priorities: LeaguePriorityInput[];
   priorLeagueDecisions: PriorLeagueDecision[];
+  leagues?: LeagueCatalogItem[];
 }): number[] {
   const decided = new Set([
     ...input.priorities.map((priority) => priority.leagueId),
     ...input.priorLeagueDecisions.map((decision) => decision.leagueId),
   ]);
-  return input.priorSeasonLeagueIds.filter((leagueId) => !decided.has(leagueId));
+  const juniorRecreationalIds = new Set(
+    (input.leagues ?? []).filter((league) => league.isJuniorRecreational === true).map((league) => league.id),
+  );
+  return input.priorSeasonLeagueIds.filter(
+    (leagueId) => !decided.has(leagueId) && !juniorRecreationalIds.has(leagueId),
+  );
 }
 
 /**
@@ -496,7 +517,7 @@ export function paidPriorLeaguesOffList(input: {
   return input.priorSeasonLeagueIds.flatMap((leagueId) => {
     if (onPriority.has(leagueId)) return [];
     const league = leagues[leagueId];
-    if (!league || isFreeLeague(league)) return [];
+    if (!league || isFreeLeague(league) || league.isJuniorRecreational === true) return [];
     return [league];
   });
 }

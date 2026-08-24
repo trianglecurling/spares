@@ -1018,7 +1018,7 @@ export type GuestRegistrationSubmitInput = {
   nameTagName: string;
   nameTagIncludePronouns: boolean;
   guardian?: GuardianInput;
-  membershipChoice: 'regular' | 'social';
+  membershipChoice: 'regular' | 'social' | 'junior_recreational';
   basicIcePrivileges: boolean;
   studentDiscountClaimed: boolean;
   studentInstitution: string | null;
@@ -1028,6 +1028,7 @@ export type GuestRegistrationSubmitInput = {
   experienceSelfReportedYears: number | null;
   usaCurlingMembershipOptIn?: boolean;
   uswcaMembershipOptIn?: boolean;
+  juniorAssistancePercent?: number;
   payLater?: boolean;
   membershipCommitteeComments?: string | null;
   icePrivilegesChoice?: 'none' | 'league_play' | 'basic_ice';
@@ -1092,10 +1093,12 @@ export async function submitGuestRegistration(
   const actor = actorRow as Member;
 
   const membershipPayment = await import('./registrationMembershipPaymentService.js');
-  if (input.membershipChoice === 'social') {
+  if (input.membershipChoice === 'social' || input.membershipChoice === 'junior_recreational') {
     await membershipPayment.updateMembership(draft.id, actor, {
-      membershipOption: 'social',
+      membershipOption: input.membershipChoice,
       basicIcePrivileges: false,
+      juniorAssistancePercent:
+        input.membershipChoice === 'junior_recreational' ? input.juniorAssistancePercent ?? 0 : 0,
       usaCurlingMembershipOptIn: input.usaCurlingMembershipOptIn,
       uswcaMembershipOptIn: input.uswcaMembershipOptIn,
     });
@@ -1146,12 +1149,13 @@ export async function submitGuestRegistration(
   const icePrivilegesChoice = belowBasicIceMin
     ? 'league_play'
     : input.icePrivilegesChoice ?? (input.basicIcePrivileges ? 'basic_ice' : undefined);
-  if (input.membershipChoice !== 'social' && icePrivilegesChoice) {
+  if (input.membershipChoice !== 'social' && input.membershipChoice !== 'junior_recreational' && icePrivilegesChoice) {
     await membershipPayment.updateIcePrivileges(draft.id, actor, { choice: icePrivilegesChoice });
   }
 
   if (
     input.membershipChoice !== 'social' &&
+    input.membershipChoice !== 'junior_recreational' &&
     ((input.priorities && input.priorities.length > 0) || input.desiredLeagueCount != null)
   ) {
     const { putRegistrationLeaguePriorities } = await import('./registrationLeagueSelectionService.js');

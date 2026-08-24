@@ -152,6 +152,26 @@ export function membershipNeedsSabbaticalStep(input: {
   return input.membershipOption === 'social' && input.noMembershipEligible === true;
 }
 
+/** Social and Junior Recreational skip discounts, experience, ice privileges, and league selection. */
+export function membershipSkipsLeaguePlay(
+  membershipOption: RegistrationMembershipPaymentResumeShape['selection']['membershipOption'] | null | undefined,
+): boolean {
+  return membershipOption === 'social' || membershipOption === 'junior_recreational';
+}
+
+export type GuestApiMembershipChoice = 'regular' | 'social' | 'junior_recreational';
+
+/** Guest APIs only persist a billable membership. Sabbatical-only is not a guest path. */
+export function guestApiMembershipChoice(
+  membershipChoice:
+    | RegistrationMembershipPaymentResumeShape['selection']['membershipOption']
+    | null
+    | undefined,
+): GuestApiMembershipChoice {
+  if (membershipChoice === 'social' || membershipChoice === 'junior_recreational') return membershipChoice;
+  return 'regular';
+}
+
 /** Basic ice privileges are only offered once a new curler reports at least this many years. */
 export const BASIC_ICE_MIN_EXPERIENCE_YEARS = 1;
 

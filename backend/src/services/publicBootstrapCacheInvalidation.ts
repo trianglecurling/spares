@@ -3,32 +3,40 @@ import { invalidateMenuTreeCache } from './menuTreeCache.js';
 
 const MUTATION_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
-function pathMatchesPublicBootstrapMutation(path: string, method: string): boolean {
-  if (!MUTATION_METHODS.has(method)) {
+function normalizeMutationPath(url: string): string {
+  const path = (url.split('?')[0] ?? '').replace(/\/+$/, '') || '/';
+  if (path.startsWith('/api/')) return path;
+  return path === '/' ? '/api' : `/api${path}`;
+}
+
+export function pathMatchesPublicBootstrapMutation(path: string, method: string): boolean {
+  if (!MUTATION_METHODS.has(method.toUpperCase())) {
     return false;
   }
 
-  if (path.startsWith('/api/content/')) {
+  const normalized = normalizeMutationPath(path);
+
+  if (normalized.startsWith('/api/content/')) {
     return true;
   }
 
-  if (path.startsWith('/api/sponsorship/')) {
+  if (normalized.startsWith('/api/sponsorship/')) {
     return true;
   }
 
-  if (path.startsWith('/api/calendar/')) {
+  if (normalized.startsWith('/api/calendar/')) {
     return true;
   }
 
-  if (path === '/api/events' || /^\/api\/events\/\d+/.test(path)) {
+  if (normalized === '/api/events' || /^\/api\/events\/\d+/.test(normalized)) {
     return true;
   }
 
-  if (path === '/api/config' || path.startsWith('/api/config/')) {
+  if (normalized === '/api/config' || normalized.startsWith('/api/config/')) {
     return true;
   }
 
-  if (path === '/api/governance/settings') {
+  if (normalized === '/api/governance/settings') {
     return true;
   }
 
@@ -38,12 +46,14 @@ function pathMatchesPublicBootstrapMutation(path: string, method: string): boole
 export function maybeInvalidatePublicBootstrapCache(request: {
   method: string;
   url: string;
+  originalUrl?: string;
+  raw?: { url?: string };
 }, statusCode: number): void {
   if (statusCode < 200 || statusCode >= 300) {
     return;
   }
 
-  const path = request.url.split('?')[0] ?? '';
+  const path = normalizeMutationPath(request.originalUrl ?? request.raw?.url ?? request.url);
   if (!pathMatchesPublicBootstrapMutation(path, request.method)) {
     return;
   }

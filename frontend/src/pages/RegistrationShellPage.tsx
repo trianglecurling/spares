@@ -79,7 +79,9 @@ import {
 import {
   nextStepFor,
   parseRegistrationResumePointer,
+  guestApiMembershipChoice,
   membershipNeedsSabbaticalStep,
+  membershipSkipsLeaguePlay,
   experienceSkipsIcePrivilegesStep,
   shouldRecommendSaturdayInstructional,
   resolvePostShellResumeStepFromPayment,
@@ -341,7 +343,8 @@ type LocalRegistrationDraftV1 = {
   guardian: { firstName: string; lastName: string; email: string; phone: string };
   nameTagName: string;
   nameTagIncludePronouns: boolean | null;
-  membershipChoice: 'regular' | 'social' | null;
+  membershipChoice: 'regular' | 'social' | 'junior_recreational' | null;
+  juniorAssistancePercent: '0' | '25' | '50' | '75';
   usaCurlingMembershipOptIn: boolean;
   uswcaMembershipOptIn: boolean;
   basicIcePrivileges: boolean;
@@ -805,6 +808,7 @@ function buildGuestDraftBase(
     nameTagName: partial.nameTagName ?? '',
     nameTagIncludePronouns: partial.nameTagIncludePronouns ?? null,
     membershipChoice: partial.membershipChoice ?? null,
+    juniorAssistancePercent: partial.juniorAssistancePercent ?? '0',
     usaCurlingMembershipOptIn: partial.usaCurlingMembershipOptIn ?? defaultUsaCurlingMembershipOptIn(),
     uswcaMembershipOptIn:
       partial.uswcaMembershipOptIn ?? defaultUswcaMembershipOptIn(partial.demographics?.preferredPronouns),
@@ -1342,6 +1346,7 @@ export default function RegistrationShellPage() {
     setNameTagName(draft.nameTagName || '');
     setNameTagIncludePronouns(draft.nameTagIncludePronouns ?? null);
     setMembershipChoice(draft.membershipChoice);
+    setJuniorAssistancePercent(draft.juniorAssistancePercent ?? '0');
     setUsaCurlingMembershipOptIn(
       typeof draft.usaCurlingMembershipOptIn === 'boolean'
         ? draft.usaCurlingMembershipOptIn
@@ -1392,9 +1397,8 @@ export default function RegistrationShellPage() {
           nameTagName: nameTagNameRef.current,
           nameTagIncludePronouns: nameTagIncludePronounsRef.current,
           membershipChoice:
-            membershipChoice === 'junior_recreational' || membershipChoice === 'none' || membershipChoice == null
-              ? null
-              : membershipChoice,
+            membershipChoice === 'none' || membershipChoice == null ? null : membershipChoice,
+          juniorAssistancePercent,
           usaCurlingMembershipOptIn,
           uswcaMembershipOptIn,
           basicIcePrivileges,
@@ -1419,6 +1423,7 @@ export default function RegistrationShellPage() {
       sameEmail,
       guardian,
       membershipChoice,
+      juniorAssistancePercent,
       usaCurlingMembershipOptIn,
       uswcaMembershipOptIn,
       basicIcePrivileges,
@@ -2009,7 +2014,7 @@ export default function RegistrationShellPage() {
         seasonId: windowState.season.id,
         sessionId: windowState.session.id,
         curlerDateOfBirth: registeringCurlerDateOfBirth,
-        membershipChoice: membershipChoice === 'social' ? 'social' : 'regular',
+        membershipChoice: guestApiMembershipChoice(membershipChoice),
         basicIcePrivileges,
         studentDiscountClaimed,
         studentInstitution: studentInstitution || null,
@@ -2023,8 +2028,8 @@ export default function RegistrationShellPage() {
         uswcaMembershipOptIn: membershipAppliesParentAssociations(membershipChoice)
           ? uswcaMembershipOptIn
           : null,
-        desiredLeagueCount: saved?.desiredLeagueCount ?? null,
-        priorities: saved?.priorities ?? [],
+        desiredLeagueCount: membershipSkipsLeaguePlay(membershipChoice) ? null : saved?.desiredLeagueCount ?? null,
+        priorities: membershipSkipsLeaguePlay(membershipChoice) ? [] : saved?.priorities ?? [],
       })
       .then((response) => {
         if (canceled) return;
@@ -2083,7 +2088,7 @@ export default function RegistrationShellPage() {
           sessionId: windowState.session.id,
           curlerDateOfBirth: registeringCurlerDateOfBirth,
           // Preview only; UI membership choice stays unselected until the curler picks one.
-          membershipChoice: membershipChoice === 'social' ? 'social' : 'regular',
+          membershipChoice: guestApiMembershipChoice(membershipChoice),
           basicIcePrivileges,
           studentDiscountClaimed,
           studentInstitution: studentInstitution || null,
@@ -2097,9 +2102,14 @@ export default function RegistrationShellPage() {
           uswcaMembershipOptIn: membershipAppliesParentAssociations(membershipChoice)
             ? uswcaMembershipOptIn
             : null,
-          desiredLeagueCount:
-            guestLeagueSelectionRef.current?.desiredLeagueCount ?? leaguePayload?.desiredLeagueCount ?? null,
-          priorities: guestLeagueSelectionRef.current?.priorities ?? leaguePayload?.priorities ?? [],
+          juniorAssistancePercent:
+            membershipChoice === 'junior_recreational' ? Number(juniorAssistancePercent) : 0,
+          desiredLeagueCount: membershipSkipsLeaguePlay(membershipChoice)
+            ? null
+            : guestLeagueSelectionRef.current?.desiredLeagueCount ?? leaguePayload?.desiredLeagueCount ?? null,
+          priorities: membershipSkipsLeaguePlay(membershipChoice)
+            ? []
+            : guestLeagueSelectionRef.current?.priorities ?? leaguePayload?.priorities ?? [],
         });
         if (!canceled) {
           setMembershipPayment(data);
@@ -2122,6 +2132,7 @@ export default function RegistrationShellPage() {
     windowState,
     registeringCurlerDateOfBirth,
     membershipChoice,
+    juniorAssistancePercent,
     basicIcePrivileges,
     studentDiscountClaimed,
     studentInstitution,
@@ -3046,7 +3057,7 @@ export default function RegistrationShellPage() {
         navigate(
           goToSabbaticalStep
             ? '/registration/league-priority'
-            : selectedMembership === 'social' || selectedMembership === 'junior_recreational'
+            : membershipSkipsLeaguePlay(selectedMembership)
               ? '/registration/review'
               : `/registration/${stepAfterDiscounts(paymentPayload)}`,
         );
@@ -3056,12 +3067,11 @@ export default function RegistrationShellPage() {
           noMembershipPathActiveRef.current = false;
         }
       } else {
-        const guestNextStep =
-          selectedMembership === 'social'
-            ? 'review'
-            : isSelfReportedExperienceType(experienceChoice) || !membershipPayment
-              ? 'experience'
-              : stepAfterDiscounts(membershipPayment);
+        const guestNextStep = membershipSkipsLeaguePlay(selectedMembership)
+          ? 'review'
+          : isSelfReportedExperienceType(experienceChoice) || !membershipPayment
+            ? 'experience'
+            : stepAfterDiscounts(membershipPayment);
         persistGuestDraft(guestNextStep);
         navigate(`/registration/${guestNextStep}`);
       }
@@ -3398,7 +3408,7 @@ export default function RegistrationShellPage() {
             nameTagIncludePronouns,
           ),
           guardian: isMinorDate(registeringCurlerDateOfBirth || '') ? guardian : undefined,
-          membershipChoice: membershipChoice === 'social' ? 'social' : 'regular',
+          membershipChoice: guestApiMembershipChoice(membershipChoice),
           basicIcePrivileges,
           icePrivilegesChoice:
             icePrivilegesChoice ?? (basicIcePrivileges ? 'basic_ice' : skipsIcePrivileges ? 'league_play' : undefined),
@@ -3414,16 +3424,16 @@ export default function RegistrationShellPage() {
           uswcaMembershipOptIn: membershipAppliesParentAssociations(membershipChoice)
             ? uswcaMembershipOptIn
             : undefined,
+          juniorAssistancePercent:
+            membershipChoice === 'junior_recreational' ? Number(juniorAssistancePercent) : 0,
           payLater: options?.payLater ?? false,
           membershipCommitteeComments: membershipCommitteeComments.trim() || null,
-          desiredLeagueCount:
-            membershipChoice === 'social'
-              ? null
-              : guestLeagueSelectionRef.current?.desiredLeagueCount ?? leaguePayload?.desiredLeagueCount ?? null,
-          priorities:
-            membershipChoice === 'social'
-              ? []
-              : guestLeagueSelectionRef.current?.priorities ?? leaguePayload?.priorities ?? [],
+          desiredLeagueCount: membershipSkipsLeaguePlay(membershipChoice)
+            ? null
+            : guestLeagueSelectionRef.current?.desiredLeagueCount ?? leaguePayload?.desiredLeagueCount ?? null,
+          priorities: membershipSkipsLeaguePlay(membershipChoice)
+            ? []
+            : guestLeagueSelectionRef.current?.priorities ?? leaguePayload?.priorities ?? [],
           basicIceFallbackInterest: leaguePayload?.basicIceFallbackInterest ?? null,
         });
         rememberRegistrationCurlerNameForSuccess(data.registrationId, registeringCurlerName);
@@ -3610,7 +3620,7 @@ export default function RegistrationShellPage() {
             onClick: () => navigateRegistrationBack('/registration/league-priority'),
           };
         }
-        if (membershipOption === 'social' || membershipOption === 'junior_recreational') {
+        if (membershipSkipsLeaguePlay(membershipOption)) {
           return { label: 'Back', onClick: () => navigateRegistrationBack('/registration/membership') };
         }
         const iceChoice = membershipPayment?.icePrivilegesChoice ?? icePrivilegesChoice;

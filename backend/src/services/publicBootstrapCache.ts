@@ -159,7 +159,8 @@ async function rebuildCaches(): Promise<void> {
 }
 
 export function getPublicBootstrapCacheEtag(includeHome: boolean): string {
-  const entry = includeHome ? homeCache : shellCache;
+  const entry =
+    (includeHome ? homeCache : shellCache) ?? (includeHome ? staleHomeCache : staleShellCache);
   return `"bootstrap-${entry?.generation ?? 0}"`;
 }
 
@@ -211,21 +212,15 @@ export async function getCachedPublicBootstrap(includeHome: boolean): Promise<Pu
   }
 
   const stale = includeHome ? staleHomeCache : staleShellCache;
-  if (stale && rebuildPromise) {
-    return stale.payload;
-  }
-
-  if (rebuildPromise) {
-    await rebuildPromise;
-    const rebuilt = includeHome ? homeCache : shellCache;
-    if (rebuilt) return rebuilt.payload;
+  try {
+    await warmPublicBootstrapCache();
+  } catch {
     if (stale) return stale.payload;
-    throw new Error('Public bootstrap cache unavailable after rebuild');
+    throw new Error('Public bootstrap cache unavailable');
   }
 
-  await warmPublicBootstrapCache();
-  const built = includeHome ? homeCache : shellCache;
-  if (built) return built.payload;
+  const rebuilt = includeHome ? homeCache : shellCache;
+  if (rebuilt) return rebuilt.payload;
   if (stale) return stale.payload;
   throw new Error('Public bootstrap cache unavailable');
 }

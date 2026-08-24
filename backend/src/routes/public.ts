@@ -201,13 +201,14 @@ export async function publicRoutes(fastify: FastifyInstance) {
   // GET /public/bootstrap?includeHome=true - Shared payload for public shell (+ optional homepage content)
   fastify.get<{ Querystring: { includeHome?: string } }>('/public/bootstrap', async (request, reply) => {
     const includeHome = request.query.includeHome === 'true' || request.query.includeHome === '1';
+    const payload = await getCachedPublicBootstrap(includeHome);
     const etag = getPublicBootstrapCacheEtag(includeHome);
     reply.header('Cache-Control', 'private, max-age=0, must-revalidate');
     reply.header('ETag', etag);
     if (request.headers['if-none-match'] === etag) {
       return reply.code(304).send();
     }
-    return getCachedPublicBootstrap(includeHome);
+    return payload;
   });
 
   // GET /public/home - Homepage data

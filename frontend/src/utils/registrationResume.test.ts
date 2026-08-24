@@ -2,7 +2,9 @@ import { describe, expect, test } from 'bun:test';
 import {
   getRegistrationStartScreenMode,
   isDraftRegistrationResumeStatus,
+  guestApiMembershipChoice,
   membershipNeedsSabbaticalStep,
+  membershipSkipsLeaguePlay,
   experienceSkipsIcePrivilegesStep,
   shouldRecommendSaturdayInstructional,
   nextStepFor,
@@ -326,5 +328,21 @@ describe('registration resume targeting', () => {
       membershipNeedsSabbaticalStep({ membershipOption: 'regular', noMembershipEligible: true }),
     ).toBe(false);
     expect(membershipNeedsSabbaticalStep({ membershipOption: 'junior_recreational' })).toBe(false);
+  });
+
+  test('membershipSkipsLeaguePlay covers social and Junior Recreational only', () => {
+    expect(membershipSkipsLeaguePlay('social')).toBe(true);
+    expect(membershipSkipsLeaguePlay('junior_recreational')).toBe(true);
+    expect(membershipSkipsLeaguePlay('regular')).toBe(false);
+    expect(membershipSkipsLeaguePlay('none')).toBe(false);
+    expect(membershipSkipsLeaguePlay('regular_spare_only')).toBe(false);
+  });
+
+  test('guestApiMembershipChoice keeps Junior Recreational instead of coercing to regular', () => {
+    expect(guestApiMembershipChoice('junior_recreational')).toBe('junior_recreational');
+    expect(guestApiMembershipChoice('social')).toBe('social');
+    expect(guestApiMembershipChoice('regular')).toBe('regular');
+    expect(guestApiMembershipChoice('none')).toBe('regular');
+    expect(guestApiMembershipChoice(null)).toBe('regular');
   });
 });

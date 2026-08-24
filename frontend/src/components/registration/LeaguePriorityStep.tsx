@@ -610,6 +610,7 @@ export default function LeaguePriorityStep({
       priorSeasonLeagueIds: payload?.priorSeasonLeagueIds ?? [],
       priorities,
       priorLeagueDecisions,
+      leagues,
     });
     if (undecided.length > 0) {
       const name = leagueById.get(undecided[0])?.name ?? 'a league you played last session';

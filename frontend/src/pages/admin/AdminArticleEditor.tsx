@@ -16,6 +16,7 @@ import FormCheckbox from '../../components/FormCheckbox';
 import FormField from '../../components/FormField';
 import Modal from '../../components/Modal';
 import { storeArticleDraftPreview } from '../../utils/articleDraftPreviewSession';
+import { notifyPublicBootstrapChanged } from '../../utils/publicBootstrapClient';
 import {
   buildArticleHtmlContentFromMarkdown,
   isArticleHtmlContentEmpty,
@@ -398,10 +399,12 @@ export default function AdminArticleEditor() {
       if (isNew) {
         const res = await api.post('/content/articles', payload);
         showAlert('Article created', 'success');
+        notifyPublicBootstrapChanged();
         navigate(`/admin/content/articles/${res.data.id}`, { replace: true });
       } else {
         await api.patch(`/content/articles/${id}`, payload);
         showAlert('Article updated', 'success');
+        notifyPublicBootstrapChanged();
         const articleId = Number.parseInt(id!, 10);
         if (Number.isFinite(articleId)) {
           await loadVersions(articleId);
@@ -476,6 +479,7 @@ export default function AdminArticleEditor() {
       await loadVersions(articleId);
       setSaveRevisionNote('');
       setSaveSmallEdit(false);
+      notifyPublicBootstrapChanged();
       showAlert(`Restored "${revisionLabel}"`, 'success');
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;

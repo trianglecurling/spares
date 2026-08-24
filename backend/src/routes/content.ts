@@ -11,6 +11,7 @@ import {
 import { generateArticleCss } from '../utils/generateArticleCss.js';
 import type { Member } from '../types.js';
 import { markSearchIndexDirty } from '../search/searchIndexInvalidation.js';
+import { invalidatePublicBootstrapCache } from '../services/publicBootstrapCache.js';
 import { listMailingLists, getMailingListById } from '../domains/content/mailingLists.js';
 import {
   assertDashboardSectionIdsExist,
@@ -25,6 +26,11 @@ import {
 } from '../domains/content/dashboardSections.js';
 import { isEventOwner, listOwnedEventIds } from '../services/eventService.js';
 import { listManagedProgramIds } from '../services/volunteeringService.js';
+
+function markPublicArticleCachesDirty(): void {
+  markSearchIndexDirty();
+  invalidatePublicBootstrapCache('article');
+}
 
 async function ensureGeneratedCss(content: string, contentType: string): Promise<string> {
   if (contentType !== 'html') return content;
@@ -774,7 +780,7 @@ export async function contentRoutes(fastify: FastifyInstance) {
           .where(eq(schema.events.id, linkEventId));
       }
     }
-    markSearchIndexDirty();
+    markPublicArticleCachesDirty();
     return {
       id: row!.id,
       title: row!.title,
@@ -996,7 +1002,7 @@ export async function contentRoutes(fastify: FastifyInstance) {
         .limit(1);
 
       if (!row) return reply.code(404).send({ error: 'Article not found' });
-      markSearchIndexDirty();
+      markPublicArticleCachesDirty();
       return {
         id: row.id,
         title: row.title,
@@ -1147,7 +1153,7 @@ export async function contentRoutes(fastify: FastifyInstance) {
       .where(eq(schema.articles.id, id))
       .limit(1);
     if (!row) return reply.code(404).send({ error: 'Article not found' });
-    markSearchIndexDirty();
+    markPublicArticleCachesDirty();
     return {
       id: row.id,
       title: row.title,
@@ -1171,7 +1177,7 @@ export async function contentRoutes(fastify: FastifyInstance) {
       .where(eq(schema.articles.id, id))
       .returning({ id: schema.articles.id });
     if (deleted.length === 0) return reply.code(404).send({ error: 'Article not found' });
-    markSearchIndexDirty();
+    markPublicArticleCachesDirty();
     return { success: true };
   });
 

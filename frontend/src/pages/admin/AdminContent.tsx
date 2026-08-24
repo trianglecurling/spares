@@ -758,6 +758,7 @@ export default function AdminContent() {
     try {
       await api.patch(`/content/articles/${articleId}`, { featured });
       await loadContentData();
+      notifyPublicBootstrapChanged();
       if (!featured) {
         showAlert('Featured designation removed', 'success');
       }
@@ -776,6 +777,7 @@ export default function AdminContent() {
       await api.patch('/content/homepage/featured-articles/reorder', {
         ids: reordered.map((a) => a.id),
       });
+      notifyPublicBootstrapChanged();
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       showAlert(msg || 'Failed to reorder featured articles', 'error');

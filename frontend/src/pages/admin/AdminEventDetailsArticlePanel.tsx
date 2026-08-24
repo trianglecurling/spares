@@ -15,6 +15,7 @@ import FormField from '../../components/FormField';
 import Modal from '../../components/Modal';
 import InlineStateMessage from '../../components/InlineStateMessage';
 import { storeArticleDraftPreview } from '../../utils/articleDraftPreviewSession';
+import { notifyPublicBootstrapChanged } from '../../utils/publicBootstrapClient';
 import {
   buildArticleHtmlContentFromMarkdown,
   isArticleHtmlContentEmpty,
@@ -297,6 +298,7 @@ export default function AdminEventDetailsArticlePanel({
           };
       await api.patch(`/content/articles/${articleId}`, payload);
       showAlert('Event page content updated', 'success');
+      notifyPublicBootstrapChanged();
       await loadVersions(articleId);
       savedSnapshotRef.current = JSON.stringify({
         title: form.title,
@@ -373,6 +375,7 @@ export default function AdminEventDetailsArticlePanel({
       await loadVersions(articleId);
       setSaveRevisionNote('');
       setSaveSmallEdit(false);
+      notifyPublicBootstrapChanged();
       showAlert(`Restored "${revisionLabel}"`, 'success');
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;

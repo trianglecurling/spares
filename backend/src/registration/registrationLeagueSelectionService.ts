@@ -327,11 +327,13 @@ export async function getGuestLeagueCatalog(
   },
 ) {
   const base = await buildGuestRegistrationContext(input, { includeSessionLeagues: true });
-  const desiredLeagueCount = input.desiredLeagueCount ?? null;
+  const skipLeaguePlay =
+    input.membershipChoice === 'social' || input.membershipChoice === 'junior_recreational';
+  const desiredLeagueCount = skipLeaguePlay ? null : input.desiredLeagueCount ?? null;
   const context: RegistrationContext = {
     ...base,
     desiredLeagueCount,
-    priorities: input.priorities ?? [],
+    priorities: skipLeaguePlay ? [] : input.priorities ?? [],
   };
   return catalogPayloadFromContext(context, {
     desiredLeagueCount,
