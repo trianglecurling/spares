@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { buildPublicLeagueTypeText, type PublicLeagueFormationInput } from './publicLeagueDisplay.js';
+import {
+  buildPublicLeagueCostText,
+  buildPublicLeagueTypeText,
+  type PublicLeagueFormationInput,
+} from './publicLeagueDisplay.js';
 
 function league(overrides: Partial<PublicLeagueFormationInput> = {}): PublicLeagueFormationInput {
   return {
@@ -46,5 +50,21 @@ describe('buildPublicLeagueTypeText', () => {
         })
       )
     ).toBe('Instructional program. Ages 18 and up. Curlers under 2 years of experience only.');
+  });
+});
+
+describe('buildPublicLeagueCostText', () => {
+  test('shows only the fee when regular membership is not required', () => {
+    expect(buildPublicLeagueCostText(12500, false)).toBe('$125.00');
+    expect(buildPublicLeagueCostText(0, false)).toBe('Free with basic ice privileges');
+  });
+
+  test('notes when a regular membership is required', () => {
+    expect(buildPublicLeagueCostText(12500, true)).toBe(
+      '$125.00 (requires a regular membership)'
+    );
+    expect(buildPublicLeagueCostText(0, true)).toBe(
+      'Free with basic ice privileges (requires a regular membership)'
+    );
   });
 });

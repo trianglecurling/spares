@@ -191,6 +191,7 @@ export async function getPublicLeaguesPage(sessionId?: number | null): Promise<P
       is_play_in_based?: number;
       public_notes?: string | null;
       team_formation?: 'coordinator' | 'skips_draft';
+      requires_club_membership?: number;
     };
 
     const drawTimes = drawTimesByLeagueId.get(league.id) ?? [];
@@ -229,7 +230,10 @@ export async function getPublicLeaguesPage(sessionId?: number | null): Promise<P
       }),
       drawTimesText: drawTimes.map(formatPublicDrawTime).join(' and '),
       coordinators: coordinatorsByLeagueId.get(league.id) ?? [],
-      costText: buildPublicLeagueCostText(registrationFeeMinor),
+      costText: buildPublicLeagueCostText(
+        registrationFeeMinor,
+        toBool(row.requires_club_membership ?? 1)
+      ),
       publicNotes: row.public_notes?.trim() || null,
     };
   });

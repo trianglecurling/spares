@@ -132,9 +132,14 @@ export function formatPublicDrawTime(time: string): string {
   return `${displayHour}:${minutes} ${ampm}`;
 }
 
-export function buildPublicLeagueCostText(registrationFeeMinor: number): string {
-  if (registrationFeeMinor <= 0) {
-    return 'Free with basic ice privileges';
-  }
-  return `$${(registrationFeeMinor / 100).toFixed(2)}`;
+export function buildPublicLeagueCostText(
+  registrationFeeMinor: number,
+  requiresClubMembership = false
+): string {
+  const cost =
+    registrationFeeMinor <= 0
+      ? 'Free with basic ice privileges'
+      : `$${(registrationFeeMinor / 100).toFixed(2)}`;
+  if (!requiresClubMembership) return cost;
+  return `${cost} (requires a regular membership)`;
 }
