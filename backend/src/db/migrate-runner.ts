@@ -256,5 +256,6 @@ export async function runDrizzleMigrations(config: DatabaseConfig): Promise<void
 
   await baselineExistingPostgresDatabaseIfNeeded();
   await applyPendingPostgresMigrations();
+  console.log('Running post-migration data checks...');
   await restoreFalselyCancelledEmptyPriorityRegistrations('postgres');
 }

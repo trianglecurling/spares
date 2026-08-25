@@ -1,5 +1,5 @@
 import { getDatabaseConfig as getDbConfigFromFile, DatabaseConfig } from './config.js';
-import { getDrizzleDb, resetDrizzleDb } from './drizzle-db.js';
+import { getDrizzleDb, resetDrizzleDb, closeDrizzleDb } from './drizzle-db.js';
 import { runDatabaseBootstrap } from './bootstrap.js';
 import { runDrizzleMigrations } from './migrate-runner.js';
 import { ensureRegistrationPriceDiscountSettingsTablesExist } from './registrationSchemaBootstrap.js';
@@ -123,8 +123,8 @@ export async function testDatabaseConnection(config: DatabaseConfig): Promise<vo
   }
 }
 
-export function closeDatabase(): void | Promise<void> {
-  resetDrizzleDb();
+export async function closeDatabase(): Promise<void> {
+  await closeDrizzleDb();
 }
 
 export async function dbExec(sqlStatement: string): Promise<void> {

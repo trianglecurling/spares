@@ -1,4 +1,4 @@
-import { initializeDatabase } from '../db/index.js';
+import { initializeDatabase, closeDatabase } from '../db/index.js';
 import { getDatabaseConfig } from '../db/config.js';
 
 async function main() {
@@ -11,6 +11,7 @@ async function main() {
   // Root `bun run db:migrate` runs this script: Drizzle SQL migrations, then idempotent seeds.
   await initializeDatabase(dbConfig);
   console.log('Database migrations and bootstrap completed successfully.');
+  await closeDatabase();
 }
 
 main().catch((error) => {

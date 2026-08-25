@@ -340,6 +340,7 @@ async function runRegistrationBootstrap(adapter: DatabaseAdapter): Promise<void>
 /** Idempotent seeds and additive registration helpers after Drizzle migrations. */
 export async function runDatabaseBootstrap(config: DatabaseConfig): Promise<void> {
   const isPostgres = config.type === 'postgres';
+  console.log('Running database bootstrap...');
 
   await seedRbacRolesAndScopes(isPostgres);
   await seedMemberRoleAssignmentsFromLegacyFlags(isPostgres);

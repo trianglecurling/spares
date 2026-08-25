@@ -137,6 +137,8 @@ type DrizzleSchema = PgSchema;
 
 let dbInstance: DrizzleDb | null = null;
 let schema: DrizzleSchema | null = null;
+let sqliteClient: Database | null = null;
+let pgPool: Pool | null = null;
 
 export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
   if (dbInstance && schema) {
@@ -153,7 +155,8 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
     const sqlite = new Database(dbPath);
     sqlite.run('PRAGMA journal_mode = WAL;');
     sqlite.run('PRAGMA foreign_keys = ON;');
-    
+    sqliteClient = sqlite;
+
     dbInstance = drizzle({ client: sqlite }) as unknown as DrizzleDb;
     schema = {
       members: sqliteSchema.membersSqlite,
@@ -293,7 +296,8 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       password: config.postgres.password,
       ssl: config.postgres.ssl ? { rejectUnauthorized: false } : false,
     });
-    
+    pgPool = pool;
+
     dbInstance = drizzlePg(pool);
     schema = {
       members: pgSchema.membersPg,
@@ -428,7 +432,20 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
 }
 
 export function resetDrizzleDb() {
+  void closeDrizzleDb();
+}
+
+/** Close the SQLite handle or Postgres pool so CLI scripts can exit. */
+export async function closeDrizzleDb(): Promise<void> {
+  const pool = pgPool;
+  const sqlite = sqliteClient;
+  pgPool = null;
+  sqliteClient = null;
   dbInstance = null;
   schema = null;
+  sqlite?.close();
+  if (pool) {
+    await pool.end();
+  }
 }
 
