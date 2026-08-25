@@ -21,6 +21,7 @@ import {
   type PlayInTeamForEvaluation,
 } from './playInEntryService.js';
 import { invalidatePlayInEvaluationCache } from './playInEvaluationCache.js';
+import { playInDraftJoinsIncompleteTeam } from './leaguePriorityRules.js';
 
 export class LeagueEntryValidationError extends Error {
   details: Record<string, string>;
@@ -105,6 +106,8 @@ export async function loadPlayInEntryContextsForRegistration(input: {
       onExistingTeam: summary.onExistingTeam,
       existingTeamId: summary.existingTeam?.id ?? null,
       committedOtherMemberIds: summary.committedOtherMemberIds,
+      committedOtherMemberTeams: summary.committedOtherMemberTeams,
+      teamSize: summary.teamSize,
       guaranteed: summary.guaranteed,
     };
   }
@@ -491,14 +494,14 @@ function findIncompleteEntryTeamCoveredByDraft(input: {
   draftMemberIds: Set<number>;
   teamSize: number;
 }): (typeof input.teams)[number] | null {
-  const candidates = input.teams.filter((team) => {
-    if (team.members.length >= input.teamSize) return false;
-    const accountIds = team.members
-      .map((member) => member.member_id)
-      .filter((id): id is number => id != null);
-    if (accountIds.length === 0) return false;
-    return accountIds.every((memberId) => input.draftMemberIds.has(memberId));
-  });
+  const candidates = input.teams.filter((team) =>
+    playInDraftJoinsIncompleteTeam({
+      teamSize: input.teamSize,
+      teamMemberCount: team.members.length,
+      teamMemberIds: team.members.map((member) => member.member_id),
+      draftMemberIds: input.draftMemberIds,
+    }),
+  );
   if (candidates.length === 0) return null;
   // Prefer the largest incomplete overlap so we extend the most complete declaration.
   return [...candidates].sort((left, right) => right.members.length - left.members.length)[0] ?? null;

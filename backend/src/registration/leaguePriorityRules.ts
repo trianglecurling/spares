@@ -70,6 +70,24 @@ export function expectedByotRosterSize(league: Pick<PriorityLeagueShape, 'format
   return null;
 }
 
+/**
+ * Whether a draft roster can join an existing incomplete play-in team: the team
+ * still has an open slot, and every account-linked member on that team is named
+ * in the draft (the registrant plus declared teammates).
+ */
+export function playInDraftJoinsIncompleteTeam(input: {
+  teamSize: number;
+  teamMemberCount: number;
+  teamMemberIds: Array<number | null | undefined>;
+  draftMemberIds: Iterable<number>;
+}): boolean {
+  if (input.teamSize <= 0 || input.teamMemberCount >= input.teamSize) return false;
+  const accountIds = input.teamMemberIds.filter((id): id is number => id != null);
+  if (accountIds.length === 0) return false;
+  const draft = input.draftMemberIds instanceof Set ? input.draftMemberIds : new Set(input.draftMemberIds);
+  return accountIds.every((id) => draft.has(id));
+}
+
 export function pendingRosterNames(text: string | null | undefined): string[] {
   return (text ?? '')
     .split(/[\n,;]+/)

@@ -15,6 +15,7 @@ import {
   leagueHasVacancies,
   omitLeaveBehindDecisionsForListedLeagues,
   omitLeaveBehindSelectionsForListedLeagues,
+  playInDraftJoinsIncompleteTeam,
   type PriorityLabelCandidate,
 } from './leaguePriorityRules.js';
 import { league, priority, registrationContext, selection } from './registrationTestFixtures.js';
@@ -67,9 +68,61 @@ function labelsFor(context: RegistrationContext): string[] {
   return evaluateLeaguePriorities(context).entries.map((entry) => entry.label);
 }
 
-function playInEntryContext(guaranteed: boolean, committedOtherMemberIds: number[] = []): PlayInEntryContext {
-  return { onExistingTeam: false, committedOtherMemberIds, guaranteed };
+function playInEntryContext(
+  guaranteed: boolean,
+  committedOtherMemberIds: number[] = [],
+  extras: Partial<PlayInEntryContext> = {},
+): PlayInEntryContext {
+  return { onExistingTeam: false, committedOtherMemberIds, guaranteed, ...extras };
 }
+
+function committedTeam(
+  teamId: number,
+  memberIds: number[],
+): PlayInEntryContext['committedOtherMemberTeams'] {
+  const members = memberIds.map((memberId) => ({
+    memberId,
+    memberName: `Member ${memberId}`,
+    pendingName: null,
+  }));
+  const team = { id: teamId, name: null, members };
+  return memberIds.map((memberId) => ({ memberId, team }));
+}
+
+describe('play-in join of incomplete teams', () => {
+  test('covers every account-linked member and still has an open slot', () => {
+    expect(
+      playInDraftJoinsIncompleteTeam({
+        teamSize: 4,
+        teamMemberCount: 3,
+        teamMemberIds: [21, 22, 23],
+        draftMemberIds: [20, 21, 22, 23],
+      }),
+    ).toBe(true);
+  });
+
+  test('rejects a full team even when the draft names every member', () => {
+    expect(
+      playInDraftJoinsIncompleteTeam({
+        teamSize: 4,
+        teamMemberCount: 4,
+        teamMemberIds: [21, 22, 23, 24],
+        draftMemberIds: [20, 21, 22, 23, 24],
+      }),
+    ).toBe(false);
+  });
+
+  test('rejects a draft that omits an existing teammate', () => {
+    expect(
+      playInDraftJoinsIncompleteTeam({
+        teamSize: 4,
+        teamMemberCount: 3,
+        teamMemberIds: [21, 22, 23],
+        draftMemberIds: [20, 21],
+      }),
+    ).toBe(false);
+  });
+});
 
 describe('league vacancies', () => {
   test('a league has vacancies only when the waitlist is shorter than open spots', () => {
@@ -754,6 +807,93 @@ describe('validation', () => {
         ],
         playInEntry: { 1: playInEntryContext(false, [21]) },
       }),
+      'play_in_teammate_already_committed',
+    );
+  });
+
+  test('a teammate on a full declared team stays rejected even when the team roster is known', () => {
+    const members = [21, 22, 23, 24];
+    expectBlocked(
+      contextWithLeagues([
+        standard(1, { name: 'Tuesday League', isPlayInBased: true, leagueType: 'bring_your_own_team', format: 'teams' }),
+      ], {
+        priorities: [
+          priority({ leagueId: 1, priorityRank: 1, teamRosterPlacements: [{ memberId: 21 }] }),
+        ],
+        playInEntry: {
+          1: playInEntryContext(false, members, {
+            teamSize: 4,
+            committedOtherMemberTeams: committedTeam(9, members),
+          }),
+        },
+      }),
+      'play_in_teammate_already_committed',
+    );
+  });
+
+  test('joining an incomplete declared play-in team is allowed when the draft covers that roster', () => {
+    const teammates = [21, 22, 23];
+    const context = contextWithLeagues(
+      [standard(1, { isPlayInBased: true, leagueType: 'bring_your_own_team', format: 'teams' })],
+      {
+        priorities: [
+          priority({
+            leagueId: 1,
+            priorityRank: 1,
+            teamRosterPlacements: teammates.map((memberId) => ({ memberId })),
+          }),
+        ],
+        playInEntry: {
+          1: playInEntryContext(false, teammates, {
+            teamSize: 4,
+            committedOtherMemberTeams: committedTeam(9, teammates),
+          }),
+        },
+      },
+    );
+    expect(validateLeaguePriorities(context).allowed).toBe(true);
+  });
+
+  test('joining a two-person incomplete play-in team is allowed', () => {
+    const teammates = [21, 22];
+    const context = contextWithLeagues(
+      [standard(1, { isPlayInBased: true, leagueType: 'bring_your_own_team', format: 'teams' })],
+      {
+        priorities: [
+          priority({
+            leagueId: 1,
+            priorityRank: 1,
+            teamRosterPlacements: teammates.map((memberId) => ({ memberId })),
+          }),
+        ],
+        playInEntry: {
+          1: playInEntryContext(false, teammates, {
+            teamSize: 4,
+            committedOtherMemberTeams: committedTeam(9, teammates),
+          }),
+        },
+      },
+    );
+    expect(validateLeaguePriorities(context).allowed).toBe(true);
+  });
+
+  test('naming only some members of an incomplete declared team is still rejected', () => {
+    const teammates = [21, 22, 23];
+    expectBlocked(
+      contextWithLeagues(
+        [standard(1, { isPlayInBased: true, leagueType: 'bring_your_own_team', format: 'teams' })],
+        {
+          priorities: [
+            priority({ leagueId: 1, priorityRank: 1, teamRosterPlacements: [{ memberId: 21 }] }),
+          ],
+          playInEntry: {
+            1: playInEntryContext(false, teammates, {
+              teamSize: 4,
+              committedOtherMemberTeams: committedTeam(9, teammates),
+            }),
+          },
+        },
+      ),
       'play_in_teammate_already_committed',
     );
   });

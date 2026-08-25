@@ -1,8 +1,14 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import FormField from '../FormField';
 import MemberMultiSelect from '../MemberMultiSelect';
 import { useAlert } from '../../contexts/AlertContext';
-import { playInCommittedMemberConflictMessage } from './RegistrationPlayInEntryPanel';
+import { useConfirm } from '../../contexts/ConfirmContext';
+import {
+  playInCommittedMemberConflictMessage,
+  playInEntryTeamIsJoinable,
+  playInJoinExistingTeamConfirmMessage,
+  playInJoinableTeamRosterUpdate,
+} from './RegistrationPlayInEntryPanel';
 import {
   expectedByotRosterSize,
   pendingRosterNames,
@@ -46,6 +52,8 @@ export default function PriorityRosterField({
   playInCommittedOtherMemberIds,
 }: Props) {
   const { showAlert } = useAlert();
+  const { confirm } = useConfirm();
+  const joinPromptInFlightRef = useRef(false);
   const expectedRosterSize = expectedByotRosterSize(league);
   const teammateCapacity = expectedRosterSize ? Math.max(expectedRosterSize - 1, 0) : undefined;
   const selectedMemberIds = useMemo(
@@ -64,28 +72,49 @@ export default function PriorityRosterField({
     return map;
   }, [playInCommittedOtherMemberIds, playInCommittedOtherMemberTeams]);
 
-  const updateMembers = (memberIds: number[]) => {
-    const alreadySelected = new Set(selectedMemberIds);
-    const allowed: number[] = [];
-    let conflictShown = false;
+  const memberDisplayName = (memberId: number, team: RegistrationPlayInCommittedOtherMemberTeam['team'] | null) =>
+    memberNameById.get(memberId) ??
+    team?.members.find((teamMember) => teamMember.memberId === memberId)?.memberName ??
+    'That member';
 
-    for (const memberId of memberIds) {
-      if (alreadySelected.has(memberId) || !committedOtherTeamByMemberId.has(memberId)) {
-        allowed.push(memberId);
-        continue;
+  const updateMembers = (memberIds: number[]) => {
+    if (joinPromptInFlightRef.current) return;
+    const alreadySelected = new Set(selectedMemberIds);
+    const newlyAddedCommittedId = memberIds.find(
+      (memberId) => !alreadySelected.has(memberId) && committedOtherTeamByMemberId.has(memberId),
+    );
+
+    if (newlyAddedCommittedId != null) {
+      const team = committedOtherTeamByMemberId.get(newlyAddedCommittedId) ?? null;
+      const memberName = memberDisplayName(newlyAddedCommittedId, team);
+      if (team && playInEntryTeamIsJoinable(team, expectedRosterSize)) {
+        joinPromptInFlightRef.current = true;
+        void confirm({
+          title: 'Join this team?',
+          message: playInJoinExistingTeamConfirmMessage({ memberName, team }),
+          confirmText: 'Yes',
+          cancelText: 'No',
+          variant: 'info',
+        })
+          .then((accepted) => {
+            if (!accepted) return;
+            onChange(playInJoinableTeamRosterUpdate({ team, registeringMemberId: registeringCurler.id }));
+          })
+          .finally(() => {
+            joinPromptInFlightRef.current = false;
+          });
+        return;
       }
-      if (!conflictShown) {
-        const team = committedOtherTeamByMemberId.get(memberId);
-        const memberName =
-          memberNameById.get(memberId) ??
-          team?.members.find((teamMember) => teamMember.memberId === memberId)?.memberName ??
-          'That member';
-        showAlert(playInCommittedMemberConflictMessage({ memberName, team }), 'warning', 'Already on another team');
-        conflictShown = true;
-      }
+      showAlert(playInCommittedMemberConflictMessage({ memberName, team }), 'warning', 'Already on another team');
+      onChange({
+        teamRosterPlacements: memberIds
+          .filter((memberId) => alreadySelected.has(memberId) || !committedOtherTeamByMemberId.has(memberId))
+          .map((memberId) => ({ memberId })),
+      });
+      return;
     }
 
-    onChange({ teamRosterPlacements: allowed.map((memberId) => ({ memberId })) });
+    onChange({ teamRosterPlacements: memberIds.map((memberId) => ({ memberId })) });
   };
 
   const removePendingName = useCallback(

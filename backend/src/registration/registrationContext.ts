@@ -122,6 +122,20 @@ export type JuniorAssistanceRequest = {
   status?: 'none' | 'pending' | 'approved' | 'partially_approved' | 'denied' | 'withdrawn';
 };
 
+/** Declared play-in team a selected teammate already belongs to. */
+export type PlayInCommittedOtherMemberTeam = {
+  memberId: number;
+  team: {
+    id: number;
+    name: string | null;
+    members: Array<{
+      memberId: number | null;
+      memberName: string | null;
+      pendingName: string | null;
+    }>;
+  };
+};
+
 /** Play-in (TLINE) entry state for a play-in based league the registrant selected. */
 export type PlayInEntryContext = {
   /** The registrant is already listed on a declared entry team for this league. */
@@ -129,6 +143,10 @@ export type PlayInEntryContext = {
   existingTeamId?: number | null;
   /** Members (other than the registrant) already committed to other active entry teams. */
   committedOtherMemberIds: number[];
+  /** Full roster for each committed other member, used to allow joining incomplete teams. */
+  committedOtherMemberTeams?: PlayInCommittedOtherMemberTeam[];
+  /** Expected roster size for this play-in league. */
+  teamSize?: number | null;
   /** The registrant's declared/drafted team is pessimistically guaranteed auto entry. */
   guaranteed: boolean;
 };

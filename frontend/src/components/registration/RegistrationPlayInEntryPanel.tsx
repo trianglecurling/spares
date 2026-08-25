@@ -38,7 +38,20 @@ export function playInEntryTeamMembersText(
     .join(', ');
 }
 
-/** Alert copy when a registrant tries to add someone already on another declared play-in team. */
+function playInTeamRosterLines(team?: {
+  members: Array<{
+    memberName: string | null;
+    pendingName: string | null;
+  }>;
+} | null): string[] {
+  return (team?.members ?? [])
+    .map((member) =>
+      member.pendingName ? `${member.pendingName} (not yet registered)` : member.memberName ?? '',
+    )
+    .filter(Boolean);
+}
+
+/** Alert copy when a registrant tries to add someone already on a full declared play-in team. */
 export function playInCommittedMemberConflictMessage(input: {
   memberName: string;
   team?: {
@@ -50,13 +63,62 @@ export function playInCommittedMemberConflictMessage(input: {
   } | null;
 }): string {
   const intro = `${input.memberName} is already on a different team for this league.`;
-  const rosterLines = (input.team?.members ?? [])
-    .map((member) =>
-      member.pendingName ? `${member.pendingName} (not yet registered)` : member.memberName ?? '',
-    )
-    .filter(Boolean);
+  const rosterLines = playInTeamRosterLines(input.team);
   if (rosterLines.length === 0) return intro;
   return `${intro}\n\nTeam roster:\n${rosterLines.join('\n')}`;
+}
+
+/** Confirm copy when a registrant can join an incomplete declared play-in team. */
+export function playInJoinExistingTeamConfirmMessage(input: {
+  memberName: string;
+  team?: {
+    members: Array<{
+      memberId?: number | null;
+      memberName: string | null;
+      pendingName: string | null;
+    }>;
+  } | null;
+}): string {
+  const intro = `${input.memberName} is already on a team. Would you like to join this team?`;
+  const rosterLines = playInTeamRosterLines(input.team);
+  if (rosterLines.length === 0) return intro;
+  return `${intro}\n\nTeam roster:\n${rosterLines.join('\n')}`;
+}
+
+export function playInEntryTeamIsJoinable(
+  team: { members: unknown[] } | null | undefined,
+  teamSize: number | null | undefined,
+): boolean {
+  return Boolean(team && teamSize != null && teamSize > 0 && team.members.length < teamSize);
+}
+
+/** Roster fields that declare joining an existing play-in team (registrant is the locked pill). */
+export function playInJoinableTeamRosterUpdate(input: {
+  team: {
+    members: Array<{
+      memberId?: number | null;
+      pendingName: string | null;
+    }>;
+  };
+  registeringMemberId: number | null;
+}): {
+  teamRosterPlacements: Array<{ memberId: number }>;
+  byotTeammateText: string | null;
+} {
+  const teamRosterPlacements: Array<{ memberId: number }> = [];
+  const pendingNames: string[] = [];
+  for (const member of input.team.members) {
+    if (member.memberId != null && member.memberId !== input.registeringMemberId) {
+      teamRosterPlacements.push({ memberId: member.memberId });
+      continue;
+    }
+    const pendingName = member.pendingName?.trim();
+    if (pendingName) pendingNames.push(pendingName);
+  }
+  return {
+    teamRosterPlacements,
+    byotTeammateText: pendingNames.length > 0 ? pendingNames.join('\n') : null,
+  };
 }
 
 /**

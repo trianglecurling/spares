@@ -28,6 +28,7 @@ import {
   MAX_PROTECTED_CLAIMS,
   MAX_SIMULTANEOUS_SABBATICALS,
   MIN_PLAY_IN_ROSTER_SIZE,
+  playInDraftJoinsIncompleteTeam,
   type LabeledPriorityEntry,
   type LeaguePriorityGuaranteeLabel,
   type PriorityLabelCandidate,
@@ -48,6 +49,7 @@ import {
   orderedPriorities,
   type LeagueConfig,
   type LeaguePriorityInput,
+  type PlayInEntryContext,
   type RegistrationContext,
   type RegistrationSelectionInput,
 } from './registrationContext.js';
@@ -227,6 +229,37 @@ function validateRanks(context: RegistrationContext, blockingErrors: DecisionMes
   }
 }
 
+function playInDraftJoinsCommittedIncompleteTeam(
+  context: RegistrationContext,
+  priority: LeaguePriorityInput,
+  entry: PlayInEntryContext,
+  expectedSize: number,
+): boolean {
+  const teamSize = entry.teamSize ?? expectedSize;
+  const teams = entry.committedOtherMemberTeams ?? [];
+  const committed = new Set(entry.committedOtherMemberIds);
+  const conflicting = (priority.teamRosterPlacements ?? []).filter((placement) =>
+    committed.has(placement.memberId),
+  );
+  const teamsById = new Map<number, (typeof teams)[number]['team']>();
+  for (const placement of conflicting) {
+    const match = teams.find((item) => item.memberId === placement.memberId);
+    if (!match) return false;
+    teamsById.set(match.team.id, match.team);
+  }
+  if (teamsById.size !== 1) return false;
+  const team = [...teamsById.values()][0];
+  if (!team) return false;
+  const draftMemberIds = new Set((priority.teamRosterPlacements ?? []).map((placement) => placement.memberId));
+  if (context.registrant.memberId != null) draftMemberIds.add(context.registrant.memberId);
+  return playInDraftJoinsIncompleteTeam({
+    teamSize,
+    teamMemberCount: team.members.length,
+    teamMemberIds: team.members.map((member) => member.memberId),
+    draftMemberIds,
+  });
+}
+
 function validateRoster(
   context: RegistrationContext,
   league: LeagueConfig,
@@ -273,7 +306,7 @@ function validateRoster(
       const conflicting = (priority.teamRosterPlacements ?? []).filter((placement) =>
         committed.has(placement.memberId),
       );
-      if (conflicting.length > 0) {
+      if (conflicting.length > 0 && !playInDraftJoinsCommittedIncompleteTeam(context, priority, entry, expectedSize)) {
         blockingErrors.push(
           blockingError(
             'play_in_teammate_already_committed',
