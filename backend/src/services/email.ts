@@ -9,6 +9,11 @@ import type { FormattedEventWhen } from '../utils/formatEventTimespans.js';
 import { formatDateInTimeZone, formatTimeInTimeZone } from '../utils/timeZone.js';
 import { consumeSendBudget, type SendBudgetKind } from '../utils/abuseProtection.js';
 import { logEvent } from './observability.js';
+import {
+  EXPENSE_STATUS_LABELS,
+  EXPENSE_TRIP_PURPOSE_LABELS,
+  FINANCE_CONTACT_EMAIL,
+} from './expenseReportConstants.js';
 
 let emailClient: EmailClient | null = null;
 let smtpTransporter: Transporter | null = null;
@@ -2196,4 +2201,141 @@ export async function sendVolunteerReminderEmail(input: {
     recipientName: input.recipientName,
   });
 }
+
+function formatExpenseMoney(amountMinor: number, currency = 'usd'): string {
+  const code = /^[a-z]{3}$/i.test(currency) ? currency.toUpperCase() : 'USD';
+  try {
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: code }).format(amountMinor / 100);
+  } catch {
+    return `${(amountMinor / 100).toFixed(2)} ${currency.toUpperCase()}`;
+  }
+}
+
+function expenseManageLinkSections(manageUrl?: string): { html: string; text: string } {
+  if (!manageUrl) return { html: '', text: '' };
+  return {
+    html: `<p><a href="${escapeHtmlEmail(manageUrl)}">View or update your expense report</a></p>
+    <p><strong>Important:</strong> Do not forward this email. Anyone with the manage link above can view or change your expense report.</p>`,
+    text: [
+      `View or update your expense report: ${manageUrl}`,
+      'Important: Do not forward this email. Anyone with the manage link above can view or change your expense report.',
+    ].join('\n'),
+  };
+}
+
+export async function sendExpenseReportConfirmationEmail(input: {
+  to: string;
+  recipientName: string;
+  clubName: string;
+  manageUrl: string;
+  report: {
+    kind: string;
+    status: string;
+    purpose?: string | null;
+    comments?: string | null;
+    requestedAmountMinor: number;
+    requestedCurrency: string;
+    committeeName?: string | null;
+    committeeCustom?: string | null;
+    activityDate?: string | null;
+    roundTripMiles?: number | null;
+    tripPurpose?: string | null;
+    receipts: Array<{ name: string; amountMinor: number; currency: string }>;
+  };
+}): Promise<void> {
+  const isMileage = input.report.kind === 'mileage';
+  const statusLabel = EXPENSE_STATUS_LABELS[input.report.status as keyof typeof EXPENSE_STATUS_LABELS] ?? input.report.status;
+  const amount = formatExpenseMoney(input.report.requestedAmountMinor, input.report.requestedCurrency);
+  const links = expenseManageLinkSections(input.manageUrl);
+  const policyHtml = isMileage
+    ? `<p>Review the <a href="${escapeHtmlEmail(`${config.frontendUrl.replace(/\/+$/, '')}/go/mileagepolicy`)}">mileage policy</a>.</p>`
+    : `<p>Review the <a href="${escapeHtmlEmail(`${config.frontendUrl.replace(/\/+$/, '')}/go/expensepolicy`)}">expense policy</a>.</p>`;
+  const policyText = isMileage
+    ? `Mileage policy: ${config.frontendUrl.replace(/\/+$/, '')}/go/mileagepolicy`
+    : `Expense policy: ${config.frontendUrl.replace(/\/+$/, '')}/go/expensepolicy`;
+
+  const committee = input.report.committeeCustom || input.report.committeeName;
+  const tripPurpose = input.report.tripPurpose
+    ? EXPENSE_TRIP_PURPOSE_LABELS[input.report.tripPurpose as keyof typeof EXPENSE_TRIP_PURPOSE_LABELS] ?? input.report.tripPurpose
+    : null;
+  const receiptLines = input.report.receipts
+    .map((receipt) => `${receipt.name}: ${formatExpenseMoney(receipt.amountMinor, receipt.currency)}`)
+    .join('<br>');
+
+  const detailHtml = isMileage
+    ? `<p><strong>Date:</strong> ${escapeHtmlEmail(input.report.activityDate ?? '')}</p>
+       <p><strong>Miles:</strong> ${escapeHtmlEmail(String(input.report.roundTripMiles ?? ''))}</p>
+       <p><strong>Purpose:</strong> ${escapeHtmlEmail(tripPurpose ?? '')}</p>`
+    : `<p><strong>Committee:</strong> ${escapeHtmlEmail(committee ?? '')}</p>
+       <p><strong>Purpose:</strong> ${escapeHtmlEmail(input.report.purpose ?? '')}</p>
+       ${receiptLines ? `<p><strong>Receipts:</strong><br>${receiptLines}</p>` : ''}`;
+
+  const htmlContent = `
+    <h2>Expense report received</h2>
+    <p>Hi ${escapeHtmlEmail(input.recipientName)},</p>
+    <p>We received your ${isMileage ? 'mileage' : 'expense'} reimbursement report for ${escapeHtmlEmail(input.clubName)}.</p>
+    <p><strong>Status:</strong> ${escapeHtmlEmail(statusLabel)}</p>
+    <p><strong>Amount requested:</strong> ${escapeHtmlEmail(amount)}</p>
+    ${detailHtml}
+    ${input.report.comments ? `<p><strong>Comments:</strong> ${escapeHtmlEmail(input.report.comments)}</p>` : ''}
+    ${policyHtml}
+    ${links.html}
+  `;
+
+  const textBody = [
+    'Expense report received',
+    '',
+    `Hi ${input.recipientName},`,
+    '',
+    `We received your ${isMileage ? 'mileage' : 'expense'} reimbursement report for ${input.clubName}.`,
+    `Status: ${statusLabel}`,
+    `Amount requested: ${amount}`,
+    isMileage ? `Date: ${input.report.activityDate ?? ''}` : `Committee: ${committee ?? ''}`,
+    isMileage ? `Miles: ${input.report.roundTripMiles ?? ''}` : `Purpose: ${input.report.purpose ?? ''}`,
+    input.report.comments ? `Comments: ${input.report.comments}` : null,
+    policyText,
+    links.text,
+  ].filter(Boolean).join('\n');
+
+  await sendEmail({
+    to: input.to,
+    subject: `${isMileage ? 'Mileage' : 'Expense'} report received`,
+    htmlContent,
+    textContent: textBody,
+    recipientName: input.recipientName,
+  });
+}
+
+export async function sendExpenseReportCheckMailedEmail(input: {
+  to: string;
+  recipientName: string;
+  manageUrl?: string;
+}): Promise<void> {
+  const links = expenseManageLinkSections(input.manageUrl);
+  const htmlContent = `
+    <h2>Reimbursement check mailed</h2>
+    <p>Hi ${escapeHtmlEmail(input.recipientName)},</p>
+    <p>Your reimbursement check has been mailed. Please allow 7–10 business days for delivery.</p>
+    <p>If you do not receive the check, contact <a href="mailto:${FINANCE_CONTACT_EMAIL}">${FINANCE_CONTACT_EMAIL}</a>.</p>
+    ${links.html}
+  `;
+  const textBody = [
+    'Reimbursement check mailed',
+    '',
+    `Hi ${input.recipientName},`,
+    '',
+    'Your reimbursement check has been mailed. Please allow 7–10 business days for delivery.',
+    `If you do not receive the check, contact ${FINANCE_CONTACT_EMAIL}.`,
+    links.text || null,
+  ].filter(Boolean).join('\n');
+
+  await sendEmail({
+    to: input.to,
+    subject: 'Your reimbursement check has been mailed',
+    htmlContent,
+    textContent: textBody,
+    recipientName: input.recipientName,
+  });
+}
+
 

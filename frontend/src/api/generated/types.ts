@@ -2604,6 +2604,506 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/public/expenses/form-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            committees?: {
+                                id?: number;
+                                name?: string;
+                            }[];
+                            clubName?: string;
+                            mileageRateCentsPerMile?: number;
+                            isClubCreditCardHolder?: boolean;
+                            submitterPrefill?: null | {
+                                name?: string;
+                                email?: null | string;
+                                phone?: null | string;
+                                mailingAddress?: null | {
+                                    addressLine1?: string;
+                                    addressLine2?: string;
+                                    city?: string;
+                                    state?: string;
+                                    country?: string;
+                                    postalCode?: string;
+                                };
+                            };
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/public/expenses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id?: number;
+                            kind?: string;
+                            status?: string;
+                            statusLabel?: string;
+                            memberId?: null | number;
+                            submitterName?: string;
+                            submitterEmail?: string;
+                            submitterPhone?: null | string;
+                            mailingAddress?: null | {
+                                addressLine1?: string;
+                                addressLine2?: string;
+                                city?: string;
+                                state?: string;
+                                country?: string;
+                                postalCode?: string;
+                            };
+                            committeeId?: null | number;
+                            committeeName?: null | string;
+                            committeeCustom?: null | string;
+                            purpose?: null | string;
+                            requestedAmountMinor?: number;
+                            requestedCurrency?: string;
+                            amountJustification?: null | string;
+                            usedClubCreditCard?: null | boolean;
+                            clubCreditCardOwnerMemberId?: null | number;
+                            clubCreditCardOwnerName?: null | string;
+                            comments?: null | string;
+                            activityDate?: null | string;
+                            fromKind?: null | string;
+                            fromOther?: null | string;
+                            toKind?: null | string;
+                            toOther?: null | string;
+                            roundTripMiles?: null | number;
+                            tripPurpose?: null | string;
+                            tripPurposeOther?: null | string;
+                            receipts?: {
+                                id?: number;
+                                name?: string;
+                                receiptDate?: string;
+                                amountMinor?: number;
+                                currency?: string;
+                                currencyOther?: null | string;
+                                includesDurableGood?: boolean;
+                                originalFilename?: string;
+                                mimeType?: string;
+                                byteSize?: number;
+                                sortOrder?: number;
+                            }[];
+                            submittedAt?: string;
+                            createdAt?: string;
+                            updatedAt?: string;
+                            canEdit?: boolean;
+                            statusChangedByName?: null | string;
+                            statusChangedAt?: null | string;
+                            lastUpdatedByName?: null | string;
+                            notes?: {
+                                id: number;
+                                authorName: string;
+                                body: string;
+                                createdAt: string;
+                            }[];
+                            changes?: {
+                                id: number;
+                                actorName: string;
+                                /** @enum {string} */
+                                kind: "fields" | "status";
+                                summary: string;
+                                details?: null | {
+                                    field: string;
+                                    from: string;
+                                    to: string;
+                                }[];
+                                createdAt: string;
+                            }[];
+                            manageUrl?: string;
+                            accessToken?: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/public/expenses/manage/{accessToken}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    accessToken: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id?: number;
+                            kind?: string;
+                            status?: string;
+                            statusLabel?: string;
+                            memberId?: null | number;
+                            submitterName?: string;
+                            submitterEmail?: string;
+                            submitterPhone?: null | string;
+                            mailingAddress?: null | {
+                                addressLine1?: string;
+                                addressLine2?: string;
+                                city?: string;
+                                state?: string;
+                                country?: string;
+                                postalCode?: string;
+                            };
+                            committeeId?: null | number;
+                            committeeName?: null | string;
+                            committeeCustom?: null | string;
+                            purpose?: null | string;
+                            requestedAmountMinor?: number;
+                            requestedCurrency?: string;
+                            amountJustification?: null | string;
+                            usedClubCreditCard?: null | boolean;
+                            clubCreditCardOwnerMemberId?: null | number;
+                            clubCreditCardOwnerName?: null | string;
+                            comments?: null | string;
+                            activityDate?: null | string;
+                            fromKind?: null | string;
+                            fromOther?: null | string;
+                            toKind?: null | string;
+                            toOther?: null | string;
+                            roundTripMiles?: null | number;
+                            tripPurpose?: null | string;
+                            tripPurposeOther?: null | string;
+                            receipts?: {
+                                id?: number;
+                                name?: string;
+                                receiptDate?: string;
+                                amountMinor?: number;
+                                currency?: string;
+                                currencyOther?: null | string;
+                                includesDurableGood?: boolean;
+                                originalFilename?: string;
+                                mimeType?: string;
+                                byteSize?: number;
+                                sortOrder?: number;
+                            }[];
+                            submittedAt?: string;
+                            createdAt?: string;
+                            updatedAt?: string;
+                            canEdit?: boolean;
+                            statusChangedByName?: null | string;
+                            statusChangedAt?: null | string;
+                            lastUpdatedByName?: null | string;
+                            notes?: {
+                                id: number;
+                                authorName: string;
+                                body: string;
+                                createdAt: string;
+                            }[];
+                            changes?: {
+                                id: number;
+                                actorName: string;
+                                /** @enum {string} */
+                                kind: "fields" | "status";
+                                summary: string;
+                                details?: null | {
+                                    field: string;
+                                    from: string;
+                                    to: string;
+                                }[];
+                                createdAt: string;
+                            }[];
+                            manageUrl?: string;
+                            accessToken?: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    accessToken: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id?: number;
+                            kind?: string;
+                            status?: string;
+                            statusLabel?: string;
+                            memberId?: null | number;
+                            submitterName?: string;
+                            submitterEmail?: string;
+                            submitterPhone?: null | string;
+                            mailingAddress?: null | {
+                                addressLine1?: string;
+                                addressLine2?: string;
+                                city?: string;
+                                state?: string;
+                                country?: string;
+                                postalCode?: string;
+                            };
+                            committeeId?: null | number;
+                            committeeName?: null | string;
+                            committeeCustom?: null | string;
+                            purpose?: null | string;
+                            requestedAmountMinor?: number;
+                            requestedCurrency?: string;
+                            amountJustification?: null | string;
+                            usedClubCreditCard?: null | boolean;
+                            clubCreditCardOwnerMemberId?: null | number;
+                            clubCreditCardOwnerName?: null | string;
+                            comments?: null | string;
+                            activityDate?: null | string;
+                            fromKind?: null | string;
+                            fromOther?: null | string;
+                            toKind?: null | string;
+                            toOther?: null | string;
+                            roundTripMiles?: null | number;
+                            tripPurpose?: null | string;
+                            tripPurposeOther?: null | string;
+                            receipts?: {
+                                id?: number;
+                                name?: string;
+                                receiptDate?: string;
+                                amountMinor?: number;
+                                currency?: string;
+                                currencyOther?: null | string;
+                                includesDurableGood?: boolean;
+                                originalFilename?: string;
+                                mimeType?: string;
+                                byteSize?: number;
+                                sortOrder?: number;
+                            }[];
+                            submittedAt?: string;
+                            createdAt?: string;
+                            updatedAt?: string;
+                            canEdit?: boolean;
+                            statusChangedByName?: null | string;
+                            statusChangedAt?: null | string;
+                            lastUpdatedByName?: null | string;
+                            notes?: {
+                                id: number;
+                                authorName: string;
+                                body: string;
+                                createdAt: string;
+                            }[];
+                            changes?: {
+                                id: number;
+                                actorName: string;
+                                /** @enum {string} */
+                                kind: "fields" | "status";
+                                summary: string;
+                                details?: null | {
+                                    field: string;
+                                    from: string;
+                                    to: string;
+                                }[];
+                                createdAt: string;
+                            }[];
+                            manageUrl?: string;
+                            accessToken?: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/public/expenses/manage/{accessToken}/receipts/{receiptId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    accessToken: string;
+                    receiptId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/public/search": {
         parameters: {
             query?: never;
@@ -20833,6 +21333,1156 @@ export interface paths {
                 };
             };
         };
+        trace?: never;
+    };
+    "/expenses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    page?: number;
+                    pageSize?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items: {
+                                id: number;
+                                kind: string;
+                                status: string;
+                                statusLabel: string;
+                                submitterName: string;
+                                submitterEmail: string;
+                                requestedAmountMinor: number;
+                                requestedCurrency: string;
+                                submittedAt: string;
+                            }[];
+                            page: number;
+                            pageSize: number;
+                            total: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/expenses/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id?: number;
+                            kind?: string;
+                            status?: string;
+                            statusLabel?: string;
+                            memberId?: null | number;
+                            submitterName?: string;
+                            submitterEmail?: string;
+                            submitterPhone?: null | string;
+                            mailingAddress?: null | {
+                                addressLine1?: string;
+                                addressLine2?: string;
+                                city?: string;
+                                state?: string;
+                                country?: string;
+                                postalCode?: string;
+                            };
+                            committeeId?: null | number;
+                            committeeName?: null | string;
+                            committeeCustom?: null | string;
+                            purpose?: null | string;
+                            requestedAmountMinor?: number;
+                            requestedCurrency?: string;
+                            amountJustification?: null | string;
+                            usedClubCreditCard?: null | boolean;
+                            clubCreditCardOwnerMemberId?: null | number;
+                            clubCreditCardOwnerName?: null | string;
+                            comments?: null | string;
+                            activityDate?: null | string;
+                            fromKind?: null | string;
+                            fromOther?: null | string;
+                            toKind?: null | string;
+                            toOther?: null | string;
+                            roundTripMiles?: null | number;
+                            tripPurpose?: null | string;
+                            tripPurposeOther?: null | string;
+                            receipts?: {
+                                id?: number;
+                                name?: string;
+                                receiptDate?: string;
+                                amountMinor?: number;
+                                currency?: string;
+                                currencyOther?: null | string;
+                                includesDurableGood?: boolean;
+                                originalFilename?: string;
+                                mimeType?: string;
+                                byteSize?: number;
+                                sortOrder?: number;
+                            }[];
+                            submittedAt?: string;
+                            createdAt?: string;
+                            updatedAt?: string;
+                            canEdit?: boolean;
+                            statusChangedByName?: null | string;
+                            statusChangedAt?: null | string;
+                            lastUpdatedByName?: null | string;
+                            notes?: {
+                                id: number;
+                                authorName: string;
+                                body: string;
+                                createdAt: string;
+                            }[];
+                            changes?: {
+                                id: number;
+                                actorName: string;
+                                /** @enum {string} */
+                                kind: "fields" | "status";
+                                summary: string;
+                                details?: null | {
+                                    field: string;
+                                    from: string;
+                                    to: string;
+                                }[];
+                                createdAt: string;
+                            }[];
+                            manageUrl?: string;
+                            accessToken?: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id?: number;
+                            kind?: string;
+                            status?: string;
+                            statusLabel?: string;
+                            memberId?: null | number;
+                            submitterName?: string;
+                            submitterEmail?: string;
+                            submitterPhone?: null | string;
+                            mailingAddress?: null | {
+                                addressLine1?: string;
+                                addressLine2?: string;
+                                city?: string;
+                                state?: string;
+                                country?: string;
+                                postalCode?: string;
+                            };
+                            committeeId?: null | number;
+                            committeeName?: null | string;
+                            committeeCustom?: null | string;
+                            purpose?: null | string;
+                            requestedAmountMinor?: number;
+                            requestedCurrency?: string;
+                            amountJustification?: null | string;
+                            usedClubCreditCard?: null | boolean;
+                            clubCreditCardOwnerMemberId?: null | number;
+                            clubCreditCardOwnerName?: null | string;
+                            comments?: null | string;
+                            activityDate?: null | string;
+                            fromKind?: null | string;
+                            fromOther?: null | string;
+                            toKind?: null | string;
+                            toOther?: null | string;
+                            roundTripMiles?: null | number;
+                            tripPurpose?: null | string;
+                            tripPurposeOther?: null | string;
+                            receipts?: {
+                                id?: number;
+                                name?: string;
+                                receiptDate?: string;
+                                amountMinor?: number;
+                                currency?: string;
+                                currencyOther?: null | string;
+                                includesDurableGood?: boolean;
+                                originalFilename?: string;
+                                mimeType?: string;
+                                byteSize?: number;
+                                sortOrder?: number;
+                            }[];
+                            submittedAt?: string;
+                            createdAt?: string;
+                            updatedAt?: string;
+                            canEdit?: boolean;
+                            statusChangedByName?: null | string;
+                            statusChangedAt?: null | string;
+                            lastUpdatedByName?: null | string;
+                            notes?: {
+                                id: number;
+                                authorName: string;
+                                body: string;
+                                createdAt: string;
+                            }[];
+                            changes?: {
+                                id: number;
+                                actorName: string;
+                                /** @enum {string} */
+                                kind: "fields" | "status";
+                                summary: string;
+                                details?: null | {
+                                    field: string;
+                                    from: string;
+                                    to: string;
+                                }[];
+                                createdAt: string;
+                            }[];
+                            manageUrl?: string;
+                            accessToken?: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/expenses/{id}/receipts/{receiptId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    receiptId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/expenses": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    page?: number;
+                    pageSize?: number;
+                    status?: string;
+                    search?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items: {
+                                id: number;
+                                kind: string;
+                                status: string;
+                                statusLabel: string;
+                                submitterName: string;
+                                submitterEmail: string;
+                                requestedAmountMinor: number;
+                                requestedCurrency: string;
+                                submittedAt: string;
+                            }[];
+                            page: number;
+                            pageSize: number;
+                            total: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/expenses/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            unprocessedCount: number;
+                            awaitingReimbursementCount: number;
+                            monthToDateAmountMinor: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/expenses/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id?: number;
+                            kind?: string;
+                            status?: string;
+                            statusLabel?: string;
+                            memberId?: null | number;
+                            submitterName?: string;
+                            submitterEmail?: string;
+                            submitterPhone?: null | string;
+                            mailingAddress?: null | {
+                                addressLine1?: string;
+                                addressLine2?: string;
+                                city?: string;
+                                state?: string;
+                                country?: string;
+                                postalCode?: string;
+                            };
+                            committeeId?: null | number;
+                            committeeName?: null | string;
+                            committeeCustom?: null | string;
+                            purpose?: null | string;
+                            requestedAmountMinor?: number;
+                            requestedCurrency?: string;
+                            amountJustification?: null | string;
+                            usedClubCreditCard?: null | boolean;
+                            clubCreditCardOwnerMemberId?: null | number;
+                            clubCreditCardOwnerName?: null | string;
+                            comments?: null | string;
+                            activityDate?: null | string;
+                            fromKind?: null | string;
+                            fromOther?: null | string;
+                            toKind?: null | string;
+                            toOther?: null | string;
+                            roundTripMiles?: null | number;
+                            tripPurpose?: null | string;
+                            tripPurposeOther?: null | string;
+                            receipts?: {
+                                id?: number;
+                                name?: string;
+                                receiptDate?: string;
+                                amountMinor?: number;
+                                currency?: string;
+                                currencyOther?: null | string;
+                                includesDurableGood?: boolean;
+                                originalFilename?: string;
+                                mimeType?: string;
+                                byteSize?: number;
+                                sortOrder?: number;
+                            }[];
+                            submittedAt?: string;
+                            createdAt?: string;
+                            updatedAt?: string;
+                            canEdit?: boolean;
+                            statusChangedByName?: null | string;
+                            statusChangedAt?: null | string;
+                            lastUpdatedByName?: null | string;
+                            notes?: {
+                                id: number;
+                                authorName: string;
+                                body: string;
+                                createdAt: string;
+                            }[];
+                            changes?: {
+                                id: number;
+                                actorName: string;
+                                /** @enum {string} */
+                                kind: "fields" | "status";
+                                summary: string;
+                                details?: null | {
+                                    field: string;
+                                    from: string;
+                                    to: string;
+                                }[];
+                                createdAt: string;
+                            }[];
+                            manageUrl?: string;
+                            accessToken?: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        status?: "pending_review" | "processing" | "check_mailed" | "complete";
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id?: number;
+                            kind?: string;
+                            status?: string;
+                            statusLabel?: string;
+                            memberId?: null | number;
+                            submitterName?: string;
+                            submitterEmail?: string;
+                            submitterPhone?: null | string;
+                            mailingAddress?: null | {
+                                addressLine1?: string;
+                                addressLine2?: string;
+                                city?: string;
+                                state?: string;
+                                country?: string;
+                                postalCode?: string;
+                            };
+                            committeeId?: null | number;
+                            committeeName?: null | string;
+                            committeeCustom?: null | string;
+                            purpose?: null | string;
+                            requestedAmountMinor?: number;
+                            requestedCurrency?: string;
+                            amountJustification?: null | string;
+                            usedClubCreditCard?: null | boolean;
+                            clubCreditCardOwnerMemberId?: null | number;
+                            clubCreditCardOwnerName?: null | string;
+                            comments?: null | string;
+                            activityDate?: null | string;
+                            fromKind?: null | string;
+                            fromOther?: null | string;
+                            toKind?: null | string;
+                            toOther?: null | string;
+                            roundTripMiles?: null | number;
+                            tripPurpose?: null | string;
+                            tripPurposeOther?: null | string;
+                            receipts?: {
+                                id?: number;
+                                name?: string;
+                                receiptDate?: string;
+                                amountMinor?: number;
+                                currency?: string;
+                                currencyOther?: null | string;
+                                includesDurableGood?: boolean;
+                                originalFilename?: string;
+                                mimeType?: string;
+                                byteSize?: number;
+                                sortOrder?: number;
+                            }[];
+                            submittedAt?: string;
+                            createdAt?: string;
+                            updatedAt?: string;
+                            canEdit?: boolean;
+                            statusChangedByName?: null | string;
+                            statusChangedAt?: null | string;
+                            lastUpdatedByName?: null | string;
+                            notes?: {
+                                id: number;
+                                authorName: string;
+                                body: string;
+                                createdAt: string;
+                            }[];
+                            changes?: {
+                                id: number;
+                                actorName: string;
+                                /** @enum {string} */
+                                kind: "fields" | "status";
+                                summary: string;
+                                details?: null | {
+                                    field: string;
+                                    from: string;
+                                    to: string;
+                                }[];
+                                createdAt: string;
+                            }[];
+                            manageUrl?: string;
+                            accessToken?: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/admin/expenses/{id}/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id?: number;
+                            kind?: string;
+                            status?: string;
+                            statusLabel?: string;
+                            memberId?: null | number;
+                            submitterName?: string;
+                            submitterEmail?: string;
+                            submitterPhone?: null | string;
+                            mailingAddress?: null | {
+                                addressLine1?: string;
+                                addressLine2?: string;
+                                city?: string;
+                                state?: string;
+                                country?: string;
+                                postalCode?: string;
+                            };
+                            committeeId?: null | number;
+                            committeeName?: null | string;
+                            committeeCustom?: null | string;
+                            purpose?: null | string;
+                            requestedAmountMinor?: number;
+                            requestedCurrency?: string;
+                            amountJustification?: null | string;
+                            usedClubCreditCard?: null | boolean;
+                            clubCreditCardOwnerMemberId?: null | number;
+                            clubCreditCardOwnerName?: null | string;
+                            comments?: null | string;
+                            activityDate?: null | string;
+                            fromKind?: null | string;
+                            fromOther?: null | string;
+                            toKind?: null | string;
+                            toOther?: null | string;
+                            roundTripMiles?: null | number;
+                            tripPurpose?: null | string;
+                            tripPurposeOther?: null | string;
+                            receipts?: {
+                                id?: number;
+                                name?: string;
+                                receiptDate?: string;
+                                amountMinor?: number;
+                                currency?: string;
+                                currencyOther?: null | string;
+                                includesDurableGood?: boolean;
+                                originalFilename?: string;
+                                mimeType?: string;
+                                byteSize?: number;
+                                sortOrder?: number;
+                            }[];
+                            submittedAt?: string;
+                            createdAt?: string;
+                            updatedAt?: string;
+                            canEdit?: boolean;
+                            statusChangedByName?: null | string;
+                            statusChangedAt?: null | string;
+                            lastUpdatedByName?: null | string;
+                            notes?: {
+                                id: number;
+                                authorName: string;
+                                body: string;
+                                createdAt: string;
+                            }[];
+                            changes?: {
+                                id: number;
+                                actorName: string;
+                                /** @enum {string} */
+                                kind: "fields" | "status";
+                                summary: string;
+                                details?: null | {
+                                    field: string;
+                                    from: string;
+                                    to: string;
+                                }[];
+                                createdAt: string;
+                            }[];
+                            manageUrl?: string;
+                            accessToken?: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/admin/expenses/{id}/notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        body: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id?: number;
+                            kind?: string;
+                            status?: string;
+                            statusLabel?: string;
+                            memberId?: null | number;
+                            submitterName?: string;
+                            submitterEmail?: string;
+                            submitterPhone?: null | string;
+                            mailingAddress?: null | {
+                                addressLine1?: string;
+                                addressLine2?: string;
+                                city?: string;
+                                state?: string;
+                                country?: string;
+                                postalCode?: string;
+                            };
+                            committeeId?: null | number;
+                            committeeName?: null | string;
+                            committeeCustom?: null | string;
+                            purpose?: null | string;
+                            requestedAmountMinor?: number;
+                            requestedCurrency?: string;
+                            amountJustification?: null | string;
+                            usedClubCreditCard?: null | boolean;
+                            clubCreditCardOwnerMemberId?: null | number;
+                            clubCreditCardOwnerName?: null | string;
+                            comments?: null | string;
+                            activityDate?: null | string;
+                            fromKind?: null | string;
+                            fromOther?: null | string;
+                            toKind?: null | string;
+                            toOther?: null | string;
+                            roundTripMiles?: null | number;
+                            tripPurpose?: null | string;
+                            tripPurposeOther?: null | string;
+                            receipts?: {
+                                id?: number;
+                                name?: string;
+                                receiptDate?: string;
+                                amountMinor?: number;
+                                currency?: string;
+                                currencyOther?: null | string;
+                                includesDurableGood?: boolean;
+                                originalFilename?: string;
+                                mimeType?: string;
+                                byteSize?: number;
+                                sortOrder?: number;
+                            }[];
+                            submittedAt?: string;
+                            createdAt?: string;
+                            updatedAt?: string;
+                            canEdit?: boolean;
+                            statusChangedByName?: null | string;
+                            statusChangedAt?: null | string;
+                            lastUpdatedByName?: null | string;
+                            notes?: {
+                                id: number;
+                                authorName: string;
+                                body: string;
+                                createdAt: string;
+                            }[];
+                            changes?: {
+                                id: number;
+                                actorName: string;
+                                /** @enum {string} */
+                                kind: "fields" | "status";
+                                summary: string;
+                                details?: null | {
+                                    field: string;
+                                    from: string;
+                                    to: string;
+                                }[];
+                                createdAt: string;
+                            }[];
+                            manageUrl?: string;
+                            accessToken?: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/expenses/{id}/receipts/{receiptId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    receiptId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/building-access": {

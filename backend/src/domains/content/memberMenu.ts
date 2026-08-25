@@ -66,6 +66,7 @@ export const DEFAULT_MEMBER_MENU: MemberMenuSeedNode[] = [
     children: [
       { label: 'Volunteering hub', linkType: 'external', url: '/volunteering' },
       { label: 'My shifts', linkType: 'external', url: '/volunteering?tab=shifts' },
+      { label: 'Expense reports', linkType: 'external', url: '/expenses' },
     ],
   },
   {

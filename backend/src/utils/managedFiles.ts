@@ -20,6 +20,8 @@ const MIME_BY_EXTENSION: Record<string, string> = {
   '.svg': 'image/svg+xml',
   '.bmp': 'image/bmp',
   '.ico': 'image/x-icon',
+  '.heic': 'image/heic',
+  '.heif': 'image/heif',
   '.mp3': 'audio/mpeg',
   '.wav': 'audio/wav',
   '.ogg': 'audio/ogg',

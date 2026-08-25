@@ -74,6 +74,8 @@ async function seedRbacRolesAndScopes(isPostgres: boolean): Promise<void> {
           ('general_admin', 'waitlists.view', 'allow'),
           ('general_admin', 'waitlists.manage', 'allow'),
           ('general_admin', 'registrations.manage', 'allow'),
+          ('general_admin', 'expenses.read', 'allow'),
+          ('general_admin', 'expenses.manage', 'allow'),
           ('calendar_admin', 'calendar.manage', 'allow'),
           ('content_admin', 'content.manage', 'allow'),
           ('content_admin', 'files.manage', 'allow'),
@@ -109,6 +111,73 @@ async function seedRbacRolesAndScopes(isPostgres: boolean): Promise<void> {
     VALUES ('league_manager', 'League manager', 'League management permissions', 1, 0, 1);
     INSERT OR IGNORE INTO roles (code, name, description, is_system, is_computed, is_assignable)
     VALUES ('volunteer_manager', 'Volunteer manager', 'Volunteer program and credential administration', 1, 0, 1);
+  `));
+
+  await db.execute(sql.raw(`
+    INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+    SELECT r.id, 'dashboard.read', 'allow' FROM roles r WHERE r.code = 'authenticated_user';
+    INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+    SELECT r.id, 'profile.manage_self', 'allow' FROM roles r WHERE r.code = 'authenticated_user';
+    INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+    SELECT r.id, 'members.read', 'allow' FROM roles r WHERE r.code = 'authenticated_user';
+    INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+    SELECT r.id, 'leagues.read', 'allow' FROM roles r WHERE r.code = 'authenticated_user';
+    INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+    SELECT r.id, 'calendar.read', 'allow' FROM roles r WHERE r.code = 'authenticated_user';
+    INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+    SELECT r.id, 'governance.read', 'allow' FROM roles r WHERE r.code = 'authenticated_user';
+    INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+    SELECT r.id, 'feedback.submit', 'allow' FROM roles r WHERE r.code = 'authenticated_user';
+    INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+    SELECT r.id, 'spares.read', 'allow' FROM roles r WHERE r.code = 'authenticated_user';
+    INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+    SELECT r.id, 'spares.respond', 'allow' FROM roles r WHERE r.code = 'authenticated_user';
+    INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+    SELECT r.id, 'availability.manage_self', 'allow' FROM roles r WHERE r.code = 'authenticated_user';
+    INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+    SELECT r.id, 'member.active', 'allow' FROM roles r WHERE r.code = 'active_member';
+    INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+    SELECT r.id, 'member.ice_privileges', 'allow' FROM roles r WHERE r.code = 'member_with_ice_privileges';
+    INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+    SELECT r.id, 'spares.request', 'allow' FROM roles r WHERE r.code = 'member_with_ice_privileges';
+    INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+    SELECT r.id, 'ice_bookings.manage_own', 'allow' FROM roles r WHERE r.code = 'member_with_ice_privileges';
+    INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+    SELECT r.id, 'admin.manage', 'allow' FROM roles r WHERE r.code = 'general_admin';
+    INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+    SELECT r.id, 'members.manage', 'allow' FROM roles r WHERE r.code = 'general_admin';
+    INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+    SELECT r.id, 'governance.manage', 'allow' FROM roles r WHERE r.code = 'general_admin';
+    INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+    SELECT r.id, 'feedback.manage', 'allow' FROM roles r WHERE r.code = 'general_admin';
+    INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+    SELECT r.id, 'payments.read', 'allow' FROM roles r WHERE r.code = 'general_admin';
+    INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+    SELECT r.id, 'payments.manage', 'allow' FROM roles r WHERE r.code = 'general_admin';
+    INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+    SELECT r.id, 'waitlists.view', 'allow' FROM roles r WHERE r.code = 'general_admin';
+    INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+    SELECT r.id, 'waitlists.manage', 'allow' FROM roles r WHERE r.code = 'general_admin';
+    INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+    SELECT r.id, 'registrations.manage', 'allow' FROM roles r WHERE r.code = 'general_admin';
+    INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+    SELECT r.id, 'expenses.read', 'allow' FROM roles r WHERE r.code = 'general_admin';
+    INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+    SELECT r.id, 'expenses.manage', 'allow' FROM roles r WHERE r.code = 'general_admin';
+    INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+    SELECT r.id, 'calendar.manage', 'allow' FROM roles r WHERE r.code = 'calendar_admin';
+    INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+    SELECT r.id, 'content.manage', 'allow' FROM roles r WHERE r.code = 'content_admin';
+    INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+    SELECT r.id, 'files.manage', 'allow' FROM roles r WHERE r.code = 'content_admin';
+    INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+    SELECT r.id, 'sponsorship.manage', 'allow' FROM roles r WHERE r.code = 'sponsor_admin';
+    INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+    SELECT r.id, 'leagues.manage', 'allow' FROM roles r WHERE r.code = 'league_admin';
+    INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+    SELECT r.id, 'leagues.manage', 'allow' FROM roles r WHERE r.code = 'league_manager';
+    INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+    SELECT r.id, 'volunteering.manage', 'allow' FROM roles r WHERE r.code = 'volunteer_manager';
   `));
 }
 
@@ -197,6 +266,20 @@ async function seedMemberMenu(): Promise<void> {
   await seedMemberMenuIfNeeded();
 }
 
+async function seedClubCreditCardHolderCredential(): Promise<void> {
+  const { db } = getDrizzleDb();
+  await db.execute(sql.raw(`
+    INSERT INTO volunteer_credentials (name, description, point_of_contact_email)
+    SELECT 'Club Credit Card Holder',
+           'Holds a club credit card for club-related purchases.',
+           'finance@trianglecurling.com'
+    WHERE NOT EXISTS (
+      SELECT 1 FROM volunteer_credentials
+      WHERE lower(name) = lower('Club Credit Card Holder')
+    )
+  `));
+}
+
 async function seedCoreRows(isPostgres: boolean): Promise<void> {
   const { db } = getDrizzleDb();
 
@@ -265,6 +348,7 @@ export async function runDatabaseBootstrap(config: DatabaseConfig): Promise<void
   await seedDashboardSections();
   await seedMailingLists();
   await seedMemberMenu();
+  await seedClubCreditCardHolderCredential();
   await ensureRegistrationPriceDiscountSettingsTablesExist();
   const { ensureVolunteerProgramSlugsFromTitlesIfNeeded } = await import(
     '../services/volunteerProgramSlugs.js'

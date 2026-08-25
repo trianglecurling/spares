@@ -131,6 +131,14 @@ export const abuseRouteRateLimits = {
     keyGenerator: (request: FastifyRequest) => `guest-reg:${clientIp(request)}`,
     errorResponseBuilder: rateLimitError('Too many registration attempts. Please try again later.'),
   },
+  expenseSubmit: {
+    hook: 'preHandler' as const,
+    max: 10,
+    timeWindow: '1 hour' as const,
+    allowList: shouldBypassIpLimit,
+    keyGenerator: (request: FastifyRequest) => `expense-submit:${clientIp(request)}`,
+    errorResponseBuilder: rateLimitError('Too many expense submissions. Please try again later.'),
+  },
   registrationEarlyAccessUnlock: {
     hook: 'preHandler' as const,
     max: 10,

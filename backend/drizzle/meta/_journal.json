@@ -435,6 +435,27 @@
       "when": 1780352498503,
       "tag": "0062_volunteer_credential_grant_expires_at",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1780352498504,
+      "tag": "0063_add_expense_reports",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1780352498505,
+      "tag": "0064_expense_report_staff_review",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1780352498506,
+      "tag": "0065_expense_report_card_owner",
+      "breakpoints": true
     }
   ]
 }

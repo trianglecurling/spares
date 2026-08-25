@@ -36,6 +36,14 @@ export function isPublicLightPath(pathname: string): boolean {
   if (pathname === '/public/leagues' || pathname.startsWith('/public/leagues/')) {
     return true;
   }
+  if (pathname.startsWith('/volunteering/public/')) {
+    return true;
+  }
+  // Guests can submit without logging in; logged-in members still use this path
+  // but render the authenticated layout in ExpenseReportNewRoute.
+  if (pathname === '/expenses/new' || pathname.startsWith('/expenses/manage/')) {
+    return true;
+  }
   if (pathname.startsWith('/go/')) {
     return true;
   }

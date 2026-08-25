@@ -2781,6 +2781,1339 @@
         }
       }
     },
+    "/public/expenses/form-options": {
+      "get": {
+        "tags": [
+          "expenses"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "committees": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "name": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "clubName": {
+                      "type": "string"
+                    },
+                    "mileageRateCentsPerMile": {
+                      "type": "number"
+                    },
+                    "isClubCreditCardHolder": {
+                      "type": "boolean"
+                    },
+                    "submitterPrefill": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "email": {
+                          "type": [
+                            "null",
+                            "string"
+                          ]
+                        },
+                        "phone": {
+                          "type": [
+                            "null",
+                            "string"
+                          ]
+                        },
+                        "mailingAddress": {
+                          "type": [
+                            "null",
+                            "object"
+                          ],
+                          "additionalProperties": false,
+                          "properties": {
+                            "addressLine1": {
+                              "type": "string"
+                            },
+                            "addressLine2": {
+                              "type": "string"
+                            },
+                            "city": {
+                              "type": "string"
+                            },
+                            "state": {
+                              "type": "string"
+                            },
+                            "country": {
+                              "type": "string"
+                            },
+                            "postalCode": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/public/expenses": {
+      "post": {
+        "tags": [
+          "expenses"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "number"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "statusLabel": {
+                      "type": "string"
+                    },
+                    "memberId": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "submitterName": {
+                      "type": "string"
+                    },
+                    "submitterEmail": {
+                      "type": "string"
+                    },
+                    "submitterPhone": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "mailingAddress": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "addressLine1": {
+                          "type": "string"
+                        },
+                        "addressLine2": {
+                          "type": "string"
+                        },
+                        "city": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "country": {
+                          "type": "string"
+                        },
+                        "postalCode": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "committeeId": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "committeeName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "committeeCustom": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "purpose": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "requestedAmountMinor": {
+                      "type": "number"
+                    },
+                    "requestedCurrency": {
+                      "type": "string"
+                    },
+                    "amountJustification": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "usedClubCreditCard": {
+                      "type": [
+                        "null",
+                        "boolean"
+                      ]
+                    },
+                    "clubCreditCardOwnerMemberId": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "clubCreditCardOwnerName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "comments": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "activityDate": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "fromKind": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "fromOther": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "toKind": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "toOther": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "roundTripMiles": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "tripPurpose": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "tripPurposeOther": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "receipts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "receiptDate": {
+                            "type": "string"
+                          },
+                          "amountMinor": {
+                            "type": "number"
+                          },
+                          "currency": {
+                            "type": "string"
+                          },
+                          "currencyOther": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "includesDurableGood": {
+                            "type": "boolean"
+                          },
+                          "originalFilename": {
+                            "type": "string"
+                          },
+                          "mimeType": {
+                            "type": "string"
+                          },
+                          "byteSize": {
+                            "type": "number"
+                          },
+                          "sortOrder": {
+                            "type": "number"
+                          }
+                        }
+                      }
+                    },
+                    "submittedAt": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    },
+                    "canEdit": {
+                      "type": "boolean"
+                    },
+                    "statusChangedByName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "statusChangedAt": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "lastUpdatedByName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "notes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "authorName": {
+                            "type": "string"
+                          },
+                          "body": {
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "authorName",
+                          "body",
+                          "createdAt"
+                        ]
+                      }
+                    },
+                    "changes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "actorName": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "fields",
+                              "status"
+                            ]
+                          },
+                          "summary": {
+                            "type": "string"
+                          },
+                          "details": {
+                            "type": [
+                              "null",
+                              "array"
+                            ],
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "properties": {
+                                "field": {
+                                  "type": "string"
+                                },
+                                "from": {
+                                  "type": "string"
+                                },
+                                "to": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "field",
+                                "from",
+                                "to"
+                              ]
+                            }
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "actorName",
+                          "kind",
+                          "summary",
+                          "createdAt"
+                        ]
+                      }
+                    },
+                    "manageUrl": {
+                      "type": "string"
+                    },
+                    "accessToken": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/public/expenses/manage/{accessToken}": {
+      "get": {
+        "tags": [
+          "expenses"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "accessToken",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "number"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "statusLabel": {
+                      "type": "string"
+                    },
+                    "memberId": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "submitterName": {
+                      "type": "string"
+                    },
+                    "submitterEmail": {
+                      "type": "string"
+                    },
+                    "submitterPhone": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "mailingAddress": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "addressLine1": {
+                          "type": "string"
+                        },
+                        "addressLine2": {
+                          "type": "string"
+                        },
+                        "city": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "country": {
+                          "type": "string"
+                        },
+                        "postalCode": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "committeeId": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "committeeName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "committeeCustom": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "purpose": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "requestedAmountMinor": {
+                      "type": "number"
+                    },
+                    "requestedCurrency": {
+                      "type": "string"
+                    },
+                    "amountJustification": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "usedClubCreditCard": {
+                      "type": [
+                        "null",
+                        "boolean"
+                      ]
+                    },
+                    "clubCreditCardOwnerMemberId": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "clubCreditCardOwnerName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "comments": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "activityDate": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "fromKind": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "fromOther": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "toKind": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "toOther": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "roundTripMiles": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "tripPurpose": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "tripPurposeOther": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "receipts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "receiptDate": {
+                            "type": "string"
+                          },
+                          "amountMinor": {
+                            "type": "number"
+                          },
+                          "currency": {
+                            "type": "string"
+                          },
+                          "currencyOther": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "includesDurableGood": {
+                            "type": "boolean"
+                          },
+                          "originalFilename": {
+                            "type": "string"
+                          },
+                          "mimeType": {
+                            "type": "string"
+                          },
+                          "byteSize": {
+                            "type": "number"
+                          },
+                          "sortOrder": {
+                            "type": "number"
+                          }
+                        }
+                      }
+                    },
+                    "submittedAt": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    },
+                    "canEdit": {
+                      "type": "boolean"
+                    },
+                    "statusChangedByName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "statusChangedAt": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "lastUpdatedByName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "notes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "authorName": {
+                            "type": "string"
+                          },
+                          "body": {
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "authorName",
+                          "body",
+                          "createdAt"
+                        ]
+                      }
+                    },
+                    "changes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "actorName": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "fields",
+                              "status"
+                            ]
+                          },
+                          "summary": {
+                            "type": "string"
+                          },
+                          "details": {
+                            "type": [
+                              "null",
+                              "array"
+                            ],
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "properties": {
+                                "field": {
+                                  "type": "string"
+                                },
+                                "from": {
+                                  "type": "string"
+                                },
+                                "to": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "field",
+                                "from",
+                                "to"
+                              ]
+                            }
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "actorName",
+                          "kind",
+                          "summary",
+                          "createdAt"
+                        ]
+                      }
+                    },
+                    "manageUrl": {
+                      "type": "string"
+                    },
+                    "accessToken": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "expenses"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "accessToken",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "number"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "statusLabel": {
+                      "type": "string"
+                    },
+                    "memberId": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "submitterName": {
+                      "type": "string"
+                    },
+                    "submitterEmail": {
+                      "type": "string"
+                    },
+                    "submitterPhone": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "mailingAddress": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "addressLine1": {
+                          "type": "string"
+                        },
+                        "addressLine2": {
+                          "type": "string"
+                        },
+                        "city": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "country": {
+                          "type": "string"
+                        },
+                        "postalCode": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "committeeId": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "committeeName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "committeeCustom": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "purpose": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "requestedAmountMinor": {
+                      "type": "number"
+                    },
+                    "requestedCurrency": {
+                      "type": "string"
+                    },
+                    "amountJustification": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "usedClubCreditCard": {
+                      "type": [
+                        "null",
+                        "boolean"
+                      ]
+                    },
+                    "clubCreditCardOwnerMemberId": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "clubCreditCardOwnerName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "comments": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "activityDate": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "fromKind": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "fromOther": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "toKind": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "toOther": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "roundTripMiles": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "tripPurpose": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "tripPurposeOther": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "receipts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "receiptDate": {
+                            "type": "string"
+                          },
+                          "amountMinor": {
+                            "type": "number"
+                          },
+                          "currency": {
+                            "type": "string"
+                          },
+                          "currencyOther": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "includesDurableGood": {
+                            "type": "boolean"
+                          },
+                          "originalFilename": {
+                            "type": "string"
+                          },
+                          "mimeType": {
+                            "type": "string"
+                          },
+                          "byteSize": {
+                            "type": "number"
+                          },
+                          "sortOrder": {
+                            "type": "number"
+                          }
+                        }
+                      }
+                    },
+                    "submittedAt": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    },
+                    "canEdit": {
+                      "type": "boolean"
+                    },
+                    "statusChangedByName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "statusChangedAt": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "lastUpdatedByName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "notes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "authorName": {
+                            "type": "string"
+                          },
+                          "body": {
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "authorName",
+                          "body",
+                          "createdAt"
+                        ]
+                      }
+                    },
+                    "changes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "actorName": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "fields",
+                              "status"
+                            ]
+                          },
+                          "summary": {
+                            "type": "string"
+                          },
+                          "details": {
+                            "type": [
+                              "null",
+                              "array"
+                            ],
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "properties": {
+                                "field": {
+                                  "type": "string"
+                                },
+                                "from": {
+                                  "type": "string"
+                                },
+                                "to": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "field",
+                                "from",
+                                "to"
+                              ]
+                            }
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "actorName",
+                          "kind",
+                          "summary",
+                          "createdAt"
+                        ]
+                      }
+                    },
+                    "manageUrl": {
+                      "type": "string"
+                    },
+                    "accessToken": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/public/expenses/manage/{accessToken}/receipts/{receiptId}": {
+      "get": {
+        "tags": [
+          "expenses"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "accessToken",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "receiptId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/public/search": {
       "get": {
         "tags": [
@@ -28286,6 +29619,2935 @@
             },
             "in": "path",
             "name": "memberId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/expenses": {
+      "get": {
+        "tags": [
+          "expenses"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "number"
+            },
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "number"
+            },
+            "in": "query",
+            "name": "pageSize",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "kind": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "statusLabel": {
+                            "type": "string"
+                          },
+                          "submitterName": {
+                            "type": "string"
+                          },
+                          "submitterEmail": {
+                            "type": "string"
+                          },
+                          "requestedAmountMinor": {
+                            "type": "number"
+                          },
+                          "requestedCurrency": {
+                            "type": "string"
+                          },
+                          "submittedAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "kind",
+                          "status",
+                          "statusLabel",
+                          "submitterName",
+                          "submitterEmail",
+                          "requestedAmountMinor",
+                          "requestedCurrency",
+                          "submittedAt"
+                        ]
+                      }
+                    },
+                    "page": {
+                      "type": "number"
+                    },
+                    "pageSize": {
+                      "type": "number"
+                    },
+                    "total": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "page",
+                    "pageSize",
+                    "total"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/expenses/{id}": {
+      "get": {
+        "tags": [
+          "expenses"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "number"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "statusLabel": {
+                      "type": "string"
+                    },
+                    "memberId": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "submitterName": {
+                      "type": "string"
+                    },
+                    "submitterEmail": {
+                      "type": "string"
+                    },
+                    "submitterPhone": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "mailingAddress": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "addressLine1": {
+                          "type": "string"
+                        },
+                        "addressLine2": {
+                          "type": "string"
+                        },
+                        "city": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "country": {
+                          "type": "string"
+                        },
+                        "postalCode": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "committeeId": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "committeeName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "committeeCustom": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "purpose": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "requestedAmountMinor": {
+                      "type": "number"
+                    },
+                    "requestedCurrency": {
+                      "type": "string"
+                    },
+                    "amountJustification": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "usedClubCreditCard": {
+                      "type": [
+                        "null",
+                        "boolean"
+                      ]
+                    },
+                    "clubCreditCardOwnerMemberId": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "clubCreditCardOwnerName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "comments": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "activityDate": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "fromKind": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "fromOther": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "toKind": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "toOther": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "roundTripMiles": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "tripPurpose": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "tripPurposeOther": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "receipts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "receiptDate": {
+                            "type": "string"
+                          },
+                          "amountMinor": {
+                            "type": "number"
+                          },
+                          "currency": {
+                            "type": "string"
+                          },
+                          "currencyOther": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "includesDurableGood": {
+                            "type": "boolean"
+                          },
+                          "originalFilename": {
+                            "type": "string"
+                          },
+                          "mimeType": {
+                            "type": "string"
+                          },
+                          "byteSize": {
+                            "type": "number"
+                          },
+                          "sortOrder": {
+                            "type": "number"
+                          }
+                        }
+                      }
+                    },
+                    "submittedAt": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    },
+                    "canEdit": {
+                      "type": "boolean"
+                    },
+                    "statusChangedByName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "statusChangedAt": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "lastUpdatedByName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "notes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "authorName": {
+                            "type": "string"
+                          },
+                          "body": {
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "authorName",
+                          "body",
+                          "createdAt"
+                        ]
+                      }
+                    },
+                    "changes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "actorName": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "fields",
+                              "status"
+                            ]
+                          },
+                          "summary": {
+                            "type": "string"
+                          },
+                          "details": {
+                            "type": [
+                              "null",
+                              "array"
+                            ],
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "properties": {
+                                "field": {
+                                  "type": "string"
+                                },
+                                "from": {
+                                  "type": "string"
+                                },
+                                "to": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "field",
+                                "from",
+                                "to"
+                              ]
+                            }
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "actorName",
+                          "kind",
+                          "summary",
+                          "createdAt"
+                        ]
+                      }
+                    },
+                    "manageUrl": {
+                      "type": "string"
+                    },
+                    "accessToken": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "expenses"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "number"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "statusLabel": {
+                      "type": "string"
+                    },
+                    "memberId": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "submitterName": {
+                      "type": "string"
+                    },
+                    "submitterEmail": {
+                      "type": "string"
+                    },
+                    "submitterPhone": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "mailingAddress": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "addressLine1": {
+                          "type": "string"
+                        },
+                        "addressLine2": {
+                          "type": "string"
+                        },
+                        "city": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "country": {
+                          "type": "string"
+                        },
+                        "postalCode": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "committeeId": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "committeeName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "committeeCustom": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "purpose": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "requestedAmountMinor": {
+                      "type": "number"
+                    },
+                    "requestedCurrency": {
+                      "type": "string"
+                    },
+                    "amountJustification": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "usedClubCreditCard": {
+                      "type": [
+                        "null",
+                        "boolean"
+                      ]
+                    },
+                    "clubCreditCardOwnerMemberId": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "clubCreditCardOwnerName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "comments": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "activityDate": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "fromKind": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "fromOther": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "toKind": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "toOther": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "roundTripMiles": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "tripPurpose": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "tripPurposeOther": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "receipts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "receiptDate": {
+                            "type": "string"
+                          },
+                          "amountMinor": {
+                            "type": "number"
+                          },
+                          "currency": {
+                            "type": "string"
+                          },
+                          "currencyOther": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "includesDurableGood": {
+                            "type": "boolean"
+                          },
+                          "originalFilename": {
+                            "type": "string"
+                          },
+                          "mimeType": {
+                            "type": "string"
+                          },
+                          "byteSize": {
+                            "type": "number"
+                          },
+                          "sortOrder": {
+                            "type": "number"
+                          }
+                        }
+                      }
+                    },
+                    "submittedAt": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    },
+                    "canEdit": {
+                      "type": "boolean"
+                    },
+                    "statusChangedByName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "statusChangedAt": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "lastUpdatedByName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "notes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "authorName": {
+                            "type": "string"
+                          },
+                          "body": {
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "authorName",
+                          "body",
+                          "createdAt"
+                        ]
+                      }
+                    },
+                    "changes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "actorName": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "fields",
+                              "status"
+                            ]
+                          },
+                          "summary": {
+                            "type": "string"
+                          },
+                          "details": {
+                            "type": [
+                              "null",
+                              "array"
+                            ],
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "properties": {
+                                "field": {
+                                  "type": "string"
+                                },
+                                "from": {
+                                  "type": "string"
+                                },
+                                "to": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "field",
+                                "from",
+                                "to"
+                              ]
+                            }
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "actorName",
+                          "kind",
+                          "summary",
+                          "createdAt"
+                        ]
+                      }
+                    },
+                    "manageUrl": {
+                      "type": "string"
+                    },
+                    "accessToken": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/expenses/{id}/receipts/{receiptId}": {
+      "get": {
+        "tags": [
+          "expenses"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "receiptId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/admin/expenses": {
+      "get": {
+        "tags": [
+          "expenses"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "number"
+            },
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "number"
+            },
+            "in": "query",
+            "name": "pageSize",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "status",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "search",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "kind": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "statusLabel": {
+                            "type": "string"
+                          },
+                          "submitterName": {
+                            "type": "string"
+                          },
+                          "submitterEmail": {
+                            "type": "string"
+                          },
+                          "requestedAmountMinor": {
+                            "type": "number"
+                          },
+                          "requestedCurrency": {
+                            "type": "string"
+                          },
+                          "submittedAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "kind",
+                          "status",
+                          "statusLabel",
+                          "submitterName",
+                          "submitterEmail",
+                          "requestedAmountMinor",
+                          "requestedCurrency",
+                          "submittedAt"
+                        ]
+                      }
+                    },
+                    "page": {
+                      "type": "number"
+                    },
+                    "pageSize": {
+                      "type": "number"
+                    },
+                    "total": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "page",
+                    "pageSize",
+                    "total"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/expenses/summary": {
+      "get": {
+        "tags": [
+          "expenses"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "unprocessedCount": {
+                      "type": "number"
+                    },
+                    "awaitingReimbursementCount": {
+                      "type": "number"
+                    },
+                    "monthToDateAmountMinor": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "unprocessedCount",
+                    "awaitingReimbursementCount",
+                    "monthToDateAmountMinor"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/expenses/{id}": {
+      "get": {
+        "tags": [
+          "expenses"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "number"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "statusLabel": {
+                      "type": "string"
+                    },
+                    "memberId": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "submitterName": {
+                      "type": "string"
+                    },
+                    "submitterEmail": {
+                      "type": "string"
+                    },
+                    "submitterPhone": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "mailingAddress": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "addressLine1": {
+                          "type": "string"
+                        },
+                        "addressLine2": {
+                          "type": "string"
+                        },
+                        "city": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "country": {
+                          "type": "string"
+                        },
+                        "postalCode": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "committeeId": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "committeeName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "committeeCustom": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "purpose": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "requestedAmountMinor": {
+                      "type": "number"
+                    },
+                    "requestedCurrency": {
+                      "type": "string"
+                    },
+                    "amountJustification": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "usedClubCreditCard": {
+                      "type": [
+                        "null",
+                        "boolean"
+                      ]
+                    },
+                    "clubCreditCardOwnerMemberId": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "clubCreditCardOwnerName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "comments": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "activityDate": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "fromKind": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "fromOther": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "toKind": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "toOther": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "roundTripMiles": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "tripPurpose": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "tripPurposeOther": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "receipts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "receiptDate": {
+                            "type": "string"
+                          },
+                          "amountMinor": {
+                            "type": "number"
+                          },
+                          "currency": {
+                            "type": "string"
+                          },
+                          "currencyOther": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "includesDurableGood": {
+                            "type": "boolean"
+                          },
+                          "originalFilename": {
+                            "type": "string"
+                          },
+                          "mimeType": {
+                            "type": "string"
+                          },
+                          "byteSize": {
+                            "type": "number"
+                          },
+                          "sortOrder": {
+                            "type": "number"
+                          }
+                        }
+                      }
+                    },
+                    "submittedAt": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    },
+                    "canEdit": {
+                      "type": "boolean"
+                    },
+                    "statusChangedByName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "statusChangedAt": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "lastUpdatedByName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "notes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "authorName": {
+                            "type": "string"
+                          },
+                          "body": {
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "authorName",
+                          "body",
+                          "createdAt"
+                        ]
+                      }
+                    },
+                    "changes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "actorName": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "fields",
+                              "status"
+                            ]
+                          },
+                          "summary": {
+                            "type": "string"
+                          },
+                          "details": {
+                            "type": [
+                              "null",
+                              "array"
+                            ],
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "properties": {
+                                "field": {
+                                  "type": "string"
+                                },
+                                "from": {
+                                  "type": "string"
+                                },
+                                "to": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "field",
+                                "from",
+                                "to"
+                              ]
+                            }
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "actorName",
+                          "kind",
+                          "summary",
+                          "createdAt"
+                        ]
+                      }
+                    },
+                    "manageUrl": {
+                      "type": "string"
+                    },
+                    "accessToken": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "expenses"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "pending_review",
+                      "processing",
+                      "check_mailed",
+                      "complete"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "number"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "statusLabel": {
+                      "type": "string"
+                    },
+                    "memberId": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "submitterName": {
+                      "type": "string"
+                    },
+                    "submitterEmail": {
+                      "type": "string"
+                    },
+                    "submitterPhone": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "mailingAddress": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "addressLine1": {
+                          "type": "string"
+                        },
+                        "addressLine2": {
+                          "type": "string"
+                        },
+                        "city": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "country": {
+                          "type": "string"
+                        },
+                        "postalCode": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "committeeId": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "committeeName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "committeeCustom": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "purpose": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "requestedAmountMinor": {
+                      "type": "number"
+                    },
+                    "requestedCurrency": {
+                      "type": "string"
+                    },
+                    "amountJustification": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "usedClubCreditCard": {
+                      "type": [
+                        "null",
+                        "boolean"
+                      ]
+                    },
+                    "clubCreditCardOwnerMemberId": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "clubCreditCardOwnerName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "comments": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "activityDate": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "fromKind": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "fromOther": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "toKind": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "toOther": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "roundTripMiles": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "tripPurpose": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "tripPurposeOther": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "receipts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "receiptDate": {
+                            "type": "string"
+                          },
+                          "amountMinor": {
+                            "type": "number"
+                          },
+                          "currency": {
+                            "type": "string"
+                          },
+                          "currencyOther": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "includesDurableGood": {
+                            "type": "boolean"
+                          },
+                          "originalFilename": {
+                            "type": "string"
+                          },
+                          "mimeType": {
+                            "type": "string"
+                          },
+                          "byteSize": {
+                            "type": "number"
+                          },
+                          "sortOrder": {
+                            "type": "number"
+                          }
+                        }
+                      }
+                    },
+                    "submittedAt": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    },
+                    "canEdit": {
+                      "type": "boolean"
+                    },
+                    "statusChangedByName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "statusChangedAt": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "lastUpdatedByName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "notes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "authorName": {
+                            "type": "string"
+                          },
+                          "body": {
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "authorName",
+                          "body",
+                          "createdAt"
+                        ]
+                      }
+                    },
+                    "changes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "actorName": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "fields",
+                              "status"
+                            ]
+                          },
+                          "summary": {
+                            "type": "string"
+                          },
+                          "details": {
+                            "type": [
+                              "null",
+                              "array"
+                            ],
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "properties": {
+                                "field": {
+                                  "type": "string"
+                                },
+                                "from": {
+                                  "type": "string"
+                                },
+                                "to": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "field",
+                                "from",
+                                "to"
+                              ]
+                            }
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "actorName",
+                          "kind",
+                          "summary",
+                          "createdAt"
+                        ]
+                      }
+                    },
+                    "manageUrl": {
+                      "type": "string"
+                    },
+                    "accessToken": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/expenses/{id}/report": {
+      "patch": {
+        "tags": [
+          "expenses"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "number"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "statusLabel": {
+                      "type": "string"
+                    },
+                    "memberId": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "submitterName": {
+                      "type": "string"
+                    },
+                    "submitterEmail": {
+                      "type": "string"
+                    },
+                    "submitterPhone": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "mailingAddress": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "addressLine1": {
+                          "type": "string"
+                        },
+                        "addressLine2": {
+                          "type": "string"
+                        },
+                        "city": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "country": {
+                          "type": "string"
+                        },
+                        "postalCode": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "committeeId": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "committeeName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "committeeCustom": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "purpose": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "requestedAmountMinor": {
+                      "type": "number"
+                    },
+                    "requestedCurrency": {
+                      "type": "string"
+                    },
+                    "amountJustification": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "usedClubCreditCard": {
+                      "type": [
+                        "null",
+                        "boolean"
+                      ]
+                    },
+                    "clubCreditCardOwnerMemberId": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "clubCreditCardOwnerName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "comments": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "activityDate": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "fromKind": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "fromOther": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "toKind": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "toOther": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "roundTripMiles": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "tripPurpose": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "tripPurposeOther": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "receipts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "receiptDate": {
+                            "type": "string"
+                          },
+                          "amountMinor": {
+                            "type": "number"
+                          },
+                          "currency": {
+                            "type": "string"
+                          },
+                          "currencyOther": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "includesDurableGood": {
+                            "type": "boolean"
+                          },
+                          "originalFilename": {
+                            "type": "string"
+                          },
+                          "mimeType": {
+                            "type": "string"
+                          },
+                          "byteSize": {
+                            "type": "number"
+                          },
+                          "sortOrder": {
+                            "type": "number"
+                          }
+                        }
+                      }
+                    },
+                    "submittedAt": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    },
+                    "canEdit": {
+                      "type": "boolean"
+                    },
+                    "statusChangedByName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "statusChangedAt": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "lastUpdatedByName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "notes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "authorName": {
+                            "type": "string"
+                          },
+                          "body": {
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "authorName",
+                          "body",
+                          "createdAt"
+                        ]
+                      }
+                    },
+                    "changes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "actorName": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "fields",
+                              "status"
+                            ]
+                          },
+                          "summary": {
+                            "type": "string"
+                          },
+                          "details": {
+                            "type": [
+                              "null",
+                              "array"
+                            ],
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "properties": {
+                                "field": {
+                                  "type": "string"
+                                },
+                                "from": {
+                                  "type": "string"
+                                },
+                                "to": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "field",
+                                "from",
+                                "to"
+                              ]
+                            }
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "actorName",
+                          "kind",
+                          "summary",
+                          "createdAt"
+                        ]
+                      }
+                    },
+                    "manageUrl": {
+                      "type": "string"
+                    },
+                    "accessToken": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/expenses/{id}/notes": {
+      "post": {
+        "tags": [
+          "expenses"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "body": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "body"
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "number"
+                    },
+                    "kind": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "statusLabel": {
+                      "type": "string"
+                    },
+                    "memberId": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "submitterName": {
+                      "type": "string"
+                    },
+                    "submitterEmail": {
+                      "type": "string"
+                    },
+                    "submitterPhone": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "mailingAddress": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "addressLine1": {
+                          "type": "string"
+                        },
+                        "addressLine2": {
+                          "type": "string"
+                        },
+                        "city": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "country": {
+                          "type": "string"
+                        },
+                        "postalCode": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "committeeId": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "committeeName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "committeeCustom": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "purpose": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "requestedAmountMinor": {
+                      "type": "number"
+                    },
+                    "requestedCurrency": {
+                      "type": "string"
+                    },
+                    "amountJustification": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "usedClubCreditCard": {
+                      "type": [
+                        "null",
+                        "boolean"
+                      ]
+                    },
+                    "clubCreditCardOwnerMemberId": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "clubCreditCardOwnerName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "comments": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "activityDate": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "fromKind": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "fromOther": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "toKind": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "toOther": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "roundTripMiles": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "tripPurpose": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "tripPurposeOther": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "receipts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "receiptDate": {
+                            "type": "string"
+                          },
+                          "amountMinor": {
+                            "type": "number"
+                          },
+                          "currency": {
+                            "type": "string"
+                          },
+                          "currencyOther": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "includesDurableGood": {
+                            "type": "boolean"
+                          },
+                          "originalFilename": {
+                            "type": "string"
+                          },
+                          "mimeType": {
+                            "type": "string"
+                          },
+                          "byteSize": {
+                            "type": "number"
+                          },
+                          "sortOrder": {
+                            "type": "number"
+                          }
+                        }
+                      }
+                    },
+                    "submittedAt": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    },
+                    "canEdit": {
+                      "type": "boolean"
+                    },
+                    "statusChangedByName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "statusChangedAt": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "lastUpdatedByName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "notes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "authorName": {
+                            "type": "string"
+                          },
+                          "body": {
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "authorName",
+                          "body",
+                          "createdAt"
+                        ]
+                      }
+                    },
+                    "changes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "actorName": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "fields",
+                              "status"
+                            ]
+                          },
+                          "summary": {
+                            "type": "string"
+                          },
+                          "details": {
+                            "type": [
+                              "null",
+                              "array"
+                            ],
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "properties": {
+                                "field": {
+                                  "type": "string"
+                                },
+                                "from": {
+                                  "type": "string"
+                                },
+                                "to": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "field",
+                                "from",
+                                "to"
+                              ]
+                            }
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "actorName",
+                          "kind",
+                          "summary",
+                          "createdAt"
+                        ]
+                      }
+                    },
+                    "manageUrl": {
+                      "type": "string"
+                    },
+                    "accessToken": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/expenses/{id}/receipts/{receiptId}": {
+      "get": {
+        "tags": [
+          "expenses"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "receiptId",
             "required": true
           }
         ],

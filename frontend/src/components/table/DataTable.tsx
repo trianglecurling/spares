@@ -28,6 +28,7 @@ type DataTableProps<Row, SortKey extends string, RowId extends TableRowId> = {
   className?: string;
   shellClassName?: string;
   getRowClassName?: (row: Row) => string | undefined;
+  onRowClick?: (row: Row) => void;
 };
 
 function joinClasses(...parts: Array<string | false | null | undefined>) {
@@ -55,6 +56,7 @@ export default function DataTable<Row, SortKey extends string, RowId extends Tab
   className,
   shellClassName,
   getRowClassName,
+  onRowClick,
 }: DataTableProps<Row, SortKey, RowId>) {
   const selectedIdSet = new Set(selection?.selectedIds ?? []);
   const selectableRows = selection
@@ -170,8 +172,18 @@ export default function DataTable<Row, SortKey extends string, RowId extends Tab
                     key={String(rowId)}
                     className={joinClasses(
                       isSelected && 'bg-blue-50/70 dark:bg-blue-900/20',
+                      onRowClick && 'cursor-pointer',
                       getRowClassName?.(row)
                     )}
+                    onClick={
+                      onRowClick
+                        ? (event) => {
+                            const target = event.target as HTMLElement | null;
+                            if (target?.closest('button, a, input, select, textarea, label')) return;
+                            onRowClick(row);
+                          }
+                        : undefined
+                    }
                   >
                     {selection ? (
                       <td className="app-table-td w-12">

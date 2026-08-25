@@ -2258,6 +2258,21 @@ export const eventSpecialLinksSqlite = sqliteTable('event_special_links', {
 
 export type VolunteerSignupStatus = 'confirmed' | 'cancelled';
 
+export type ExpenseReportKind = 'expense' | 'mileage';
+export type ExpenseReportStatus = 'pending_review' | 'processing' | 'check_mailed' | 'complete';
+export type ExpenseFromKind = 'home' | 'other';
+export type ExpenseToKind = 'club' | 'other';
+export type ExpenseTripPurpose =
+  | 'bar'
+  | 'bonspiel'
+  | 'building_maintenance'
+  | 'ice_maintenance'
+  | 'instruction'
+  | 'rental'
+  | 'supply_pickup_delivery'
+  | 'other';
+export type ExpenseReceiptCurrency = 'usd' | 'cad' | 'other';
+
 export const volunteerProgramsSqlite = sqliteTable('volunteer_programs', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   title: text('title').notNull(),
@@ -2424,6 +2439,97 @@ export const volunteerSignupsSqlite = sqliteTable('volunteer_signups', {
     table.shift_role_id,
     table.member_id
   ),
+}));
+
+export const expenseReportsSqlite = sqliteTable('expense_reports', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  kind: text('kind').notNull().$type<ExpenseReportKind>(),
+  status: text('status').default('pending_review').notNull().$type<ExpenseReportStatus>(),
+  member_id: integer('member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
+  submitter_name: text('submitter_name').notNull(),
+  submitter_email: text('submitter_email').notNull(),
+  submitter_phone: text('submitter_phone'),
+  mailing_address: text('mailing_address'),
+  access_token: text('access_token'),
+  committee_id: integer('committee_id').references(() => governanceCommitteesSqlite.id, { onDelete: 'set null' }),
+  committee_name: text('committee_name'),
+  committee_custom: text('committee_custom'),
+  purpose: text('purpose'),
+  requested_amount_minor: integer('requested_amount_minor').notNull(),
+  requested_currency: text('requested_currency').default('usd').notNull(),
+  amount_justification: text('amount_justification'),
+  used_club_credit_card: integer('used_club_credit_card'),
+  club_credit_card_owner_member_id: integer('club_credit_card_owner_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
+  club_credit_card_owner_name: text('club_credit_card_owner_name'),
+  comments: text('comments'),
+  activity_date: text('activity_date'),
+  from_kind: text('from_kind').$type<ExpenseFromKind>(),
+  from_other: text('from_other'),
+  to_kind: text('to_kind').$type<ExpenseToKind>(),
+  to_other: text('to_other'),
+  round_trip_miles: real('round_trip_miles'),
+  trip_purpose: text('trip_purpose').$type<ExpenseTripPurpose>(),
+  trip_purpose_other: text('trip_purpose_other'),
+  status_changed_by_member_id: integer('status_changed_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
+  status_changed_by_name: text('status_changed_by_name'),
+  status_changed_at: text('status_changed_at'),
+  last_updated_by_member_id: integer('last_updated_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
+  last_updated_by_name: text('last_updated_by_name'),
+  submitted_at: text('submitted_at').default(sql`datetime('now')`).notNull(),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  memberIdx: index('idx_expense_reports_member_id').on(table.member_id),
+  emailIdx: index('idx_expense_reports_submitter_email').on(table.submitter_email),
+  statusIdx: index('idx_expense_reports_status').on(table.status),
+  submittedIdx: index('idx_expense_reports_submitted_at').on(table.submitted_at),
+  accessTokenUnique: uniqueIndex('expense_reports_access_token_unique').on(table.access_token),
+}));
+
+export const expenseReceiptsSqlite = sqliteTable('expense_receipts', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  report_id: integer('report_id').notNull().references(() => expenseReportsSqlite.id, { onDelete: 'cascade' }),
+  name: text('name').notNull(),
+  receipt_date: text('receipt_date').notNull(),
+  amount_minor: integer('amount_minor').notNull(),
+  currency: text('currency').default('usd').notNull().$type<ExpenseReceiptCurrency>(),
+  currency_other: text('currency_other'),
+  includes_durable_good: integer('includes_durable_good').default(0).notNull(),
+  storage_key: text('storage_key').notNull(),
+  original_filename: text('original_filename').notNull(),
+  mime_type: text('mime_type').notNull(),
+  byte_size: integer('byte_size').notNull(),
+  sort_order: integer('sort_order').default(0).notNull(),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  reportIdx: index('idx_expense_receipts_report_id').on(table.report_id),
+}));
+
+export const expenseReportNotesSqlite = sqliteTable('expense_report_notes', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  report_id: integer('report_id').notNull().references(() => expenseReportsSqlite.id, { onDelete: 'cascade' }),
+  author_member_id: integer('author_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
+  author_name: text('author_name').notNull(),
+  body: text('body').notNull(),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  reportIdx: index('idx_expense_report_notes_report_id').on(table.report_id),
+}));
+
+export type ExpenseReportChangeKind = 'fields' | 'status';
+
+export const expenseReportChangesSqlite = sqliteTable('expense_report_changes', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  report_id: integer('report_id').notNull().references(() => expenseReportsSqlite.id, { onDelete: 'cascade' }),
+  actor_member_id: integer('actor_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
+  actor_name: text('actor_name').notNull(),
+  kind: text('kind').notNull().$type<ExpenseReportChangeKind>(),
+  summary: text('summary').notNull(),
+  details: text('details'),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  reportIdx: index('idx_expense_report_changes_report_id').on(table.report_id),
 }));
 
 // ========== PostgreSQL Schema ==========
@@ -4582,6 +4688,95 @@ export const volunteerSignupsPg = pgTable('volunteer_signups', {
   ),
 }));
 
+export const expenseReportsPg = pgTable('expense_reports', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  kind: textPg('kind').notNull().$type<ExpenseReportKind>(),
+  status: textPg('status').default('pending_review').notNull().$type<ExpenseReportStatus>(),
+  member_id: integerPg('member_id').references(() => membersPg.id, { onDelete: 'set null' }),
+  submitter_name: textPg('submitter_name').notNull(),
+  submitter_email: textPg('submitter_email').notNull(),
+  submitter_phone: textPg('submitter_phone'),
+  mailing_address: textPg('mailing_address'),
+  access_token: textPg('access_token'),
+  committee_id: integerPg('committee_id').references(() => governanceCommitteesPg.id, { onDelete: 'set null' }),
+  committee_name: textPg('committee_name'),
+  committee_custom: textPg('committee_custom'),
+  purpose: textPg('purpose'),
+  requested_amount_minor: integerPg('requested_amount_minor').notNull(),
+  requested_currency: textPg('requested_currency').default('usd').notNull(),
+  amount_justification: textPg('amount_justification'),
+  used_club_credit_card: integerPg('used_club_credit_card'),
+  club_credit_card_owner_member_id: integerPg('club_credit_card_owner_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
+  club_credit_card_owner_name: textPg('club_credit_card_owner_name'),
+  comments: textPg('comments'),
+  activity_date: date('activity_date'),
+  from_kind: textPg('from_kind').$type<ExpenseFromKind>(),
+  from_other: textPg('from_other'),
+  to_kind: textPg('to_kind').$type<ExpenseToKind>(),
+  to_other: textPg('to_other'),
+  round_trip_miles: doublePrecision('round_trip_miles'),
+  trip_purpose: textPg('trip_purpose').$type<ExpenseTripPurpose>(),
+  trip_purpose_other: textPg('trip_purpose_other'),
+  status_changed_by_member_id: integerPg('status_changed_by_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
+  status_changed_by_name: textPg('status_changed_by_name'),
+  status_changed_at: timestamp('status_changed_at', { withTimezone: false }),
+  last_updated_by_member_id: integerPg('last_updated_by_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
+  last_updated_by_name: textPg('last_updated_by_name'),
+  submitted_at: timestamp('submitted_at', { withTimezone: false }).defaultNow().notNull(),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  memberIdx: indexPg('idx_expense_reports_member_id').on(table.member_id),
+  emailIdx: indexPg('idx_expense_reports_submitter_email').on(table.submitter_email),
+  statusIdx: indexPg('idx_expense_reports_status').on(table.status),
+  submittedIdx: indexPg('idx_expense_reports_submitted_at').on(table.submitted_at),
+  accessTokenUnique: uniqueIndexPg('expense_reports_access_token_unique').on(table.access_token),
+}));
+
+export const expenseReceiptsPg = pgTable('expense_receipts', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  report_id: integerPg('report_id').notNull().references(() => expenseReportsPg.id, { onDelete: 'cascade' }),
+  name: textPg('name').notNull(),
+  receipt_date: date('receipt_date').notNull(),
+  amount_minor: integerPg('amount_minor').notNull(),
+  currency: textPg('currency').default('usd').notNull().$type<ExpenseReceiptCurrency>(),
+  currency_other: textPg('currency_other'),
+  includes_durable_good: integerPg('includes_durable_good').default(0).notNull(),
+  storage_key: textPg('storage_key').notNull(),
+  original_filename: textPg('original_filename').notNull(),
+  mime_type: textPg('mime_type').notNull(),
+  byte_size: integerPg('byte_size').notNull(),
+  sort_order: integerPg('sort_order').default(0).notNull(),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  reportIdx: indexPg('idx_expense_receipts_report_id').on(table.report_id),
+}));
+
+export const expenseReportNotesPg = pgTable('expense_report_notes', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  report_id: integerPg('report_id').notNull().references(() => expenseReportsPg.id, { onDelete: 'cascade' }),
+  author_member_id: integerPg('author_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
+  author_name: textPg('author_name').notNull(),
+  body: textPg('body').notNull(),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  reportIdx: indexPg('idx_expense_report_notes_report_id').on(table.report_id),
+}));
+
+export const expenseReportChangesPg = pgTable('expense_report_changes', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  report_id: integerPg('report_id').notNull().references(() => expenseReportsPg.id, { onDelete: 'cascade' }),
+  actor_member_id: integerPg('actor_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
+  actor_name: textPg('actor_name').notNull(),
+  kind: textPg('kind').notNull().$type<ExpenseReportChangeKind>(),
+  summary: textPg('summary').notNull(),
+  details: textPg('details'),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  reportIdx: indexPg('idx_expense_report_changes_report_id').on(table.report_id),
+}));
+
 // Export schema objects for use in database initialization
 export const sqliteSchema = {
   members: membersSqlite,
@@ -4700,6 +4895,10 @@ export const sqliteSchema = {
   volunteerShiftExceptions: volunteerShiftExceptionsSqlite,
   volunteerShiftRoles: volunteerShiftRolesSqlite,
   volunteerSignups: volunteerSignupsSqlite,
+  expenseReports: expenseReportsSqlite,
+  expenseReceipts: expenseReceiptsSqlite,
+  expenseReportNotes: expenseReportNotesSqlite,
+  expenseReportChanges: expenseReportChangesSqlite,
 };
 
 export const pgSchema = {
@@ -4819,4 +5018,8 @@ export const pgSchema = {
   volunteerShiftExceptions: volunteerShiftExceptionsPg,
   volunteerShiftRoles: volunteerShiftRolesPg,
   volunteerSignups: volunteerSignupsPg,
+  expenseReports: expenseReportsPg,
+  expenseReceipts: expenseReceiptsPg,
+  expenseReportNotes: expenseReportNotesPg,
+  expenseReportChanges: expenseReportChangesPg,
 };

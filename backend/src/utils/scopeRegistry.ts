@@ -57,6 +57,9 @@ export const SCOPE_REGISTRY: ScopeRegistryEntry[] = [
   { scope: 'payments.read', category: 'Payments', description: 'Read payment orders, webhook events, transactions, and refund records.' },
   { scope: 'payments.manage', category: 'Payments', description: 'Manage payment operations such as manual transitions and refunds.' },
 
+  { scope: 'expenses.read', category: 'Expenses', description: 'View submitted expense and mileage reimbursement reports.' },
+  { scope: 'expenses.manage', category: 'Expenses', description: 'Update expense report status and staff notes.' },
+
   { scope: 'leagues.manage', category: 'Leagues', description: 'Manage leagues globally or in a scoped context (league id).' },
 
   { scope: 'events.read', category: 'Events', description: 'View events and event registration data.' },

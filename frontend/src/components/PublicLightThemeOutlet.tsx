@@ -1,4 +1,4 @@
-import { useEffect, Suspense } from 'react';
+import { useEffect, Suspense, type ReactNode } from 'react';
 import { Outlet } from 'react-router-dom';
 import { useTheme } from '../contexts/ThemeContext';
 
@@ -9,12 +9,22 @@ import { useTheme } from '../contexts/ThemeContext';
  * Initial HTML load: the same path rules are applied in /index.html (inline script) so the
  * first paint does not use OS-dark before this effect runs.
  */
-export default function PublicLightThemeOutlet() {
+function useForcePublicLightTheme() {
   const { setForcedResolvedTheme } = useTheme();
   useEffect(() => {
     setForcedResolvedTheme('light');
     return () => setForcedResolvedTheme(null);
   }, [setForcedResolvedTheme]);
+}
+
+/** Use when a public-light page is rendered outside {@link PublicLightThemeOutlet}. */
+export function ForcePublicLightTheme({ children }: { children: ReactNode }) {
+  useForcePublicLightTheme();
+  return <>{children}</>;
+}
+
+export default function PublicLightThemeOutlet() {
+  useForcePublicLightTheme();
   return (
     <Suspense fallback={null}>
       <Outlet />

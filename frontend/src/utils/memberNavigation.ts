@@ -19,6 +19,7 @@ export function getAdminLinks(member: AuthenticatedMember | null): MemberNavLink
     memberHasScope(member, 'registrations.manage') || memberHasScope(member, 'admin.manage');
   const canManageWebhooks = memberHasScope(member, 'admin.manage');
   const canReadPayments = memberHasScope(member, 'payments.read');
+  const canReadExpenses = memberHasScope(member, 'expenses.read');
   const canManageServerConfig = Boolean(member.isServerAdmin);
   const canManageWaivers =
     memberHasScope(member, 'members.manage') || memberHasScope(member, 'events.manage');
@@ -36,6 +37,7 @@ export function getAdminLinks(member: AuthenticatedMember | null): MemberNavLink
       : []),
     ...(canManageSponsorship ? [{ to: '/admin/sponsorship', label: 'Manage sponsorships' }] : []),
     ...(canReadPayments ? [{ to: '/admin/payments', label: 'Manage payments' }] : []),
+    ...(canReadExpenses ? [{ to: '/admin/expenses', label: 'Manage expense reports' }] : []),
     ...(canManageWebhooks ? [{ to: '/admin/webhooks', label: 'Outbound webhooks' }] : []),
     ...(canManageServerConfig ? [{ to: '/admin/roles', label: 'Manage roles' }] : []),
     ...(canManageServerConfig ? [{ to: '/admin/service-accounts', label: 'Service accounts' }] : []),

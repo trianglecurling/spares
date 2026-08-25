@@ -7,8 +7,10 @@ import { ConfirmProvider } from './contexts/ConfirmContext';
 import { MemberOptionsProvider } from './contexts/MemberOptionsContext';
 import { LeagueOptionsProvider } from './contexts/LeagueOptionsContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
-import PublicLightThemeOutlet from './components/PublicLightThemeOutlet';
+import PublicLightThemeOutlet, { ForcePublicLightTheme } from './components/PublicLightThemeOutlet';
 import AuthenticatedAppShell from './components/AuthenticatedAppShell';
+import AppStateCard from './components/AppStateCard';
+import Layout from './components/Layout';
 import EventManageRoute from './pages/admin/EventManageRoute';
 import Login from './pages/Login';
 import PublicHomePage from './pages/PublicHomePage';
@@ -89,6 +91,13 @@ const PublicVolunteerProgramPage = lazyRoute(() => import('./pages/PublicVolunte
 const PublicVolunteerSignupManagePage = lazyRoute(
   () => import('./pages/PublicVolunteerSignupManagePage')
 );
+const PublicExpenseReportPage = lazyRoute(() => import('./pages/PublicExpenseReportPage'));
+const PublicExpenseReportManagePage = lazyRoute(() => import('./pages/PublicExpenseReportManagePage'));
+const MemberExpenses = lazyRoute(() => import('./pages/MemberExpenses'));
+const MemberExpenseDetail = lazyRoute(() => import('./pages/MemberExpenseDetail'));
+const MemberExpenseNewPage = lazyRoute(() => import('./pages/MemberExpenseNewPage'));
+const AdminExpenses = lazyRoute(() => import('./pages/admin/AdminExpenses'));
+const AdminExpenseDetail = lazyRoute(() => import('./pages/admin/AdminExpenseDetail'));
 const MyVolunteerShifts = lazyRoute(() => import('./pages/MyVolunteerShifts'));
 const AdminEventRegistrationEditor = lazyRoute(() => import('./pages/admin/AdminEventRegistrationEditor'));
 const AdminEventScorekeeper = lazyRoute(() => import('./pages/admin/AdminEventScorekeeper'));
@@ -175,6 +184,36 @@ function PublicCalendarRoute() {
   return <Calendar publicMode />;
 }
 
+function ExpenseReportNewRoute() {
+  const { member, token, isLoading, isLikelyAuthenticated } = useAuth();
+
+  if (isLoading || (isLikelyAuthenticated && !member)) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-gray-500">Loading...</div>
+      </div>
+    );
+  }
+
+  if (token && member) {
+    return (
+      <Layout>
+        <Suspense fallback={<AppStateCard title="Loading..." />}>
+          <MemberExpenseNewPage />
+        </Suspense>
+      </Layout>
+    );
+  }
+
+  return (
+    <ForcePublicLightTheme>
+      <Suspense fallback={null}>
+        <PublicExpenseReportPage />
+      </Suspense>
+    </ForcePublicLightTheme>
+  );
+}
+
 function App() {
   return (
     <BrowserRouter>
@@ -194,6 +233,7 @@ function App() {
                       </Suspense>
                     }
                   />
+                  <Route path="/expenses/new" element={<ExpenseReportNewRoute />} />
 
                     {/* Help pages - accessible without authentication */}
                     {/* Public marketing pages (always light); native UI matches via color-scheme */}
@@ -255,6 +295,10 @@ function App() {
                       <Route
                         path="/volunteering/public/signups/manage/:accessToken"
                         element={<PublicVolunteerSignupManagePage />}
+                      />
+                      <Route
+                        path="/expenses/manage/:accessToken"
+                        element={<PublicExpenseReportManagePage />}
                       />
 
                       <Route
@@ -388,6 +432,22 @@ function App() {
                         element={
                           <ProtectedRoute>
                             <VolunteeringHub />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
+                        path="/expenses"
+                        element={
+                          <ProtectedRoute>
+                            <MemberExpenses />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
+                        path="/expenses/:id"
+                        element={
+                          <ProtectedRoute>
+                            <MemberExpenseDetail />
                           </ProtectedRoute>
                         }
                       />
@@ -699,6 +759,22 @@ function App() {
                       <Route path="/admin/registrations/:segment/:subsegment" element={<AdminRegistrationRoute />} />
                       <Route path="/admin/payments" element={<AdminPaymentsRoute />} />
                       <Route path="/admin/payments/:segment" element={<AdminPaymentsRoute />} />
+                      <Route
+                        path="/admin/expenses"
+                        element={
+                          <ProtectedRoute requiredScope="expenses.read">
+                            <AdminExpenses />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
+                        path="/admin/expenses/:id"
+                        element={
+                          <ProtectedRoute requiredScope="expenses.read">
+                            <AdminExpenseDetail />
+                          </ProtectedRoute>
+                        }
+                      />
                       <Route
                         path="/admin/webhooks"
                         element={
