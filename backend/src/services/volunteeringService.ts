@@ -358,6 +358,13 @@ export type VolunteerHubCredential = VolunteerCredentialSummary & {
   expiresAt: string | null;
 };
 
+export type MemberVolunteerCredentialView = {
+  id: number;
+  name: string;
+  description: string | null;
+  expiresAt: string | null;
+};
+
 export type VolunteerRoleView = {
   id: number;
   programId: number;
@@ -1668,6 +1675,32 @@ export async function listCredentialsAdmin(member: Member): Promise<CredentialAd
         grantedByMemberId: g.grantedByMemberId,
         expiresAt: normalizeDateOnly(g.expiresAt),
       })),
+  }));
+}
+
+export async function listMemberVolunteerCredentials(
+  memberId: number
+): Promise<MemberVolunteerCredentialView[]> {
+  const { db, schema } = getDrizzleDb();
+  const rows = await db
+    .select({
+      id: schema.volunteerCredentials.id,
+      name: schema.volunteerCredentials.name,
+      description: schema.volunteerCredentials.description,
+      expiresAt: schema.memberVolunteerCredentials.expires_at,
+    })
+    .from(schema.memberVolunteerCredentials)
+    .innerJoin(
+      schema.volunteerCredentials,
+      eq(schema.volunteerCredentials.id, schema.memberVolunteerCredentials.credential_id)
+    )
+    .where(eq(schema.memberVolunteerCredentials.member_id, memberId))
+    .orderBy(asc(schema.volunteerCredentials.name));
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    expiresAt: normalizeDateOnly(row.expiresAt),
   }));
 }
 

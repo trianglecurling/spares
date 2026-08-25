@@ -17,7 +17,7 @@ import type {
   VerifiedWebhookEvent,
   VerifyWebhookInput,
 } from './paymentService.js';
-import { PaymentServiceError, PaymentSignatureError, truncateCheckoutText } from './paymentService.js';
+import { PaymentServiceError, PaymentSignatureError, toProviderCheckoutLineItem, truncateCheckoutText } from './paymentService.js';
 import {
   buildSquareRefundReason,
   checkoutLineItemsToRefundItems,
@@ -227,7 +227,7 @@ function checkoutLineItemsTotalMinor(lineItems: CheckoutLineItem[]): number {
   return lineItems.reduce((sum, item) => sum + item.amountMinor, 0);
 }
 
-function buildSquareOrderDetails(input: CreateCheckoutInput): {
+export function buildSquareOrderDetails(input: CreateCheckoutInput): {
   lineItems: Array<{
     name: string;
     quantity: string;
@@ -271,14 +271,17 @@ function buildSquareOrderDetails(input: CreateCheckoutInput): {
   const discountItems = lineItems.filter((item) => item.amountMinor < 0);
 
   return {
-    lineItems: positiveItems.map((item) => ({
-      name: truncateCheckoutText(item.description, 512),
-      quantity: '1',
-      basePriceMoney: {
-        amount: BigInt(item.amountMinor),
-        currency,
-      },
-    })),
+    lineItems: positiveItems.map((item) => {
+      const priced = toProviderCheckoutLineItem(item);
+      return {
+        name: truncateCheckoutText(priced.description, 512),
+        quantity: String(priced.quantity),
+        basePriceMoney: {
+          amount: BigInt(priced.unitAmountMinor),
+          currency,
+        },
+      };
+    }),
     discounts:
       discountItems.length > 0
         ? discountItems.map((item, index) => ({

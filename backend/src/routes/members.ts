@@ -15,6 +15,7 @@ import {
   memberCreateResponseSchema,
   memberEmergencyContactResponseSchema,
   memberExperienceSummaryResponseSchema,
+  memberVolunteerCredentialsResponseSchema,
   memberLeaguesResponseSchema,
   memberListResponseSchema,
   memberDirectoryListResponseSchema,
@@ -55,6 +56,7 @@ import type {
   MemberCreateResponse,
   MemberEmergencyContactResponse,
   MemberExperienceSummaryResponse,
+  MemberVolunteerCredentialsResponse,
   MemberLeaguesResponse,
   MemberMembershipCardResponse,
   CreateMemberSeasonMembershipBody,
@@ -104,6 +106,7 @@ import {
   validateHalfYearExperienceValue,
 } from '../registration/curlingExperienceYears.js';
 import { getMemberTotalExperienceYears } from '../services/memberExperienceSummary.js';
+import { listMemberVolunteerCredentials } from '../services/volunteeringService.js';
 import {
   createMemberSeasonMembership,
   deleteMemberSeasonMembership,
@@ -1291,6 +1294,50 @@ export async function memberRoutes(fastify: FastifyInstance) {
       }
 
       return { totalExperienceYears };
+    },
+  );
+
+  // Volunteer credentials held by a member (visible to all authenticated members)
+  fastify.get<{ Params: { memberId: string }; Reply: MemberVolunteerCredentialsResponse | ApiErrorResponse }>(
+    '/members/:memberId/volunteer-credentials',
+    {
+      schema: {
+        tags: ['members'],
+        params: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            memberId: { type: 'string' },
+          },
+          required: ['memberId'],
+        },
+        response: {
+          200: memberVolunteerCredentialsResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const member = (request as AuthenticatedRequest).member;
+      if (!member) {
+        return reply.code(401).send({ error: 'Unauthorized' });
+      }
+
+      const targetMemberId = parseInt(request.params.memberId, 10);
+      if (Number.isNaN(targetMemberId)) {
+        return reply.code(400).send({ error: 'Invalid member ID' });
+      }
+
+      const { db, schema } = getDrizzleDb();
+      const existing = await db
+        .select({ id: schema.members.id })
+        .from(schema.members)
+        .where(eq(schema.members.id, targetMemberId))
+        .limit(1);
+      if (!existing[0]) {
+        return reply.code(404).send({ error: 'Member not found' });
+      }
+
+      return { credentials: await listMemberVolunteerCredentials(targetMemberId) };
     },
   );
 

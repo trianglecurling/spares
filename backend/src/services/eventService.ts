@@ -1155,6 +1155,7 @@ export async function registerForEvent(input: RegisterForEventInput) {
     totalFee,
     needsPayment,
     waitlistPosition,
+    groupSize,
   };
 }
 

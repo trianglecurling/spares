@@ -206,16 +206,19 @@ export function extractSquareOrderRefundLineItems(order: unknown): SquareRefundR
 }
 
 export function checkoutLineItemsToRefundItems(
-  lineItems: Array<{ description: string; amountMinor: number }> | null | undefined
+  lineItems: Array<{ description: string; amountMinor: number; quantity?: number }> | null | undefined
 ): SquareRefundReasonLineItem[] {
   if (!lineItems) return [];
   return lineItems
     .filter((item) => item.description.trim().length > 0 && item.amountMinor !== 0)
-    .map((item) => ({
-      name: item.description.trim(),
-      quantity: 1,
-      amountMinor: item.amountMinor,
-    }));
+    .map((item) => {
+      const quantity = item.quantity;
+      return {
+        name: item.description.trim(),
+        quantity: typeof quantity === 'number' && Number.isInteger(quantity) && quantity >= 1 ? quantity : 1,
+        amountMinor: item.amountMinor,
+      };
+    });
 }
 
 export function buildSquareRefundReason(input: {

@@ -493,6 +493,28 @@ export const memberExperienceSummaryResponseSchema = {
   required: ['totalExperienceYears'],
 } as const;
 
+export const memberVolunteerCredentialsResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    credentials: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          id: { type: 'number' },
+          name: { type: 'string' },
+          description: { type: ['string', 'null'] },
+          expiresAt: { type: ['string', 'null'] },
+        },
+        required: ['id', 'name', 'description', 'expiresAt'],
+      },
+    },
+  },
+  required: ['credentials'],
+} as const;
+
 export const memberSeasonMembershipSchema = {
   type: 'object',
   additionalProperties: false,

@@ -3016,11 +3016,12 @@ function formatEventResponse(event: EventFormattingSource) {
 
 async function createCheckoutForRegistration(
   event: EventFormattingSource,
-  registrationResult: { registrationId: number; totalFee: number },
+  registrationResult: { registrationId: number; totalFee: number; groupSize?: number },
   contactEmail: string,
   createdByMemberId?: number | null,
   checkoutFrontendBaseUrl: string = canonicalFrontendBaseUrl()
 ) {
+  const groupSize = Math.max(1, registrationResult.groupSize ?? 1);
   const paymentService = createPaymentService();
   const paymentProvider = getDefaultPaymentProvider();
   const order = await paymentService.createPaymentOrder({
@@ -3036,6 +3037,8 @@ async function createCheckoutForRegistration(
       paymentItemName: event.payment_item_name ?? null,
       registrationId: registrationResult.registrationId,
       contactEmail,
+      groupSize,
+      checkoutQuantity: groupSize,
     },
   });
 
@@ -3096,6 +3099,7 @@ async function createCheckoutForRegistrationBalance(
       paymentKind: 'event_registration_balance',
       previousGroupSize: input.previousGroupSize,
       groupSize: input.groupSize,
+      checkoutQuantity: Math.max(1, input.groupSize - input.previousGroupSize),
     },
   });
 

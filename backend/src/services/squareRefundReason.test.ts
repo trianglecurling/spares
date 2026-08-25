@@ -82,6 +82,21 @@ describe('extractSquareOrderRefundLineItems', () => {
       { name: 'Early bird', quantity: 1, amountMinor: -2000 },
     ]);
   });
+
+  test('keeps Square quantity and line total for a group registration', () => {
+    expect(
+      extractSquareOrderRefundLineItems({
+        lineItems: [
+          {
+            name: 'Curling Event',
+            quantity: '3',
+            basePriceMoney: { amount: 4000, currency: 'USD' },
+            totalMoney: { amount: 12000, currency: 'USD' },
+          },
+        ],
+      })
+    ).toEqual([{ name: 'Curling Event', quantity: 3, amountMinor: 12000 }]);
+  });
 });
 
 describe('buildSquareRefundReason', () => {
@@ -148,5 +163,13 @@ describe('buildSquareRefundReason', () => {
         staffReason: 'Requested by donor',
       })
     ).toBe('Donation to Triangle Curling Club x1 $50.00 — Requested by donor');
+  });
+
+  test('preserves group registration quantity on checkout fallback items', () => {
+    expect(
+      checkoutLineItemsToRefundItems([
+        { description: 'Curling Event', amountMinor: 12000, quantity: 3 },
+      ])
+    ).toEqual([{ name: 'Curling Event', quantity: 3, amountMinor: 12000 }]);
   });
 });

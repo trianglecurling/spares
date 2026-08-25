@@ -204,6 +204,17 @@ export type MemberExperienceSummaryResponse = {
   totalExperienceYears: number;
 };
 
+export type MemberVolunteerCredentialResponse = {
+  id: number;
+  name: string;
+  description: string | null;
+  expiresAt: string | null;
+};
+
+export type MemberVolunteerCredentialsResponse = {
+  credentials: MemberVolunteerCredentialResponse[];
+};
+
 export type MemberSeasonMembershipResponse = {
   id: number;
   seasonId: number;

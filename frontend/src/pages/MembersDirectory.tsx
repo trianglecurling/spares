@@ -15,6 +15,11 @@ import FormField from '../components/FormField';
 import useTableQueryState from '../hooks/useTableQueryState';
 import { useLeagueOptions } from '../contexts/LeagueOptionsContext';
 import { isLeagueEligibleForSpares } from '../utils/leagueSpareEligibility';
+import {
+  formatVolunteerDateOnly,
+  localDateOnly,
+  volunteerCredentialIsValidOn,
+} from '../utils/volunteering';
 
 const MEMBERS_PAGE_SIZE = 50;
 
@@ -58,7 +63,14 @@ interface MemberExperienceSummary {
   totalExperienceYears: number;
 }
 
-type MemberProfileModalTab = 'profile' | 'emergency-contact' | 'sparing' | 'leagues';
+interface MemberVolunteerCredential {
+  id: number;
+  name: string;
+  description: string | null;
+  expiresAt: string | null;
+}
+
+type MemberProfileModalTab = 'profile' | 'emergency-contact' | 'sparing' | 'leagues' | 'credentials';
 
 type MembersPageTab = 'directory' | 'spare-lists';
 
@@ -68,6 +80,62 @@ function formatExperienceYears(years: number): string {
 }
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+function MemberVolunteerCredentialsList({
+  credentials,
+}: {
+  credentials: MemberVolunteerCredential[];
+}) {
+  const today = localDateOnly();
+  const sorted = [...credentials].sort((a, b) => {
+    const aExpired = !volunteerCredentialIsValidOn(a.expiresAt, today);
+    const bExpired = !volunteerCredentialIsValidOn(b.expiresAt, today);
+    if (aExpired !== bExpired) return aExpired ? 1 : -1;
+    return a.name.localeCompare(b.name);
+  });
+
+  return (
+    <ul className="space-y-3">
+      {sorted.map((credential) => {
+        const expired = !volunteerCredentialIsValidOn(credential.expiresAt, today);
+        return (
+          <li key={credential.id} className="app-card space-y-2 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="font-medium text-gray-900 dark:text-gray-100">{credential.name}</div>
+              <span
+                className={
+                  expired
+                    ? 'inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-200'
+                    : 'inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200'
+                }
+              >
+                {expired ? 'Expired' : 'Current'}
+              </span>
+            </div>
+            {credential.description ? (
+              <p className="whitespace-pre-wrap text-sm text-gray-600 dark:text-gray-400">
+                {credential.description}
+              </p>
+            ) : null}
+            {credential.expiresAt ? (
+              <p
+                className={
+                  expired
+                    ? 'text-sm text-amber-700 dark:text-amber-300'
+                    : 'text-sm text-gray-600 dark:text-gray-400'
+                }
+              >
+                {expired ? 'Expired' : 'Expires'} {formatVolunteerDateOnly(credential.expiresAt)}
+              </p>
+            ) : (
+              <p className="text-sm text-gray-600 dark:text-gray-400">No expiration</p>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
 
 const roleLabels: Record<string, string> = {
   lead: 'Lead',
@@ -96,11 +164,13 @@ export default function MembersDirectory() {
     null
   );
   const [memberExperience, setMemberExperience] = useState<MemberExperienceSummary | null>(null);
+  const [memberCredentials, setMemberCredentials] = useState<MemberVolunteerCredential[] | null>(null);
   const [profileModalTab, setProfileModalTab] = useState<MemberProfileModalTab>('profile');
   const [loadingAvailability, setLoadingAvailability] = useState(false);
   const [loadingLeagues, setLoadingLeagues] = useState(false);
   const [loadingEmergencyContact, setLoadingEmergencyContact] = useState(false);
   const [loadingExperience, setLoadingExperience] = useState(false);
+  const [loadingCredentials, setLoadingCredentials] = useState(false);
   const [teamRosterModal, setTeamRosterModal] = useState<{
     teamId: number;
     teamName: string;
@@ -244,34 +314,40 @@ export default function MembersDirectory() {
     setMemberLeagues(null);
     setMemberEmergencyContact(null);
     setMemberExperience(null);
+    setMemberCredentials(null);
 
     setLoadingAvailability(true);
     setLoadingLeagues(true);
     setLoadingEmergencyContact(true);
     setLoadingExperience(true);
+    setLoadingCredentials(true);
     try {
       const memberId = String(member.id);
-      const [availabilityRes, leaguesRes, emergencyContactRes, experienceRes] = await Promise.all([
+      const [availabilityRes, leaguesRes, emergencyContactRes, experienceRes, credentialsRes] = await Promise.all([
         get('/members/{memberId}/availability', undefined, { memberId }),
         get('/members/{memberId}/leagues', undefined, { memberId }),
         get('/members/{memberId}/emergency-contact', undefined, { memberId }),
         get('/members/{memberId}/experience', undefined, { memberId }),
+        get('/members/{memberId}/volunteer-credentials', undefined, { memberId }),
       ]);
       setMemberAvailability(availabilityRes);
       setMemberLeagues(Array.isArray(leaguesRes) ? leaguesRes : []);
       setMemberEmergencyContact(emergencyContactRes);
       setMemberExperience(experienceRes as MemberExperienceSummary);
+      setMemberCredentials(credentialsRes.credentials ?? []);
     } catch (error) {
       console.error('Failed to load member data:', error);
       setMemberAvailability({ canSkip: false, availableLeagues: [] });
       setMemberLeagues([]);
       setMemberEmergencyContact(null);
       setMemberExperience(null);
+      setMemberCredentials(null);
     } finally {
       setLoadingAvailability(false);
       setLoadingLeagues(false);
       setLoadingEmergencyContact(false);
       setLoadingExperience(false);
+      setLoadingCredentials(false);
     }
   }, []);
 
@@ -281,6 +357,7 @@ export default function MembersDirectory() {
     setMemberLeagues(null);
     setMemberEmergencyContact(null);
     setMemberExperience(null);
+    setMemberCredentials(null);
     setProfileModalTab('profile');
     setTeamRosterModal(null);
   };
@@ -488,6 +565,12 @@ export default function MembersDirectory() {
                     label: 'Leagues',
                     isActive: profileModalTab === 'leagues',
                     onClick: () => setProfileModalTab('leagues'),
+                  },
+                  {
+                    key: 'credentials',
+                    label: 'Credentials',
+                    isActive: profileModalTab === 'credentials',
+                    onClick: () => setProfileModalTab('credentials'),
                   },
                 ]}
               />
@@ -711,6 +794,21 @@ export default function MembersDirectory() {
                       </ul>
                     ) : (
                       <InlineStateMessage title="Not on any league rosters." />
+                    )}
+                  </div>
+                )}
+
+                {profileModalTab === 'credentials' && (
+                  <div>
+                    <h3 className="app-section-title mb-3">Volunteering credentials</h3>
+                    {loadingCredentials ? (
+                      <InlineStateMessage title="Loading credentials..." />
+                    ) : memberCredentials && memberCredentials.length > 0 ? (
+                      <MemberVolunteerCredentialsList credentials={memberCredentials} />
+                    ) : memberCredentials ? (
+                      <InlineStateMessage title="No volunteering credentials." />
+                    ) : (
+                      <InlineStateMessage title="Unable to load credentials." />
                     )}
                   </div>
                 )}

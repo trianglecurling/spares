@@ -55,6 +55,18 @@ function asNumber(value: unknown): number | null {
   return null;
 }
 
+function asPositiveInteger(value: unknown): number | null {
+  const parsed = asNumber(value);
+  if (parsed == null || !Number.isInteger(parsed) || parsed < 1) return null;
+  return parsed;
+}
+
+function asNonNegativeInteger(value: unknown): number | null {
+  const parsed = asNumber(value);
+  if (parsed == null || !Number.isInteger(parsed) || parsed < 0) return null;
+  return parsed;
+}
+
 function asBoolean(value: unknown): boolean | null {
   if (typeof value === 'boolean') return value;
   if (typeof value === 'string') {
@@ -205,7 +217,51 @@ export interface HostedCheckoutSession {
 
 export interface CheckoutLineItem {
   description: string;
+  /** Line total in minor units (unit price × quantity). */
   amountMinor: number;
+  /** Number of identical units. Providers send this with a per-unit price. */
+  quantity?: number;
+}
+
+export function checkoutLineItemQuantity(item: CheckoutLineItem): number {
+  return asPositiveInteger(item.quantity) ?? 1;
+}
+
+/** Per-unit amount, or null when the line total does not divide evenly by quantity. */
+export function checkoutLineItemUnitAmountMinor(item: CheckoutLineItem): number | null {
+  const quantity = checkoutLineItemQuantity(item);
+  if (item.amountMinor % quantity !== 0) return null;
+  return item.amountMinor / quantity;
+}
+
+export function toProviderCheckoutLineItem(item: CheckoutLineItem): {
+  description: string;
+  quantity: number;
+  unitAmountMinor: number;
+} {
+  const quantity = checkoutLineItemQuantity(item);
+  const unitAmountMinor = checkoutLineItemUnitAmountMinor(item);
+  if (unitAmountMinor == null) {
+    return { description: item.description, quantity: 1, unitAmountMinor: item.amountMinor };
+  }
+  return { description: item.description, quantity, unitAmountMinor };
+}
+
+/** People billed on this event checkout: group size, or the added people on a balance payment. */
+export function eventRegistrationCheckoutQuantity(metadata: Record<string, unknown>): number {
+  const explicit = asPositiveInteger(metadata.checkoutQuantity ?? metadata.checkout_quantity);
+  if (explicit != null) return explicit;
+
+  const paymentKind = asString(metadata.paymentKind ?? metadata.payment_kind);
+  if (paymentKind === 'event_registration_balance') {
+    const groupSize = asPositiveInteger(metadata.groupSize ?? metadata.group_size);
+    const previousGroupSize = asNonNegativeInteger(metadata.previousGroupSize ?? metadata.previous_group_size);
+    if (groupSize != null && previousGroupSize != null && groupSize > previousGroupSize) {
+      return groupSize - previousGroupSize;
+    }
+  }
+
+  return asPositiveInteger(metadata.groupSize ?? metadata.group_size) ?? 1;
 }
 
 export interface CreateCheckoutInput {
@@ -360,16 +416,19 @@ function buildStripeCheckoutLineItems(input: CreateCheckoutInput): Stripe.Checko
     ];
   }
 
-  return lineItems.map((item) => ({
-    quantity: 1,
-    price_data: {
-      currency: input.currency.toLowerCase(),
-      unit_amount: item.amountMinor,
-      product_data: {
-        name: truncateCheckoutText(item.description, 250),
+  return lineItems.map((item) => {
+    const priced = toProviderCheckoutLineItem(item);
+    return {
+      quantity: priced.quantity,
+      price_data: {
+        currency: input.currency.toLowerCase(),
+        unit_amount: priced.unitAmountMinor,
+        product_data: {
+          name: truncateCheckoutText(priced.description, 250),
+        },
       },
-    },
-  }));
+    };
+  });
 }
 
 class StripePaymentProviderAdapter implements PaymentProviderAdapter {
@@ -954,6 +1013,7 @@ export class PaymentService {
         {
           description: eventRegistrationCheckoutItemDescription(input.metadata),
           amountMinor: input.amountMinor,
+          quantity: eventRegistrationCheckoutQuantity(input.metadata),
         },
       ];
     }

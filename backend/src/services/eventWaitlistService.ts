@@ -809,6 +809,7 @@ export async function acceptWaitlistOfferByToken(
     offer,
     registrationId: registration.id,
     totalFee,
+    groupSize: registration.group_size ?? 1,
     contactEmail: registration.contact_email,
     checkoutFrontendBaseUrl,
   });
@@ -826,12 +827,14 @@ async function createCheckoutForWaitlistOffer(input: {
   offer: { id: number; response_token: string };
   registrationId: number;
   totalFee: number;
+  groupSize: number;
   contactEmail: string;
   checkoutFrontendBaseUrl: string;
 }) {
   const { createPaymentService, getDefaultPaymentProvider, buildCheckoutSuccessUrl } = await import('./paymentService.js');
   const { db, schema } = getDrizzleDb();
 
+  const groupSize = Math.max(1, input.groupSize);
   const paymentService = createPaymentService();
   const paymentProvider = getDefaultPaymentProvider();
   const order = await paymentService.createPaymentOrder({
@@ -848,6 +851,8 @@ async function createCheckoutForWaitlistOffer(input: {
       registrationId: input.registrationId,
       contactEmail: input.contactEmail,
       eventWaitlistOfferId: input.offer.id,
+      groupSize,
+      checkoutQuantity: groupSize,
     },
   });
 

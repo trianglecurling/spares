@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { isSquareOrderFullyPaid, planSquareOrderCompletion } from './squarePaymentProviderAdapter.js';
+import { buildSquareOrderDetails, isSquareOrderFullyPaid, planSquareOrderCompletion } from './squarePaymentProviderAdapter.js';
+import type { CreateCheckoutInput } from './paymentService.js';
 
 describe('isSquareOrderFullyPaid', () => {
   test('requires zero net amount due and at least one tender', () => {
@@ -103,5 +104,66 @@ describe('planSquareOrderCompletion', () => {
       locationId: null,
       fulfillments: [],
     });
+  });
+});
+
+function eventCheckoutInput(overrides: Partial<CreateCheckoutInput>): CreateCheckoutInput {
+  return {
+    orderId: 1,
+    orderToken: 'tok',
+    amountMinor: 12000,
+    currency: 'usd',
+    subjectType: 'event_registration',
+    subjectId: 10,
+    successUrl: 'https://example.com/success',
+    cancelUrl: 'https://example.com/cancel',
+    description: 'Event registration — Learn to Curl',
+    ...overrides,
+  };
+}
+
+describe('buildSquareOrderDetails', () => {
+  test('sends group registrations as quantity at the per-person price', () => {
+    expect(
+      buildSquareOrderDetails(
+        eventCheckoutInput({
+          lineItems: [
+            { description: 'Curling Event', amountMinor: 12000, quantity: 3 },
+          ],
+        })
+      )
+    ).toEqual({
+      lineItems: [
+        {
+          name: 'Curling Event',
+          quantity: '3',
+          basePriceMoney: {
+            amount: 4000n,
+            currency: 'USD',
+          },
+        },
+      ],
+      discounts: undefined,
+    });
+  });
+
+  test('keeps a single line when quantity is omitted', () => {
+    expect(
+      buildSquareOrderDetails(
+        eventCheckoutInput({
+          amountMinor: 4000,
+          lineItems: [{ description: 'Curling Event', amountMinor: 4000 }],
+        })
+      ).lineItems
+    ).toEqual([
+      {
+        name: 'Curling Event',
+        quantity: '1',
+        basePriceMoney: {
+          amount: 4000n,
+          currency: 'USD',
+        },
+      },
+    ]);
   });
 });
