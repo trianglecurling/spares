@@ -28,6 +28,10 @@ import {
 } from './email.js';
 import { ensureUniqueVolunteerProgramSlug } from './volunteerProgramSlugs.js';
 import { compareVolunteerProgramsForDiscovery } from '../utils/volunteerProgramSort.js';
+import {
+  heldVolunteerCredentialIdsOn,
+  volunteerCredentialIsValidOn,
+} from '../utils/volunteerCredentials.js';
 
 /**
  * Club is the default volunteer location and is not shown in UI/email.
@@ -119,6 +123,16 @@ function normalizeDateOnly(value: unknown): string | null {
   if (Number.isNaN(d.getTime())) return null;
   const pad = (n: number) => String(n).padStart(2, '0');
   return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+}
+
+function clubDateOnly(instant: Date): string {
+  return formatDateInTimeZone(instant, config.timeZone) ?? instant.toISOString().slice(0, 10);
+}
+
+function shiftDateOnly(startDt: string): string {
+  const parsed = new Date(startDt);
+  if (Number.isNaN(parsed.getTime())) return startDt.slice(0, 10);
+  return clubDateOnly(parsed);
 }
 
 function normalizeDurationMinutes(value: number | undefined): number {
@@ -341,6 +355,7 @@ export type VolunteerCredentialSummary = {
 
 export type VolunteerHubCredential = VolunteerCredentialSummary & {
   held: boolean;
+  expiresAt: string | null;
 };
 
 export type VolunteerRoleView = {
@@ -500,6 +515,7 @@ export type CredentialAdminView = VolunteerCredentialSummary & {
     memberEmail: string | null;
     grantedAt: string;
     grantedByMemberId: number | null;
+    expiresAt: string | null;
   }>;
 };
 
@@ -610,13 +626,26 @@ async function replaceRoleCredentials(roleId: number, credentialIds: number[]): 
   );
 }
 
-async function getMemberCredentials(memberId: number): Promise<Set<number>> {
+async function getMemberCredentialGrants(
+  memberId: number
+): Promise<Array<{ credentialId: number; expiresAt: string | null }>> {
   const { db, schema } = getDrizzleDb();
   const rows = await db
-    .select({ credentialId: schema.memberVolunteerCredentials.credential_id })
+    .select({
+      credentialId: schema.memberVolunteerCredentials.credential_id,
+      expiresAt: schema.memberVolunteerCredentials.expires_at,
+    })
     .from(schema.memberVolunteerCredentials)
     .where(eq(schema.memberVolunteerCredentials.member_id, memberId));
-  return new Set(rows.map((r) => r.credentialId));
+  return rows.map((row) => ({
+    credentialId: row.credentialId,
+    expiresAt: normalizeDateOnly(row.expiresAt),
+  }));
+}
+
+async function getMemberCredentials(memberId: number, asOfDate: string): Promise<Set<number>> {
+  const grants = await getMemberCredentialGrants(memberId);
+  return heldVolunteerCredentialIdsOn(grants, asOfDate);
 }
 
 async function getRoleRequiredCredentialMap(
@@ -1496,7 +1525,8 @@ export async function grantCredential(input: {
   credentialId: number;
   memberId: number;
   grantedByMemberId: number;
-}): Promise<{ id: number }> {
+  expiresAt?: string | null;
+}): Promise<{ id: number; expiresAt: string | null }> {
   const { db, schema } = getDrizzleDb();
   const credential = await db
     .select({ id: schema.volunteerCredentials.id })
@@ -1524,16 +1554,42 @@ export async function grantCredential(input: {
     .limit(1);
   if (existing[0]) throw new VolunteeringServiceError('Member already has this credential', 409);
 
+  const expiresAt = parseOptionalDateOnly(input.expiresAt, 'expiration date');
   const [row] = await db
     .insert(schema.memberVolunteerCredentials)
     .values({
       member_id: input.memberId,
       credential_id: input.credentialId,
       granted_by_member_id: input.grantedByMemberId,
+      expires_at: expiresAt,
     } as any)
     .returning({ id: schema.memberVolunteerCredentials.id });
 
-  return { id: row.id };
+  return { id: row.id, expiresAt };
+}
+
+export async function updateCredentialGrant(
+  credentialId: number,
+  memberId: number,
+  expiresAt: string | null
+): Promise<void> {
+  const { db, schema } = getDrizzleDb();
+  const existing = await db
+    .select({ id: schema.memberVolunteerCredentials.id })
+    .from(schema.memberVolunteerCredentials)
+    .where(
+      and(
+        eq(schema.memberVolunteerCredentials.member_id, memberId),
+        eq(schema.memberVolunteerCredentials.credential_id, credentialId)
+      )
+    )
+    .limit(1);
+  if (!existing[0]) throw new VolunteeringServiceError('Credential grant not found', 404);
+  const nextExpiresAt = parseOptionalDateOnly(expiresAt, 'expiration date');
+  await db
+    .update(schema.memberVolunteerCredentials)
+    .set({ expires_at: nextExpiresAt } as any)
+    .where(eq(schema.memberVolunteerCredentials.id, existing[0].id));
 }
 
 export async function revokeCredential(credentialId: number, memberId: number): Promise<void> {
@@ -1587,6 +1643,7 @@ export async function listCredentialsAdmin(member: Member): Promise<CredentialAd
       memberEmail: schema.members.email,
       grantedAt: schema.memberVolunteerCredentials.granted_at,
       grantedByMemberId: schema.memberVolunteerCredentials.granted_by_member_id,
+      expiresAt: schema.memberVolunteerCredentials.expires_at,
     })
     .from(schema.memberVolunteerCredentials)
     .innerJoin(schema.members, eq(schema.members.id, schema.memberVolunteerCredentials.member_id))
@@ -1609,18 +1666,21 @@ export async function listCredentialsAdmin(member: Member): Promise<CredentialAd
         memberEmail: g.memberEmail,
         grantedAt: requireIso(g.grantedAt as any, 'grantedAt'),
         grantedByMemberId: g.grantedByMemberId,
+        expiresAt: normalizeDateOnly(g.expiresAt),
       })),
   }));
 }
 
 export async function listMyCredentials(memberId: number): Promise<VolunteerCredentialSummary[]> {
   const { db, schema } = getDrizzleDb();
+  const today = clubDateOnly(await getCurrentTimeAsync());
   const rows = await db
     .select({
       id: schema.volunteerCredentials.id,
       name: schema.volunteerCredentials.name,
       description: schema.volunteerCredentials.description,
       pointOfContactEmail: schema.volunteerCredentials.point_of_contact_email,
+      expiresAt: schema.memberVolunteerCredentials.expires_at,
     })
     .from(schema.memberVolunteerCredentials)
     .innerJoin(
@@ -1629,12 +1689,15 @@ export async function listMyCredentials(memberId: number): Promise<VolunteerCred
     )
     .where(eq(schema.memberVolunteerCredentials.member_id, memberId))
     .orderBy(asc(schema.volunteerCredentials.name));
-  return rows;
+  return rows
+    .filter((row) => volunteerCredentialIsValidOn(normalizeDateOnly(row.expiresAt), today))
+    .map(({ expiresAt: _expiresAt, ...row }) => row);
 }
 
 export async function listHubCredentials(memberId: number): Promise<VolunteerHubCredential[]> {
   const { db, schema } = getDrizzleDb();
-  const [credentials, held] = await Promise.all([
+  const today = clubDateOnly(await getCurrentTimeAsync());
+  const [credentials, grants] = await Promise.all([
     db
       .select({
         id: schema.volunteerCredentials.id,
@@ -1644,12 +1707,17 @@ export async function listHubCredentials(memberId: number): Promise<VolunteerHub
       })
       .from(schema.volunteerCredentials)
       .orderBy(asc(schema.volunteerCredentials.name)),
-    getMemberCredentials(memberId),
+    getMemberCredentialGrants(memberId),
   ]);
-  return credentials.map((c) => ({
-    ...c,
-    held: held.has(c.id),
-  }));
+  const grantByCredentialId = new Map(grants.map((grant) => [grant.credentialId, grant]));
+  return credentials.map((c) => {
+    const grant = grantByCredentialId.get(c.id);
+    return {
+      ...c,
+      held: grant ? volunteerCredentialIsValidOn(grant.expiresAt, today) : false,
+      expiresAt: grant?.expiresAt ?? null,
+    };
+  });
 }
 
 async function buildProgramViews(options: {
@@ -1662,8 +1730,8 @@ async function buildProgramViews(options: {
   const { db, schema } = getDrizzleDb();
   const now = await getCurrentTimeAsync();
   const nowIso = now.toISOString();
-  const [heldCredentials, clubName] = await Promise.all([
-    getMemberCredentials(options.member.id),
+  const [heldGrants, clubName] = await Promise.all([
+    getMemberCredentialGrants(options.member.id),
     getConfiguredClubName(),
   ]);
 
@@ -1776,6 +1844,8 @@ async function buildProgramViews(options: {
     const programShifts: VolunteerShiftView[] = shifts
       .filter((s) => s.program_id === program.id)
       .map((shift) => {
+        const shiftStart = requireIso(shift.start_dt as any, 'startDt');
+        const heldCredentials = heldVolunteerCredentialIdsOn(heldGrants, shiftDateOnly(shiftStart));
         const rolesForShift: VolunteerShiftRoleView[] = shiftRoles
           .filter((sr) => sr.shiftId === shift.id)
           .map((sr) => {
@@ -1818,7 +1888,7 @@ async function buildProgramViews(options: {
         return {
           id: shift.id,
           programId: shift.program_id,
-          startDt: requireIso(shift.start_dt as any, 'startDt'),
+          startDt: shiftStart,
           endDt: requireIso(shift.end_dt as any, 'endDt'),
           recurrenceSeriesId: shift.recurrence_series_id ?? null,
           recurrenceRule: shift.recurrence_rule ?? null,
@@ -1954,7 +2024,7 @@ export async function listDashboardOpportunities(memberId: number): Promise<Dash
   const maxPrograms = sectionConfig.maxPrograms ?? 3;
   const maxShiftsPerProgram = sectionConfig.maxShiftsPerProgram ?? 4;
   const horizon = new Date(now.getTime() + lookAheadDays * 24 * 60 * 60 * 1000).toISOString();
-  const [held, clubName] = await Promise.all([getMemberCredentials(memberId), getConfiguredClubName()]);
+  const [heldGrants, clubName] = await Promise.all([getMemberCredentialGrants(memberId), getConfiguredClubName()]);
 
   const shifts = await db
     .select({
@@ -2057,6 +2127,8 @@ export async function listDashboardOpportunities(memberId: number): Promise<Dash
   for (const sr of shiftRoles) {
     const shift = shiftMap.get(sr.shiftId);
     if (!shift) continue;
+    const startDt = requireIso(shift.startDt as any, 'startDt');
+    const held = heldVolunteerCredentialIdsOn(heldGrants, shiftDateOnly(startDt));
     const required = roleCredMap.get(sr.roleId) ?? [];
     if (!memberHasAllCredentials(held, required)) continue;
     const registered = countMap.get(sr.id) ?? 0;
@@ -2079,7 +2151,7 @@ export async function listDashboardOpportunities(memberId: number): Promise<Dash
     if (!shiftDraft) {
       shiftDraft = {
         shiftId: sr.shiftId,
-        startDt: requireIso(shift.startDt as any, 'startDt'),
+        startDt,
         endDt: requireIso(shift.endDt as any, 'endDt'),
         roles: [],
       };
@@ -2263,7 +2335,8 @@ export async function signUpForShiftRole(
 
   const requiredMap = await getRoleRequiredCredentialMap([target.roleId]);
   const required = requiredMap.get(target.roleId) ?? [];
-  const actorHeld = await getMemberCredentials(actor.id);
+  const asOfDate = shiftDateOnly(startDt);
+  const actorHeld = await getMemberCredentials(actor.id, asOfDate);
   if (!memberHasAllCredentials(actorHeld, required)) {
     throw new VolunteeringServiceError('Missing required credentials for this role', 403);
   }
@@ -2275,7 +2348,7 @@ export async function signUpForShiftRole(
   }
 
   for (const memberId of memberIds) {
-    const held = memberId === actor.id ? actorHeld : await getMemberCredentials(memberId);
+    const held = memberId === actor.id ? actorHeld : await getMemberCredentials(memberId, asOfDate);
     if (!memberHasAllCredentials(held, required)) {
       throw new VolunteeringServiceError(
         'One or more selected members are missing required credentials for this role',

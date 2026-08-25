@@ -16,6 +16,7 @@ import FormCheckbox from '../../components/FormCheckbox';
 import FormField from '../../components/FormField';
 import Modal from '../../components/Modal';
 import { storeArticleDraftPreview } from '../../utils/articleDraftPreviewSession';
+import { articleSnippetForSave } from '../../utils/articleSnippet';
 import { notifyPublicBootstrapChanged } from '../../utils/publicBootstrapClient';
 import {
   buildArticleHtmlContentFromMarkdown,
@@ -282,12 +283,13 @@ export default function AdminArticleEditor() {
 
   const handleDraftPreview = () => {
     const content = getCurrentEditorContent();
+    const snippetToSave = articleSnippetForSave(content, form.snippet);
     const k = storeArticleDraftPreview({
       title: form.title,
       slug: form.slug,
       contentType: form.contentType,
       content,
-      snippet: form.snippet.trim() || null,
+      snippet: snippetToSave,
     });
     if (!k) {
       showAlert('Could not open preview. Allow storage for this site or try again.', 'error');
@@ -378,12 +380,13 @@ export default function AdminArticleEditor() {
       showAlert('Revision note is required unless this is a small edit', 'error');
       return;
     }
+    const snippetToSave = articleSnippetForSave(content, form.snippet);
     setSaving(true);
     try {
       const payload = settingsOnly
         ? {
             slug: form.slug.trim(),
-            snippet: form.snippet.trim() || null,
+            snippet: snippetToSave,
             publishedAt: form.publishedAt ? new Date(form.publishedAt).toISOString() : null,
           }
         : {
@@ -393,7 +396,7 @@ export default function AdminArticleEditor() {
             content,
             revisionNote: saveSmallEdit ? null : saveRevisionNote.trim() || null,
             smallEdit: !isNew && saveSmallEdit,
-            snippet: form.snippet.trim() || null,
+            snippet: snippetToSave,
             publishedAt: form.publishedAt ? new Date(form.publishedAt).toISOString() : null,
           };
       if (isNew) {
@@ -416,9 +419,12 @@ export default function AdminArticleEditor() {
         contentType: form.contentType,
         content,
         htmlContent: form.htmlContent,
-        snippet: form.snippet,
+        snippet: snippetToSave ?? '',
         publishedAt: form.publishedAt,
       });
+      if (form.snippet !== (snippetToSave ?? '')) {
+        setForm((f) => ({ ...f, snippet: snippetToSave ?? '' }));
+      }
       if (!settingsOnly) {
         setSaveRevisionNote('');
         setSaveSmallEdit(false);
@@ -742,7 +748,7 @@ export default function AdminArticleEditor() {
                     state={hasReadMoreMarker ? 'disabled' : 'default'}
                     stateMessage={
                       hasReadMoreMarker
-                        ? `Remove the read more marker (${READ_MORE_MARKER}) from the article to use a custom snippet.`
+                        ? `The read more marker (${READ_MORE_MARKER}) is in the article, so this snippet is ignored. Remove the marker to use a custom snippet.`
                         : undefined
                     }
                   >

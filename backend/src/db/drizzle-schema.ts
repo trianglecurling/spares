@@ -2349,6 +2349,7 @@ export const memberVolunteerCredentialsSqlite = sqliteTable('member_volunteer_cr
   credential_id: integer('credential_id').notNull().references(() => volunteerCredentialsSqlite.id, { onDelete: 'cascade' }),
   granted_by_member_id: integer('granted_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
   granted_at: text('granted_at').default(sql`datetime('now')`).notNull(),
+  expires_at: text('expires_at'), // YYYY-MM-DD, optional — grant is valid through this date
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
 }, (table) => ({
   memberIdx: index('idx_member_volunteer_credentials_member_id').on(table.member_id),
@@ -4500,6 +4501,7 @@ export const memberVolunteerCredentialsPg = pgTable('member_volunteer_credential
   }),
   granted_by_member_id: integerPg('granted_by_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
   granted_at: timestamp('granted_at', { withTimezone: false }).defaultNow().notNull(),
+  expires_at: date('expires_at'), // YYYY-MM-DD, optional — grant is valid through this date
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
 }, (table) => ({
   memberIdx: indexPg('idx_member_volunteer_credentials_member_id').on(table.member_id),

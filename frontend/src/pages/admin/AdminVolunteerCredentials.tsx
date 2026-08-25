@@ -11,6 +11,11 @@ import { useConfirm } from '../../contexts/ConfirmContext';
 import { useMemberOptions } from '../../contexts/MemberOptionsContext';
 import api, { formatApiError } from '../../utils/api';
 import { memberHasScope } from '../../utils/permissions';
+import {
+  formatVolunteerDateOnly,
+  localDateOnly,
+  volunteerCredentialIsValidOn,
+} from '../../utils/volunteering';
 
 type CredentialGrant = {
   id: number;
@@ -19,6 +24,7 @@ type CredentialGrant = {
   memberEmail: string | null;
   grantedAt: string;
   grantedByMemberId: number | null;
+  expiresAt: string | null;
 };
 
 type CredentialAdmin = {
@@ -29,6 +35,10 @@ type CredentialAdmin = {
   managers: Array<{ id: number; name: string; email: string | null }>;
   grants: CredentialGrant[];
 };
+
+function expiredGrantCount(grants: CredentialGrant[], today: string): number {
+  return grants.filter((grant) => !volunteerCredentialIsValidOn(grant.expiresAt, today)).length;
+}
 
 export default function AdminVolunteerCredentials() {
   const { showAlert } = useAlert();
@@ -47,8 +57,10 @@ export default function AdminVolunteerCredentials() {
   const [managerIds, setManagerIds] = useState<number[]>([]);
   const [saving, setSaving] = useState(false);
   const [grantMemberIds, setGrantMemberIds] = useState<number[]>([]);
+  const [grantExpiresAt, setGrantExpiresAt] = useState('');
   const [granting, setGranting] = useState(false);
   const [revokingMemberId, setRevokingMemberId] = useState<number | null>(null);
+  const [savingExpiresMemberId, setSavingExpiresMemberId] = useState<number | null>(null);
   const [selectedCredentialId, setSelectedCredentialId] = useState<number | null>(null);
 
   const load = useCallback(async (opts?: { quiet?: boolean }) => {
@@ -162,6 +174,7 @@ export default function AdminVolunteerCredentials() {
         try {
           const res = await api.post(`/volunteering/admin/credentials/${selected.id}/grants`, {
             memberId,
+            expiresAt: grantExpiresAt.trim() || null,
           });
           const option = memberOptions.find((m) => m.id === memberId);
           granted.push({
@@ -171,6 +184,7 @@ export default function AdminVolunteerCredentials() {
             memberEmail: option?.email ?? null,
             grantedAt: new Date().toISOString(),
             grantedByMemberId: member?.id ?? null,
+            expiresAt: (res.data.expiresAt as string | null | undefined) ?? (grantExpiresAt.trim() || null),
           });
         } catch (err) {
           failures.push(formatApiError(err, `Failed to grant to member ${memberId}`));
@@ -189,6 +203,29 @@ export default function AdminVolunteerCredentials() {
       setGrantMemberIds([]);
     } finally {
       setGranting(false);
+    }
+  };
+
+  const handleUpdateExpiresAt = async (memberId: number, expiresAt: string | null) => {
+    if (!selected) return;
+    const previous = selected.grants.find((g) => g.memberId === memberId)?.expiresAt ?? null;
+    patchCredential(selected.id, (cred) => ({
+      ...cred,
+      grants: cred.grants.map((g) => (g.memberId === memberId ? { ...g, expiresAt } : g)),
+    }));
+    setSavingExpiresMemberId(memberId);
+    try {
+      await api.patch(`/volunteering/admin/credentials/${selected.id}/grants/${memberId}`, {
+        expiresAt,
+      });
+    } catch (err) {
+      patchCredential(selected.id, (cred) => ({
+        ...cred,
+        grants: cred.grants.map((g) => (g.memberId === memberId ? { ...g, expiresAt: previous } : g)),
+      }));
+      showAlert(formatApiError(err, 'Failed to update expiration date'), 'error');
+    } finally {
+      setSavingExpiresMemberId(null);
     }
   };
 
@@ -213,6 +250,8 @@ export default function AdminVolunteerCredentials() {
       setRevokingMemberId(null);
     }
   };
+
+  const today = localDateOnly();
 
   return loading ? (
     <AppStateCard title="Loading credentials..." />
@@ -278,7 +317,9 @@ export default function AdminVolunteerCredentials() {
           {credentials.length === 0 ? (
             <InlineStateMessage title="No credentials yet." />
           ) : (
-            credentials.map((cred) => (
+            credentials.map((cred) => {
+              const expiredCount = expiredGrantCount(cred.grants, today);
+              return (
               <div
                 key={cred.id}
                 className={`app-card w-full p-4 ${
@@ -292,6 +333,7 @@ export default function AdminVolunteerCredentials() {
                     onClick={() => {
                       setSelectedCredentialId(cred.id);
                       setGrantMemberIds([]);
+                      setGrantExpiresAt('');
                     }}
                   >
                     <div className="font-medium text-gray-900 dark:text-gray-100">{cred.name}</div>
@@ -300,6 +342,7 @@ export default function AdminVolunteerCredentials() {
                     </div>
                     <div className="mt-1 text-sm text-gray-500 dark:text-gray-400">
                       {cred.grants.length} member{cred.grants.length === 1 ? '' : 's'}
+                      {expiredCount > 0 ? ` · ${expiredCount} expired` : ''}
                     </div>
                   </button>
                   <div className="flex gap-2 shrink-0">
@@ -314,7 +357,8 @@ export default function AdminVolunteerCredentials() {
                   </div>
                 </div>
               </div>
-            ))
+              );
+            })
           )}
         </section>
       </div>
@@ -340,6 +384,20 @@ export default function AdminVolunteerCredentials() {
                   placeholder="Search members to grant..."
                 />
               </FormField>
+              <FormField
+                label="Expiration date"
+                htmlFor={`${baseId}-grant-expires`}
+                optional
+                helperText="Leave blank if this credential does not expire. Valid through the selected date."
+              >
+                <input
+                  id={`${baseId}-grant-expires`}
+                  type="date"
+                  className="app-input w-full max-w-xs"
+                  value={grantExpiresAt}
+                  onChange={(e) => setGrantExpiresAt(e.target.value)}
+                />
+              </FormField>
               <Button
                 type="button"
                 disabled={grantMemberIds.length === 0 || granting}
@@ -357,29 +415,61 @@ export default function AdminVolunteerCredentials() {
               <InlineStateMessage title="No members hold this credential yet." />
             ) : (
               <ul className="space-y-2">
-                {selected.grants.map((grant) => (
-                  <li
-                    key={grant.id}
-                    className="app-card flex items-center justify-between gap-3 p-3"
-                  >
-                    <div>
-                      <div className="font-medium">{grant.memberName}</div>
-                      {grant.memberEmail ? (
-                        <div className="text-sm text-gray-600 dark:text-gray-400">
-                          {grant.memberEmail}
+                {[...selected.grants]
+                  .sort((a, b) => {
+                    const aExpired = !volunteerCredentialIsValidOn(a.expiresAt, today);
+                    const bExpired = !volunteerCredentialIsValidOn(b.expiresAt, today);
+                    if (aExpired !== bExpired) return aExpired ? 1 : -1;
+                    return a.memberName.localeCompare(b.memberName);
+                  })
+                  .map((grant) => {
+                    const expired = !volunteerCredentialIsValidOn(grant.expiresAt, today);
+                    const expiresInputId = `${baseId}-grant-expires-${grant.id}`;
+                    return (
+                      <li key={grant.id} className="app-card space-y-3 p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="font-medium">{grant.memberName}</div>
+                            {grant.memberEmail ? (
+                              <div className="text-sm text-gray-600 dark:text-gray-400">
+                                {grant.memberEmail}
+                              </div>
+                            ) : null}
+                            {expired && grant.expiresAt ? (
+                              <p className="mt-1 text-sm text-amber-700 dark:text-amber-300">
+                                Expired {formatVolunteerDateOnly(grant.expiresAt)}
+                              </p>
+                            ) : null}
+                          </div>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            disabled={revokingMemberId === grant.memberId}
+                            onClick={() => void handleRevoke(grant.memberId, grant.memberName)}
+                          >
+                            {revokingMemberId === grant.memberId ? 'Revoking…' : 'Revoke'}
+                          </Button>
                         </div>
-                      ) : null}
-                    </div>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      disabled={revokingMemberId === grant.memberId}
-                      onClick={() => void handleRevoke(grant.memberId, grant.memberName)}
-                    >
-                      {revokingMemberId === grant.memberId ? 'Revoking…' : 'Revoke'}
-                    </Button>
-                  </li>
-                ))}
+                        <FormField
+                          label="Expiration date"
+                          htmlFor={expiresInputId}
+                          optional
+                          className="mb-0"
+                        >
+                          <input
+                            id={expiresInputId}
+                            type="date"
+                            className="app-input w-full max-w-xs"
+                            value={grant.expiresAt ?? ''}
+                            disabled={savingExpiresMemberId === grant.memberId}
+                            onChange={(e) => {
+                              void handleUpdateExpiresAt(grant.memberId, e.target.value.trim() || null);
+                            }}
+                          />
+                        </FormField>
+                      </li>
+                    );
+                  })}
               </ul>
             )}
           </>

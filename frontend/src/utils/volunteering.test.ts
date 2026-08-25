@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import {
   volunteerProgramAppearsInDiscovery,
   volunteerProgramHasOpenShifts,
+  formatVolunteerDateOnly,
+  volunteerCredentialIsValidOn,
 } from './volunteering';
 
 describe('volunteerProgramHasOpenShifts', () => {
@@ -43,5 +45,23 @@ describe('volunteerProgramAppearsInDiscovery', () => {
         shifts: [{ roles: [{ id: 1 }] }],
       })
     ).toBe(true);
+  });
+});
+
+describe('volunteerCredentialIsValidOn', () => {
+  test('treats a missing expiration as always valid', () => {
+    expect(volunteerCredentialIsValidOn(null, '2026-08-24')).toBe(true);
+    expect(volunteerCredentialIsValidOn('', '2026-08-24')).toBe(true);
+  });
+
+  test('is valid through the expiration date', () => {
+    expect(volunteerCredentialIsValidOn('2026-09-01', '2026-09-01')).toBe(true);
+    expect(volunteerCredentialIsValidOn('2026-09-01', '2026-09-02')).toBe(false);
+  });
+});
+
+describe('formatVolunteerDateOnly', () => {
+  test('formats a calendar date without shifting timezones', () => {
+    expect(formatVolunteerDateOnly('2026-09-01')).toBe('Sep 1, 2026');
   });
 });

@@ -32,6 +32,7 @@ import {
   revokeCredential,
   signUpForShiftRole,
   updateCredential,
+  updateCredentialGrant,
   updateOwnSignupComments,
   updateProgram,
   updateRole,
@@ -135,8 +136,18 @@ const credentialBodySchema = z.object({
 
 const credentialPatchSchema = credentialBodySchema.partial();
 
+const grantExpiresAtSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Expiration date must be YYYY-MM-DD')
+  .nullable();
+
 const grantBodySchema = z.object({
   memberId: z.number().int().positive(),
+  expiresAt: grantExpiresAtSchema.optional(),
+});
+
+const grantPatchSchema = z.object({
+  expiresAt: grantExpiresAtSchema,
 });
 
 const signupBodySchema = z.object({
@@ -717,8 +728,32 @@ export async function volunteeringRoutes(fastify: FastifyInstance): Promise<void
           credentialId,
           memberId: parsed.data.memberId,
           grantedByMemberId: member.id,
+          expiresAt: parsed.data.expiresAt,
         });
         return reply.code(201).send(result);
+      } catch (err) {
+        return handleServiceError(reply, err);
+      }
+    }
+  );
+
+  fastify.patch<{ Params: { id: string; memberId: string } }>(
+    '/volunteering/admin/credentials/:id/grants/:memberId',
+    { schema: { tags: ['volunteering'] } },
+    async (request, reply) => {
+      const member = getMember(request as AuthenticatedRequest);
+      if (!member) return sendApiError(reply, 401, 'Unauthorized');
+      const credentialId = Number.parseInt(request.params.id, 10);
+      const memberId = Number.parseInt(request.params.memberId, 10);
+      if (!Number.isFinite(credentialId) || !Number.isFinite(memberId)) {
+        return sendApiError(reply, 400, 'Invalid id');
+      }
+      if (!(await canManageCredential(member, credentialId))) return sendApiError(reply, 403, 'Forbidden');
+      const parsed = grantPatchSchema.safeParse(request.body);
+      if (!parsed.success) return sendValidationError(reply, 'Invalid grant data', parsed.error.flatten());
+      try {
+        await updateCredentialGrant(credentialId, memberId, parsed.data.expiresAt);
+        return { ok: true };
       } catch (err) {
         return handleServiceError(reply, err);
       }

@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, exists, inArray, isNotNull, notExists, or, sql } from 'drizzle-orm';
 import { getDatabaseConfigProfile } from '../../../db-config-path.js';
+import { articleHasReadMoreMarker, getEffectiveArticleSnippet } from '../../../content/articleSnippet.js';
 import { getDrizzleDb } from '../../../db/drizzle-db.js';
 import { getDefaultPaymentProvider } from '../../../services/paymentService.js';
 import { getUpcomingBonspiels } from '../../calendar/queries/calendarReadFacade.js';
@@ -51,40 +52,6 @@ function activeAnnouncement(markdown: string | null | undefined, expiresAt: stri
   return text;
 }
 
-function findMarkerIndex(content: string): number {
-  const idx = content.indexOf('⁂');
-  if (idx >= 0) return idx;
-  const legacy = content.indexOf('<!--more-->');
-  return legacy >= 0 ? legacy : -1;
-}
-
-function getEffectiveSnippet(
-  content: string,
-  customSnippet: string | null,
-  contentType: 'markdown' | 'html' = 'markdown'
-): { snippet: string; hasMore: boolean } {
-  if (customSnippet != null && customSnippet.trim() !== '') {
-    return { snippet: customSnippet.trim(), hasMore: true };
-  }
-  if (contentType === 'html') {
-    try {
-      const parsed = JSON.parse(content) as { html?: string };
-      const html = parsed?.html ?? '';
-      const text = html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-      return { snippet: text || '(Custom content)', hasMore: true };
-    } catch {
-      return { snippet: '(Custom content)', hasMore: true };
-    }
-  }
-
-  const idx = findMarkerIndex(content);
-  if (idx >= 0) {
-    const snippet = content.slice(0, idx).trim().replace(/\$\$widget\d+\s*$/, '').trim();
-    return { snippet, hasMore: true };
-  }
-
-  return { snippet: content.trim(), hasMore: false };
-}
 
 function stripMarker(content: string): string {
   return content.replace(/⁂/g, '').replace(/<!--more-->/gi, '').trim();
@@ -319,7 +286,7 @@ export async function getPublicHomeData() {
   return {
     siteConfig,
     featuredArticles: featuredArticleRows.map((article) => {
-      const { snippet, hasMore } = getEffectiveSnippet(
+      const { snippet, hasMore } = getEffectiveArticleSnippet(
         article.content ?? '',
         article.snippet,
         (article.content_type ?? 'markdown') as 'markdown' | 'html',
@@ -419,7 +386,7 @@ export async function listPublicArticles(featuredOnly: boolean) {
     .limit(50);
 
   return rows.map((row) => {
-    const { snippet, hasMore } = getEffectiveSnippet(
+    const { snippet, hasMore } = getEffectiveArticleSnippet(
       row.content ?? '',
       row.snippet ?? null,
       (row.content_type ?? 'markdown') as 'markdown' | 'html',
@@ -536,13 +503,17 @@ export async function getPublicArticleBySlug(slug: string) {
   }
 
   const contentType = (article.content_type as 'markdown' | 'html') ?? 'markdown';
+  const content = article.content ?? '';
+  const snippet = articleHasReadMoreMarker(content, contentType)
+    ? getEffectiveArticleSnippet(content, article.snippet, contentType).snippet
+    : (article.snippet ?? null);
   return {
     id: article.id,
     title: article.title,
     slug: article.slug,
     contentType,
-    content: contentType === 'markdown' ? stripMarker(article.content ?? '') : article.content ?? '',
-    snippet: article.snippet ?? null,
+    content: contentType === 'markdown' ? stripMarker(content) : content,
+    snippet,
     publishedAt: article.publishedAt ?? null,
   };
 }

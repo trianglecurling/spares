@@ -16,6 +16,9 @@ import { useAlert } from '../contexts/AlertContext';
 import { formatApiError } from '../utils/api';
 import {
   formatProgramShiftDateSpan,
+  formatVolunteerDateOnly,
+  localDateOnly,
+  volunteerCredentialIsValidOn,
   volunteerProgramAppearsInDiscovery,
   volunteerProgramHasOpenShifts,
   type VolunteerHubCredential,
@@ -86,17 +89,17 @@ export default function VolunteeringHub() {
     [visiblePrograms]
   );
 
-  const hasHeldCredentials = useMemo(
-    () => credentials.some((credential) => credential.held),
+  const hasCredentialGrants = useMemo(
+    () => credentials.some((credential) => credential.held || credential.expiresAt != null),
     [credentials]
   );
 
   useEffect(() => {
-    if (loading || activeTab !== 'credentials' || hasHeldCredentials) return;
+    if (loading || activeTab !== 'credentials' || hasCredentialGrants) return;
     const next = new URLSearchParams(searchParams);
     next.delete('tab');
     setSearchParams(next, { replace: true });
-  }, [loading, activeTab, hasHeldCredentials, searchParams, setSearchParams]);
+  }, [loading, activeTab, hasCredentialGrants, searchParams, setSearchParams]);
 
   if (legacyProgramId != null) {
     return <Navigate to={`/volunteering/programs/${legacyProgramId}`} replace />;
@@ -137,7 +140,7 @@ export default function VolunteeringHub() {
             isActive: activeTab === 'shifts',
             onClick: () => setTab('shifts'),
           },
-          ...(hasHeldCredentials
+          ...(hasCredentialGrants
             ? [
                 {
                   key: 'credentials',
@@ -154,7 +157,7 @@ export default function VolunteeringHub() {
         <MyVolunteerShiftsPanel />
       ) : loading ? (
         <AppStateCard title="Loading opportunities" description="Fetching volunteer programs and shifts." />
-      ) : activeTab === 'credentials' && hasHeldCredentials ? (
+      ) : activeTab === 'credentials' && hasCredentialGrants ? (
         <CredentialsTab credentials={credentials} />
       ) : (
         <div className="space-y-4">
@@ -264,37 +267,55 @@ function CredentialsTab({ credentials }: { credentials: VolunteerHubCredential[]
     );
   }
 
+  const todayKey = localDateOnly();
+
   return (
     <div className="space-y-4">
       <p className="text-sm text-gray-600 dark:text-gray-400">
         Need a credential? Reach out to the point of contact listed.
       </p>
       <ul className="space-y-3">
-        {credentials.map((cred) => (
-          <li key={cred.id} className="app-card p-4 space-y-2">
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div className="font-medium text-gray-900 dark:text-gray-100">{cred.name}</div>
-              <span
-                className={
-                  cred.held
-                    ? 'inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200'
-                    : 'inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-700 dark:text-gray-200'
-                }
-              >
-                {cred.held ? 'You have this' : 'Not held'}
-              </span>
-            </div>
-            {cred.description ? (
-              <p className="text-sm text-gray-600 dark:text-gray-400 whitespace-pre-wrap">{cred.description}</p>
-            ) : null}
-            <p className="text-sm text-gray-600 dark:text-gray-400">
-              Point of contact:{' '}
-              <a className="text-primary-teal-link hover:underline" href={`mailto:${cred.pointOfContactEmail}`}>
-                {cred.pointOfContactEmail}
-              </a>
-            </p>
-          </li>
-        ))}
+        {credentials.map((cred) => {
+          const expired = Boolean(cred.expiresAt) && !volunteerCredentialIsValidOn(cred.expiresAt, todayKey);
+          const statusLabel = cred.held ? 'You have this' : expired ? 'Expired' : 'Not held';
+          return (
+            <li key={cred.id} className="app-card p-4 space-y-2">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="font-medium text-gray-900 dark:text-gray-100">{cred.name}</div>
+                <span
+                  className={
+                    cred.held
+                      ? 'inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200'
+                      : expired
+                        ? 'inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-200'
+                        : 'inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-700 dark:text-gray-200'
+                  }
+                >
+                  {statusLabel}
+                </span>
+              </div>
+              {cred.description ? (
+                <p className="text-sm text-gray-600 dark:text-gray-400 whitespace-pre-wrap">{cred.description}</p>
+              ) : null}
+              {cred.held && cred.expiresAt ? (
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  Expires {formatVolunteerDateOnly(cred.expiresAt)}
+                </p>
+              ) : null}
+              {expired && cred.expiresAt ? (
+                <p className="text-sm text-amber-700 dark:text-amber-300">
+                  Expired {formatVolunteerDateOnly(cred.expiresAt)}
+                </p>
+              ) : null}
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Point of contact:{' '}
+                <a className="text-primary-teal-link hover:underline" href={`mailto:${cred.pointOfContactEmail}`}>
+                  {cred.pointOfContactEmail}
+                </a>
+              </p>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

@@ -7,6 +7,7 @@ export type VolunteerCredentialSummary = {
 
 export type VolunteerHubCredential = VolunteerCredentialSummary & {
   held: boolean;
+  expiresAt: string | null;
 };
 
 export type VolunteerMemberSummary = {
@@ -404,6 +405,32 @@ export function hoursInputToMinutes(value: string): number | null {
   const hours = Number.parseFloat(value);
   if (!Number.isFinite(hours) || hours <= 0) return null;
   return Math.round(hours * 60);
+}
+
+/** Local calendar date as YYYY-MM-DD. */
+export function localDateOnly(date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+/** Format a YYYY-MM-DD value without timezone shifting. */
+export function formatVolunteerDateOnly(ymd: string): string {
+  const [y, m, d] = ymd.split('-').map(Number);
+  if (!y || !m || !d) return ymd;
+  return new Date(y, m - 1, d).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
+
+/** A grant is valid through its expiration date (inclusive). Missing expiration does not expire. */
+export function volunteerCredentialIsValidOn(
+  expiresAt: string | null | undefined,
+  asOfDate: string
+): boolean {
+  if (expiresAt == null || expiresAt === '') return true;
+  return expiresAt >= asOfDate;
 }
 
 /** Add minutes to a datetime-local string; returns another datetime-local value. */

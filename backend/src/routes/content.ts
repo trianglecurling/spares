@@ -8,6 +8,7 @@ import {
   articleMatchesContentSearch,
   type ArticleContentSearchMode,
 } from '../content/articleContentSearch.js';
+import { articleHasReadMoreMarker } from '../content/articleSnippet.js';
 import { generateArticleCss } from '../utils/generateArticleCss.js';
 import type { Member } from '../types.js';
 import { markSearchIndexDirty } from '../search/searchIndexInvalidation.js';
@@ -740,7 +741,7 @@ export async function contentRoutes(fastify: FastifyInstance) {
           slug: body.slug,
           content_type: contentType,
           content,
-          snippet: body.snippet ?? null,
+          snippet: articleHasReadMoreMarker(content, contentType) ? null : (body.snippet ?? null),
           featured: body.featured ? 1 : 0,
           featured_sort_order: body.featured ? featuredSortOrder : 0,
           published_at: body.publishedAt ? new Date(body.publishedAt) : null,
@@ -1086,6 +1087,9 @@ export async function contentRoutes(fastify: FastifyInstance) {
     const nextTitle = (updates.title as string | undefined) ?? existing.title;
     const nextContentType = (updates.content_type as string | undefined) ?? (existing.content_type ?? 'markdown');
     const nextContent = (updates.content as string | undefined) ?? existing.content;
+    if (articleHasReadMoreMarker(nextContent ?? '', (nextContentType as 'markdown' | 'html') ?? 'markdown')) {
+      updates.snippet = null;
+    }
     const versionContentWillChange =
       (existing.title ?? '') !== (nextTitle ?? '') ||
       (existing.content_type ?? 'markdown') !== (nextContentType ?? 'markdown') ||

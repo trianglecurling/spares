@@ -15,6 +15,7 @@ import FormField from '../../components/FormField';
 import Modal from '../../components/Modal';
 import InlineStateMessage from '../../components/InlineStateMessage';
 import { storeArticleDraftPreview } from '../../utils/articleDraftPreviewSession';
+import { articleSnippetForSave } from '../../utils/articleSnippet';
 import { notifyPublicBootstrapChanged } from '../../utils/publicBootstrapClient';
 import {
   buildArticleHtmlContentFromMarkdown,
@@ -253,12 +254,13 @@ export default function AdminEventDetailsArticlePanel({
 
   const handleDraftPreview = () => {
     const content = getCurrentEditorContent();
+    const snippetToSave = articleSnippetForSave(content, form.snippet);
     const k = storeArticleDraftPreview({
       title: form.title,
       slug: eventSlug.trim() || slugFromName(form.title) || `event-${eventId}`,
       contentType: form.contentType,
       content,
-      snippet: form.snippet.trim() || null,
+      snippet: snippetToSave,
     });
     if (!k) {
       showAlert('Could not open preview. Allow storage for this site or try again.', 'error');
@@ -280,11 +282,12 @@ export default function AdminEventDetailsArticlePanel({
       showAlert('Revision note is required unless this is a small edit', 'error');
       return;
     }
+    const snippetToSave = articleSnippetForSave(content, form.snippet);
     setSaving(true);
     try {
       const payload = settingsOnly
         ? {
-            snippet: form.snippet.trim() || null,
+            snippet: snippetToSave,
             publishedAt: null,
           }
         : {
@@ -293,7 +296,7 @@ export default function AdminEventDetailsArticlePanel({
             content,
             revisionNote: saveSmallEdit ? null : saveRevisionNote.trim() || null,
             smallEdit: saveSmallEdit,
-            snippet: form.snippet.trim() || null,
+            snippet: snippetToSave,
             publishedAt: null,
           };
       await api.patch(`/content/articles/${articleId}`, payload);
@@ -305,8 +308,11 @@ export default function AdminEventDetailsArticlePanel({
         contentType: form.contentType,
         content,
         htmlContent: form.htmlContent,
-        snippet: form.snippet,
+        snippet: snippetToSave ?? '',
       });
+      if (form.snippet !== (snippetToSave ?? '')) {
+        setForm((f) => ({ ...f, snippet: snippetToSave ?? '' }));
+      }
       if (!settingsOnly) {
         setSaveRevisionNote('');
         setSaveSmallEdit(false);
@@ -598,11 +604,11 @@ export default function AdminEventDetailsArticlePanel({
                   optional
                   htmlFor={`${fieldId}-snippet`}
                   state={hasReadMoreMarker ? 'disabled' : 'default'}
-                  stateMessage={
-                    hasReadMoreMarker
-                      ? `Remove the read more marker (${READ_MORE_MARKER}) from the article to use a custom snippet.`
-                      : undefined
-                  }
+                    stateMessage={
+                      hasReadMoreMarker
+                        ? `The read more marker (${READ_MORE_MARKER}) is in the article, so this snippet is ignored. Remove the marker to use a custom snippet.`
+                        : undefined
+                    }
                 >
                   {({ describedBy }) => (
                     <textarea

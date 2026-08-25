@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, inArray, isNotNull, notExists, sql } from 'drizzle-orm';
 import { articleToSearchableText } from '../content/articleContentSearch.js';
+import { getEffectiveArticleSnippet } from '../content/articleSnippet.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { notArchivedCondition } from '../utils/softDelete.js';
 import { buildStaticPageDocuments } from './staticPages.js';
@@ -20,10 +21,8 @@ function parseTimestampMs(value: string | Date | null | undefined): number {
   return Number.isNaN(parsed) ? 0 : parsed;
 }
 
-function buildPreviewSnippet(plainText: string, customSnippet: string | null | undefined): string {
-  const trimmedCustom = customSnippet?.trim();
-  if (trimmedCustom) return trimmedCustom;
-  const normalized = plainText.replace(/\s+/g, ' ').trim();
+function truncateSnippet(text: string): string {
+  const normalized = text.replace(/\s+/g, ' ').trim();
   if (normalized.length <= 200) return normalized;
   return `${normalized.slice(0, 197).trimEnd()}…`;
 }
@@ -66,7 +65,12 @@ async function loadPublishedArticleDocuments(): Promise<SearchDocument[]> {
   return rows.map((row) => {
     const contentType = (row.contentType ?? 'markdown') as 'markdown' | 'html';
     const plainText = articleToSearchableText(row.content ?? '', contentType);
-    const snippet = buildPreviewSnippet(plainText, row.snippet);
+    const { snippet: effectiveSnippet } = getEffectiveArticleSnippet(
+      row.content ?? '',
+      row.snippet,
+      contentType,
+    );
+    const snippet = truncateSnippet(effectiveSnippet);
     const recencyMs = Math.max(
       parseTimestampMs(row.publishedAt),
       parseTimestampMs(row.updatedAt),
@@ -142,7 +146,12 @@ async function loadPublishedEventDocuments(): Promise<SearchDocument[]> {
     const scheduleText = (timespansByEvent.get(row.id) ?? []).join(' ');
     const calendarType = row.calendarTypeIds?.trim() ?? '';
     const plainText = [articlePlainText, scheduleText, calendarType].filter(Boolean).join(' ').trim();
-    const snippet = buildPreviewSnippet(plainText, row.articleSnippet);
+    const snippet =
+      row.articleContent != null
+        ? truncateSnippet(
+            getEffectiveArticleSnippet(row.articleContent, row.articleSnippet, contentType).snippet,
+          )
+        : truncateSnippet(plainText);
     const recencyMs = Math.max(
       parseTimestampMs(row.updatedAt),
       ...((timespansByEvent.get(row.id) ?? []).map((span) => parseTimestampMs(span.split(' ')[0]))),
