@@ -1,0 +1,3 @@
+[test]
+# Compiled output includes leftover *.test.js files from backend builds.
+pathIgnorePatterns = ["**/dist/**"]
