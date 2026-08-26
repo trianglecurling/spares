@@ -21,6 +21,7 @@ import {
   volunteerCredentialIsValidOn,
   volunteerProgramAppearsInDiscovery,
   volunteerProgramHasOpenShifts,
+  volunteerProgramVisibleGivenCredentials,
   type VolunteerHubCredential,
   type VolunteerProgramView,
 } from '../utils/volunteering';
@@ -80,9 +81,18 @@ export default function VolunteeringHub() {
     void load();
   }, [load]);
 
+  const heldCredentialIds = useMemo(
+    () => new Set(credentials.filter((credential) => credential.held).map((credential) => credential.id)),
+    [credentials]
+  );
   const visiblePrograms = useMemo(
-    () => programs.filter(volunteerProgramAppearsInDiscovery),
-    [programs]
+    () =>
+      programs.filter(
+        (program) =>
+          volunteerProgramAppearsInDiscovery(program) &&
+          volunteerProgramVisibleGivenCredentials(program, heldCredentialIds)
+      ),
+    [programs, heldCredentialIds]
   );
   const hasAnyOpenShifts = useMemo(
     () => visiblePrograms.some(volunteerProgramHasOpenShifts),

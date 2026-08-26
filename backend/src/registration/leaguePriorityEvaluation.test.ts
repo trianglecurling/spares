@@ -1102,6 +1102,25 @@ describe('derived downstream state', () => {
     );
   });
 
+  test('subject-to-availability backups are not superfluous while guaranteed spots are below the desired count', () => {
+    const context = contextWithLeagues(
+      [
+        standard(1),
+        standard(2),
+        standard(3, { predecessorLeagueId: null, allowsWaitlist: false }),
+        standard(4, { predecessorLeagueId: null, allowsWaitlist: false }),
+      ],
+      { desiredLeagueCount: 3 },
+    );
+    expect(labelsFor(context)).toEqual([
+      'guaranteed_return',
+      'guaranteed_return',
+      'subject_to_availability',
+      'subject_to_availability',
+    ]);
+    expect(validateLeaguePriorities(context).allowed).toBe(true);
+  });
+
   test('a switch-with-fallback list is not superfluous', () => {
     const context = contextWithLeagues([
       standard(1, { predecessorLeagueId: null }),

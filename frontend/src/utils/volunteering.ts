@@ -238,6 +238,68 @@ export function volunteerProgramHasOpenShifts(program: {
   return program.shifts.some((shift) => shift.roles.length > 0);
 }
 
+/** A shift is past once its end date/time is before now. */
+export function volunteerShiftHasEnded(endDt: string, nowIso: string): boolean {
+  return endDt < nowIso;
+}
+
+/**
+ * True when the program has shifts and the last one has already ended.
+ * Used as a derived archive (no job writes archived_at).
+ */
+export function volunteerProgramLastShiftHasEnded(
+  program: { shifts: Array<{ endDt: string }> },
+  nowIso: string
+): boolean {
+  if (program.shifts.length === 0) return false;
+  let lastEnd = program.shifts[0].endDt;
+  for (const shift of program.shifts) {
+    if (shift.endDt > lastEnd) lastEnd = shift.endDt;
+  }
+  return volunteerShiftHasEnded(lastEnd, nowIso);
+}
+
+/**
+ * Confirmed sign-ups and seats needed across shift roles.
+ * Ended shifts are omitted while any later shift remains; fully past programs
+ * keep historical totals so archived rows still show x/y.
+ */
+export function volunteerProgramSignupTotals(
+  program: {
+    shifts: Array<{
+      endDt?: string;
+      roles: Array<{ volunteersRegistered: number; volunteersNeeded: number }>;
+    }>;
+  },
+  nowIso: string = new Date().toISOString()
+): { signedUp: number; needed: number } {
+  const openShifts = program.shifts.filter(
+    (shift) => !shift.endDt || !volunteerShiftHasEnded(shift.endDt, nowIso)
+  );
+  const shifts = openShifts.length > 0 ? openShifts : program.shifts;
+  let signedUp = 0;
+  let needed = 0;
+  for (const shift of shifts) {
+    for (const role of shift.roles) {
+      signedUp += role.volunteersRegistered;
+      needed += role.volunteersNeeded;
+    }
+  }
+  return { signedUp, needed };
+}
+
+/** Local calendar date (YYYY-MM-DD) of the earliest shift, if any. */
+export function volunteerProgramFirstShiftDate(program: {
+  shifts: Array<{ startDt: string }>;
+}): string | null {
+  if (program.shifts.length === 0) return null;
+  let earliest = program.shifts[0].startDt;
+  for (const shift of program.shifts) {
+    if (shift.startDt < earliest) earliest = shift.startDt;
+  }
+  return volunteerShiftDayKey(earliest);
+}
+
 /**
  * Published programs with no roles are listed even without shifts.
  * Shift-based programs stay hidden on the hub until they have an upcoming shift.
@@ -247,6 +309,23 @@ export function volunteerProgramAppearsInDiscovery(program: {
   shifts: Array<{ roles: unknown[] }>;
 }): boolean {
   return volunteerProgramHasOpenShifts(program) || program.roles.length === 0;
+}
+
+/**
+ * Hub discovery: a program appears only if the member qualifies for at least
+ * one of its roles (holds every credential that role requires). Roles with no
+ * credential requirement always qualify. Programs with no roles stay visible.
+ */
+export function volunteerProgramVisibleGivenCredentials(
+  program: { roles: Array<{ requiredCredentials: Array<{ id: number }> }> },
+  heldCredentialIds: Iterable<number>
+): boolean {
+  const roles = program.roles;
+  if (roles.length === 0) return true;
+  const held = heldCredentialIds instanceof Set ? heldCredentialIds : new Set(heldCredentialIds);
+  return roles.some((role) =>
+    role.requiredCredentials.every((credential) => held.has(credential.id))
+  );
 }
 
 /** Format a program date span from its shifts (single day or inclusive range). */

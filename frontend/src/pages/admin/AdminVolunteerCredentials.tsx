@@ -40,6 +40,31 @@ function expiredGrantCount(grants: CredentialGrant[], today: string): number {
   return grants.filter((grant) => !volunteerCredentialIsValidOn(grant.expiresAt, today)).length;
 }
 
+const EMAIL_ADDRESS_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function isValidEmailAddress(email: string): boolean {
+  return EMAIL_ADDRESS_RE.test(email);
+}
+
+function credentialHolderEmailEntries(
+  grants: CredentialGrant[],
+  today: string
+): string[] {
+  const entries: string[] = [];
+  const seenEmails = new Set<string>();
+  for (const grant of grants) {
+    if (!volunteerCredentialIsValidOn(grant.expiresAt, today)) continue;
+    const email = grant.memberEmail?.trim() ?? '';
+    if (!email || !isValidEmailAddress(email)) continue;
+    const emailKey = email.toLowerCase();
+    if (seenEmails.has(emailKey)) continue;
+    seenEmails.add(emailKey);
+    const displayName = grant.memberName.trim() || email;
+    entries.push(`"${displayName}" <${email}>`);
+  }
+  return entries;
+}
+
 export default function AdminVolunteerCredentials() {
   const { showAlert } = useAlert();
   const { confirm } = useConfirm();
@@ -253,6 +278,21 @@ export default function AdminVolunteerCredentials() {
 
   const today = localDateOnly();
 
+  const handleCopyEmails = async () => {
+    if (!selected) return;
+    const entries = credentialHolderEmailEntries(selected.grants, today);
+    if (entries.length === 0) {
+      showAlert('No holder emails to copy', 'warning');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(entries.join(', '));
+      showAlert('Holder emails copied', 'success');
+    } catch {
+      showAlert('Failed to copy emails', 'error');
+    }
+  };
+
   return loading ? (
     <AppStateCard title="Loading credentials..." />
   ) : (
@@ -414,7 +454,13 @@ export default function AdminVolunteerCredentials() {
             {selected.grants.length === 0 ? (
               <InlineStateMessage title="No members hold this credential yet." />
             ) : (
-              <ul className="space-y-2">
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center justify-end">
+                  <Button type="button" variant="secondary" onClick={() => void handleCopyEmails()}>
+                    Copy emails
+                  </Button>
+                </div>
+                <ul className="space-y-2">
                 {[...selected.grants]
                   .sort((a, b) => {
                     const aExpired = !volunteerCredentialIsValidOn(a.expiresAt, today);
@@ -470,7 +516,8 @@ export default function AdminVolunteerCredentials() {
                       </li>
                     );
                   })}
-              </ul>
+                </ul>
+              </div>
             )}
           </>
         )}

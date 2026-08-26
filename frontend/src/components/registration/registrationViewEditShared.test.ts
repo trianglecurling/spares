@@ -526,7 +526,7 @@ describe('guarantee labels shown while reordering', () => {
     expect(result.entries.map((entry) => entry.label)).toEqual(['guaranteed_return', 'superfluous']);
   });
 
-  test('two guaranteed returns leave extra leagues subject to availability then superfluous', () => {
+  test('two guaranteed returns leave extra leagues subject to availability as backups', () => {
     const result = evaluate({
       priorities: ranked(1, 2, 3, 4),
       desiredLeagueCount: 3,
@@ -536,7 +536,7 @@ describe('guarantee labels shown while reordering', () => {
       'guaranteed_return',
       'guaranteed_return',
       'subject_to_availability',
-      'superfluous',
+      'subject_to_availability',
     ]);
   });
 

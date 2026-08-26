@@ -1503,21 +1503,34 @@ export class PaymentService {
       });
 
       const resolvedNativeOrderId = result.providerNativeOrderId ?? options?.nativeOrderId ?? asString(metadata.squareOrderId);
-      if (
-        !options?.dryRun
-        && resolvedNativeOrderId
-        && asString(metadata.squareOrderId) !== resolvedNativeOrderId
-      ) {
-        await this.db
-          .update(this.schema.paymentOrders)
-          .set({
-            metadata: safeJsonStringify({
-              ...metadata,
-              squareOrderId: resolvedNativeOrderId,
-            }),
-            updated_at: sql`CURRENT_TIMESTAMP`,
-          })
-          .where(eq(this.schema.paymentOrders.id, orderId));
+      if (!options?.dryRun) {
+        const nextMetadata = { ...metadata };
+        let metadataChanged = false;
+        if (resolvedNativeOrderId && asString(nextMetadata.squareOrderId) !== resolvedNativeOrderId) {
+          nextMetadata.squareOrderId = resolvedNativeOrderId;
+          metadataChanged = true;
+        }
+        if (result.status === 'completed' || result.status === 'already_completed') {
+          if (!asString(nextMetadata.squareOrderCompletedAt)) {
+            nextMetadata.squareOrderCompletedAt = new Date().toISOString();
+            metadataChanged = true;
+          }
+        } else if (result.status === 'skipped' && result.reason && result.reason !== 'not_fully_paid') {
+          if (!asString(nextMetadata.squareOrderCompleteSkippedAt)) {
+            nextMetadata.squareOrderCompleteSkippedAt = new Date().toISOString();
+            nextMetadata.squareOrderCompleteSkippedReason = result.reason;
+            metadataChanged = true;
+          }
+        }
+        if (metadataChanged) {
+          await this.db
+            .update(this.schema.paymentOrders)
+            .set({
+              metadata: safeJsonStringify(nextMetadata),
+              updated_at: sql`CURRENT_TIMESTAMP`,
+            })
+            .where(eq(this.schema.paymentOrders.id, orderId));
+        }
       }
 
       await logEvent({
@@ -1563,22 +1576,29 @@ export class PaymentService {
     dryRun?: boolean;
     delayMs?: number;
     provider?: PaymentProvider;
+    limit?: number;
+    onlyMissingCompletionFlag?: boolean;
   }): Promise<CompletePaidProviderOrdersSummary> {
     const provider = input?.provider ?? 'square';
     const delayMs = Math.max(0, input?.delayMs ?? 100);
-    const rows = await this.db
+    const conditions = [
+      eq(this.schema.paymentOrders.provider, provider),
+      inArray(this.schema.paymentOrders.status, [...FULLY_PAID_ORDER_STATUSES]),
+    ];
+    if (input?.onlyMissingCompletionFlag === true) {
+      conditions.push(this.missingSquareCompletionFlagCondition());
+    }
+    const query = this.db
       .select({
         id: this.schema.paymentOrders.id,
         status: this.schema.paymentOrders.status,
       })
       .from(this.schema.paymentOrders)
-      .where(
-        and(
-          eq(this.schema.paymentOrders.provider, provider),
-          inArray(this.schema.paymentOrders.status, [...FULLY_PAID_ORDER_STATUSES])
-        )
-      )
+      .where(and(...conditions))
       .orderBy(this.schema.paymentOrders.id);
+    const rows = input?.limit != null
+      ? await query.limit(Math.max(1, input.limit))
+      : await query;
 
     const results: CompletePaidProviderOrderSummaryRow[] = [];
     for (const [index, row] of rows.entries()) {
@@ -2034,7 +2054,7 @@ export class PaymentService {
     }
 
     try {
-      if (verified.orderLookup.providerOrderId && !order.provider_order_id) {
+      if (verified.orderLookup.providerOrderId && !order.provider_order_id && input.provider !== 'square') {
         await this.db
           .update(this.schema.paymentOrders)
           .set({
@@ -2042,6 +2062,22 @@ export class PaymentService {
             updated_at: sql`CURRENT_TIMESTAMP`,
           })
           .where(eq(this.schema.paymentOrders.id, order.id));
+      }
+
+      if (input.provider === 'square' && verified.orderLookup.providerOrderId) {
+        const metadata = safeJsonParseObject(order.metadata);
+        if (asString(metadata.squareOrderId) !== verified.orderLookup.providerOrderId) {
+          await this.db
+            .update(this.schema.paymentOrders)
+            .set({
+              metadata: safeJsonStringify({
+                ...metadata,
+                squareOrderId: verified.orderLookup.providerOrderId,
+              }),
+              updated_at: sql`CURRENT_TIMESTAMP`,
+            })
+            .where(eq(this.schema.paymentOrders.id, order.id));
+        }
       }
 
       if (verified.transaction) {
@@ -2658,16 +2694,35 @@ export class PaymentService {
     return asString(treasurer?.memberName);
   }
 
+  private missingSquareCompletionFlagCondition() {
+    const metadataColumn = this.schema.paymentOrders.metadata;
+    const isPostgres = getDatabaseConfig()?.type === 'postgres';
+    return isPostgres
+      ? sql`COALESCE(${metadataColumn}::jsonb->>'squareOrderCompletedAt', '') = '' AND COALESCE(${metadataColumn}::jsonb->>'squareOrderCompleteSkippedAt', '') = ''`
+      : sql`COALESCE(json_extract(COALESCE(${metadataColumn}, '{}'), '$.squareOrderCompletedAt'), '') = '' AND COALESCE(json_extract(COALESCE(${metadataColumn}, '{}'), '$.squareOrderCompleteSkippedAt'), '') = ''`;
+  }
+
+  private squareNativeOrderIdMetadataCondition(nativeOrderId: string) {
+    const metadataColumn = this.schema.paymentOrders.metadata;
+    const isPostgres = getDatabaseConfig()?.type === 'postgres';
+    return isPostgres
+      ? sql`(COALESCE(${metadataColumn}::jsonb->>'squareOrderId', '') = ${nativeOrderId} OR COALESCE(${metadataColumn}::jsonb->>'square_order_id', '') = ${nativeOrderId})`
+      : sql`(COALESCE(json_extract(COALESCE(${metadataColumn}, '{}'), '$.squareOrderId'), '') = ${nativeOrderId} OR COALESCE(json_extract(COALESCE(${metadataColumn}, '{}'), '$.square_order_id'), '') = ${nativeOrderId})`;
+  }
+
   private async findOrderForWebhook(
     provider: PaymentProvider,
     lookup: { orderId: number | null; orderToken: string | null; providerOrderId: string | null; providerTransactionId: string | null }
-  ): Promise<{ id: number; provider_order_id: string | null } | null> {
+  ): Promise<{ id: number; provider_order_id: string | null; metadata: string | null } | null> {
+    const webhookOrderColumns = {
+      id: this.schema.paymentOrders.id,
+      provider_order_id: this.schema.paymentOrders.provider_order_id,
+      metadata: this.schema.paymentOrders.metadata,
+    };
+
     if (lookup.orderId) {
       const [orderById] = await this.db
-        .select({
-          id: this.schema.paymentOrders.id,
-          provider_order_id: this.schema.paymentOrders.provider_order_id,
-        })
+        .select(webhookOrderColumns)
         .from(this.schema.paymentOrders)
         .where(eq(this.schema.paymentOrders.id, lookup.orderId))
         .limit(1);
@@ -2676,10 +2731,7 @@ export class PaymentService {
 
     if (lookup.orderToken) {
       const [orderByToken] = await this.db
-        .select({
-          id: this.schema.paymentOrders.id,
-          provider_order_id: this.schema.paymentOrders.provider_order_id,
-        })
+        .select(webhookOrderColumns)
         .from(this.schema.paymentOrders)
         .where(eq(this.schema.paymentOrders.order_token, lookup.orderToken))
         .limit(1);
@@ -2688,10 +2740,7 @@ export class PaymentService {
 
     if (lookup.providerOrderId) {
       const [orderByProvider] = await this.db
-        .select({
-          id: this.schema.paymentOrders.id,
-          provider_order_id: this.schema.paymentOrders.provider_order_id,
-        })
+        .select(webhookOrderColumns)
         .from(this.schema.paymentOrders)
         .where(
           and(
@@ -2701,14 +2750,23 @@ export class PaymentService {
         )
         .limit(1);
       if (orderByProvider) return orderByProvider;
+
+      const [orderByNative] = await this.db
+        .select(webhookOrderColumns)
+        .from(this.schema.paymentOrders)
+        .where(
+          and(
+            eq(this.schema.paymentOrders.provider, provider),
+            this.squareNativeOrderIdMetadataCondition(lookup.providerOrderId)
+          )
+        )
+        .limit(1);
+      if (orderByNative) return orderByNative;
     }
 
     if (lookup.providerTransactionId) {
       const [orderByTransaction] = await this.db
-        .select({
-          id: this.schema.paymentOrders.id,
-          provider_order_id: this.schema.paymentOrders.provider_order_id,
-        })
+        .select(webhookOrderColumns)
         .from(this.schema.paymentOrders)
         .innerJoin(
           this.schema.paymentTransactions,

@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import { buildSquareOrderDetails, isSquareOrderFullyPaid, planSquareOrderCompletion } from './squarePaymentProviderAdapter.js';
-import type { CreateCheckoutInput } from './paymentService.js';
+import {
+  buildSquareOrderDetails,
+  extractSquareWebhookOrderLookup,
+  isSquareOrderFullyPaid,
+  isSquareVersionMismatch,
+  planSquareOrderCompletion,
+} from './squarePaymentProviderAdapter.js';
+import { PaymentServiceError, type CreateCheckoutInput } from './paymentService.js';
 
 describe('isSquareOrderFullyPaid', () => {
   test('requires zero net amount due and at least one tender', () => {
@@ -104,6 +110,108 @@ describe('planSquareOrderCompletion', () => {
       locationId: null,
       fulfillments: [],
     });
+  });
+});
+
+describe('extractSquareWebhookOrderLookup', () => {
+  test('matches payment.updated using Square order id when reference_id is absent', () => {
+    expect(
+      extractSquareWebhookOrderLookup({
+        type: 'payment.updated',
+        data: {
+          object: {
+            payment: {
+              id: 'pay-1',
+              order_id: 'sq-order-99',
+              status: 'COMPLETED',
+            },
+          },
+        },
+      })
+    ).toEqual({
+      orderId: null,
+      orderToken: null,
+      providerOrderId: 'sq-order-99',
+      providerTransactionId: 'pay-1',
+    });
+  });
+
+  test('reads order.updated payloads that wrap order_updated instead of order', () => {
+    expect(
+      extractSquareWebhookOrderLookup({
+        type: 'order.updated',
+        data: {
+          object: {
+            order_updated: {
+              order_id: 'sq-order-77',
+              state: 'OPEN',
+              version: 4,
+            },
+          },
+        },
+      })
+    ).toEqual({
+      orderId: null,
+      orderToken: null,
+      providerOrderId: 'sq-order-77',
+      providerTransactionId: null,
+    });
+  });
+
+  test('reads refund.created order_id and refund id', () => {
+    expect(
+      extractSquareWebhookOrderLookup({
+        type: 'refund.created',
+        data: {
+          object: {
+            refund: {
+              id: 'refund-1',
+              payment_id: 'pay-1',
+              order_id: 'sq-order-55',
+            },
+          },
+        },
+      })
+    ).toEqual({
+      orderId: null,
+      orderToken: null,
+      providerOrderId: 'sq-order-55',
+      providerTransactionId: 'refund-1',
+    });
+  });
+
+  test('accepts camelCase payment fields and order referenceId', () => {
+    expect(
+      extractSquareWebhookOrderLookup({
+        type: 'payment.updated',
+        data: {
+          object: {
+            payment: {
+              id: 'pay-2',
+              orderId: 'sq-order-camel',
+              referenceId: 'order-token-1',
+            },
+          },
+        },
+      })
+    ).toEqual({
+      orderId: null,
+      orderToken: 'order-token-1',
+      providerOrderId: 'sq-order-camel',
+      providerTransactionId: 'pay-2',
+    });
+  });
+});
+
+describe('isSquareVersionMismatch', () => {
+  test('detects wrapped Square errors from callSquare', () => {
+    expect(
+      isSquareVersionMismatch(
+        new PaymentServiceError('Square error (HTTP 409): CONFLICT VERSION_MISMATCH Version does not match', 502)
+      )
+    ).toBe(true);
+    expect(isSquareVersionMismatch(new PaymentServiceError('Square error: NOT_FOUND', 502))).toBe(false);
+    expect(isSquareVersionMismatch(new Error('network down'))).toBe(false);
   });
 });
 

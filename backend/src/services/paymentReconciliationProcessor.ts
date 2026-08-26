@@ -1,5 +1,5 @@
 import { config } from '../config.js';
-import { createPaymentService } from './paymentService.js';
+import { createPaymentService, getEnabledPaymentProviders } from './paymentService.js';
 
 let running = false;
 
@@ -23,6 +23,20 @@ export async function reconcileStalePaymentsOnce(): Promise<void> {
       console.log(
         `[Payment Reconciliation] checked=${summary.checked} changed=${summary.changed} skipped_by_max_age=${summary.skippedByMaxAge} stale_before=${summary.staleThresholdIso}${summary.maxPendingAgeThresholdIso ? ` max_pending_age_before=${summary.maxPendingAgeThresholdIso}` : ''}`
       );
+    }
+
+    if (getEnabledPaymentProviders().includes('square')) {
+      const completeSummary = await paymentService.completePaidProviderOrdersForFullyPaidPayments({
+        provider: 'square',
+        delayMs: 100,
+        limit: config.payment.reconcile.batchSize,
+        onlyMissingCompletionFlag: true,
+      });
+      if (completeSummary.checked > 0 || completeSummary.failed > 0) {
+        console.log(
+          `[Payment Reconciliation] square_complete checked=${completeSummary.checked} completed=${completeSummary.completed} already_completed=${completeSummary.alreadyCompleted} skipped=${completeSummary.skipped} failed=${completeSummary.failed}`
+        );
+      }
     }
   } catch (error) {
     console.error('[Payment Reconciliation] Processor run failed:', error);

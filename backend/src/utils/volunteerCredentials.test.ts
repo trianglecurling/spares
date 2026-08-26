@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   heldVolunteerCredentialIdsOn,
   volunteerCredentialIsValidOn,
+  volunteerProgramVisibleGivenCredentials,
 } from './volunteerCredentials.js';
 
 describe('volunteerCredentialIsValidOn', () => {
@@ -31,5 +32,87 @@ describe('heldVolunteerCredentialIdsOn', () => {
 
   test('drops grants that have already expired', () => {
     expect([...heldVolunteerCredentialIdsOn(grants, '2026-09-02')].sort()).toEqual([1]);
+  });
+});
+
+describe('volunteerProgramVisibleGivenCredentials', () => {
+  const iceTech = { id: 1 };
+  const firstAid = { id: 2 };
+  const bar = { id: 3 };
+
+  test('keeps programs with no roles', () => {
+    expect(volunteerProgramVisibleGivenCredentials({ roles: [] }, [])).toBe(true);
+  });
+
+  test('keeps programs that have any role with no credential requirement', () => {
+    expect(
+      volunteerProgramVisibleGivenCredentials(
+        {
+          roles: [
+            { requiredCredentials: [iceTech] },
+            { requiredCredentials: [] },
+          ],
+        },
+        []
+      )
+    ).toBe(true);
+  });
+
+  test('hides programs when the member does not qualify for any role', () => {
+    expect(
+      volunteerProgramVisibleGivenCredentials(
+        {
+          roles: [
+            { requiredCredentials: [iceTech] },
+            { requiredCredentials: [firstAid] },
+          ],
+        },
+        [bar.id]
+      )
+    ).toBe(false);
+    expect(
+      volunteerProgramVisibleGivenCredentials(
+        {
+          roles: [{ requiredCredentials: [iceTech] }],
+        },
+        []
+      )
+    ).toBe(false);
+  });
+
+  test('shows programs when the member qualifies for at least one role', () => {
+    expect(
+      volunteerProgramVisibleGivenCredentials(
+        {
+          roles: [
+            { requiredCredentials: [iceTech] },
+            { requiredCredentials: [firstAid] },
+          ],
+        },
+        [firstAid.id]
+      )
+    ).toBe(true);
+  });
+
+  test('hides a multi-credential role when the member holds only some of its required credentials', () => {
+    expect(
+      volunteerProgramVisibleGivenCredentials(
+        {
+          roles: [{ requiredCredentials: [iceTech, firstAid] }],
+        },
+        [iceTech.id]
+      )
+    ).toBe(false);
+  });
+
+  test('shows a multi-credential role when the member holds every required credential', () => {
+    expect(
+      volunteerProgramVisibleGivenCredentials(
+        {
+          roles: [{ requiredCredentials: [iceTech, firstAid] }],
+        },
+        [iceTech.id, firstAid.id]
+      )
+    ).toBe(true);
   });
 });

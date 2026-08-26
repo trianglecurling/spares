@@ -345,22 +345,18 @@ export function guaranteeBudgetFor(desiredLeagueCount: number): number {
 
 /**
  * An entry that already counts toward the desired league count: a held
- * guarantee, an available or temporary fill, or a subject-to-availability
- * leftover that still fills a remaining wanted slot. That last case shapes
- * the list (later rows become superfluous) without billing or rostering the
- * unconfirmed league. Waitlists, incomplete rosters, and play-in misses do
- * not secure a slot, so later entries can still be necessary.
+ * guarantee, an available spot, or a temporary fill. Those are confirmed
+ * placements. Subject-to-availability leftovers are unconfirmed, so they do
+ * not fill a slot — later rows stay valid backups. Waitlists, incomplete
+ * rosters, and play-in misses also do not secure a slot.
  */
 function entrySecuresDesiredSlot(entry: LabeledPriorityEntry): boolean {
-  if (entry.guaranteed || entry.label === 'available' || entry.label === 'temporary_spot_available') {
-    return true;
-  }
-  return entry.label === 'subject_to_availability' && !entry.isPlayInBased && !entry.isInstructional;
+  return entry.guaranteed || entry.label === 'available' || entry.label === 'temporary_spot_available';
 }
 
 /**
- * Anything below an already-filled desired count cannot be placed, billed, or
- * waitlisted. Relabel those rows so the registrant can remove them or move
+ * Anything below a confirmed fill of the desired count cannot be placed, billed,
+ * or waitlisted. Relabel those rows so the registrant can remove them or move
  * them higher (for example to try a switch with guaranteed fallback).
  */
 function markSuperfluousEntries(entries: LabeledPriorityEntry[], desiredLeagueCount: number): void {
@@ -405,11 +401,13 @@ function markSuperfluousEntries(entries: LabeledPriorityEntry[], desiredLeagueCo
  * Available and billed now; a full program is subject to availability and
  * payment waits.
  *
- * Once guaranteed spots plus available, temporary-fill, or subject-to-availability
- * entries already fill the desired league count, every later entry is
- * `superfluous`. Those rows are not waitlisted or billed. A registrant can
- * still add a league and move it above a guaranteed spot to try a switch
- * with fallback; until they do, the extra row blocks continue.
+ * Once guaranteed spots plus available or temporary-fill entries already fill
+ * the desired league count, every later entry is `superfluous`. Those rows
+ * are not waitlisted or billed. Subject-to-availability leftovers do not fill
+ * the count, so extra rows remain backups while confirmed placements are still
+ * short of the number wanted. A registrant can still add a league and move it
+ * above a guaranteed spot to try a switch with fallback; until they do, extra
+ * rows below an already-filled count block continue.
  *
  * Sabbaticals do not consume this budget. A registrant may hold two guaranteed
  * priority spots and still take sabbatical from other prior leagues.

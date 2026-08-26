@@ -30,7 +30,9 @@ import { ensureUniqueVolunteerProgramSlug } from './volunteerProgramSlugs.js';
 import { compareVolunteerProgramsForDiscovery } from '../utils/volunteerProgramSort.js';
 import {
   heldVolunteerCredentialIdsOn,
+  memberHasAllVolunteerCredentials,
   volunteerCredentialIsValidOn,
+  volunteerProgramVisibleGivenCredentials,
 } from '../utils/volunteerCredentials.js';
 
 /**
@@ -687,13 +689,6 @@ async function getRoleRequiredCredentialMap(
     map.set(row.roleId, list);
   }
   return map;
-}
-
-function memberHasAllCredentials(
-  held: Set<number>,
-  required: VolunteerCredentialSummary[]
-): boolean {
-  return required.every((c) => held.has(c.id));
 }
 
 export async function createProgram(input: {
@@ -1912,7 +1907,7 @@ async function buildProgramViews(options: {
               volunteersRegistered: roleSignups.length,
               isFull: roleSignups.length >= sr.volunteersNeeded,
               requiredCredentials: required,
-              callerHasCredentials: memberHasAllCredentials(heldCredentials, required),
+              callerHasCredentials: memberHasAllVolunteerCredentials(heldCredentials, required),
               callerIsSignedUp: roleSignups.some((su) => su.memberId === options.member.id),
               signups: roleSignups,
             };
@@ -1963,8 +1958,12 @@ export async function listHubPrograms(member: Member): Promise<{
     listMyCredentials(member.id),
     listHubCredentials(member.id),
   ]);
+  const heldCredentialIds = new Set(myCredentials.map((credential) => credential.id));
+  const visiblePrograms = programs.filter((program) =>
+    volunteerProgramVisibleGivenCredentials(program, heldCredentialIds)
+  );
   // Discover opportunities: priority (lower first; missing = last), then earliest upcoming shift, then title.
-  const sortedPrograms = [...programs].sort((a, b) =>
+  const sortedPrograms = [...visiblePrograms].sort((a, b) =>
     compareVolunteerProgramsForDiscovery(
       { priority: a.priority, nextShiftStart: a.shifts[0]?.startDt ?? null, title: a.title },
       { priority: b.priority, nextShiftStart: b.shifts[0]?.startDt ?? null, title: b.title }
@@ -2163,7 +2162,7 @@ export async function listDashboardOpportunities(memberId: number): Promise<Dash
     const startDt = requireIso(shift.startDt as any, 'startDt');
     const held = heldVolunteerCredentialIdsOn(heldGrants, shiftDateOnly(startDt));
     const required = roleCredMap.get(sr.roleId) ?? [];
-    if (!memberHasAllCredentials(held, required)) continue;
+    if (!memberHasAllVolunteerCredentials(held, required)) continue;
     const registered = countMap.get(sr.id) ?? 0;
     if (registered >= sr.volunteersNeeded) continue;
 
@@ -2370,7 +2369,7 @@ export async function signUpForShiftRole(
   const required = requiredMap.get(target.roleId) ?? [];
   const asOfDate = shiftDateOnly(startDt);
   const actorHeld = await getMemberCredentials(actor.id, asOfDate);
-  if (!memberHasAllCredentials(actorHeld, required)) {
+  if (!memberHasAllVolunteerCredentials(actorHeld, required)) {
     throw new VolunteeringServiceError('Missing required credentials for this role', 403);
   }
   if (guestNames.length > 0 && required.length > 0) {
@@ -2382,7 +2381,7 @@ export async function signUpForShiftRole(
 
   for (const memberId of memberIds) {
     const held = memberId === actor.id ? actorHeld : await getMemberCredentials(memberId, asOfDate);
-    if (!memberHasAllCredentials(held, required)) {
+    if (!memberHasAllVolunteerCredentials(held, required)) {
       throw new VolunteeringServiceError(
         'One or more selected members are missing required credentials for this role',
         403

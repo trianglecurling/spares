@@ -15,7 +15,13 @@ import { useAlert } from '../../contexts/AlertContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { isArchivedAt } from '../../utils/softDelete';
 import { memberHasScope } from '../../utils/permissions';
-import type { VolunteerProgramView } from '../../utils/volunteering';
+import {
+  formatVolunteerDateOnly,
+  volunteerProgramFirstShiftDate,
+  volunteerProgramLastShiftHasEnded,
+  volunteerProgramSignupTotals,
+  type VolunteerProgramView,
+} from '../../utils/volunteering';
 import AdminVolunteerProgramDuplicateModal from './AdminVolunteerProgramDuplicateModal';
 
 type VolunteeringTab = 'programs' | 'credentials';
@@ -181,19 +187,23 @@ export function AdminVolunteeringPrograms() {
         ),
       },
       {
-        id: 'priority',
-        header: 'Priority',
-        renderCell: (row) => (row.priority == null ? '—' : String(row.priority)),
+        id: 'date',
+        header: 'Date',
+        cellClassName: 'text-sm text-gray-600 dark:text-gray-400',
+        renderCell: (row) => {
+          const firstShiftDate = volunteerProgramFirstShiftDate(row);
+          return firstShiftDate ? formatVolunteerDateOnly(firstShiftDate) : '—';
+        },
       },
       {
-        id: 'roles',
-        header: 'Roles',
-        renderCell: (row) => String(row.roles.length),
-      },
-      {
-        id: 'shifts',
-        header: 'Shifts',
-        renderCell: (row) => String(row.shifts.length),
+        id: 'signups',
+        header: 'Sign-ups',
+        align: 'right',
+        cellClassName: 'text-sm text-gray-700 dark:text-gray-300',
+        renderCell: (row) => {
+          const { signedUp, needed } = volunteerProgramSignupTotals(row);
+          return `${signedUp}/${needed}`;
+        },
       },
       {
         id: 'managers',
@@ -201,34 +211,15 @@ export function AdminVolunteeringPrograms() {
         renderCell: (row) =>
           row.managers.length === 0 ? '—' : row.managers.map((m) => m.name).join(', '),
       },
-      {
-        id: 'status',
-        header: 'Status',
-        align: 'center',
-        renderCell: (row) => {
-          if (isArchivedAt(row.archivedAt)) {
-            return (
-              <span className="inline-block rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900 dark:bg-amber-900/30 dark:text-amber-200">
-                Archived
-              </span>
-            );
-          }
-          return (
-            <span
-              className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
-                row.published
-                  ? 'bg-green-100 text-green-800 dark:bg-emerald-900/30 dark:text-emerald-200'
-                  : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
-              }`}
-            >
-              {row.published ? 'Published' : 'Draft'}
-            </span>
-          );
-        },
-      },
     ],
     []
   );
+
+  const visiblePrograms = useMemo(() => {
+    if (includeArchived) return programs;
+    const nowIso = new Date().toISOString();
+    return programs.filter((program) => !volunteerProgramLastShiftHasEnded(program, nowIso));
+  }, [programs, includeArchived]);
 
   return (
     <>
@@ -244,13 +235,21 @@ export function AdminVolunteeringPrograms() {
 
       {loading ? (
         <AppStateCard title="Loading programs..." />
-      ) : programs.length === 0 ? (
+      ) : visiblePrograms.length === 0 ? (
         <AppStateCard
-          title={includeArchived ? 'No programs match these filters.' : 'No programs yet.'}
+          title={
+            includeArchived
+              ? 'No programs match these filters.'
+              : programs.length > 0
+                ? 'No upcoming programs.'
+                : 'No programs yet.'
+          }
           description={
-            canCreate
-              ? 'Create a volunteer program to start adding a description, roles, and shifts.'
-              : 'You are not a manager of any volunteer programs.'
+            !includeArchived && programs.length > 0
+              ? 'Past programs are hidden. Include archived items to review them.'
+              : canCreate
+                ? 'Create a volunteer program to start adding a description, roles, and shifts.'
+                : 'You are not a manager of any volunteer programs.'
           }
           action={
             canCreate && !includeArchived ? (
@@ -262,7 +261,7 @@ export function AdminVolunteeringPrograms() {
         />
       ) : (
         <DataTable
-          rows={programs}
+          rows={visiblePrograms}
           rowKey={(row) => row.id}
           columns={columns}
           actions={

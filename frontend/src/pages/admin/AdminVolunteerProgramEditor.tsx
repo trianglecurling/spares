@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
+import AppPageControlsRow from '../../components/AppPageControlsRow';
 import AppStateCard from '../../components/AppStateCard';
 import BackButton from '../../components/BackButton';
 import Button from '../../components/Button';
@@ -16,6 +17,7 @@ import MemberMultiSelect from '../../components/MemberMultiSelect';
 import Modal from '../../components/Modal';
 import PageTabs from '../../components/PageTabs';
 import RecurrenceFields, { useRecurrenceState } from '../../components/RecurrenceFields';
+import IncludeArchivedToggle from '../../components/softDelete/IncludeArchivedToggle';
 import VolunteerProgramLocationField from '../../components/VolunteerProgramLocationField';
 import { resolveSiteName } from '../../components/SeoMeta';
 import { useAlert } from '../../contexts/AlertContext';
@@ -37,6 +39,7 @@ import {
   VOLUNTEER_LOCATION_CLUB,
   volunteerLocationChoiceFromStored,
   volunteerLocationStoredFromChoice,
+  volunteerShiftHasEnded,
   type VolunteerLocationChoice,
   type VolunteerProgramView,
   type VolunteerRoleView,
@@ -122,6 +125,7 @@ export default function AdminVolunteerProgramEditor() {
 
   const [saving, setSaving] = useState(false);
   const [program, setProgram] = useState<VolunteerProgramView | null>(null);
+  const [includeArchivedSignups, setIncludeArchivedSignups] = useState(false);
   const [allCredentials, setAllCredentials] = useState<Array<{ id: number; name: string }>>([]);
 
   const [title, setTitle] = useState('');
@@ -226,6 +230,12 @@ export default function AdminVolunteerProgramEditor() {
     () => program?.roles.find((r) => r.id === newShiftRoleId) ?? null,
     [program, newShiftRoleId]
   );
+  const visibleSignupShifts = useMemo(() => {
+    if (!program) return [];
+    if (includeArchivedSignups) return program.shifts;
+    const nowIso = new Date().toISOString();
+    return program.shifts.filter((shift) => !volunteerShiftHasEnded(shift.endDt, nowIso));
+  }, [program, includeArchivedSignups]);
   const newShiftStartLocal = newShiftTimes[0]?.startLocal ?? '';
   const newShiftRecurrence = useRecurrenceState(
     '',
@@ -1224,57 +1234,74 @@ export default function AdminVolunteerProgramEditor() {
       ) : null}
 
       {activeTab === 'signups' && program ? (
-        <div className="space-y-4">
-          {program.shifts.length === 0 ? (
-            <AppStateCard title="No shifts yet" description="Add shifts before managing signups." />
-          ) : (
-            program.shifts.map((shift) => (
-              <div key={shift.id} className="app-card p-4 space-y-3">
-                <div className="font-medium text-gray-900 dark:text-gray-100">
-                  {formatVolunteerRange(shift.startDt, shift.endDt)}
-                </div>
-                {shift.roles.map((role) => (
-                  <div key={role.id} className="rounded-md border border-gray-200 dark:border-gray-700 p-3">
-                    <div className="flex flex-wrap items-baseline justify-between gap-2">
-                      <div className="font-medium">{role.roleName}</div>
-                      <div className="text-sm text-gray-600 dark:text-gray-400">
-                        {role.volunteersRegistered}/{role.volunteersNeeded}
-                      </div>
-                    </div>
-                    {role.signups.length === 0 ? (
-                      <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">No signups</p>
-                    ) : (
-                      <ul className="mt-2 space-y-2">
-                        {role.signups.map((signup) => (
-                          <li key={signup.id} className="flex items-start justify-between gap-3 text-sm">
-                            <div className="min-w-0 space-y-0.5">
-                              <div>{signup.memberName}{!signup.memberId ? ' (non-member)' : ''}</div>
-                              {signup.guestEmail ? (
-                                <p className="text-gray-600 dark:text-gray-400">{signup.guestEmail}</p>
-                              ) : null}
-                              {signup.comments ? (
-                                <p className="text-gray-600 dark:text-gray-400 whitespace-pre-wrap">
-                                  {signup.comments}
-                                </p>
-                              ) : null}
-                            </div>
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              onClick={() => handleRemoveSignup(signup.id, signup.memberName)}
-                            >
-                              Remove
-                            </Button>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
+        <>
+          {program.shifts.length > 0 ? (
+            <AppPageControlsRow
+              right={
+                <IncludeArchivedToggle
+                  checked={includeArchivedSignups}
+                  onChange={setIncludeArchivedSignups}
+                />
+              }
+            />
+          ) : null}
+          <div className="space-y-4">
+            {program.shifts.length === 0 ? (
+              <AppStateCard title="No shifts yet" description="Add shifts before managing signups." />
+            ) : visibleSignupShifts.length === 0 ? (
+              <AppStateCard
+                title="No upcoming sign-ups"
+                description="Past shifts are hidden. Include archived items to review them."
+              />
+            ) : (
+              visibleSignupShifts.map((shift) => (
+                <div key={shift.id} className="app-card p-4 space-y-3">
+                  <div className="font-medium text-gray-900 dark:text-gray-100">
+                    {formatVolunteerRange(shift.startDt, shift.endDt)}
                   </div>
-                ))}
-              </div>
-            ))
-          )}
-        </div>
+                  {shift.roles.map((role) => (
+                    <div key={role.id} className="rounded-md border border-gray-200 dark:border-gray-700 p-3">
+                      <div className="flex flex-wrap items-baseline justify-between gap-2">
+                        <div className="font-medium">{role.roleName}</div>
+                        <div className="text-sm text-gray-600 dark:text-gray-400">
+                          {role.volunteersRegistered}/{role.volunteersNeeded}
+                        </div>
+                      </div>
+                      {role.signups.length === 0 ? (
+                        <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">No signups</p>
+                      ) : (
+                        <ul className="mt-2 space-y-2">
+                          {role.signups.map((signup) => (
+                            <li key={signup.id} className="flex items-start justify-between gap-3 text-sm">
+                              <div className="min-w-0 space-y-0.5">
+                                <div>{signup.memberName}{!signup.memberId ? ' (non-member)' : ''}</div>
+                                {signup.guestEmail ? (
+                                  <p className="text-gray-600 dark:text-gray-400">{signup.guestEmail}</p>
+                                ) : null}
+                                {signup.comments ? (
+                                  <p className="text-gray-600 dark:text-gray-400 whitespace-pre-wrap">
+                                    {signup.comments}
+                                  </p>
+                                ) : null}
+                              </div>
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                onClick={() => handleRemoveSignup(signup.id, signup.memberName)}
+                              >
+                                Remove
+                              </Button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ))
+            )}
+          </div>
+        </>
       ) : null}
       <Modal
         isOpen={!!deleteShiftTarget}

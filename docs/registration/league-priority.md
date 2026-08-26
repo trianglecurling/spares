@@ -99,7 +99,7 @@ live as the registrant reorders, adds, or removes leagues.
 | Temporary spot available | A sabbatical has left a temporary fill vacancy. Billed immediately, minus the sabbatical fee. Open registration only. |
 | Waitlisted | Queued on the league waitlist. Payment deferred. |
 | Subject to availability | Wanted, not waitlisted, and not yet confirmed. Payment waits until staff places the curler. Includes a third league below two guaranteed returns, a leftover with no waitlist, and a full instructional program. |
-| Superfluous | Below leagues that already fill the desired count. Not waitlisted or billed. Must be removed or moved higher before continuing. |
+| Superfluous | Below confirmed placements (guaranteed, available, or temporary fill) that already fill the desired count. Not waitlisted or billed. Must be removed or moved higher before continuing. Unconfirmed subject-to-availability leftovers do not fill the count. |
 
 ### Return eligibility
 
@@ -207,7 +207,7 @@ secured = 0
 for entry in rank order:
     if secured >= desiredLeagueCount:
         entry.label = superfluous
-    else if entry is guaranteed, available, temporary fill, or subject-to-availability:
+    else if entry is guaranteed, available, or temporary fill:
         secured += 1
 ```
 
@@ -216,11 +216,12 @@ two guarantees sit above it — including a rank-3 waitlist while a fallback is
 held further down the list. Counting total grants (including those later
 fallbacks) would label the leftover as subject to availability and then mark the
 fallback superfluous. Once two spots above are already guaranteed, further
-leftovers are subject to availability only while they still fill a remaining
-desired-count slot. Anything below an already-filled desired count is
-superfluous: the registrant may add a league in order to move it higher
-(switch with fallback), but cannot continue until those extra rows are removed
-or reordered.
+leftovers are subject to availability even if the league has a waitlist. Those
+unconfirmed leftovers do not fill the desired count, so extra rows stay as
+backups until guaranteed, available, or temporary-fill placements already fill
+the number wanted. Anything below that confirmed fill is superfluous: the
+registrant may add a league in order to move it higher (switch with fallback),
+but cannot continue until those extra rows are removed or reordered.
 
 ### Instructional programs
 
@@ -260,14 +261,15 @@ Registrant played Tuesday and Thursday last session.
 | 2 | Tuesday, Monday, Wednesday, Thursday | Guaranteed return, Waitlisted, Waitlisted, Guaranteed fallback |
 | 1 | Monday, Tuesday, Thursday | Waitlisted, Guaranteed return, (none — budget spent) |
 | 3 | Monday, Tuesday, Thursday | Waitlisted, Guaranteed return, Guaranteed fallback |
-| 3 | Tuesday, Thursday, Monday, Wednesday | Guaranteed return, Guaranteed return, Subject to availability, Superfluous |
+| 3 | Tuesday, Thursday, Monday, Wednesday | Guaranteed return, Guaranteed return, Subject to availability, Subject to availability |
 
 In the fifth row the budget is `min(2, 1) = 1`, so Thursday gets no guarantee
 even though the registrant has a return right for it. In the last row both
-protected spots are already guaranteed, Monday fills the third wanted league
-as subject to availability, and Wednesday is superfluous. Monday and Wednesday
-in the Tuesday-first count-2 row stay waitlisted because only one guarantee
-sits above them; Thursday remains the fallback.
+protected spots are already guaranteed, and Monday and Wednesday remain
+subject to availability as options for the third wanted league. Wednesday is a
+backup if Monday does not come through. Monday and Wednesday in the
+Tuesday-first count-2 row stay waitlisted because only one guarantee sits
+above them; Thursday remains the fallback.
 
 ## Play-in ordering
 
