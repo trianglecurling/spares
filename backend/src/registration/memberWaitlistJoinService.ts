@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, lt, notInArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import type { Member } from '../types.js';
 import { RegistrationMemberValidationError } from './registrationMemberService.js';
@@ -550,6 +550,7 @@ export async function joinMemberWaitlist(input: {
   waitlistId: number;
   teamRosterText?: string | null;
   teamRosterPlacements?: Array<{ memberId: number }> | null;
+  notifyJoined?: boolean;
 }) {
   const contextPayload = await getMemberWaitlistJoinContext(input.member, input.waitlistId);
   if (contextPayload.alreadyOnWaitlist) {
@@ -577,6 +578,7 @@ export async function joinMemberWaitlist(input: {
       actorMemberId: input.member.id,
       reason: 'WAITLIST_ENTRY_CREATED',
       auditSource: 'member_self',
+      notifyJoined: input.notifyJoined,
     });
   } catch (error) {
     if (error instanceof WaitlistStaffValidationError) {
@@ -584,6 +586,9 @@ export async function joinMemberWaitlist(input: {
     }
     throw error;
   }
+
+  const { assignTrailingWaitlistPriorityRank } = await import('./memberWaitlistPriority.js');
+  await assignTrailingWaitlistPriorityRank(input.member.id, result.entry.id);
 
   const { position, total } = await getActiveWaitlistEntryPosition(input.waitlistId, result.entry.id);
 

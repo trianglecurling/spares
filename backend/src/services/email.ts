@@ -9,6 +9,7 @@ import type { FormattedEventWhen } from '../utils/formatEventTimespans.js';
 import { formatDateInTimeZone, formatTimeInTimeZone } from '../utils/timeZone.js';
 import { consumeSendBudget, type SendBudgetKind } from '../utils/abuseProtection.js';
 import { logEvent } from './observability.js';
+import { recordOutboundEmail, shouldLogOutboundEmail } from './outboundEmailLogService.js';
 import {
   EXPENSE_STATUS_LABELS,
   EXPENSE_TRIP_PURPOSE_LABELS,
@@ -208,6 +209,19 @@ function logEmail(options: EmailOptions, fullHtmlContent: string, prefix: string
   console.log('='.repeat(80));
 }
 
+function persistOutboundEmailIfNeeded(options: EmailOptions, fullHtmlContent: string): void {
+  if (!shouldLogOutboundEmail(options)) return;
+  recordOutboundEmail({
+    recipientEmail: options.to,
+    recipientName: options.recipientName,
+    subject: options.subject,
+    htmlBody: fullHtmlContent,
+    textBody: options.textContent ?? null,
+  }).catch((error) => {
+    console.error('[Email Service] Failed to persist outbound email log:', error);
+  });
+}
+
 export async function sendEmail(options: EmailOptions, memberToken?: string): Promise<EmailDeliveryResult> {
   console.log(`[Email Service] sendEmail called for ${options.to}`);
   const fullHtmlContent = buildFullHtmlContent(options.htmlContent, memberToken);
@@ -242,6 +256,7 @@ export async function sendEmail(options: EmailOptions, memberToken?: string): Pr
         `[Email Service] Test mode: sent via SMTP to ${config.testMailer.smtpHost}:${config.testMailer.smtpPort}`
       );
       logEvent({ eventType: 'email.sent', meta: { test_mode: true } }).catch(() => {});
+      persistOutboundEmailIfNeeded(options, fullHtmlContent);
       return { status: 'sent' };
     } catch (error) {
       console.error(
@@ -296,6 +311,7 @@ export async function sendEmail(options: EmailOptions, memberToken?: string): Pr
       await poller.pollUntilDone();
       logEvent({ eventType: 'email.sent' }).catch(() => {});
     }
+    persistOutboundEmailIfNeeded(options, fullHtmlContent);
     return { status: 'sent' };
   } catch (error) {
     // If sending fails for any reason (misconfiguration, transient outage, etc),

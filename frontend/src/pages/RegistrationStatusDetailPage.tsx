@@ -34,6 +34,7 @@ type LeaguePriority = {
   leagueName: string;
   priorityRank: number;
   guaranteeLabel: LeaguePriorityGuaranteeLabel | null;
+  isPlayInBased?: boolean;
   byotTeammateText: string | null;
   teamRosterDisplay?: string | null;
 };
@@ -191,9 +192,12 @@ export default function RegistrationStatusDetailPage() {
   }
 
   async function removeWaitlist(entry: WaitlistEntry) {
+    const teamNote = entry.teamRosterDisplay
+      ? `\n\nThis will remove the entire team (${entry.teamRosterDisplay}) from the waitlist. Everyone on the roster will get an email.`
+      : '';
     const ok = await confirm({
       title: 'Remove from waitlist?',
-      message: `Are you sure you want to remove yourself from the waitlist for ${entry.waitlistName || entry.leagueName}?\n\nYou will give up your current waitlist position. If you join this waitlist again later, you will be added as a new entry.`,
+      message: `Are you sure you want to leave the waitlist for ${entry.waitlistName || entry.leagueName}?${teamNote}\n\nThe current waitlist position will be given up. If you join this waitlist again later, you will be added as a new entry.`,
       confirmText: 'Remove from waitlist',
       cancelText: 'Keep my position',
       variant: 'warning',
@@ -342,7 +346,9 @@ export default function RegistrationStatusDetailPage() {
                                 priority.guaranteeLabel,
                               )}`}
                             >
-                              {guaranteeChipLabel(priority.guaranteeLabel)}
+                              {guaranteeChipLabel(priority.guaranteeLabel, {
+                                isPlayInBased: priority.isPlayInBased === true,
+                              })}
                             </span>
                           ) : null}
                         </div>
@@ -415,8 +421,6 @@ export default function RegistrationStatusDetailPage() {
                         <Button variant="outline-danger" onClick={() => void removeWaitlist(entry)}>
                           Remove from waitlist
                         </Button>
-                      ) : entry.teammateContactMessage ? (
-                        <p className="text-sm text-gray-600 dark:text-gray-300 md:max-w-sm">{entry.teammateContactMessage}</p>
                       ) : null}
                     </div>
                   ))}

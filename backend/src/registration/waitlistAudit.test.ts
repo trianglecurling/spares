@@ -45,4 +45,13 @@ describe('waitlist audit summaries', () => {
       })
     ).toBe("John Smith's waitlist offer preference changed");
   });
+
+  test('entry_priority_changed names the member', () => {
+    expect(
+      formatWaitlistAuditSummary({
+        action: 'entry_priority_changed',
+        memberName: 'John Smith',
+      })
+    ).toBe("John Smith's waitlist preference order changed");
+  });
 });

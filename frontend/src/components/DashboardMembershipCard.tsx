@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useEffect, useMemo, useState } from 'react';
+import HelpCallout from './HelpCallout';
 import InlineStateMessage from './InlineStateMessage';
 import { useAuth } from '../contexts/AuthContext';
 import api, { getApiErrorMessage } from '../utils/api';
@@ -12,6 +13,10 @@ type MembershipCardPayload = {
   };
   icePrivilegesValidThrough: string | null;
   pendingRegistrationPayment: boolean;
+  clubTenure: {
+    kind: 'new' | 'years';
+    years: number | null;
+  } | null;
   leagues: Array<{
     leagueId: number;
     leagueName: string;
@@ -64,6 +69,47 @@ function participationLabel(participation: MembershipCardPayload['leagues'][numb
   if (participation === 'waitlist') return 'Waitlist';
   if (participation === 'pending') return 'Pending';
   return null;
+}
+
+const CLUB_TENURE_HELP = (
+  <>
+    This number is not necessarily reflective of the number of years of curling experience used to determine
+    5-and-under eligibility. Please refer to GNCC or USA Curling guidelines. Does not include the year the club was
+    closed for COVID. Reach out to the Membership Committee with questions.
+  </>
+);
+
+function formatTenureYears(years: number) {
+  return Number.isInteger(years) ? String(years) : years.toFixed(1).replace(/\.0$/, '');
+}
+
+function ClubTenureMark({ tenure }: { tenure: NonNullable<MembershipCardPayload['clubTenure']> }) {
+  const isNew = tenure.kind === 'new';
+  if (!isNew && tenure.years == null) return null;
+
+  const displayYears = isNew ? null : formatTenureYears(tenure.years as number);
+  const accessibleName = isNew ? 'New member' : `${displayYears}-year member`;
+
+  return (
+    <HelpCallout
+      text={CLUB_TENURE_HELP}
+      label={accessibleName}
+      align="end"
+      triggerClassName="flex h-[4.5rem] w-[4.5rem] flex-col items-center justify-center rounded-full border-2 border-primary-orange bg-white/80 px-1.5 text-center transition-colors hover:bg-primary-orange/10 dark:bg-gray-900/80"
+    >
+      <span className="flex -translate-y-1 flex-col items-center justify-center leading-none">
+        <span className="text-2xl font-semibold leading-none text-primary-orange tabular-nums">{isNew ? 'New' : displayYears}</span>
+        <span className="mt-px flex flex-col items-center gap-px text-xs font-medium leading-none text-gray-600 dark:text-gray-400">
+          {isNew ? <span>member</span> : (
+            <>
+              <span>year</span>
+              <span>member</span>
+            </>
+          )}
+        </span>
+      </span>
+    </HelpCallout>
+  );
 }
 
 export default function DashboardMembershipCard() {
@@ -136,31 +182,21 @@ export default function DashboardMembershipCard() {
     );
   }
 
-  return (
-    <div className="relative h-full w-full overflow-hidden rounded-2xl border border-primary-teal/20 dark:border-primary-teal/30 bg-gradient-to-br from-white via-teal-50/70 to-orange-50/40 dark:from-gray-800 dark:via-gray-800 dark:to-gray-900 p-5 shadow-sm">
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute -right-8 -top-8 h-28 w-28 rounded-full bg-primary-teal/10 dark:bg-primary-teal/15"
-      />
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute -bottom-10 -left-6 h-24 w-24 rounded-full bg-primary-orange/10 dark:bg-primary-orange/15"
-      />
+  const showTenure = data.clubTenure != null;
 
-      {clubLogoUrl ? (
-        <img
-          src={clubLogoUrl}
-          alt={clubName ? `${clubName} logo` : 'Club logo'}
-          className="absolute right-5 top-5 h-[4.5rem] w-[4.5rem] object-contain"
-        />
-      ) : null}
+  return (
+    <div className="relative h-full w-full overflow-visible rounded-2xl border border-primary-teal/20 dark:border-primary-teal/30 bg-gradient-to-br from-white via-teal-50/70 to-orange-50/40 dark:from-gray-800 dark:via-gray-800 dark:to-gray-900 p-5 shadow-sm">
+      <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden rounded-2xl">
+        <div className="absolute -right-8 -top-8 h-28 w-28 rounded-full bg-primary-teal/10 dark:bg-primary-teal/15" />
+        <div className="absolute -bottom-10 -left-6 h-24 w-24 rounded-full bg-primary-orange/10 dark:bg-primary-orange/15" />
+      </div>
 
       <div className="relative flex items-start gap-4">
         <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-primary-teal-solid text-lg font-semibold text-white shadow-sm ring-4 ring-white/80 dark:ring-gray-800/80">
           {initials || '?'}
         </span>
 
-        <div className={`min-w-0 flex-1 space-y-3${clubLogoUrl ? ' pr-20' : ''}`}>
+        <div className="min-w-0 flex-1 space-y-3">
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-primary-teal/80 dark:text-primary-teal">
               Membership card
@@ -208,6 +244,19 @@ export default function DashboardMembershipCard() {
             </div>
           ) : null}
         </div>
+
+        {clubLogoUrl || showTenure ? (
+          <div className="flex w-[4.5rem] shrink-0 flex-col items-center gap-2">
+            {clubLogoUrl ? (
+              <img
+                src={clubLogoUrl}
+                alt={clubName ? `${clubName} logo` : 'Club logo'}
+                className="h-[4.5rem] w-[4.5rem] object-contain"
+              />
+            ) : null}
+            {data.clubTenure ? <ClubTenureMark tenure={data.clubTenure} /> : null}
+          </div>
+        ) : null}
       </div>
     </div>
   );

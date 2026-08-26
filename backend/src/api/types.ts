@@ -42,6 +42,10 @@ export type AuthTokenBody = {
   token: string;
 };
 
+export type AuthSignInAsBody = {
+  targetMemberId: number;
+};
+
 export type AuthTokenPairResponse = {
   accessToken: string;
   refreshToken: string;
@@ -183,6 +187,10 @@ export type MemberMembershipCardResponse = {
   };
   icePrivilegesValidThrough: string | null;
   pendingRegistrationPayment: boolean;
+  clubTenure: {
+    kind: 'new' | 'years';
+    years: number | null;
+  } | null;
   session: {
     id: number;
     name: string;
@@ -287,10 +295,6 @@ export type BulkCreateResponse = {
 export type BulkDeleteResponse = {
   success: boolean;
   deletedCount: number;
-};
-
-export type LoginLinkResponse = {
-  loginLink: string;
 };
 
 export type BulkSendWelcomeResponse = {
@@ -502,6 +506,26 @@ export type ObservabilityResponse = {
     logins: number;
     authCodesRequested: number;
   }>;
+};
+
+export type OutboundEmailListItem = {
+  id: number;
+  recipientEmail: string;
+  recipientName: string | null;
+  subject: string;
+  createdAt: string;
+};
+
+export type OutboundEmailListResponse = {
+  items: OutboundEmailListItem[];
+  page: number;
+  pageSize: number;
+  total: number;
+};
+
+export type OutboundEmailDetailResponse = OutboundEmailListItem & {
+  htmlBody: string;
+  textBody: string | null;
 };
 
 export type TestMessageResponse = {

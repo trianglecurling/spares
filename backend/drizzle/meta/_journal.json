@@ -456,6 +456,20 @@
       "when": 1780352498506,
       "tag": "0065_expense_report_card_owner",
       "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1780352498507,
+      "tag": "0066_add_outbound_emails",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1780352498508,
+      "tag": "0067_add_league_waitlists_frozen_entry_count",
+      "breakpoints": true
     }
   ]
 }

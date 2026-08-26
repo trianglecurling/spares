@@ -708,7 +708,7 @@ Represents a user's active or historical position on a league waitlist.
 
 ### Purpose
 
-Supports first-come, first-served waitlists, ADD/REPLACE behavior, rollover,
+Supports tenure-ordered waitlists with a staff-frozen prefix, rollover,
 declines, and staff operations.
 
 ### Fields
@@ -764,9 +764,11 @@ acceptable if decline history is captured separately.
 
 ### Position/order
 
-Waitlists are first-come, first-served.
+Waitlists are ordered by club tenure until staff freeze them. Frozen rows keep
+their locked stored order.
 
-The implementation should use a stable sortable field.
+The implementation uses `frozen_entry_count` plus a stable sortable field for
+the frozen prefix. Unfrozen rows are sorted live.
 
 Options include:
 

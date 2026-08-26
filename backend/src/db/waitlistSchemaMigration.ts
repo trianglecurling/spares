@@ -5,6 +5,7 @@ const leagueWaitlistsDDL = `
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'active',
+    frozen_entry_count INTEGER NOT NULL DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
@@ -16,6 +17,7 @@ const leagueWaitlistsDDLPg = `
     id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     name TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'active',
+    frozen_entry_count INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
   );
@@ -30,6 +32,7 @@ export async function ensureLeagueWaitlistSchema(
   await execSQL(db, isPostgres ? leagueWaitlistsDDLPg : leagueWaitlistsDDL);
 
   if (isPostgres) {
+    await execSQL(db, 'ALTER TABLE league_waitlists ADD COLUMN IF NOT EXISTS frozen_entry_count INTEGER NOT NULL DEFAULT 0');
     await execSQL(db, 'ALTER TABLE leagues ADD COLUMN IF NOT EXISTS waitlist_id INTEGER REFERENCES league_waitlists(id) ON DELETE SET NULL');
     await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_leagues_waitlist_id ON leagues(waitlist_id)');
     await execSQL(db, 'ALTER TABLE waitlist_entries ADD COLUMN IF NOT EXISTS waitlist_id INTEGER REFERENCES league_waitlists(id) ON DELETE CASCADE');
@@ -42,7 +45,21 @@ export async function ensureLeagueWaitlistSchema(
       'ALTER TABLE waitlist_entries ADD COLUMN IF NOT EXISTS original_replaces_league_id INTEGER REFERENCES leagues(id) ON DELETE SET NULL'
     );
     await execSQL(db, 'CREATE INDEX IF NOT EXISTS idx_waitlist_entries_waitlist_id ON waitlist_entries(waitlist_id)');
+    await maybeBackfillOtherClubExperienceYears();
     return;
+  }
+
+  {
+    const waitlistCols = [
+      { name: 'frozen_entry_count', ddl: 'frozen_entry_count INTEGER NOT NULL DEFAULT 0' },
+    ];
+    for (const col of waitlistCols) {
+      const stmt = db.prepare<{ name?: string | null }>(`PRAGMA table_info(league_waitlists)`);
+      const rows = await stmt.all();
+      if (!rows.some((r) => String(r.name) === col.name)) {
+        await execSQL(db, `ALTER TABLE league_waitlists ADD COLUMN ${col.ddl}`);
+      }
+    }
   }
 
   const leagueCols = [
@@ -76,4 +93,14 @@ export async function ensureLeagueWaitlistSchema(
     }
   }
   await execSQL(db, `CREATE INDEX IF NOT EXISTS idx_waitlist_entries_waitlist_id ON waitlist_entries(waitlist_id)`);
+  await maybeBackfillOtherClubExperienceYears();
+}
+
+async function maybeBackfillOtherClubExperienceYears(): Promise<void> {
+  try {
+    const { backfillMemberOtherClubExperienceYears } = await import('../registration/otherClubExperienceSync.js');
+    await backfillMemberOtherClubExperienceYears();
+  } catch {
+    // Drizzle may not be initialized during very early schema bootstrap.
+  }
 }

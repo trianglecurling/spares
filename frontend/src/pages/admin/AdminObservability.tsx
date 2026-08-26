@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { get } from '../../api/client';
 import BackButton from '../../components/BackButton';
 import Button from '../../components/Button';
@@ -128,7 +129,11 @@ export default function AdminObservability() {
                   </div>
                 </div>
                 <div className="p-4 rounded border border-gray-200 dark:border-gray-700">
-                  <div className="text-sm text-gray-500 dark:text-gray-400">Emails (today)</div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">
+                    <Link to="/admin/observability/emails" className="text-primary-teal-link hover:underline">
+                      Emails (today)
+                    </Link>
+                  </div>
                   <div className="text-2xl font-semibold text-gray-900 dark:text-gray-100">
                     {observability.totals.emailsToday}
                   </div>

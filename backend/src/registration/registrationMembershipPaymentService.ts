@@ -37,7 +37,7 @@ import {
   type RegistrationContext,
   type RegistrationSelectionInput,
 } from './registrationContext.js';
-import { omitLeaveBehindSelectionsForListedLeagues } from './leaguePriorityRules.js';
+import { omitLeaveBehindSelectionsForListedLeagues, leaguePriorityGuaranteeLabelText } from './leaguePriorityRules.js';
 import { evaluateLeaguePriorities, type LeaguePriorityEvaluation } from './leaguePriorityEvaluation.js';
 import { formatRegistrationTeammatesDisplay, sendRegistrationEmailForDashboard, type RegistrationEmailPayload, type RegistrationMessageType, type RegistrationReceiptLineItem } from './registrationEmailService.js';
 import {
@@ -62,6 +62,8 @@ import {
   applyRegistrationWaitlistOfferPreferences,
 } from './registrationWaitlistCleanup.js';
 import { getWaitlistQueuePosition, insertWaitlistAuditEvent } from './waitlistAudit.js';
+import { assignWaitlistJoinOrder, isLifetimeWaitlistMember } from './waitlistQueueService.js';
+import { syncMemberOtherClubExperienceYears } from './otherClubExperienceSync.js';
 import { loadExistingWaitlistEntriesForMember, waitlistEntryIncludesMember } from './waitlistMemberMembership.js';
 import { sendWaitlistEntryJoinedNotifications } from './waitlistJoinedNotificationService.js';
 import type { Member } from '../types.js';
@@ -431,7 +433,10 @@ async function registrationSummaryLines(context: RegistrationContext): Promise<s
   const labelByLeagueId = new Map(evaluation.entries.map((entry) => [entry.leagueId, entry.label]));
   for (const priority of [...context.priorities].sort((a, b) => a.priorityRank - b.priorityRank)) {
     const league = context.leagues[priority.leagueId];
-    const label = GUARANTEE_LABEL_TEXT[labelByLeagueId.get(priority.leagueId) ?? 'subject_to_availability'];
+    const label = leaguePriorityGuaranteeLabelText(
+      labelByLeagueId.get(priority.leagueId) ?? 'subject_to_availability',
+      league,
+    );
     let line = `${priority.priorityRank}. ${league?.name ?? `League ${priority.leagueId}`} — ${label}`;
     const teammates = await priorityTeammatesDisplayText(priority);
     if (teammates) {
@@ -461,17 +466,6 @@ const SELECTION_TYPE_LABELS: Record<string, string> = {
   drop: 'Drop league',
   junior_recreational: 'Junior recreational program',
   spare_only: 'Spare only',
-};
-
-const GUARANTEE_LABEL_TEXT: Record<string, string> = {
-  guaranteed_return: 'Guaranteed return',
-  awaiting_roster_entry: 'Awaiting roster entry',
-  guaranteed_fallback: 'Guaranteed fallback',
-  available: 'Available',
-  temporary_spot_available: 'Temporary spot available',
-  waitlisted: 'Waitlisted',
-  subject_to_availability: 'Subject to availability',
-  superfluous: 'Superfluous',
 };
 
 function humanizeRegistrationToken(value: string | null | undefined): string {
@@ -1558,6 +1552,13 @@ export async function updateExperience(registrationId: number, actor: Member, in
       updated_at: sql`CURRENT_TIMESTAMP`,
     })
     .where(eq(schema.curlingRegistrations.id, registrationId));
+  if (registration.curler_member_id) {
+    await syncMemberOtherClubExperienceYears({
+      memberId: registration.curler_member_id,
+      experienceType: input.experienceType,
+      experienceSelfReportedYears: input.experienceSelfReportedYears,
+    });
+  }
   return getRegistrationMembershipPaymentPayload(registrationId, actor);
 }
 
@@ -1766,6 +1767,12 @@ async function persistRegistrationWaitlists(input: {
   }>;
 }): Promise<void> {
   const { schema } = getDrizzleDb();
+  await syncMemberOtherClubExperienceYears({
+    memberId: input.curlerMemberId,
+    experienceType: input.context.experience.type,
+    experienceSelfReportedYears: input.context.experience.selfReportedYears,
+    db: input.tx,
+  });
   const waitlistedEntries = input.evaluation.entries.filter((entry) => entry.label === 'waitlisted');
 
   for (const entry of waitlistedEntries) {
@@ -1873,6 +1880,12 @@ async function persistRegistrationWaitlists(input: {
         waitlistId: league.waitlistId,
         leagueId: entry.leagueId,
         priorityRank: priority.priorityRank,
+      });
+      await assignWaitlistJoinOrder({
+        waitlistId: league.waitlistId,
+        entryId,
+        isLifetimeMember: await isLifetimeWaitlistMember(input.curlerMemberId),
+        db: input.tx,
       });
     }
 

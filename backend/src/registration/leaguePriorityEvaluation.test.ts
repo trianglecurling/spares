@@ -13,6 +13,7 @@ import {
   labelPriorityEntries,
   leagueHasTemporaryFillVacancy,
   leagueHasVacancies,
+  leaguePriorityGuaranteeLabelText,
   omitLeaveBehindDecisionsForListedLeagues,
   omitLeaveBehindSelectionsForListedLeagues,
   playInDraftJoinsIncompleteTeam,
@@ -242,6 +243,8 @@ describe('guarantee labeling', () => {
       playInEntry: { 1: playInEntryContext(true) },
     });
     expect(labelsFor(context)).toEqual(['guaranteed_return']);
+    expect(leaguePriorityGuaranteeLabelText('guaranteed_return', playIn)).toBe('Guaranteed entry');
+    expect(leaguePriorityGuaranteeLabelText('guaranteed_return')).toBe('Guaranteed return');
   });
 
   test('a play-in league with an incomplete team awaits roster entry', () => {

@@ -24,7 +24,9 @@ const faqItems: Array<{ question: string; answer: string; accent: string }> = [
 ];
 
 const alsoKnowItems: string[] = [
-  'You may remove yourself from a waitlist at any time, but you lose your position; re-joining starts at the back with a fresh decline count.',
+  'Queue order is based on club tenure, with years at another club as a tiebreaker. After staff freeze a waitlist, people already in line keep their places and new joiners line up behind them by tenure. Waitlists are frozen immediately after the priority registration period ends for any session. Your position can change until that freeze.',
+  'You may leave a waitlist at any time, but you lose your position; re-joining places you with other unfrozen entries by club tenure, with a fresh decline count. Anyone on a team waitlist roster can remove the whole team entry; everyone on the roster is emailed.',
+  'If you are on more than one waitlist, keep them in preference order on the Waitlists page so we can fill your top choices first. Team waitlists must stay above individual waitlists.',
   'Permanent spots are offered before temporary sabbatical-fill spots.',
   'Joining a waitlist defers payment until placement is known.',
   'Not available for the Tuesday competitive league, which uses a play-in system.',
@@ -51,7 +53,8 @@ export default function WaitlistsExplainerPage() {
             <p className="public-body max-w-3xl text-base sm:text-lg">
               A league waitlist records your interest in joining a league when it is full. You can join during
               registration or at any time. When a spot is open after priority registration, the highest waitlist entry
-              will receive an offer to join the league.
+              will receive an offer to join the league. Order is based on club tenure until staff freeze the
+              waitlist; after that, new joiners line up behind the frozen rows.
             </p>
           </div>
         </section>
@@ -71,7 +74,7 @@ export default function WaitlistsExplainerPage() {
                   Any league on your list that is not guaranteed to you becomes a waitlist entry carrying its place in
                   your order.
                 </li>
-                <li>You can also join a league waitlist directly from the league page at any time.</li>
+                <li>You can also join and reorder waitlists later from the Waitlists page in your account.</li>
               </ol>
               <p className="pt-1">
                 <Link

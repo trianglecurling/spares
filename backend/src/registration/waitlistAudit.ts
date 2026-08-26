@@ -1,4 +1,4 @@
-import { and, asc, eq, sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { getDatabaseConfig } from '../db/config.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import type {
@@ -135,7 +135,7 @@ export function formatWaitlistAuditSummary(input: {
         ? `${memberName} moved to position #${input.position} on the waitlist${teamSuffix}`
         : `${memberName} reordered on the waitlist${teamSuffix}`;
     case 'entry_moved_to_bottom':
-      return `${memberName} moved to the bottom of the waitlist${teamSuffix}`;
+      return `${memberName} moved into the unfrozen waitlist set${teamSuffix}`;
     case 'decline_count_changed':
       return `${memberName} declined a waitlist offer and kept their position${teamSuffix}`;
     case 'offer_sent': {
@@ -173,6 +173,16 @@ export function formatWaitlistAuditSummary(input: {
         : `${memberName}'s waitlist entry corrected${teamSuffix}`;
     case 'offer_preference_changed':
       return `${memberName}'s waitlist offer preference changed${teamSuffix}`;
+    case 'entry_priority_changed':
+      return `${memberName}'s waitlist preference order changed${teamSuffix}`;
+    case 'waitlist_frozen':
+      return actorName
+        ? `${actorName} froze the waitlist order${positionText}`
+        : `Waitlist order frozen${positionText}`;
+    case 'frozen_count_changed':
+      return actorName
+        ? `${actorName} changed the frozen waitlist count${positionText}`
+        : `Frozen waitlist count changed${positionText}`;
     default:
       return null;
   }
@@ -199,21 +209,10 @@ export async function getWaitlistQueuePosition(
   waitlistId: number,
   entryId: number
 ): Promise<{ position: number; total: number } | null> {
-  const { schema } = getDrizzleDb();
-  const activeEntries = await tx
-    .select({
-      id: schema.waitlistEntries.id,
-    })
-    .from(schema.waitlistEntries)
-    .where(and(eq(schema.waitlistEntries.waitlist_id, waitlistId), eq(schema.waitlistEntries.status, 'active')))
-    .orderBy(
-      asc(schema.waitlistEntries.position_sort_key),
-      asc(schema.waitlistEntries.joined_at),
-      asc(schema.waitlistEntries.id)
-    );
-  const index = activeEntries.findIndex((entry: { id: number }) => entry.id === entryId);
-  if (index < 0) return null;
-  return { position: index + 1, total: activeEntries.length };
+  const { getActiveWaitlistEntryQueuePosition } = await import('./waitlistQueueService.js');
+  const result = await getActiveWaitlistEntryQueuePosition(waitlistId, entryId, tx as never);
+  if (result.position == null) return null;
+  return { position: result.position, total: result.total };
 }
 
 export async function insertWaitlistAuditEvent(
@@ -289,6 +288,8 @@ export async function recordAndDeleteWaitlistEntry(
 ): Promise<void> {
   const { schema } = getDrizzleDb();
   const queuePosition = await getWaitlistQueuePosition(tx, input.entry.waitlist_id, input.entry.id);
+  const { releaseFrozenSlotIfNeeded } = await import('./waitlistQueueService.js');
+  await releaseFrozenSlotIfNeeded(input.entry.waitlist_id, input.entry.id, tx as never);
 
   await insertWaitlistAuditEvent(tx, {
     waitlistEntryId: input.entry.id,

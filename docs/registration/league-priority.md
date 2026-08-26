@@ -94,6 +94,7 @@ live as the registrant reorders, adds, or removes leagues.
 | Label | Meaning |
 | --- | --- |
 | Guaranteed return | The spot is held. Billed immediately. Priority registration only. |
+| Guaranteed entry | Play-in display of a held guarantee when the declared team cleared the TLINE bar. Same underlying `guaranteed_return` label. Billed immediately. Priority registration only. |
 | Guaranteed fallback | The spot is held as a backstop if higher choices do not come through. Billed immediately. Priority registration only. |
 | Available | The league currently has vacancies. Billed immediately. Open registration, or instructional programs in any registration state. |
 | Temporary spot available | A sabbatical has left a temporary fill vacancy. Billed immediately, minus the sabbatical fee. Open registration only. |
@@ -246,8 +247,8 @@ placement for it. Completing a play-in roster then evaluates the TLINE bar.
 Play-in based leagues have no fallback right. A play-in team that misses the
 TLINE bar goes to playdowns rather than dropping into a held spot. A play-in
 entry therefore receives `guaranteed_return` (bar cleared, roster complete),
-`awaiting_roster_entry` (roster incomplete), or `subject_to_availability`,
-never `guaranteed_fallback`.
+shown as **Guaranteed entry**, `awaiting_roster_entry` (roster incomplete), or
+`subject_to_availability`, never `guaranteed_fallback`.
 
 ### Worked examples
 

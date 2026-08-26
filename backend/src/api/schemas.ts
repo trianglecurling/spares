@@ -329,15 +329,6 @@ export const bulkDeleteResponseSchema = {
   required: ['success', 'deletedCount'],
 } as const;
 
-export const loginLinkResponseSchema = {
-  type: 'object',
-  additionalProperties: false,
-  properties: {
-    loginLink: { type: 'string' },
-  },
-  required: ['loginLink'],
-} as const;
-
 export const bulkSendWelcomeResponseSchema = {
   type: 'object',
   additionalProperties: false,
@@ -444,6 +435,15 @@ export const memberMembershipCardResponseSchema = {
     },
     icePrivilegesValidThrough: { type: ['string', 'null'] },
     pendingRegistrationPayment: { type: 'boolean' },
+    clubTenure: {
+      type: ['object', 'null'],
+      additionalProperties: false,
+      properties: {
+        kind: { type: 'string', enum: ['new', 'years'] },
+        years: { type: ['number', 'null'] },
+      },
+      required: ['kind', 'years'],
+    },
     session: {
       type: ['object', 'null'],
       additionalProperties: false,
@@ -471,7 +471,7 @@ export const memberMembershipCardResponseSchema = {
       },
     },
   },
-  required: ['name', 'membershipStatus', 'icePrivilegesValidThrough', 'pendingRegistrationPayment', 'session', 'leagues'],
+  required: ['name', 'membershipStatus', 'icePrivilegesValidThrough', 'pendingRegistrationPayment', 'clubTenure', 'session', 'leagues'],
 } as const;
 
 export const memberEmergencyContactResponseSchema = {
@@ -1898,6 +1898,148 @@ export const waiversAdminBulkLookupResponseSchema = {
     rows: {
       type: 'array',
       items: waiversAdminBulkLookupRowSchema,
+    },
+  },
+} as const;
+
+export const returningPlayerQaStatusSchema = {
+  type: 'string',
+  enum: [
+    'not_yet_registered',
+    'guaranteed_return',
+    'guaranteed_fallback',
+    'dropped',
+    'third_or_higher',
+    'sabbatical',
+  ],
+} as const;
+
+export const staffReturningPlayersQaResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'sessionId',
+    'sessionName',
+    'registrationState',
+    'leagues',
+    'league',
+    'predecessor',
+    'players',
+    'counts',
+  ],
+  properties: {
+    sessionId: { type: 'number' },
+    sessionName: { type: 'string' },
+    registrationState: { type: 'string', enum: ['closed', 'priority', 'open'] },
+    leagues: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'name', 'dayOfWeek', 'predecessorLeagueId'],
+        properties: {
+          id: { type: 'number' },
+          name: { type: 'string' },
+          dayOfWeek: { type: 'number' },
+          predecessorLeagueId: { type: ['number', 'null'] },
+        },
+      },
+    },
+    league: {
+      anyOf: [
+        { type: 'null' },
+        {
+          type: 'object',
+          additionalProperties: false,
+          required: ['id', 'name', 'dayOfWeek'],
+          properties: {
+            id: { type: 'number' },
+            name: { type: 'string' },
+            dayOfWeek: { type: 'number' },
+          },
+        },
+      ],
+    },
+    predecessor: {
+      anyOf: [
+        { type: 'null' },
+        {
+          type: 'object',
+          additionalProperties: false,
+          required: ['id', 'name', 'sessionName'],
+          properties: {
+            id: { type: 'number' },
+            name: { type: 'string' },
+            sessionName: { type: ['string', 'null'] },
+          },
+        },
+      ],
+    },
+    players: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: [
+          'memberId',
+          'memberName',
+          'memberEmail',
+          'isTemporarySabbaticalFill',
+          'status',
+          'priorityRank',
+          'guaranteeLabel',
+          'registrationId',
+          'registrationStatus',
+        ],
+        properties: {
+          memberId: { type: 'number' },
+          memberName: { type: 'string' },
+          memberEmail: { type: ['string', 'null'] },
+          isTemporarySabbaticalFill: { type: 'boolean' },
+          status: returningPlayerQaStatusSchema,
+          priorityRank: { type: ['number', 'null'] },
+          guaranteeLabel: {
+            anyOf: [
+              { type: 'null' },
+              {
+                type: 'string',
+                enum: [
+                  'guaranteed_return',
+                  'awaiting_roster_entry',
+                  'guaranteed_fallback',
+                  'available',
+                  'temporary_spot_available',
+                  'waitlisted',
+                  'subject_to_availability',
+                  'superfluous',
+                ],
+              },
+            ],
+          },
+          registrationId: { type: ['number', 'null'] },
+          registrationStatus: { type: ['string', 'null'] },
+        },
+      },
+    },
+    counts: {
+      type: 'object',
+      additionalProperties: false,
+      required: [
+        'not_yet_registered',
+        'guaranteed_return',
+        'guaranteed_fallback',
+        'dropped',
+        'third_or_higher',
+        'sabbatical',
+      ],
+      properties: {
+        not_yet_registered: { type: 'number' },
+        guaranteed_return: { type: 'number' },
+        guaranteed_fallback: { type: 'number' },
+        dropped: { type: 'number' },
+        third_or_higher: { type: 'number' },
+        sabbatical: { type: 'number' },
+      },
     },
   },
 } as const;

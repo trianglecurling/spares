@@ -13,6 +13,9 @@ import {
   removeWaitlistEntry,
   reorderWaitlistEntries,
   renameWaitlist,
+  freezeWaitlistForStaff,
+  freezeAllWaitlistsForStaff,
+  setWaitlistFrozenCountForStaff,
   processBatchVacancyOffers,
   sendWaitlistOffers,
   triggerWaitlistDeferredPayment,
@@ -24,6 +27,7 @@ import {
   getWaitlistTeamMemberPlacementOptions,
   joinMemberWaitlist,
 } from '../registration/memberWaitlistJoinService.js';
+import { getMemberWaitlists, saveMemberWaitlists } from '../registration/memberWaitlistPriority.js';
 import { RegistrationMemberValidationError } from '../registration/registrationMemberService.js';
 import { memberCanManageWaitlists, memberCanViewWaitlists } from '../utils/waitlistAccess.js';
 
@@ -112,6 +116,14 @@ const createOfferSchema = z.object({
 });
 const reorderSchema = z.object({
   entryIds: z.array(z.number().int().positive()).min(1),
+  frozenEntryCount: z.number().int().min(0).optional(),
+  reason: z.string().min(1),
+});
+const freezeSchema = z.object({
+  reason: z.string().min(1),
+});
+const frozenCountSchema = z.object({
+  frozenEntryCount: z.number().int().min(0),
   reason: z.string().min(1),
 });
 const renameWaitlistSchema = z.object({
@@ -128,6 +140,15 @@ const processVacanciesSchema = z.object({
 const joinWaitlistSchema = z.object({
   teamRosterText: z.string().optional().nullable(),
   teamRosterPlacements: teamRosterPlacementsSchema,
+});
+const saveMemberWaitlistsSchema = z.object({
+  entries: z.array(
+    z.object({
+      waitlistId: z.number().int().positive(),
+      teamRosterText: z.string().optional().nullable(),
+      teamRosterPlacements: teamRosterPlacementsSchema,
+    }),
+  ),
 });
 const teamMemberPlacementOptionsQuerySchema = z.object({
   memberIds: z
@@ -157,6 +178,33 @@ export async function waitlistRoutes(fastify: FastifyInstance): Promise<void> {
       throw error;
     }
   });
+
+  fastify.get('/waitlists/mine', { schema: { tags: ['waitlists'] } }, async (request, reply) => {
+    const member = requireWaitlistView(request, reply);
+    if (!member) return;
+    try {
+      return await getMemberWaitlists(member);
+    } catch (error) {
+      if (handleWaitlistError(reply, error)) return;
+      throw error;
+    }
+  });
+
+  fastify.put(
+    '/waitlists/mine',
+    { schema: { tags: ['waitlists'], body: looseObjectSchema } },
+    async (request, reply) => {
+      const member = requireWaitlistView(request, reply);
+      if (!member) return;
+      try {
+        const body = saveMemberWaitlistsSchema.parse(request.body);
+        return await saveMemberWaitlists(member, body);
+      } catch (error) {
+        if (handleWaitlistError(reply, error)) return;
+        throw error;
+      }
+    },
+  );
 
   fastify.get('/waitlists/:waitlistId', { schema: { tags: ['waitlists'] } }, async (request, reply) => {
     if (!requireWaitlistView(request, reply)) return;
@@ -244,6 +292,42 @@ export async function waitlistRoutes(fastify: FastifyInstance): Promise<void> {
       return await reorderWaitlistEntries({
         waitlistId: params.waitlistId,
         entryIds: body.entryIds,
+        frozenEntryCount: body.frozenEntryCount,
+        reason: body.reason,
+        actorMemberId: member.id,
+      });
+    } catch (error) {
+      if (handleWaitlistError(reply, error)) return;
+      throw error;
+    }
+  });
+
+  fastify.post('/waitlists/:waitlistId/freeze', { schema: { tags: ['waitlists'], body: looseObjectSchema } }, async (request, reply) => {
+    const member = requireWaitlistManage(request, reply);
+    if (!member) return;
+    try {
+      const params = waitlistIdParamsSchema.parse(request.params);
+      const body = freezeSchema.parse(request.body);
+      return await freezeWaitlistForStaff({
+        waitlistId: params.waitlistId,
+        reason: body.reason,
+        actorMemberId: member.id,
+      });
+    } catch (error) {
+      if (handleWaitlistError(reply, error)) return;
+      throw error;
+    }
+  });
+
+  fastify.post('/waitlists/:waitlistId/frozen-count', { schema: { tags: ['waitlists'], body: looseObjectSchema } }, async (request, reply) => {
+    const member = requireWaitlistManage(request, reply);
+    if (!member) return;
+    try {
+      const params = waitlistIdParamsSchema.parse(request.params);
+      const body = frozenCountSchema.parse(request.body);
+      return await setWaitlistFrozenCountForStaff({
+        waitlistId: params.waitlistId,
+        frozenEntryCount: body.frozenEntryCount,
         reason: body.reason,
         actorMemberId: member.id,
       });
@@ -287,6 +371,21 @@ export async function waitlistRoutes(fastify: FastifyInstance): Promise<void> {
         reason: body.reason,
         expiresAt: body.expiresAt,
         override: body.override,
+        actorMemberId: member.id,
+      });
+    } catch (error) {
+      if (handleWaitlistError(reply, error)) return;
+      throw error;
+    }
+  });
+
+  fastify.post('/waitlists/freeze-all', { schema: { tags: ['waitlists'], body: looseObjectSchema } }, async (request, reply) => {
+    const member = requireWaitlistManage(request, reply);
+    if (!member) return;
+    try {
+      const body = freezeSchema.parse(request.body);
+      return await freezeAllWaitlistsForStaff({
+        reason: body.reason,
         actorMemberId: member.id,
       });
     } catch (error) {

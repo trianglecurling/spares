@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { get, post } from '../api/client';
 import Button from '../components/Button';
 import Footer from '../components/Footer';
+import DeveloperSessionBanner from '../components/DeveloperSessionBanner';
 import { buildContactPageLink } from '../constants/contactRecipients';
 import type { AuthenticatedMember } from '../../../backend/src/types.ts';
 
@@ -239,6 +240,7 @@ export default function Login() {
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
+      <DeveloperSessionBanner />
       <div className="flex-grow flex items-center justify-center px-4 text-gray-900 dark:text-gray-100">
         <div className="max-w-md w-full space-y-8">
           <div className="text-center">

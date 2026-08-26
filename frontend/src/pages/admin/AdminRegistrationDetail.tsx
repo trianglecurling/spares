@@ -77,6 +77,7 @@ type RegistrationDetail = {
     leagueName: string;
     priorityRank: number;
     guaranteeLabel: LeaguePriorityGuaranteeLabel | null;
+    isPlayInBased?: boolean;
     byotTeammateText: string | null;
     teamRosterDisplay?: string | null;
   }>;
@@ -731,7 +732,9 @@ export default function AdminRegistrationDetail() {
                             priority.guaranteeLabel,
                           )}`}
                         >
-                          {guaranteeChipLabel(priority.guaranteeLabel)}
+                          {guaranteeChipLabel(priority.guaranteeLabel, {
+                            isPlayInBased: priority.isPlayInBased === true,
+                          })}
                         </span>
                       ) : null}
                     </div>

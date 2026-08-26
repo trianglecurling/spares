@@ -25,11 +25,11 @@ export default function AppPageControlsRow({
         className
       )}
     >
-      {hasLeft ? <div className="flex flex-wrap items-center gap-3">{left}</div> : null}
+      {hasLeft ? <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">{left}</div> : null}
       {hasRight ? (
         <div
           className={joinClasses(
-            'flex flex-wrap items-center gap-3',
+            'flex shrink-0 flex-nowrap items-center gap-3',
             hasLeft ? 'md:justify-end' : 'md:ml-auto md:justify-end'
           )}
         >

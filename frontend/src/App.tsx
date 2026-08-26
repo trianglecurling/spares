@@ -55,6 +55,10 @@ const AdminEventRegistrationPreview = lazyRoute(() => import('./pages/admin/Admi
 const AdminArticleEditor = lazyRoute(() => import('./pages/admin/AdminArticleEditor'));
 const AdminArticleVersionPreview = lazyRoute(() => import('./pages/admin/AdminArticleVersionPreview'));
 const AdminObservability = lazyRoute(() => import('./pages/admin/AdminObservability'));
+const AdminObservabilityEmails = lazyRoute(() => import('./pages/admin/AdminObservabilityEmails'));
+const AdminObservabilityEmailDetail = lazyRoute(
+  () => import('./pages/admin/AdminObservabilityEmailDetail')
+);
 const AdminSponsorship = lazyRoute(() => import('./pages/admin/AdminSponsorship'));
 const Leagues = lazyRoute(() => import('./pages/leagues/Leagues'));
 const CopyLeaguesToSession = lazyRoute(() => import('./pages/leagues/CopyLeaguesToSession'));
@@ -102,6 +106,7 @@ const MyVolunteerShifts = lazyRoute(() => import('./pages/MyVolunteerShifts'));
 const AdminEventRegistrationEditor = lazyRoute(() => import('./pages/admin/AdminEventRegistrationEditor'));
 const AdminEventScorekeeper = lazyRoute(() => import('./pages/admin/AdminEventScorekeeper'));
 const AdminRegistrationRoute = lazyRoute(() => import('./pages/admin/AdminRegistrationRoute'));
+const WaitlistsPage = lazyRoute(() => import('./pages/WaitlistsPage'));
 const AdminWaitlists = lazyRoute(() => import('./pages/admin/AdminWaitlists'));
 const PublicLeaguesPage = lazyRoute(() => import('./pages/PublicLeaguesPage'));
 const PublicEventsPage = lazyRoute(() => import('./pages/PublicEventsPage'));
@@ -634,6 +639,22 @@ function App() {
                         }
                       />
                       <Route
+                        path="/admin/observability/emails/:id"
+                        element={
+                          <ProtectedRoute serverAdminOnly>
+                            <AdminObservabilityEmailDetail />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
+                        path="/admin/observability/emails"
+                        element={
+                          <ProtectedRoute serverAdminOnly>
+                            <AdminObservabilityEmails />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
                         path="/admin/observability"
                         element={
                           <ProtectedRoute serverAdminOnly>
@@ -742,7 +763,7 @@ function App() {
                         path="/waitlists"
                         element={
                           <ProtectedRoute>
-                            <AdminWaitlists />
+                            <WaitlistsPage />
                           </ProtectedRoute>
                         }
                       />

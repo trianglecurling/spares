@@ -5189,6 +5189,236 @@
         }
       }
     },
+    "/auth/sign-in-as": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "targetMemberId": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "targetMemberId"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "accessToken": {
+                      "type": "string"
+                    },
+                    "refreshToken": {
+                      "type": "string"
+                    },
+                    "member": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "number"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "email": {
+                          "type": [
+                            "null",
+                            "string"
+                          ]
+                        },
+                        "phone": {
+                          "type": [
+                            "null",
+                            "string"
+                          ]
+                        },
+                        "spareOnly": {
+                          "type": "boolean"
+                        },
+                        "socialMember": {
+                          "type": "boolean"
+                        },
+                        "isAdmin": {
+                          "type": "boolean"
+                        },
+                        "isServerAdmin": {
+                          "type": "boolean"
+                        },
+                        "isCalendarAdmin": {
+                          "type": "boolean"
+                        },
+                        "isContentAdmin": {
+                          "type": "boolean"
+                        },
+                        "isSponsorAdmin": {
+                          "type": "boolean"
+                        },
+                        "leagueManagerLeagueIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          }
+                        },
+                        "ownedEventIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          }
+                        },
+                        "isLeagueAdministrator": {
+                          "type": "boolean"
+                        },
+                        "isLeagueAdministratorGlobal": {
+                          "type": "boolean"
+                        },
+                        "roleCodes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "roleNames": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "scopeRules": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                              "scope": {
+                                "type": "string"
+                              },
+                              "effect": {
+                                "type": "string",
+                                "enum": [
+                                  "allow",
+                                  "deny"
+                                ]
+                              },
+                              "resourceType": {
+                                "type": [
+                                  "null",
+                                  "string"
+                                ]
+                              },
+                              "resourceId": {
+                                "type": [
+                                  "null",
+                                  "number"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "scope",
+                              "effect"
+                            ]
+                          }
+                        },
+                        "optedInSms": {
+                          "type": "boolean"
+                        },
+                        "emailSubscribed": {
+                          "type": "boolean"
+                        },
+                        "emailVisible": {
+                          "type": "boolean"
+                        },
+                        "phoneVisible": {
+                          "type": "boolean"
+                        },
+                        "themePreference": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "email",
+                        "phone",
+                        "spareOnly",
+                        "socialMember",
+                        "isAdmin",
+                        "isServerAdmin",
+                        "isCalendarAdmin",
+                        "isContentAdmin",
+                        "isSponsorAdmin",
+                        "leagueManagerLeagueIds",
+                        "ownedEventIds",
+                        "isLeagueAdministrator",
+                        "isLeagueAdministratorGlobal",
+                        "roleCodes",
+                        "roleNames",
+                        "scopeRules",
+                        "optedInSms",
+                        "emailSubscribed",
+                        "emailVisible",
+                        "phoneVisible",
+                        "themePreference"
+                      ]
+                    },
+                    "actorMemberId": {
+                      "type": "number"
+                    },
+                    "isImpersonating": {
+                      "type": "boolean"
+                    },
+                    "accountSwitchOptions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "accessToken",
+                    "refreshToken",
+                    "member",
+                    "actorMemberId",
+                    "isImpersonating",
+                    "accountSwitchOptions"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/auth/stop-impersonation": {
       "post": {
         "tags": [
@@ -5871,6 +6101,32 @@
                     "pendingRegistrationPayment": {
                       "type": "boolean"
                     },
+                    "clubTenure": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "new",
+                            "years"
+                          ]
+                        },
+                        "years": {
+                          "type": [
+                            "null",
+                            "number"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "years"
+                      ]
+                    },
                     "session": {
                       "type": [
                         "null",
@@ -5929,6 +6185,7 @@
                     "membershipStatus",
                     "icePrivilegesValidThrough",
                     "pendingRegistrationPayment",
+                    "clubTenure",
                     "session",
                     "leagues"
                   ]
@@ -7867,44 +8124,6 @@
                   },
                   "required": [
                     "success"
-                  ]
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/members/{id}/login-link": {
-      "get": {
-        "tags": [
-          "members"
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "in": "path",
-            "name": "id",
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Default Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "properties": {
-                    "loginLink": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "loginLink"
                   ]
                 }
               }
@@ -27608,6 +27827,273 @@
         }
       }
     },
+    "/registration/staff/qa/returning-players": {
+      "get": {
+        "tags": [
+          "registration-staff"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "number"
+            },
+            "in": "query",
+            "name": "sessionId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "number"
+            },
+            "in": "query",
+            "name": "leagueId",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "sessionId",
+                    "sessionName",
+                    "registrationState",
+                    "leagues",
+                    "league",
+                    "predecessor",
+                    "players",
+                    "counts"
+                  ],
+                  "properties": {
+                    "sessionId": {
+                      "type": "number"
+                    },
+                    "sessionName": {
+                      "type": "string"
+                    },
+                    "registrationState": {
+                      "type": "string",
+                      "enum": [
+                        "closed",
+                        "priority",
+                        "open"
+                      ]
+                    },
+                    "leagues": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "id",
+                          "name",
+                          "dayOfWeek",
+                          "predecessorLeagueId"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "dayOfWeek": {
+                            "type": "number"
+                          },
+                          "predecessorLeagueId": {
+                            "type": [
+                              "null",
+                              "number"
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    "league": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "id",
+                            "name",
+                            "dayOfWeek"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "number"
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "dayOfWeek": {
+                              "type": "number"
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    "predecessor": {
+                      "anyOf": [
+                        {
+                          "type": "null"
+                        },
+                        {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "required": [
+                            "id",
+                            "name",
+                            "sessionName"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "number"
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "sessionName": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    "players": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "memberId",
+                          "memberName",
+                          "memberEmail",
+                          "isTemporarySabbaticalFill",
+                          "status",
+                          "priorityRank",
+                          "guaranteeLabel",
+                          "registrationId",
+                          "registrationStatus"
+                        ],
+                        "properties": {
+                          "memberId": {
+                            "type": "number"
+                          },
+                          "memberName": {
+                            "type": "string"
+                          },
+                          "memberEmail": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "isTemporarySabbaticalFill": {
+                            "type": "boolean"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "not_yet_registered",
+                              "guaranteed_return",
+                              "guaranteed_fallback",
+                              "dropped",
+                              "third_or_higher",
+                              "sabbatical"
+                            ]
+                          },
+                          "priorityRank": {
+                            "type": [
+                              "null",
+                              "number"
+                            ]
+                          },
+                          "guaranteeLabel": {
+                            "anyOf": [
+                              {
+                                "type": "null"
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "guaranteed_return",
+                                  "awaiting_roster_entry",
+                                  "guaranteed_fallback",
+                                  "available",
+                                  "temporary_spot_available",
+                                  "waitlisted",
+                                  "subject_to_availability",
+                                  "superfluous"
+                                ]
+                              }
+                            ]
+                          },
+                          "registrationId": {
+                            "type": [
+                              "null",
+                              "number"
+                            ]
+                          },
+                          "registrationStatus": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          }
+                        }
+                      }
+                    },
+                    "counts": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "not_yet_registered",
+                        "guaranteed_return",
+                        "guaranteed_fallback",
+                        "dropped",
+                        "third_or_higher",
+                        "sabbatical"
+                      ],
+                      "properties": {
+                        "not_yet_registered": {
+                          "type": "number"
+                        },
+                        "guaranteed_return": {
+                          "type": "number"
+                        },
+                        "guaranteed_fallback": {
+                          "type": "number"
+                        },
+                        "dropped": {
+                          "type": "number"
+                        },
+                        "third_or_higher": {
+                          "type": "number"
+                        },
+                        "sabbatical": {
+                          "type": "number"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/registration/staff/registrations/{id}": {
       "get": {
         "parameters": [
@@ -28056,6 +28542,39 @@
         "tags": [
           "waitlists"
         ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/waitlists/mine": {
+      "get": {
+        "tags": [
+          "waitlists"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "waitlists"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Default Response"
@@ -33283,6 +33802,263 @@
         "responses": {
           "200": {
             "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/observability/emails": {
+      "get": {
+        "tags": [
+          "observability"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "number"
+            },
+            "in": "query",
+            "name": "page",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "number"
+            },
+            "in": "query",
+            "name": "pageSize",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "recipientEmail": {
+                            "type": "string"
+                          },
+                          "recipientName": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "subject": {
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "recipientEmail",
+                          "recipientName",
+                          "subject",
+                          "createdAt"
+                        ]
+                      }
+                    },
+                    "page": {
+                      "type": "number"
+                    },
+                    "pageSize": {
+                      "type": "number"
+                    },
+                    "total": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "page",
+                    "pageSize",
+                    "total"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/observability/emails/{id}": {
+      "get": {
+        "tags": [
+          "observability"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "number"
+                    },
+                    "recipientEmail": {
+                      "type": "string"
+                    },
+                    "recipientName": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "subject": {
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "htmlBody": {
+                      "type": "string"
+                    },
+                    "textBody": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "recipientEmail",
+                    "recipientName",
+                    "subject",
+                    "createdAt",
+                    "htmlBody",
+                    "textBody"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
           }
         }
       }

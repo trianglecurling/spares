@@ -5,6 +5,7 @@ import {
   includePrimaryMemberOnWaitlistRoster,
   parseTeamRosterPlacements,
   serializeTeamRosterPlacements,
+  waitlistEntryRosterMemberIds,
 } from './waitlistTeamRoster.js';
 
 describe('waitlistTeamRoster', () => {
@@ -75,5 +76,15 @@ describe('waitlistTeamRoster', () => {
 
   test('adds the primary member to a pending-name-only roster', () => {
     expect(includePrimaryMemberOnWaitlistRoster([], 20)).toEqual([{ memberId: 20 }]);
+  });
+
+  test('resolves every roster member id for a waitlist entry', () => {
+    expect(
+      waitlistEntryRosterMemberIds({
+        memberId: 20,
+        teamRosterPlacements: JSON.stringify([{ memberId: 21 }]),
+      }),
+    ).toEqual([20, 21]);
+    expect(waitlistEntryRosterMemberIds({ member_id: 20, team_roster_placements: null })).toEqual([20]);
   });
 });

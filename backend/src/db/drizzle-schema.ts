@@ -308,7 +308,10 @@ export type WaitlistAuditActionSqlite =
   | 'entry_placed'
   | 'staff_correction'
   | 'offer_preference_changed'
-  | 'entry_preference_skipped';
+  | 'entry_preference_skipped'
+  | 'entry_priority_changed'
+  | 'waitlist_frozen'
+  | 'frozen_count_changed';
 
 export type CurlingDiscountTypeSqlite = 'student' | 'reciprocal' | 'winter_only';
 export type CurlingDiscountAmountTypeSqlite = 'dollar' | 'percent';
@@ -444,6 +447,8 @@ export const leagueWaitlistsSqlite = sqliteTable('league_waitlists', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   name: text('name').notNull(),
   status: text('status').notNull().default('active').$type<LeagueWaitlistStatusSqlite>(),
+  /** First N stored-order entries are frozen; additional joiners cannot pass them. */
+  frozen_entry_count: integer('frozen_entry_count').default(0).notNull(),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
 }, (table) => ({
@@ -1461,6 +1466,18 @@ export const observabilityEventsSqlite = sqliteTable('observability_events', {
   createdAtIdx: index('idx_observability_events_created_at').on(table.created_at),
   eventTypeIdx: index('idx_observability_events_event_type').on(table.event_type),
   memberIdIdx: index('idx_observability_events_member_id').on(table.member_id),
+}));
+
+export const outboundEmailsSqlite = sqliteTable('outbound_emails', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  recipient_email: text('recipient_email').notNull(),
+  recipient_name: text('recipient_name'),
+  subject: text('subject').notNull(),
+  html_body: text('html_body').notNull(),
+  text_body: text('text_body'),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  createdAtIdx: index('idx_outbound_emails_created_at').on(table.created_at),
 }));
 
 export const paymentOrdersSqlite = sqliteTable('payment_orders', {
@@ -2760,6 +2777,8 @@ export const leagueWaitlistsPg = pgTable('league_waitlists', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
   name: textPg('name').notNull(),
   status: textPg('status').notNull().default('active').$type<LeagueWaitlistStatusSqlite>(),
+  /** First N stored-order entries are frozen; additional joiners cannot pass them. */
+  frozen_entry_count: integerPg('frozen_entry_count').default(0).notNull(),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
 }, (table) => ({
@@ -3745,6 +3764,18 @@ export const observabilityEventsPg = pgTable('observability_events', {
   createdAtIdx: indexPg('idx_observability_events_created_at').on(table.created_at),
   eventTypeIdx: indexPg('idx_observability_events_event_type').on(table.event_type),
   memberIdIdx: indexPg('idx_observability_events_member_id').on(table.member_id),
+}));
+
+export const outboundEmailsPg = pgTable('outbound_emails', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  recipient_email: textPg('recipient_email').notNull(),
+  recipient_name: textPg('recipient_name'),
+  subject: textPg('subject').notNull(),
+  html_body: textPg('html_body').notNull(),
+  text_body: textPg('text_body'),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  createdAtIdx: indexPg('idx_outbound_emails_created_at').on(table.created_at),
 }));
 
 export const paymentOrdersPg = pgTable('payment_orders', {
@@ -4837,6 +4868,7 @@ export const sqliteSchema = {
   spareRequestNotificationDeliveries: spareRequestNotificationDeliveriesSqlite,
   feedback: feedbackSqlite,
   observabilityEvents: observabilityEventsSqlite,
+  outboundEmails: outboundEmailsSqlite,
   paymentOrders: paymentOrdersSqlite,
   paymentTransactions: paymentTransactionsSqlite,
   paymentEvents: paymentEventsSqlite,
@@ -4960,6 +4992,7 @@ export const pgSchema = {
   spareRequestNotificationDeliveries: spareRequestNotificationDeliveriesPg,
   feedback: feedbackPg,
   observabilityEvents: observabilityEventsPg,
+  outboundEmails: outboundEmailsPg,
   paymentOrders: paymentOrdersPg,
   paymentTransactions: paymentTransactionsPg,
   paymentEvents: paymentEventsPg,

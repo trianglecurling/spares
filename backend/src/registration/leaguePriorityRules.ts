@@ -43,6 +43,17 @@ export const LEAGUE_PRIORITY_GUARANTEE_LABEL_TEXT: Record<LeaguePriorityGuarante
   superfluous: 'Superfluous',
 };
 
+/** Product-facing chip text. Play-in guarantees are entry, not a returning-member hold. */
+export function leaguePriorityGuaranteeLabelText(
+  label: LeaguePriorityGuaranteeLabel,
+  league?: { isPlayInBased?: boolean } | null,
+): string {
+  if (label === 'guaranteed_return' && league?.isPlayInBased === true) {
+    return 'Guaranteed entry';
+  }
+  return LEAGUE_PRIORITY_GUARANTEE_LABEL_TEXT[label];
+}
+
 /** How labels are derived. Priority uses return rights; open uses live vacancies. */
 export type PriorityLabelMode = 'priority' | 'open';
 

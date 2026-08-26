@@ -38,7 +38,8 @@ During priority registration:
 
 - Returning members may claim up to 2 protected return/sabbatical spots.
 - New members may register and join waitlists.
-- Waitlist order is first-come, first-served.
+- Waitlist order is by club tenure until staff freeze the list. Frozen rows
+  keep their places; later joiners line up below them by tenure.
 - Opening the priority window resets waitlist offer preferences to Ask. A
   submitted priority list then auto-accepts waitlisted leagues on the list and
   auto-declines waitlists left off the list.
@@ -71,7 +72,9 @@ vacancies.
 
 ## Waitlist management
 
-Waitlists are ordered first-come, first-served.
+Waitlists are ordered by club tenure until staff freeze them. Frozen rows keep
+their locked order. Staff may freeze waitlists, change the frozen count, and
+reorder rows across the frozen boundary.
 
 Waitlists automatically roll forward to successor leagues.
 

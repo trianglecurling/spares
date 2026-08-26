@@ -61,6 +61,18 @@ export function includePrimaryMemberOnWaitlistRoster(
   return [{ memberId: primaryMemberId }, ...placements];
 }
 
+export function waitlistEntryRosterMemberIds(entry: {
+  member_id?: number;
+  memberId?: number;
+  team_roster_placements?: string | null;
+  teamRosterPlacements?: string | null;
+}): number[] {
+  const primaryMemberId = entry.member_id ?? entry.memberId;
+  if (primaryMemberId == null) return [];
+  const placements = parseTeamRosterPlacements(entry.team_roster_placements ?? entry.teamRosterPlacements);
+  return [...new Set(includePrimaryMemberOnWaitlistRoster(placements, primaryMemberId).map((placement) => placement.memberId))];
+}
+
 export function parseTeamRosterPlacements(raw: string | null | undefined): WaitlistTeamMemberPlacementInput[] {
   if (!raw?.trim()) return [];
   try {

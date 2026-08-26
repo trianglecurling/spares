@@ -22,6 +22,7 @@ import Modal from '../../components/Modal';
 import DataTable from '../../components/table/DataTable';
 import type { DataTableColumn } from '../../components/table/tableTypes';
 import { formatPhone } from '../../utils/phone';
+import { getApiErrorMessage } from '../../utils/api';
 import { HiEllipsisVertical } from 'react-icons/hi2';
 import type { MemberSummary as Member } from '../../../../backend/src/types.ts';
 import AdminMemberEditorModal from './AdminMemberEditorModal';
@@ -115,7 +116,7 @@ const memberColumns: Array<DataTableColumn<Member>> = [
 export default function AdminMembers() {
   const { showAlert } = useAlert();
   const { confirm } = useConfirm();
-  const { member: currentMember } = useAuth();
+  const { member: currentMember, signInAsMember } = useAuth();
   const membersFilterInputId = useId();
   const memberActionsMenuDomId = useId();
   const [members, setMembers] = useState<Member[]>([]);
@@ -420,20 +421,27 @@ export default function AdminMembers() {
     [confirm, showAlert]
   );
 
-  const handleCopyLoginLink = useCallback(
+  const handleSignInAsMember = useCallback(
     async (id: number, name: string) => {
-      try {
-        const response = await get('/members/{id}/login-link', undefined, { id: String(id) });
-        const loginLink = response.loginLink;
+      const confirmed = await confirm({
+        title: 'Sign in as this member',
+        message: `You will be signed in as ${name} for investigation. You will have their permissions, and any changes you make will be saved as them.`,
+        variant: 'warning',
+        confirmText: 'Sign in as member',
+      });
 
-        await navigator.clipboard.writeText(loginLink);
-        showAlert(`Login link copied for ${name}!`, 'success');
-      } catch (error) {
-        console.error('Failed to copy login link:', error);
-        showAlert('Failed to copy login link', 'error');
+      if (!confirmed) {
+        return;
+      }
+
+      try {
+        await signInAsMember(id);
+      } catch (error: unknown) {
+        console.error('Failed to sign in as member:', error);
+        showAlert(getApiErrorMessage(error, 'Could not sign in as this member'), 'error');
       }
     },
-    [showAlert]
+    [confirm, showAlert, signInAsMember]
   );
 
   const handleBulkDelete = async () => {
@@ -752,17 +760,17 @@ export default function AdminMembers() {
               >
                 Edit
               </button>
-              {currentMember?.isServerAdmin ? (
+              {currentMember?.isServerAdmin && openMenuMember.id !== currentMember.id ? (
                 <button
                   type="button"
                   role="menuitem"
                   className="w-full whitespace-nowrap px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
                   onClick={() => {
-                    void handleCopyLoginLink(openMenuMember.id, openMenuMember.name);
+                    void handleSignInAsMember(openMenuMember.id, openMenuMember.name);
                     setOpenMenuId(null);
                   }}
                 >
-                  Copy login link
+                  Sign in as member
                 </button>
               ) : null}
               {openMenuMember.email ? (

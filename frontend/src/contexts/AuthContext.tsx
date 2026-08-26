@@ -11,6 +11,13 @@ import api, {
 import { getCachedMemberDisplayName, storeCachedMemberDisplayName } from '../utils/memberDisplayCache';
 import { isPublicLightPath } from '../utils/publicLightPaths';
 import { restoreAuthSession } from '../utils/restoreAuthSession';
+import {
+  clearDeveloperSessionStash,
+  readDeveloperSessionStash,
+  resolveDeveloperSession,
+  writeDeveloperSessionStash,
+  type DeveloperSessionInfo,
+} from '../utils/developerSession';
 import type { AuthenticatedMember } from '../../../backend/src/types.ts';
 
 export type AccountSwitchOption = { id: number; name: string };
@@ -46,6 +53,9 @@ interface AuthContextType {
   accountSwitchOptions: AccountSwitchOption[];
   switchToMemberAccount: (targetMemberId: number) => Promise<void>;
   stopImpersonation: () => Promise<void>;
+  developerSession: DeveloperSessionInfo | null;
+  signInAsMember: (targetMemberId: number) => Promise<void>;
+  returnFromDeveloperSession: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -70,6 +80,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [actorMemberId, setActorMemberId] = useState<number | null>(null);
   const [isImpersonating, setIsImpersonating] = useState(false);
   const [accountSwitchOptions, setAccountSwitchOptions] = useState<AccountSwitchOption[]>([]);
+  const [developerSession, setDeveloperSession] = useState<DeveloperSessionInfo | null>(() => {
+    const stash = readDeveloperSessionStash();
+    if (!stash) return null;
+    return {
+      operatorMemberId: stash.operatorMemberId,
+      operatorName: stash.operatorName,
+      targetMemberId: stash.targetMemberId,
+      targetName: stash.targetName,
+    };
+  });
   const navigate = useNavigate();
 
   const normalizeThemePreference = (
@@ -101,6 +121,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setActorMemberId(data.actorMemberId);
     setIsImpersonating(data.isImpersonating);
     setAccountSwitchOptions(data.accountSwitchOptions);
+    setDeveloperSession(resolveDeveloperSession(normalizedMember.id));
   }, []);
 
   const clearAccountSwitchState = useCallback(() => {
@@ -197,6 +218,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     redirectTo?: string,
     options?: { suppressNavigation?: boolean },
   ) => {
+    const previousStash = readDeveloperSessionStash();
+    if (previousStash) {
+      api.post('/auth/logout', { refreshToken: previousStash.refreshToken }).catch(() => {});
+    }
+    clearDeveloperSessionStash();
+    setDeveloperSession(null);
     storeAuthTokens(accessToken, refreshToken);
     setToken(accessToken);
     const normalizedMember = normalizeMember(newMember);
@@ -215,6 +242,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setActorMemberId(newMember.id);
       setIsImpersonating(false);
       setAccountSwitchOptions([]);
+      setDeveloperSession(null);
     }
 
     if (!options?.suppressNavigation) {
@@ -224,7 +252,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = (redirectTo?: string) => {
     const refreshToken = getRefreshToken();
+    const previousStash = readDeveloperSessionStash();
     api.post('/auth/logout', { refreshToken }).catch(() => {});
+    if (previousStash) {
+      api.post('/auth/logout', { refreshToken: previousStash.refreshToken }).catch(() => {});
+    }
+    clearDeveloperSessionStash();
+    setDeveloperSession(null);
     clearAuthTokens();
     setToken(null);
     setMember(null);
@@ -263,6 +297,77 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
+  const signInAsMember = async (targetMemberId: number) => {
+    const accessToken = getAccessToken();
+    const refreshToken = getRefreshToken();
+    if (!member || !accessToken || !refreshToken) {
+      throw new Error('Not signed in');
+    }
+
+    const response = await post('/auth/sign-in-as', { targetMemberId });
+    const existing = readDeveloperSessionStash();
+    if (existing) {
+      writeDeveloperSessionStash({
+        ...existing,
+        targetMemberId: response.member.id,
+        targetName: response.member.name,
+      });
+    } else {
+      writeDeveloperSessionStash({
+        accessToken,
+        refreshToken,
+        operatorMemberId: member.id,
+        operatorName: member.name,
+        targetMemberId: response.member.id,
+        targetName: response.member.name,
+      });
+    }
+
+    storeAuthTokens(response.accessToken, response.refreshToken);
+    setToken(response.accessToken);
+    applySessionPayload({
+      member: response.member as AuthenticatedMember,
+      actorMemberId: response.actorMemberId,
+      isImpersonating: response.isImpersonating,
+      accountSwitchOptions: response.accountSwitchOptions,
+    });
+    navigate('/dashboard');
+  };
+
+  const returnFromDeveloperSession = async () => {
+    const stash = readDeveloperSessionStash();
+    if (!stash) {
+      throw new Error('No investigation session to return from');
+    }
+
+    const currentRefreshToken = getRefreshToken();
+    api.post('/auth/logout', { refreshToken: currentRefreshToken }).catch(() => {});
+
+    storeAuthTokens(stash.accessToken, stash.refreshToken);
+    setToken(stash.accessToken);
+    clearDeveloperSessionStash();
+    setDeveloperSession(null);
+
+    try {
+      const session = await get('/auth/verify');
+      applySessionPayload({
+        member: session.member as AuthenticatedMember,
+        actorMemberId: session.actorMemberId,
+        isImpersonating: session.isImpersonating,
+        accountSwitchOptions: session.accountSwitchOptions,
+      });
+      navigate('/admin/members');
+    } catch (error) {
+      clearAuthTokens();
+      setToken(null);
+      setMember(null);
+      setSessionSettled(true);
+      clearAccountSwitchState();
+      navigate('/login');
+      throw error;
+    }
+  };
+
   const isLikelyAuthenticated = Boolean(member || (token && !sessionSettled));
   const memberDisplayName =
     member?.name ?? (isLikelyAuthenticated ? getCachedMemberDisplayName() : null);
@@ -284,6 +389,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         accountSwitchOptions,
         switchToMemberAccount,
         stopImpersonation,
+        developerSession,
+        signInAsMember,
+        returnFromDeveloperSession,
       }}
     >
       {children}

@@ -8,6 +8,7 @@ import type {
 import { evaluatePlayInLeagueFromDb } from '../registration/playInEntryService.js';
 import { ensureRosterPlacementsForUnpaidRegistrations } from '../registration/registrationRosterService.js';
 import { waitlistEntryIncludesMember } from '../registration/waitlistMemberMembership.js';
+import { normalizeHalfYearExperienceValue } from '../registration/curlingExperienceYears.js';
 import { getCurrentDateStringAsync } from '../utils/time.js';
 
 const ACTIVE_SABBATICAL_STATUSES: CurlingLeagueSabbaticalStatusSqlite[] = [
@@ -44,9 +45,12 @@ const DASHBOARD_SESSION_CACHE_TTL_MS = 10 * 60 * 1000;
 
 type DashboardSession = {
   id: number;
+  seasonId: number;
+  seasonStartDate: string;
   name: string;
   endDate: string | null;
   isUpcoming: boolean;
+  firstSessionId: number;
 } | null;
 
 let dashboardSessionCache: {
@@ -58,6 +62,19 @@ let dashboardSessionCache: {
 export type MembershipCardStatusKind = 'regular' | 'social' | 'former' | 'non_member' | 'lifetime';
 
 export type MembershipCardLeagueParticipation = 'roster' | 'sabbatical' | 'waitlist' | 'pending';
+
+export type ClubTenureKind = 'new' | 'years';
+
+export type ClubTenure = {
+  kind: ClubTenureKind;
+  /** Null when `kind` is `new`. Inclusive of the current membership season. */
+  years: number | null;
+};
+
+type MembershipSeason = {
+  seasonId: number;
+  startDate: string;
+};
 
 /**
  * Play-in entry on the membership card before Grant entry:
@@ -80,6 +97,8 @@ export type MemberMembershipCardData = {
   icePrivilegesValidThrough: string | null;
   /** True when membership/ice dates reflect an unpaid submitted registration. */
   pendingRegistrationPayment: boolean;
+  /** Club membership tenure for the current dashboard session, or null when unknown. */
+  clubTenure: ClubTenure | null;
   session: {
     id: number;
     name: string;
@@ -94,6 +113,8 @@ export type MemberMembershipCardData = {
 
 export type PendingRegistrationMembershipGrant = {
   membershipOption: 'regular' | 'social' | 'regular_spare_only' | 'junior_recreational';
+  seasonId: number;
+  seasonStartDate: string;
   seasonEndsAt: string;
 };
 
@@ -217,6 +238,105 @@ export function resolveIcePrivilegesValidThrough(input: {
   return input.sessionEndDate;
 }
 
+/**
+ * Club tenure is baseline years at this club (pre-app) plus membership seasons
+ * through the current dashboard season. The current year is included. The first
+ * session of a member's first tracked season is labeled new rather than 1-year,
+ * unless a club baseline already applies.
+ */
+export function resolveClubTenure(input: {
+  membershipSeasons: MembershipSeason[];
+  currentSession: { id: number; seasonId: number } | null;
+  firstSessionIdOfCurrentSeason: number | null;
+  baselineClubExperienceYears?: number;
+}): ClubTenure | null {
+  const baselineYears = Math.max(
+    0,
+    normalizeHalfYearExperienceValue(input.baselineClubExperienceYears ?? 0),
+  );
+
+  let trackedYears = 0;
+  let inFirstTrackedSeason = false;
+  if (input.membershipSeasons.length > 0) {
+    const sorted = [...input.membershipSeasons].sort(
+      (a, b) => a.startDate.localeCompare(b.startDate) || a.seasonId - b.seasonId,
+    );
+    const currentSeasonId = input.currentSession?.seasonId ?? null;
+    const currentIndex =
+      currentSeasonId == null ? -1 : sorted.findIndex((season) => season.seasonId === currentSeasonId);
+    trackedYears = currentIndex < 0 ? sorted.length : currentIndex + 1;
+    inFirstTrackedSeason = currentIndex === 0;
+  }
+
+  if (trackedYears === 0 && baselineYears === 0) {
+    return null;
+  }
+
+  const inFirstSessionOfSeason =
+    input.currentSession != null &&
+    input.firstSessionIdOfCurrentSeason != null &&
+    input.currentSession.id === input.firstSessionIdOfCurrentSeason;
+
+  if (inFirstTrackedSeason && inFirstSessionOfSeason && baselineYears === 0) {
+    return { kind: 'new', years: null };
+  }
+
+  return { kind: 'years', years: baselineYears + trackedYears };
+}
+
+/** Numeric club tenure used for waitlist ordering. "New" and unknown tenure sort as 0. */
+export function clubTenureSortYears(tenure: ClubTenure | null | undefined): number {
+  if (!tenure || tenure.kind === 'new') return 0;
+  return Math.max(0, tenure.years ?? 0);
+}
+
+function uniqueMembershipSeasons(seasons: Array<{ seasonId: number; startDate: string | null }>): MembershipSeason[] {
+  const byId = new Map<number, string>();
+  for (const season of seasons) {
+    const startDate = normalizeDateString(season.startDate);
+    if (!startDate) continue;
+    const existing = byId.get(season.seasonId);
+    if (!existing || startDate < existing) {
+      byId.set(season.seasonId, startDate);
+    }
+  }
+  return [...byId.entries()].map(([seasonId, startDate]) => ({ seasonId, startDate }));
+}
+
+async function loadFirstSessionIdOfSeason(seasonId: number): Promise<number | null> {
+  const { db, schema } = getDrizzleDb();
+  const [firstSession] = await db
+    .select({ id: schema.curlingSessions.id })
+    .from(schema.curlingSessions)
+    .where(eq(schema.curlingSessions.season_id, seasonId))
+    .orderBy(asc(schema.curlingSessions.start_date), asc(schema.curlingSessions.id))
+    .limit(1);
+  return firstSession?.id ?? null;
+}
+
+type DashboardSessionRow = {
+  id: number;
+  name: string;
+  endDate: unknown;
+  seasonId: number;
+  seasonStartDate: unknown;
+};
+
+async function toDashboardSession(row: DashboardSessionRow, isUpcoming: boolean): Promise<DashboardSession> {
+  const seasonStartDate = normalizeDateString(row.seasonStartDate);
+  if (!seasonStartDate) return null;
+  const firstSessionId = (await loadFirstSessionIdOfSeason(row.seasonId)) ?? row.id;
+  return {
+    id: row.id,
+    seasonId: row.seasonId,
+    seasonStartDate,
+    name: row.name,
+    endDate: normalizeDateString(row.endDate),
+    isUpcoming,
+    firstSessionId,
+  };
+}
+
 async function loadDashboardSessionUncached(today: string): Promise<DashboardSession> {
   const { db, schema } = getDrizzleDb();
   const todayValue = dateColumnBindValue(today);
@@ -225,10 +345,15 @@ async function loadDashboardSessionUncached(today: string): Promise<DashboardSes
     .select({
       id: schema.curlingSessions.id,
       name: schema.curlingSessions.name,
-      startDate: schema.curlingSessions.start_date,
       endDate: schema.curlingSessions.end_date,
+      seasonId: schema.curlingSessions.season_id,
+      seasonStartDate: schema.curlingSeasons.start_date,
     })
     .from(schema.curlingSessions)
+    .innerJoin(
+      schema.curlingSeasons,
+      eq(schema.curlingSessions.season_id, schema.curlingSeasons.id),
+    )
     .where(
       and(
         lte(schema.curlingSessions.start_date, todayValue as never),
@@ -239,22 +364,22 @@ async function loadDashboardSessionUncached(today: string): Promise<DashboardSes
     .limit(1);
 
   if (currentSession) {
-    return {
-      id: currentSession.id,
-      name: currentSession.name,
-      endDate: normalizeDateString(currentSession.endDate),
-      isUpcoming: false,
-    };
+    return toDashboardSession(currentSession, false);
   }
 
   const [upcomingSession] = await db
     .select({
       id: schema.curlingSessions.id,
       name: schema.curlingSessions.name,
-      startDate: schema.curlingSessions.start_date,
       endDate: schema.curlingSessions.end_date,
+      seasonId: schema.curlingSessions.season_id,
+      seasonStartDate: schema.curlingSeasons.start_date,
     })
     .from(schema.curlingSessions)
+    .innerJoin(
+      schema.curlingSeasons,
+      eq(schema.curlingSessions.season_id, schema.curlingSeasons.id),
+    )
     .where(gt(schema.curlingSessions.start_date, todayValue as never))
     .orderBy(asc(schema.curlingSessions.start_date))
     .limit(1);
@@ -263,12 +388,7 @@ async function loadDashboardSessionUncached(today: string): Promise<DashboardSes
     return null;
   }
 
-  return {
-    id: upcomingSession.id,
-    name: upcomingSession.name,
-    endDate: normalizeDateString(upcomingSession.endDate),
-    isUpcoming: true,
-  };
+  return toDashboardSession(upcomingSession, true);
 }
 
 async function resolveDashboardSession(today: string): Promise<DashboardSession> {
@@ -284,6 +404,20 @@ async function resolveDashboardSession(today: string): Promise<DashboardSession>
   const session = await loadDashboardSessionUncached(today);
   dashboardSessionCache = { today, cachedAt: now, session };
   return session;
+}
+
+export async function loadDashboardSessionForClubTenure(): Promise<{
+  session: { id: number; seasonId: number; seasonStartDate: string } | null;
+  firstSessionIdOfCurrentSeason: number | null;
+}> {
+  const today = await getCurrentDateStringAsync();
+  const session = await resolveDashboardSession(today);
+  return {
+    session: session
+      ? { id: session.id, seasonId: session.seasonId, seasonStartDate: session.seasonStartDate }
+      : null,
+    firstSessionIdOfCurrentSeason: session?.firstSessionId ?? null,
+  };
 }
 
 type SessionLeaguesResult = {
@@ -329,6 +463,8 @@ async function loadPendingRegistrationMembershipGrant(
   const rows = await db
     .select({
       membershipOption: schema.curlingRegistrations.membership_option,
+      seasonId: schema.curlingSeasons.id,
+      seasonStartDate: schema.curlingSeasons.start_date,
       seasonEndsAt: schema.curlingSeasons.end_date,
       seasonMembershipId: schema.seasonMemberships.id,
     })
@@ -355,6 +491,7 @@ async function loadPendingRegistrationMembershipGrant(
     if (row.membershipOption === 'none') continue;
     const seasonEndsAt = normalizeDateString(row.seasonEndsAt);
     if (!seasonEndsAt) continue;
+    const seasonStartDate = normalizeDateString(row.seasonStartDate);
     if (
       row.membershipOption !== 'regular' &&
       row.membershipOption !== 'social' &&
@@ -365,6 +502,8 @@ async function loadPendingRegistrationMembershipGrant(
     }
     return {
       membershipOption: row.membershipOption,
+      seasonId: row.seasonId,
+      seasonStartDate: seasonStartDate ?? seasonEndsAt,
       seasonEndsAt,
     };
   }
@@ -541,14 +680,64 @@ async function loadSessionLeagues(memberId: number, sessionId: number): Promise<
   };
 }
 
-async function loadIsLifetimeMember(memberId: number): Promise<boolean> {
+async function loadMemberTenureFields(memberId: number): Promise<{
+  isLifetimeMember: boolean;
+  baselineClubExperienceYears: number;
+}> {
   const { db, schema } = getDrizzleDb();
   const [row] = await db
-    .select({ lifetime_member: schema.members.lifetime_member })
+    .select({
+      lifetime_member: schema.members.lifetime_member,
+      baseline_club_experience_years: schema.members.baseline_club_experience_years,
+    })
     .from(schema.members)
     .where(eq(schema.members.id, memberId))
     .limit(1);
-  return (row?.lifetime_member ?? 0) === 1;
+  return {
+    isLifetimeMember: (row?.lifetime_member ?? 0) === 1,
+    baselineClubExperienceYears: normalizeHalfYearExperienceValue(
+      Number(row?.baseline_club_experience_years ?? 0),
+    ),
+  };
+}
+
+async function loadPurchasedMembershipSeasons(memberId: number): Promise<MembershipSeason[]> {
+  const { db, schema } = getDrizzleDb();
+  const rows = await db
+    .select({
+      seasonId: schema.seasonMemberships.season_id,
+      startDate: schema.curlingSeasons.start_date,
+    })
+    .from(schema.seasonMemberships)
+    .innerJoin(
+      schema.curlingSeasons,
+      eq(schema.seasonMemberships.season_id, schema.curlingSeasons.id),
+    )
+    .where(
+      and(
+        eq(schema.seasonMemberships.member_id, memberId),
+        inArray(schema.seasonMemberships.status, [...PURCHASED_SEASON_MEMBERSHIP_STATUSES]),
+      ),
+    );
+  return uniqueMembershipSeasons(rows);
+}
+
+async function loadRosterMembershipSeasons(memberId: number): Promise<MembershipSeason[]> {
+  const { db, schema } = getDrizzleDb();
+  const rows = await db
+    .select({
+      seasonId: schema.curlingSessions.season_id,
+      startDate: schema.curlingSeasons.start_date,
+    })
+    .from(schema.leagueRoster)
+    .innerJoin(schema.leagues, eq(schema.leagueRoster.league_id, schema.leagues.id))
+    .innerJoin(schema.curlingSessions, eq(schema.leagues.session_id, schema.curlingSessions.id))
+    .innerJoin(
+      schema.curlingSeasons,
+      eq(schema.curlingSessions.season_id, schema.curlingSeasons.id),
+    )
+    .where(eq(schema.leagueRoster.member_id, memberId));
+  return uniqueMembershipSeasons(rows);
 }
 
 async function memberHasActiveSessionIcePrivilege(memberId: number, sessionId: number): Promise<boolean> {
@@ -572,13 +761,22 @@ export async function getMemberMembershipCard(member: {
   name: string;
 }): Promise<MemberMembershipCardData> {
   const today = await getCurrentDateStringAsync();
-  const [latestPurchasedSeasonMembership, session, isLifetimeMember, pendingGrant] =
-    await Promise.all([
-      loadLatestPurchasedSeasonMembership(member.id),
-      resolveDashboardSession(today),
-      loadIsLifetimeMember(member.id),
-      loadPendingRegistrationMembershipGrant(member.id),
-    ]);
+  const [
+    latestPurchasedSeasonMembership,
+    session,
+    tenureFields,
+    pendingGrant,
+    purchasedMembershipSeasons,
+    rosterMembershipSeasons,
+  ] = await Promise.all([
+    loadLatestPurchasedSeasonMembership(member.id),
+    resolveDashboardSession(today),
+    loadMemberTenureFields(member.id),
+    loadPendingRegistrationMembershipGrant(member.id),
+    loadPurchasedMembershipSeasons(member.id),
+    loadRosterMembershipSeasons(member.id),
+  ]);
+  const { isLifetimeMember, baselineClubExperienceYears } = tenureFields;
 
   const purchasedMembershipStatus = resolveMembershipCardStatus({
     today,
@@ -615,11 +813,35 @@ export async function getMemberMembershipCard(member: {
     onSessionRoster,
   });
 
+  const tenureSeasons: Array<{ seasonId: number; startDate: string | null }> = [
+    ...purchasedMembershipSeasons,
+    ...rosterMembershipSeasons,
+  ];
+  if (pendingGrant) {
+    tenureSeasons.push({
+      seasonId: pendingGrant.seasonId,
+      startDate: pendingGrant.seasonStartDate,
+    });
+  }
+  if (isLifetimeMember && session) {
+    tenureSeasons.push({
+      seasonId: session.seasonId,
+      startDate: session.seasonStartDate,
+    });
+  }
+  const clubTenure = resolveClubTenure({
+    membershipSeasons: uniqueMembershipSeasons(tenureSeasons),
+    currentSession: session,
+    firstSessionIdOfCurrentSeason: session?.firstSessionId ?? null,
+    baselineClubExperienceYears,
+  });
+
   return {
     name: member.name,
     membershipStatus,
     icePrivilegesValidThrough,
     pendingRegistrationPayment,
+    clubTenure,
     session: session
       ? {
           id: session.id,

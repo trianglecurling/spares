@@ -14,6 +14,7 @@ import {
   leagueHasVacancies,
   immediateChargeEntries,
   LEAGUE_PRIORITY_GUARANTEE_LABEL_TEXT,
+  leaguePriorityGuaranteeLabelText,
   MAX_DESIRED_LEAGUE_COUNT,
   MAX_PROTECTED_CLAIMS,
   MAX_SIMULTANEOUS_SABBATICALS,
@@ -45,6 +46,7 @@ export {
   leagueHasVacancies,
   immediateChargeEntries,
   LEAGUE_PRIORITY_GUARANTEE_LABEL_TEXT,
+  leaguePriorityGuaranteeLabelText,
   MAX_DESIRED_LEAGUE_COUNT,
   MAX_PROTECTED_CLAIMS,
   MAX_SIMULTANEOUS_SABBATICALS,
@@ -770,10 +772,8 @@ export function movePriorityInList(
   return reorderPriorities(next, leagues);
 }
 
-type ByotGuaranteedReturnCaveatLeague = Pick<
-  LeagueCatalogItem,
-  'leagueType' | 'isPlayInBased' | 'format'
->;
+type ByotGuaranteedReturnCaveatLeague = Pick<LeagueCatalogItem, 'isPlayInBased'> &
+  Partial<Pick<LeagueCatalogItem, 'leagueType' | 'format'>>;
 
 /** Non-play-in BYOT guaranteed returns carry a teammate-priority caveat. */
 export function isByotGuaranteedReturnCaveat(
@@ -787,14 +787,16 @@ export function isByotGuaranteedReturnCaveat(
   );
 }
 
-export function byotGuaranteedReturnFootnote(league: Pick<LeagueCatalogItem, 'format'>): string {
+export function byotGuaranteedReturnFootnote(
+  league: Pick<ByotGuaranteedReturnCaveatLeague, 'format'>,
+): string {
   return league.format === 'doubles'
     ? '* Doubles partner must also choose this league as their first or second priority.'
     : '* All teammates must also choose this league as their first or second priority.';
 }
 
 export function byotGuaranteedReturnFootnoteId(
-  league: Pick<LeagueCatalogItem, 'format'>,
+  league: Pick<ByotGuaranteedReturnCaveatLeague, 'format'>,
   idPrefix: string,
 ): string {
   return `${idPrefix}-${league.format === 'doubles' ? 'doubles' : 'teams'}`;
@@ -824,7 +826,7 @@ export function guaranteeChipLabel(
   label: LeaguePriorityGuaranteeLabel,
   league?: ByotGuaranteedReturnCaveatLeague,
 ): string {
-  const text = LEAGUE_PRIORITY_GUARANTEE_LABEL_TEXT[label];
+  const text = leaguePriorityGuaranteeLabelText(label, league);
   return isByotGuaranteedReturnCaveat(label, league) ? `${text}*` : text;
 }
 

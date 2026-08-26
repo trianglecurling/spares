@@ -11,7 +11,6 @@ import {
   bulkCreateResponseSchema,
   bulkDeleteResponseSchema,
   bulkSendWelcomeResponseSchema,
-  loginLinkResponseSchema,
   memberCreateResponseSchema,
   memberEmergencyContactResponseSchema,
   memberExperienceSummaryResponseSchema,
@@ -51,7 +50,6 @@ import type {
   BulkDeleteResponse,
   BulkSendWelcomeResponse,
   CreateMemberBody,
-  LoginLinkResponse,
   MemberAccountAccessDelegatesResponse,
   MemberCreateResponse,
   MemberEmergencyContactResponse,
@@ -74,7 +72,6 @@ import type {
 import { sendWelcomeEmail } from '../services/email.js';
 import { getMemberPaymentDetail, listMemberPaymentHistory } from '../services/memberPaymentHistoryService.js';
 import { normalizeEmail } from '../utils/auth.js';
-import { config } from '../config.js';
 import {
   findMemberIdWithConflictingNormalizedEmailChange,
   listDelegateGranteesForGrantor,
@@ -2258,51 +2255,6 @@ export async function memberRoutes(fastify: FastifyInstance) {
         }
         throw error;
       }
-    }
-  );
-
-  // Server admin only: Get login link for member
-  fastify.get<{ Params: { id: string }; Reply: LoginLinkResponse | ApiErrorResponse }>(
-    '/members/:id/login-link',
-    {
-      schema: {
-        tags: ['members'],
-        params: {
-          type: 'object',
-          additionalProperties: false,
-          properties: { id: { type: 'string' } },
-          required: ['id'],
-        },
-        response: {
-          200: loginLinkResponseSchema,
-        },
-      },
-    },
-    async (request, _reply) => {
-    const member = (request as AuthenticatedRequest).member;
-    if (!isServerAdmin(member)) {
-      return _reply.code(403).send({ error: 'Forbidden' });
-    }
-
-    const { id } = request.params;
-    const memberId = parseInt(id, 10);
-    const { db, schema } = getDrizzleDb();
-
-    const targetMembers = await db
-      .select()
-      .from(schema.members)
-      .where(eq(schema.members.id, memberId))
-      .limit(1);
-    
-    const targetMember = targetMembers[0] as Member | undefined;
-
-    if (!targetMember) {
-      return _reply.code(404).send({ error: 'Member not found' });
-    }
-
-    const loginLink = `${config.frontendUrl}/login`;
-
-    return { loginLink };
     }
   );
 

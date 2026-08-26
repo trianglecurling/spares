@@ -1,6 +1,7 @@
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { RegistrationConfigValidationError } from './registrationConfigValidation.js';
+import { getActiveWaitlistEntryQueuePosition } from './waitlistQueueService.js';
 
 export class WaitlistEntityValidationError extends RegistrationConfigValidationError {}
 
@@ -212,15 +213,5 @@ export async function getActiveWaitlistEntryPosition(
   waitlistId: number,
   entryId: number
 ): Promise<{ position: number | null; total: number }> {
-  const { db, schema } = getDrizzleDb();
-  const rows = await db
-    .select({ id: schema.waitlistEntries.id })
-    .from(schema.waitlistEntries)
-    .where(and(eq(schema.waitlistEntries.waitlist_id, waitlistId), eq(schema.waitlistEntries.status, 'active')))
-    .orderBy(asc(schema.waitlistEntries.position_sort_key), asc(schema.waitlistEntries.joined_at), asc(schema.waitlistEntries.id));
-  const index = rows.findIndex((row) => row.id === entryId);
-  return {
-    position: index >= 0 ? index + 1 : null,
-    total: rows.length,
-  };
+  return getActiveWaitlistEntryQueuePosition(waitlistId, entryId);
 }

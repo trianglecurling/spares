@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   isValidHalfYearExperienceValue,
   normalizeHalfYearExperienceValue,
+  otherClubYearsFromSpecifiedExperience,
   validateHalfYearExperienceValue,
 } from './curlingExperienceYears.js';
 
@@ -27,5 +28,11 @@ describe('curlingExperienceYears validation', () => {
   test('normalizeHalfYearExperienceValue rounds to nearest half year', () => {
     expect(normalizeHalfYearExperienceValue(3.499)).toBe(3.5);
     expect(normalizeHalfYearExperienceValue(3.501)).toBe(3.5);
+  });
+
+  test('otherClubYearsFromSpecifiedExperience copies specified years only', () => {
+    expect(otherClubYearsFromSpecifiedExperience('specified_years', 4.2)).toBe(4);
+    expect(otherClubYearsFromSpecifiedExperience('new', 8)).toBeNull();
+    expect(otherClubYearsFromSpecifiedExperience('specified_years', null)).toBeNull();
   });
 });

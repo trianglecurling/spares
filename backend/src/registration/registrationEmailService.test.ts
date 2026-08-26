@@ -102,6 +102,62 @@ describe('Phase 9 registration email rendering', () => {
     expect(rendered.textBody).toContain('View waitlist: https://example.test/registration/view');
   });
 
+  test('waitlist joined email lists every waitlist from one edit session', () => {
+    const rendered = renderRegistrationEmail('waitlist_joined', {
+      joinedWaitlists: [
+        {
+          leagueName: 'Monday Open',
+          priorityRank: 1,
+          position: 3,
+          waitlistSize: 12,
+        },
+        {
+          leagueName: 'Late Doubles',
+          priorityRank: 2,
+          position: 1,
+          waitlistSize: 4,
+        },
+      ],
+      dashboardUrl: 'https://example.test/waitlists',
+    });
+
+    expect(rendered.subject).toBe('You have joined 2 waitlists');
+    expect(rendered.textBody).toContain('- Monday Open (preference #1, position 3 of 12)');
+    expect(rendered.textBody).toContain('- Late Doubles (preference #2, position 1 of 4)');
+    expect(rendered.textBody).toContain('View your waitlists: https://example.test/waitlists');
+    expect(rendered.textBody).not.toContain('You have joined the Monday Open waitlist');
+  });
+
+  test('waitlist joined email lists every waitlist a teammate was added to', () => {
+    const rendered = renderRegistrationEmail('waitlist_joined', {
+      addedByName: 'Alice Example',
+      joinedWaitlists: [
+        { leagueName: 'Late Doubles', position: 1, waitlistSize: 4 },
+        { leagueName: 'Mixed Doubles', position: 2, waitlistSize: 6 },
+      ],
+      dashboardUrl: 'https://example.test/waitlists',
+    });
+
+    expect(rendered.subject).toBe('You were added to 2 waitlists');
+    expect(rendered.textBody).toContain('Alice Example added you to these waitlists.');
+    expect(rendered.textBody).toContain('- Late Doubles (position 1 of 4)');
+    expect(rendered.textBody).toContain('- Mixed Doubles (position 2 of 6)');
+    expect(rendered.textBody).toContain(
+      'If you believe this was a mistake, please reach out to Alice Example.',
+    );
+  });
+
+  test('waitlist removed email names the teammate who removed the entry', () => {
+    const rendered = renderRegistrationEmail('waitlist_removed_by_member', {
+      leagueName: 'Late Doubles',
+      removedByName: 'Bob Example',
+    });
+
+    expect(rendered.subject).toBe('You have been removed from the Late Doubles waitlist');
+    expect(rendered.textBody).toContain('Bob Example removed this waitlist entry.');
+    expect(rendered.textBody).toContain('Your previous waitlist position is no longer held.');
+  });
+
   test('temporary offer email includes no-response and temporary spot wording', () => {
     const rendered = renderRegistrationEmail('waitlist_offer_temporary_sabbatical_fill', {
       leagueName: 'Tuesday Competitive',

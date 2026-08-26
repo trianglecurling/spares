@@ -258,7 +258,8 @@ A curler who does not have previous league participation history at the club.
 
 New members may register during priority registration but do not receive guaranteed return spots.
 
-New members may be added to waitlists on a first-come, first-served basis if eligible.
+New members may be added to waitlists if eligible. Unfrozen waitlist order is
+by club tenure, not join time.
 
 ## Non-guaranteed item
 
@@ -307,7 +308,7 @@ Play-in leagues must be ranked above every other league on the priority list.
 A priority list entry for a play-in based league.
 
 The entry declares an entry team. A full roster that clears the TLINE guarantee
-bar earns a Guaranteed return label, is billed immediately, and consumes one of
+bar earns a Guaranteed entry label, is billed immediately, and consumes one of
 the two protected claims. Anything else is Subject to availability and defers
 payment. A play-in entry never receives a Guaranteed fallback.
 
@@ -523,7 +524,8 @@ A user may be the curler, the registrant, a parent/guardian, a staff member, or 
 
 An ordered list of eligible people interested in joining a league.
 
-Waitlists are first-come, first-served.
+Waitlists are ordered by club tenure until staff freeze them. Frozen rows keep
+their places; later joiners line up below them by tenure.
 
 Waitlists automatically roll forward to successor leagues.
 

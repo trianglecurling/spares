@@ -12,6 +12,8 @@ import {
 } from '../registration/registrationMembershipPaymentService.js';
 import { resolveFrontendBaseUrl } from '../utils/frontendUrl.js';
 import { getStaffRegistrationStats } from '../registration/registrationStaffStats.js';
+import { staffReturningPlayersQaResponseSchema } from '../api/schemas.js';
+import { getStaffReturningPlayersQa } from '../registration/registrationStaffQa.js';
 import {
   getStaffRegistrationDetail,
   listStaffRegistrations,
@@ -89,6 +91,10 @@ const filterFieldsQuerySchema = z.object({
 });
 const statsQuerySchema = z.object({
   sessionId: z.coerce.number().int().positive(),
+});
+const returningPlayersQaQuerySchema = z.object({
+  sessionId: z.coerce.number().int().positive(),
+  leagueId: z.coerce.number().int().positive().optional(),
 });
 const staffSubmitSchema = z.object({
   changedSummary: z.string().min(1).optional(),
@@ -216,6 +222,39 @@ export async function protectedRegistrationStaffRoutes(fastify: FastifyInstance)
       throw error;
     }
   });
+
+  fastify.get(
+    '/registration/staff/qa/returning-players',
+    {
+      schema: {
+        tags: ['registration-staff'],
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['sessionId'],
+          properties: {
+            sessionId: { type: 'number' },
+            leagueId: { type: 'number' },
+          },
+        },
+        response: { 200: staffReturningPlayersQaResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      if (!requireRegistrationManage(request, reply)) return;
+      try {
+        const query = returningPlayersQaQuerySchema.parse(request.query);
+        return await getStaffReturningPlayersQa({
+          actor: (request as AuthenticatedRequest).member,
+          sessionId: query.sessionId,
+          leagueId: query.leagueId,
+        });
+      } catch (error) {
+        if (handleStaffRegistrationError(reply, error)) return;
+        throw error;
+      }
+    },
+  );
 
   fastify.get('/registration/staff/registrations/:id', async (request, reply) => {
     if (!requireRegistrationManage(request, reply)) return;

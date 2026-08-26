@@ -1,6 +1,7 @@
 import type { RefObject, ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { HiHome } from 'react-icons/hi2';
+import DeveloperSessionBanner from './DeveloperSessionBanner';
 
 export interface SiteNavBarProps {
   clubName: string;
@@ -93,6 +94,7 @@ export default function SiteNavBar({
       ref={headerRef}
       className="relative z-40 border-b border-gray-200/80 bg-white/90 backdrop-blur md:sticky md:top-0 dark:border-gray-700/80 dark:bg-gray-800/90"
     >
+      <DeveloperSessionBanner />
       <div className="public-container py-4 flex items-center justify-between gap-4">
         {backToHome ? (
           <Link to="/" className="text-sm font-medium text-primary-teal-link hover:underline">

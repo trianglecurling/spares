@@ -98,6 +98,13 @@ export interface RegistrationEmailPayload {
   seasonName?: string | null;
   sessionName?: string | null;
   leagueName?: string | null;
+  joinedWaitlists?: Array<{
+    leagueName: string;
+    priorityRank?: number | null;
+    position?: number | null;
+    waitlistSize?: number | null;
+    dashboardUrl?: string | null;
+  }> | null;
   priorityRank?: number | null;
   position?: number | null;
   waitlistSize?: number | null;
@@ -116,6 +123,7 @@ export interface RegistrationEmailPayload {
   approvedAssistancePercent?: number | null;
   teammateText?: string | null;
   addedByName?: string | null;
+  removedByName?: string | null;
   changedSummary?: string | null;
   paymentImpact?: string | null;
   deferralReasons?: string[] | null;
@@ -413,6 +421,78 @@ export function renderRegistrationEmail(messageType: RegistrationMessageType, pa
         textBody: `Social membership confirmed\n\nYour social membership is active for ${season} after payment. Social membership does not include ice privileges. Social members cannot play in leagues or spare unless they later upgrade to regular membership and purchase applicable ice privileges. Upgrading later requires paying the full regular membership price with no social membership credit and no discounts.\n\n${membershipContactText}`,
       };
     case 'waitlist_joined': {
+      const joinedWaitlists =
+        payload.joinedWaitlists && payload.joinedWaitlists.length > 0
+          ? payload.joinedWaitlists
+          : payload.leagueName
+            ? [
+                {
+                  leagueName: payload.leagueName,
+                  priorityRank: payload.priorityRank,
+                  position: payload.position,
+                  waitlistSize: payload.waitlistSize,
+                  dashboardUrl: payload.dashboardUrl,
+                },
+              ]
+            : [];
+      if (joinedWaitlists.length > 1) {
+        const waitlistCountLabel = `${joinedWaitlists.length} waitlists`;
+        const itemLines = joinedWaitlists.map((item) => {
+          const positionLabel = waitlistPositionLabel(item.position, item.waitlistSize);
+          const preferenceLabel =
+            item.priorityRank != null && item.priorityRank > 0 ? `preference #${item.priorityRank}` : null;
+          const detail = [preferenceLabel, `position ${positionLabel}`].filter(Boolean).join(', ');
+          return { name: item.leagueName, detail };
+        });
+        const listHtml = `<ul>${itemLines
+          .map((item) => `<li><strong>${escapeHtml(item.name)}</strong> — ${escapeHtml(item.detail)}</li>`)
+          .join('')}</ul>`;
+        const listText = itemLines.map((item) => `- ${item.name} (${item.detail})`).join('\n');
+        const viewWaitlistsHtml = payload.dashboardUrl
+          ? `<p><a href="${escapeHtml(payload.dashboardUrl)}">View your waitlists</a></p>`
+          : '';
+        const viewWaitlistsText = payload.dashboardUrl ? `View your waitlists: ${payload.dashboardUrl}` : '';
+        if (payload.addedByName) {
+          const mistakeHtml = `<p>If you believe this was a mistake, please reach out to <strong>${escapeHtml(payload.addedByName)}</strong>.</p>`;
+          const mistakeText = `If you believe this was a mistake, please reach out to ${payload.addedByName}.`;
+          return {
+            subject: `You were added to ${waitlistCountLabel}`,
+            htmlBody: `
+              <h2>You were added to ${escapeHtml(waitlistCountLabel)}</h2>
+              <p><strong>${escapeHtml(payload.addedByName)}</strong> added you to these waitlists.</p>
+              ${listHtml}
+              ${viewWaitlistsHtml}
+              ${mistakeHtml}
+              ${membershipContactHtml}
+            `,
+            textBody: [
+              `You were added to ${waitlistCountLabel}`,
+              '',
+              `${payload.addedByName} added you to these waitlists.`,
+              listText,
+              viewWaitlistsText,
+              mistakeText,
+              membershipContactText,
+            ].filter(Boolean).join('\n'),
+          };
+        }
+        return {
+          subject: `You have joined ${waitlistCountLabel}`,
+          htmlBody: `
+            <h2>You have joined ${escapeHtml(waitlistCountLabel)}</h2>
+            ${listHtml}
+            ${viewWaitlistsHtml}
+            ${membershipContactHtml}
+          `,
+          textBody: [
+            `You have joined ${waitlistCountLabel}`,
+            '',
+            listText,
+            viewWaitlistsText,
+            membershipContactText,
+          ].filter(Boolean).join('\n'),
+        };
+      }
       const priorityLabel = waitlistPriorityLabel(payload.priorityRank);
       const positionLabel = waitlistPositionLabel(payload.position, payload.waitlistSize);
       const priorityHtml = priorityLabel ? `<p><strong>Your priority:</strong> ${escapeHtml(priorityLabel)}</p>` : '';
@@ -466,17 +546,32 @@ export function renderRegistrationEmail(messageType: RegistrationMessageType, pa
         ].filter(Boolean).join('\n'),
       };
     }
-    case 'waitlist_removed_by_member':
+    case 'waitlist_removed_by_member': {
+      const removedByHtml = payload.removedByName
+        ? `<p><strong>${escapeHtml(payload.removedByName)}</strong> removed this waitlist entry.</p>`
+        : '';
+      const removedByText = payload.removedByName
+        ? `${payload.removedByName} removed this waitlist entry.`
+        : '';
       return {
         subject: `You have been removed from the ${leagueName} waitlist`,
         htmlBody: `
           <h2>You have been removed from the waitlist</h2>
           <p>You have been removed from the waitlist for <strong>${escapeHtml(leagueName)}</strong>.</p>
+          ${removedByHtml}
           <p>Your previous waitlist position is no longer held.</p>
           ${membershipContactHtml}
         `,
-        textBody: `You have been removed from the ${leagueName} waitlist.\n\nYour previous waitlist position is no longer held.\n\n${membershipContactText}`,
+        textBody: [
+          `You have been removed from the ${leagueName} waitlist.`,
+          removedByText,
+          'Your previous waitlist position is no longer held.',
+          membershipContactText,
+        ]
+          .filter(Boolean)
+          .join('\n\n'),
       };
+    }
     case 'waitlist_changed_by_staff':
       return {
         subject: `Your ${leagueName} waitlist status changed`,

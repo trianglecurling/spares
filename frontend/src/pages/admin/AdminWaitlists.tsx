@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
 import AppStateCard from '../../components/AppStateCard';
 import AppPageControlsRow from '../../components/AppPageControlsRow';
+import BackButton from '../../components/BackButton';
 import Button from '../../components/Button';
 import FormField from '../../components/FormField';
 import Modal from '../../components/Modal';
@@ -21,16 +22,17 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useMemberOptions } from '../../contexts/MemberOptionsContext';
 import { memberHasScope } from '../../utils/permissions';
 import HelpCallout from '../../components/HelpCallout';
-import InlineStateMessage from '../../components/InlineStateMessage';
+import {
+  nextFrozenCountAfterMove,
+  WAITLIST_POSITION_HELP,
+  WAITLIST_QUEUE_STAFF_HELP,
+} from '../../components/waitlists/waitlistQueueCopy';
 import {
   placementsAreComplete,
   syncPlacementsWithMembers,
   toPlacementPayload,
   type WaitlistTeamMemberPlacement,
 } from '../../components/waitlists/waitlistTeamRosterShared';
-
-const PERMANENT_VACANCIES_HELP =
-  'Open permanent spots at the selected placement league. Calculated from league capacity minus permanent placements and members currently on sabbatical.';
 
 const TEMPORARY_FILL_VACANCIES_HELP =
   'Open temporary spots where a member is on sabbatical and someone else can fill that spot for the session. Staff offer these after permanent vacancies.';
@@ -40,6 +42,7 @@ type WaitlistSummary = {
   name: string;
   status: string;
   activeEntryCount: number;
+  frozenEntryCount?: number;
   pendingOffers: number;
   attachedLeagues: Array<{
     id: number;
@@ -70,6 +73,9 @@ type WaitlistEntry = {
   team_roster_text?: string | null;
   teamRosterPlacements?: WaitlistTeamMemberPlacement[];
   position: number;
+  frozen?: boolean;
+  isLifetimeMember?: boolean;
+  clubTenureYears?: number;
   declineCount: number;
   offerResponsePreference?: WaitlistOfferResponsePreference;
   offerResponsePreferenceLabel?: string;
@@ -81,8 +87,9 @@ type WaitlistEntry = {
 };
 
 type WaitlistDetail = {
-  waitlist: { id: number; name: string; status: string };
+  waitlist: { id: number; name: string; status: string; frozenEntryCount?: number };
   placementLeagueId: number;
+  frozenEntryCount?: number;
   attachedLeagues: Array<{
     id: number;
     name: string;
@@ -266,10 +273,6 @@ function waitlistEntryIncludesMember(entry: WaitlistEntry, memberId: number): bo
   return (entry.teamRosterPlacements ?? []).some((placement) => placement.memberId === memberId);
 }
 
-function waitlistTeammateContactMessage(primaryMemberName: string): string {
-  return `You are on this waitlist because you were listed as a team member by ${primaryMemberName}. If you need to leave this waitlist or change your entry, please contact ${primaryMemberName}.`;
-}
-
 function teammateIdsFromRosterText(
   rosterText: string,
   entryMemberId: number,
@@ -322,10 +325,18 @@ export default function AdminWaitlists() {
   if (waitlistId && Number.isFinite(numericId)) {
     return <WaitlistDetailPage waitlistId={numericId} />;
   }
-  return <WaitlistListPage />;
+  return (
+    <AppPage>
+      <AppPageHeader
+        title="Waitlists"
+        description="Browse every league waitlist and see who is in line."
+      />
+      <WaitlistOverviewPanel />
+    </AppPage>
+  );
 }
 
-function WaitlistListPage() {
+export function WaitlistOverviewPanel() {
   const { showAlert } = useAlert();
   const canManage = useCanManageWaitlists();
   const [waitlists, setWaitlists] = useState<WaitlistSummary[]>([]);
@@ -381,71 +392,95 @@ function WaitlistListPage() {
 
   return (
     <>
-      <AppPage>
-        <AppPageHeader
-          title="Waitlists"
-          description="View the current waiting lists for each league below."
-          actions={
-            canManage && sessionOptions.length > 0 ? (
+      <AppPageControlsRow
+        left={
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            Open a waitlist to see who is in line and in what order.
+          </p>
+        }
+        right={
+          canManage ? (
+            <div className="flex flex-wrap items-center gap-2">
               <Button
+                variant="secondary"
                 onClick={() =>
                   setDialog({
-                    title: 'Process session vacancies',
+                    title: 'Freeze all waitlists',
                     description:
-                      sessionOptions.length === 1
-                        ? `Send permanent offers across all leagues with vacancies in ${sessionOptions[0].label}. Members are offered leagues in their priority order, up to the number of leagues they asked to play.`
-                        : 'Send permanent offers across all leagues with vacancies in the selected session. Members are offered leagues in their priority order, up to the number of leagues they asked to play.',
-                    confirmText: 'Process vacancies',
-                    requireExpiresAt: true,
-                    onSubmit: runAction(async (reason, options) => {
-                      const sessionId = sessionOptions.length === 1 ? sessionOptions[0].value : sessionOptions[0]?.value;
-                      if (!sessionId) return;
-                      await api.post(`/waitlists/sessions/${sessionId}/process-vacancies`, {
-                        offerType: 'permanent',
-                        reason,
-                        expiresAt: options?.expiresAt,
-                      });
-                    }, 'Session vacancies processed.'),
+                      'Lock the current order on every waitlist. New joiners will line up below the frozen rows and will not pass anyone already frozen.',
+                    confirmText: 'Freeze all',
+                    onSubmit: runAction(async (reason) => {
+                      await api.post('/waitlists/freeze-all', { reason });
+                    }, 'All waitlists frozen.'),
                   })
                 }
               >
-                Process session vacancies
+                Freeze all waitlists
               </Button>
-            ) : undefined
-          }
-        />
+              {sessionOptions.length > 0 ? (
+                <Button
+                  onClick={() =>
+                    setDialog({
+                      title: 'Process session vacancies',
+                      description:
+                        sessionOptions.length === 1
+                          ? `Send permanent offers across all leagues with vacancies in ${sessionOptions[0].label}. Members are offered leagues in their priority order, up to the number of leagues they asked to play.`
+                          : 'Send permanent offers across all leagues with vacancies in the selected session. Members are offered leagues in their priority order, up to the number of leagues they asked to play.',
+                      confirmText: 'Process vacancies',
+                      requireExpiresAt: true,
+                      onSubmit: runAction(async (reason, options) => {
+                        const sessionId = sessionOptions.length === 1 ? sessionOptions[0].value : sessionOptions[0]?.value;
+                        if (!sessionId) return;
+                        await api.post(`/waitlists/sessions/${sessionId}/process-vacancies`, {
+                          offerType: 'permanent',
+                          reason,
+                          expiresAt: options?.expiresAt,
+                        });
+                      }, 'Session vacancies processed.'),
+                    })
+                  }
+                >
+                  Process session vacancies
+                </Button>
+              ) : null}
+            </div>
+          ) : undefined
+        }
+      />
 
-        {loading ? (
-          <AppStateCard title="Loading waitlists" description="Gathering waitlist summaries." />
-        ) : error ? (
-          <AppStateCard title="Unable to load waitlists" description={error} action={<Button onClick={() => void load()}>Try again</Button>} />
-        ) : waitlists.length === 0 ? (
-          <AppStateCard
-            title="No waitlists yet"
-            description="Attach a waitlist from league configuration to start tracking queue entries."
-          />
-        ) : (
-          <div className="app-card">
-            <ul className="divide-y divide-gray-200 dark:divide-gray-700">
-              {waitlists.map((waitlist) => (
-                <li key={waitlist.id}>
-                  <Link
-                    to={`/waitlists/${waitlist.id}`}
-                    className="-mx-5 flex items-center justify-between gap-4 px-5 py-3 text-sm transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal focus-visible:ring-inset dark:hover:bg-gray-700"
-                  >
-                    <span className="font-medium text-gray-900 dark:text-white">{waitlist.name}</span>
-                    <span className="shrink-0 text-gray-600 dark:text-gray-400">
-                      {waitlist.activeEntryCount}{' '}
-                      {waitlist.activeEntryCount === 1 ? 'active entry' : 'active entries'}
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-        <ReasonDialog state={dialog} onClose={() => setDialog(null)} />
-      </AppPage>
+      {loading ? (
+        <AppStateCard title="Loading waitlists" description="Gathering waitlist summaries." />
+      ) : error ? (
+        <AppStateCard title="Unable to load waitlists" description={error} action={<Button onClick={() => void load()}>Try again</Button>} />
+      ) : waitlists.length === 0 ? (
+        <AppStateCard
+          title="No waitlists yet"
+          description="Attach a waitlist from league configuration to start tracking queue entries."
+        />
+      ) : (
+        <div className="app-card">
+          <ul className="divide-y divide-gray-200 dark:divide-gray-700">
+            {waitlists.map((waitlist) => (
+              <li key={waitlist.id}>
+                <Link
+                  to={`/waitlists/${waitlist.id}`}
+                  className="-mx-5 flex items-center justify-between gap-4 px-5 py-3 text-sm transition-colors hover:bg-gray-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal focus-visible:ring-inset dark:hover:bg-gray-700"
+                >
+                  <span className="font-medium text-gray-900 dark:text-white">{waitlist.name}</span>
+                  <span className="shrink-0 text-gray-600 dark:text-gray-400">
+                    {waitlist.activeEntryCount}{' '}
+                    {waitlist.activeEntryCount === 1 ? 'active entry' : 'active entries'}
+                    {waitlist.frozenEntryCount
+                      ? ` · ${waitlist.frozenEntryCount} frozen`
+                      : ''}
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <ReasonDialog state={dialog} onClose={() => setDialog(null)} />
     </>
   );
 }
@@ -487,6 +522,8 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
   const [editSubmitting, setEditSubmitting] = useState(false);
   const editRosterId = useId();
   const editReasonId = useId();
+  const frozenCountId = useId();
+  const [frozenCountFieldKey, setFrozenCountFieldKey] = useState(0);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -529,16 +566,6 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
       member ? orderedEntries.find((entry) => waitlistEntryIncludesMember(entry, member.id)) ?? null : null,
     [member, orderedEntries],
   );
-
-  const currentMemberTeammateEntry = useMemo(() => {
-    if (!member || !currentMemberEntry || currentMemberEntry.memberId === member.id) return null;
-    return currentMemberEntry;
-  }, [member, currentMemberEntry]);
-
-  const currentMemberPrimaryEntry = useMemo(() => {
-    if (!member || !currentMemberEntry || currentMemberEntry.memberId !== member.id) return null;
-    return currentMemberEntry;
-  }, [member, currentMemberEntry]);
 
   const memberOptionById = useMemo(
     () => new Map(memberOptions.options.map((option) => [option.id, option])),
@@ -722,20 +749,20 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
   };
 
   const leaveWaitlist = async () => {
-    if (!currentMemberPrimaryEntry) return;
+    if (!currentMemberEntry) return;
     const isByot = data?.league.leagueType === 'bring_your_own_team';
     const confirmed = await confirm({
       title: 'Leave waitlist?',
       message: isByot
-        ? 'Leaving will remove your entire team from this waitlist and you will lose your position.'
-        : 'You will lose your position on this waitlist. If you join again later, you will be added to the end of the queue.',
+        ? 'Leaving will remove the entire team from this waitlist. Everyone on the roster will get an email, and the team will lose its position.'
+        : 'You will lose your position on this waitlist. If you join again later, you will be placed with other unfrozen entries according to club tenure.',
       confirmText: 'Leave waitlist',
       cancelText: 'Keep my position',
       variant: 'danger',
     });
     if (!confirmed) return;
     try {
-      await api.post(`/registration/member/waitlist-entries/${currentMemberPrimaryEntry.id}/remove`, {});
+      await api.post(`/registration/member/waitlist-entries/${currentMemberEntry.id}/remove`, {});
       showAlert('You have been removed from the waitlist.', 'success');
       await load();
     } catch (err) {
@@ -768,22 +795,40 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
     }
   };
 
-  const handleReorder = async (nextEntries: WaitlistEntry[]) => {
+  const frozenCount = data?.frozenEntryCount ?? data?.waitlist.frozenEntryCount ?? 0;
+
+  const handleReorder = async (
+    nextEntries: WaitlistEntry[],
+    meta: { activeIndex: number; overIndex: number },
+  ) => {
     if (!canManage || !data) return;
     const previousIds = orderedEntries.map((entry) => entry.id);
     const nextIds = nextEntries.map((entry) => entry.id);
     if (previousIds.join(',') === nextIds.join(',')) return;
+    const nextFrozen = nextFrozenCountAfterMove({
+      frozenCount,
+      activeIndex: meta.activeIndex,
+      overIndex: meta.overIndex,
+      total: nextEntries.length,
+    });
 
     setDialog({
       title: 'Save queue order',
-      description: 'Reorder the active waitlist queue. This updates position for all listed members.',
+      description: 'Reorder the active waitlist queue. Frozen rows keep their locked places; unfrozen rows stay sorted by tenure unless you move them into the frozen set.',
       confirmText: 'Save order',
       onSubmit: runAction(async (reason) => {
         await api.post(`/waitlists/${waitlistId}/entries/reorder`, {
           entryIds: nextIds,
+          frozenEntryCount: nextFrozen,
           reason,
         });
-        setOrderedEntries(nextEntries.map((entry, index) => ({ ...entry, position: index + 1 })));
+        setOrderedEntries(
+          nextEntries.map((entry, index) => ({
+            ...entry,
+            position: index + 1,
+            frozen: index < nextFrozen,
+          })),
+        );
       }, 'Waitlist order saved.'),
     });
   };
@@ -843,19 +888,14 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
       <AppPage>
         <AppPageHeader
           title={data.waitlist.name}
-          description="View and manage the waitlist queue for this league."
+          description="See who is on this waitlist and in what order. Club tenure decides unfrozen order until staff freeze the list."
           actions={
             <>
-              <Link
-                className="inline-flex items-center rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-100 dark:border-gray-600 dark:text-gray-100 dark:hover:bg-gray-700"
-                to="/waitlists"
-              >
-                Back to waitlists
-              </Link>
+              <BackButton label="All waitlists" to="/waitlists?tab=all" />
               {member && !currentMemberEntry ? (
                 <Button onClick={() => void openJoinModal()}>Join waitlist</Button>
               ) : null}
-              {currentMemberPrimaryEntry ? (
+              {currentMemberEntry ? (
                 <Button variant="danger" onClick={() => void leaveWaitlist()}>
                   Leave waitlist
                 </Button>
@@ -869,25 +909,10 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
           }
         />
 
-        {currentMemberTeammateEntry ? (
-          <InlineStateMessage
-            tone="warning"
-            title="You are on this waitlist as a team member"
-            description={waitlistTeammateContactMessage(currentMemberTeammateEntry.memberName)}
-          />
-        ) : null}
-
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-2">
           <div className="app-card">
             <p className="text-sm text-gray-500 dark:text-gray-400">Active entries</p>
             <p className="mt-2 text-3xl font-semibold text-gray-900 dark:text-white">{orderedEntries.length}</p>
-          </div>
-          <div className="app-card">
-            <div className="flex items-center gap-1.5">
-              <p className="text-sm text-gray-500 dark:text-gray-400">Permanent vacancies</p>
-              <HelpCallout text={PERMANENT_VACANCIES_HELP} label="About permanent vacancies" />
-            </div>
-            <p className="mt-2 text-3xl font-semibold text-gray-900 dark:text-white">{data.league.permanentVacancies}</p>
           </div>
           <div className="app-card">
             <div className="flex items-center gap-1.5">
@@ -904,9 +929,29 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
 
         {canManage ? (
           <AppPageControlsRow
-            left={<p className="text-sm text-gray-600 dark:text-gray-400">Drag entries to reorder the queue.</p>}
+            left={
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Drag frozen rows to reorder them, or drag across the frozen boundary. Unfrozen rows stay sorted by tenure.
+              </p>
+            }
             right={
               <>
+                <Button
+                  variant="secondary"
+                  onClick={() =>
+                    setDialog({
+                      title: 'Freeze this waitlist',
+                      description:
+                        'Lock the current order. Anyone already on the list keeps their place; later joiners line up below them by tenure.',
+                      confirmText: 'Freeze waitlist',
+                      onSubmit: runAction(async (reason) => {
+                        await api.post(`/waitlists/${waitlistId}/freeze`, { reason });
+                      }, 'Waitlist frozen.'),
+                    })
+                  }
+                >
+                  Freeze waitlist
+                </Button>
                 <Button onClick={() => setAddModalOpen(true)}>Add member</Button>
                 <Button
                   onClick={() =>
@@ -939,6 +984,51 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
 
         <section className="app-card">
           <h2 className="app-section-title">Queue</h2>
+          <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+            {canManage ? WAITLIST_QUEUE_STAFF_HELP : WAITLIST_POSITION_HELP}
+          </p>
+          {canManage ? (
+            <div className="mt-4 max-w-xs">
+              <FormField
+                label="Frozen entries"
+                htmlFor={frozenCountId}
+                helperText="First this many rows stay locked. Changing this number requires a reason."
+              >
+                <input
+                  id={frozenCountId}
+                  type="number"
+                  min={0}
+                  max={orderedEntries.length}
+                  className="app-input"
+                  defaultValue={frozenCount}
+                  key={`frozen-${frozenCount}-${orderedEntries.length}-${frozenCountFieldKey}`}
+                  onBlur={(event) => {
+                    const next = Number(event.target.value);
+                    if (!Number.isInteger(next) || next === frozenCount) return;
+                    if (next < 0 || next > orderedEntries.length) {
+                      showAlert(`Frozen entries must be between 0 and ${orderedEntries.length}.`, 'warning');
+                      event.target.value = String(frozenCount);
+                      return;
+                    }
+                    setDialog({
+                      title: 'Change frozen count',
+                      description:
+                        next > frozenCount
+                          ? 'The current top unfrozen entries will be locked into the frozen set in tenure order.'
+                          : 'The last frozen entries will return to the unfrozen set and sort by tenure.',
+                      confirmText: 'Save frozen count',
+                      onSubmit: runAction(async (reason) => {
+                        await api.post(`/waitlists/${waitlistId}/frozen-count`, {
+                          frozenEntryCount: next,
+                          reason,
+                        });
+                      }, 'Frozen count updated.'),
+                    });
+                  }}
+                />
+              </FormField>
+            </div>
+          ) : null}
           {orderedEntries.length === 0 ? (
             <p className="mt-4 text-sm text-gray-500">No active waitlist entries.</p>
           ) : canManage ? (
@@ -947,12 +1037,19 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
                 items={orderedEntries}
                 getId={(entry) => entry.id}
                 getItemLabel={(entry) => waitlistEntryHeadline(entry)}
-                onReorder={(next) => void handleReorder(next)}
+                canDropOnItem={(_active, _over, activeIndex, overIndex) =>
+                  !(activeIndex >= frozenCount && overIndex >= frozenCount)
+                }
+                onReorder={(next, meta) => void handleReorder(next, meta)}
                 itemClassName="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900"
+                renderBeforeItem={(_item, index) =>
+                  frozenCount > 0 && index === frozenCount ? <WaitlistUnfrozenBoundaryLabel /> : null
+                }
                 renderItem={({ item, index, dragHandle }) => (
                   <WaitlistEntryRow
                     entry={item}
                     index={index}
+                    frozen={index < frozenCount}
                     dragHandle={dragHandle}
                     canManage={canManage}
                     onEdit={() => openEditEntryModal(item)}
@@ -965,15 +1062,19 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
           ) : (
             <div className="mt-4 space-y-3">
               {orderedEntries.map((entry, index) => (
-                <div key={entry.id} className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
-                  <WaitlistEntryRow
-                    entry={entry}
-                    index={index}
-                    canManage={false}
-                    onAction={() => {}}
-                    runAction={runAction}
-                  />
-                </div>
+                <Fragment key={entry.id}>
+                  {frozenCount > 0 && index === frozenCount ? <WaitlistUnfrozenBoundaryLabel /> : null}
+                  <div className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+                    <WaitlistEntryRow
+                      entry={entry}
+                      index={index}
+                      frozen={index < frozenCount}
+                      canManage={false}
+                      onAction={() => {}}
+                      runAction={runAction}
+                    />
+                  </div>
+                </Fragment>
               ))}
             </div>
           )}
@@ -1000,7 +1101,13 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
           </div>
         </section>
 
-        <ReasonDialog state={dialog} onClose={() => setDialog(null)} />
+        <ReasonDialog
+          state={dialog}
+          onClose={() => {
+            setDialog(null);
+            setFrozenCountFieldKey((key) => key + 1);
+          }}
+        />
 
         <Modal isOpen={renameModalOpen} onClose={() => setRenameModalOpen(false)} title="Rename waitlist" size="md">
           <div className="space-y-4">
@@ -1045,15 +1152,11 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
                   Join the waitlist for {joinContext.placementLeague.name}.
                   {joinContext.requiresByotRoster ? ' Add your full team to the entry.' : ''}
                 </p>
-                {joinContext.usesRegistration ? (
-                  <p className="text-sm text-gray-600 dark:text-gray-300">
-                    League limits are based on your submitted registration for this session.
-                  </p>
-                ) : (
+                {!joinContext.usesRegistration ? (
                   <p className="text-sm text-gray-600 dark:text-gray-300">
                     League limits are based on your current session roster.
                   </p>
-                )}
+                ) : null}
                 {joinContext.warnings.length > 0 ? (
                   <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-100">
                     {joinContext.warnings.join(' ')}
@@ -1228,9 +1331,18 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
   );
 }
 
+function WaitlistUnfrozenBoundaryLabel() {
+  return (
+    <p className="px-1 py-1 text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+      Unfrozen · sorted by club tenure
+    </p>
+  );
+}
+
 function WaitlistEntryRow({
   entry,
   index,
+  frozen = false,
   dragHandle,
   canManage,
   onEdit,
@@ -1239,6 +1351,7 @@ function WaitlistEntryRow({
 }: {
   entry: WaitlistEntry;
   index: number;
+  frozen?: boolean;
   dragHandle?: React.ReactNode;
   canManage: boolean;
   onEdit?: () => void;
@@ -1252,18 +1365,28 @@ function WaitlistEntryRow({
 
   return (
     <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-      <div className="flex min-w-0 flex-1 gap-3">
-        {dragHandle}
-        <div className="min-w-0">
+        <div className="flex min-w-0 flex-1 gap-3">
+          {dragHandle}
+          <div className="min-w-0">
           <p className="font-medium text-gray-900 dark:text-white">
             {index + 1}. {headline}
+            {frozen ? (
+              <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-normal text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                Frozen
+              </span>
+            ) : null}
+            {entry.isLifetimeMember ? (
+              <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-normal text-amber-900 dark:bg-amber-900/40 dark:text-amber-100">
+                Lifetime
+              </span>
+            ) : null}
           </p>
           <p className="mt-1 text-xs text-gray-500">
             If a spot opens: {waitlistOfferPreferenceLabel(entry)}
           </p>
           {entry.priorityRank != null ? (
             <p className="mt-1 text-xs text-gray-500">
-              League priority {entry.priorityRank}
+              Waitlist preference {entry.priorityRank}
               {entry.desiredLeagueCount != null
                 ? ` · wants up to ${entry.desiredLeagueCount} ${entry.desiredLeagueCount === 1 ? 'league' : 'leagues'}`
                 : ''}
@@ -1274,9 +1397,9 @@ function WaitlistEntryRow({
               Pending {formatStatus(entry.pendingOffer.offer_type)} offer
             </p>
           ) : null}
+          </div>
         </div>
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
         {canManage ? (
           <>
             {onEdit ? (
@@ -1342,7 +1465,7 @@ function WaitlistEntryRow({
             </Button>
           </>
         ) : null}
-      </div>
+        </div>
     </div>
   );
 }

@@ -127,7 +127,7 @@ leave the uncommitted points pool used to pack worst-case opposing teams.
 
 ## 6. Payment implications
 
-- A play-in entry whose team is guaranteed earns a **Guaranteed return** label on
+- A play-in entry whose team is guaranteed earns a **Guaranteed entry** label on
   the priority list and pays immediately. It consumes one of the two protected
   claims.
 - A play-in entry never earns a **Guaranteed fallback** label, no matter how low
@@ -167,7 +167,7 @@ leave the uncommitted points pool used to pack worst-case opposing teams.
    fill the team with no guarantee.
 3. Once a **full** team is known, the guarantee result is shown inline on the
    entry:
-   - Guaranteed entry — the entry shows **Guaranteed return** and payment is due
+   - Guaranteed entry — the entry shows **Guaranteed entry** and payment is due
      now.
    - Returning and not guaranteed — show the play-in event notice and suggest
      adding a back-up league lower on the list.

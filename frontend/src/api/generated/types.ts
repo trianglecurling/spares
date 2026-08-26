@@ -3841,6 +3841,87 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/sign-in-as": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        targetMemberId: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            accessToken: string;
+                            refreshToken: string;
+                            member: {
+                                id: number;
+                                name: string;
+                                email: null | string;
+                                phone: null | string;
+                                spareOnly: boolean;
+                                socialMember: boolean;
+                                isAdmin: boolean;
+                                isServerAdmin: boolean;
+                                isCalendarAdmin: boolean;
+                                isContentAdmin: boolean;
+                                isSponsorAdmin: boolean;
+                                leagueManagerLeagueIds: number[];
+                                ownedEventIds: number[];
+                                isLeagueAdministrator: boolean;
+                                isLeagueAdministratorGlobal: boolean;
+                                roleCodes: string[];
+                                roleNames: string[];
+                                scopeRules: {
+                                    scope: string;
+                                    /** @enum {string} */
+                                    effect: "allow" | "deny";
+                                    resourceType?: null | string;
+                                    resourceId?: null | number;
+                                }[];
+                                optedInSms: boolean;
+                                emailSubscribed: boolean;
+                                emailVisible: boolean;
+                                phoneVisible: boolean;
+                                themePreference: string;
+                            };
+                            actorMemberId: number;
+                            isImpersonating: boolean;
+                            accountSwitchOptions: {
+                                id: number;
+                                name: string;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/stop-impersonation": {
         parameters: {
             query?: never;
@@ -4079,6 +4160,11 @@ export interface paths {
                             };
                             icePrivilegesValidThrough: null | string;
                             pendingRegistrationPayment: boolean;
+                            clubTenure: null | {
+                                /** @enum {string} */
+                                kind: "new" | "years";
+                                years: null | number;
+                            };
                             session: null | {
                                 id: number;
                                 name: string;
@@ -5064,45 +5150,6 @@ export interface paths {
                 };
             };
         };
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/members/{id}/login-link": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            loginLink: string;
-                        };
-                    };
-                };
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -18429,6 +18476,85 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/registration/staff/qa/returning-players": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query: {
+                    sessionId: number;
+                    leagueId?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            sessionId: number;
+                            sessionName: string;
+                            /** @enum {string} */
+                            registrationState: "closed" | "priority" | "open";
+                            leagues: {
+                                id: number;
+                                name: string;
+                                dayOfWeek: number;
+                                predecessorLeagueId: null | number;
+                            }[];
+                            league: null | {
+                                id: number;
+                                name: string;
+                                dayOfWeek: number;
+                            };
+                            predecessor: null | {
+                                id: number;
+                                name: string;
+                                sessionName: string | null;
+                            };
+                            players: {
+                                memberId: number;
+                                memberName: string;
+                                memberEmail: null | string;
+                                isTemporarySabbaticalFill: boolean;
+                                /** @enum {string} */
+                                status: "not_yet_registered" | "guaranteed_return" | "guaranteed_fallback" | "dropped" | "third_or_higher" | "sabbatical";
+                                priorityRank: null | number;
+                                guaranteeLabel: null | ("guaranteed_return" | "awaiting_roster_entry" | "guaranteed_fallback" | "available" | "temporary_spot_available" | "waitlisted" | "subject_to_availability" | "superfluous");
+                                registrationId: null | number;
+                                registrationStatus: null | string;
+                            }[];
+                            counts: {
+                                not_yet_registered: number;
+                                guaranteed_return: number;
+                                guaranteed_fallback: number;
+                                dropped: number;
+                                third_or_higher: number;
+                                sabbatical: number;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/registration/staff/registrations/{id}": {
         parameters: {
             query?: never;
@@ -19308,6 +19434,62 @@ export interface paths {
             };
         };
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/waitlists/mine": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
         post?: never;
         delete?: never;
         options?: never;
@@ -23032,6 +23214,160 @@ export interface paths {
                 };
             };
         };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/observability/emails": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    page?: number;
+                    pageSize?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items: {
+                                id: number;
+                                recipientEmail: string;
+                                recipientName: null | string;
+                                subject: string;
+                                createdAt: string;
+                            }[];
+                            page: number;
+                            pageSize: number;
+                            total: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/observability/emails/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: number;
+                            recipientEmail: string;
+                            recipientName: null | string;
+                            subject: string;
+                            createdAt: string;
+                            htmlBody: string;
+                            textBody: null | string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;

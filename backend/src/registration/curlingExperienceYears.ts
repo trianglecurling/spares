@@ -44,3 +44,15 @@ export function memberExperienceBaselinesFromRow(row: {
     baselineClubExperienceYears: normalizeHalfYearExperienceValue(row.baseline_club_experience_years ?? 0),
   };
 }
+
+/** Years reported as prior curling experience when a new member registers. */
+export function otherClubYearsFromSpecifiedExperience(
+  experienceType: string | null | undefined,
+  selfReportedYears: number | null | undefined,
+): number | null {
+  if (experienceType !== 'specified_years') return null;
+  if (selfReportedYears == null || !Number.isFinite(Number(selfReportedYears))) return null;
+  const years = Number(selfReportedYears);
+  if (years < 0) return null;
+  return normalizeHalfYearExperienceValue(years);
+}

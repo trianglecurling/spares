@@ -55,15 +55,42 @@ Club experience accrues at 0.5 years per completed session, with a maximum of
 
 There is no ADD or REPLACE entry type. Each entry carries:
 
-- `priority_rank` — where the league sat on the registrant's priority list
+- `priority_rank` — the member's waitlist preference for this entry (1 is
+  most wanted)
 - `desired_league_count` — how many leagues the registrant wants in total
 
-Both are snapshots taken at submit. Together they say everything the old entry
-types said, and they stay correct when the registrant's circumstances change.
+When a waitlist join comes from registration, `priority_rank` is copied from
+the registrant's league priority list. Members can later edit that order on
+the waitlists page. Year-round joins that have no registration rank are added
+at the end of the member's current preference list.
 
-There is no limit on the number of waitlists a curler may be on. Entries are
-first-come, first-served within each waitlist and roll forward to successor
-leagues.
+Together they say everything the old entry types said, and they stay correct
+when the registrant's circumstances change.
+
+There is no limit on the number of waitlists a curler may be on. Entries roll
+forward to successor leagues.
+
+---
+
+## Waitlist preference
+
+If a member is on more than one waitlist, they must keep those waitlists in
+preference order. When they want fewer leagues than waitlists they are on,
+offers use that order: top choices can be accepted and lower-ranked waitlists
+can be skipped or declined.
+
+Members manage this on `/waitlists` (My waitlists). The list is read-only until
+they enter edit mode, then they can reorder, join, or leave. Saving shows a
+confirmation summary of the changes. Joining more than one waitlist in the same
+edit sends one confirmation email that lists all of them, including teammates
+who were added to those entries.
+
+Team (rostered) waitlist entries must stay above individual waitlists. This is
+the same split used for play-in leagues on the registration priority list:
+drag-and-drop cannot cross the boundary, and save clamps any mixed order while
+keeping relative order within each block. Anyone listed on a team roster can
+leave that waitlist; leaving removes the whole team entry and emails everyone
+on the roster. A person may appear on only one roster per waitlist.
 
 ---
 
@@ -87,16 +114,37 @@ is clear which league would be given up.
 
 ## Waitlist ordering
 
-Waitlist order is first-come, first-served.
+Waitlist order is not first-come, first-served.
 
-Earlier waitlist entries appear ahead of later waitlist entries.
+Each waitlist has a frozen count *N*. Rendered order is:
 
-Waitlists continue across sessions through configured league successor
-relationships.
+1. The first *N* entries in stored order. Staff may rearrange this prefix,
+   including placing someone ahead of a lifetime member.
+2. Remaining (unfrozen) entries, sorted live by club tenure (the same number
+   shown on the membership card), then years at another club, then a stable
+   hash of entry id.
 
-Because waitlists roll forward, someone who joined a waitlist in an earlier
-session remains ahead of someone who joined later, unless their entry is
-removed, moved, or otherwise modified according to the rules.
+Roster (team) entries use the combined tenure of rostered members, then
+combined total curling experience.
+
+Staff freeze a waitlist after processing it. Freeze locks the current rendered
+order and sets *N* to the number of active entries. Later freezes lock any
+new unfrozen remainder onto the end of the frozen prefix.
+
+New non-lifetime joiners are unfrozen. *N* does not change. New lifetime
+members are inserted after the last lifetime member already in the frozen
+prefix (or at the top of that prefix if none exist), and *N* increases by 1.
+
+*N* decreases by 1 only when a frozen entry leaves the frozen set: permanent
+placement, removal, or a second decline (which returns the entry to the
+unfrozen tenure sort). Unfrozen placements and first declines leave *N*
+alone.
+
+Existing waitlists start at *N* = 0, so tenure order applies immediately.
+
+Members see their queue position. That number can change until freeze, and
+among people who join after freeze. Member-facing copy does not mention
+lifetime members.
 
 ---
 

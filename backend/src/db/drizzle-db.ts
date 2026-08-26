@@ -68,6 +68,7 @@ type PgSchema = {
   spareRequestNotificationDeliveries: typeof pgSchema.spareRequestNotificationDeliveriesPg;
   feedback: typeof pgSchema.feedbackPg;
   observabilityEvents: typeof pgSchema.observabilityEventsPg;
+  outboundEmails: typeof pgSchema.outboundEmailsPg;
   paymentOrders: typeof pgSchema.paymentOrdersPg;
   paymentTransactions: typeof pgSchema.paymentTransactionsPg;
   paymentEvents: typeof pgSchema.paymentEventsPg;
@@ -220,6 +221,7 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       spareRequestNotificationDeliveries: sqliteSchema.spareRequestNotificationDeliveriesSqlite,
       feedback: sqliteSchema.feedbackSqlite,
       observabilityEvents: sqliteSchema.observabilityEventsSqlite,
+      outboundEmails: sqliteSchema.outboundEmailsSqlite,
       paymentOrders: sqliteSchema.paymentOrdersSqlite,
       paymentTransactions: sqliteSchema.paymentTransactionsSqlite,
       paymentEvents: sqliteSchema.paymentEventsSqlite,
@@ -361,6 +363,7 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       spareRequestNotificationDeliveries: pgSchema.spareRequestNotificationDeliveriesPg,
       feedback: pgSchema.feedbackPg,
       observabilityEvents: pgSchema.observabilityEventsPg,
+      outboundEmails: pgSchema.outboundEmailsPg,
       paymentOrders: pgSchema.paymentOrdersPg,
       paymentTransactions: pgSchema.paymentTransactionsPg,
       paymentEvents: pgSchema.paymentEventsPg,

@@ -553,6 +553,7 @@ describe('guarantee labels shown while reordering', () => {
 
   test('every label has readable chip text', () => {
     expect(guaranteeChipLabel('guaranteed_return')).toBe('Guaranteed return');
+    expect(guaranteeChipLabel('guaranteed_return', playInLeague)).toBe('Guaranteed entry');
     expect(guaranteeChipLabel('awaiting_roster_entry')).toBe('Awaiting roster entry');
     expect(guaranteeChipLabel('guaranteed_fallback')).toBe('Guaranteed fallback');
     expect(guaranteeChipLabel('available')).toBe('Available');
@@ -576,7 +577,7 @@ describe('guarantee labels shown while reordering', () => {
     });
     expect(guaranteeChipLabel('guaranteed_return', teamLeague)).toBe('Guaranteed return*');
     expect(guaranteeChipLabel('guaranteed_return', teamsByot)).toBe('Guaranteed return*');
-    expect(guaranteeChipLabel('guaranteed_return', playInLeague)).toBe('Guaranteed return');
+    expect(guaranteeChipLabel('guaranteed_return', playInLeague)).toBe('Guaranteed entry');
     expect(guaranteeChipLabel('guaranteed_fallback', teamLeague)).toBe('Guaranteed fallback');
     expect(byotGuaranteedReturnFootnote(teamLeague)).toBe(
       '* Doubles partner must also choose this league as their first or second priority.',

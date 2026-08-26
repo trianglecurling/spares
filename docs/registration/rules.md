@@ -436,7 +436,7 @@ Play-in rules:
   remaining `playInSpotCount` spots (default 2) are decided by playdowns.
 - A play-in league sits on the priority list like any other league, except it
   must be ranked above every other league on that list. A complete roster that
-  clears the TLINE bar earns a Guaranteed return label and is billed
+  clears the TLINE bar earns a Guaranteed entry label and is billed
   immediately; anything else is Subject to availability and defers payment.
 - A play-in entry never receives a Guaranteed fallback label, because a team
   that misses the bar goes to playdowns rather than into a held spot.
@@ -580,8 +580,8 @@ spots.
 
 Play-in based leagues sit on the priority list like any other league. A
 registrant whose declared team has a full roster and clears the TLINE bar earns
-a Guaranteed return, which consumes one of the two protected claims. A play-in
-entry never receives a Guaranteed fallback.
+a Guaranteed entry label, which consumes one of the two protected claims. A
+play-in entry never receives a Guaranteed fallback.
 
 Example:
 
@@ -735,10 +735,11 @@ Rollover changes must be audited.
 
 ### Waitlist ordering
 
-Waitlists are first-come, first-served.
+Waitlists are ordered by club tenure until staff freeze them. Frozen rows keep
+their locked order; later joiners line up below them by tenure. Lifetime
+members join after the last lifetime member in the frozen prefix.
 
-Waitlists may persist across seasons, so members who joined earlier retain
-priority by virtue of their earlier waitlist position.
+Waitlists may persist across seasons through successor league attachments.
 
 ### Waitlist entries and priority
 

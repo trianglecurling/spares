@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   closestCenter,
   DndContext,
@@ -62,6 +62,8 @@ type SortableListProps<T> = {
    * the live sort preview cannot indicate an invalid destination.
    */
   canDropOnItem?: (activeItem: T, overItem: T, activeIndex: number, overIndex: number) => boolean;
+  /** Renders above an item, outside the item chrome — useful for list-section dividers. */
+  renderBeforeItem?: (item: T, index: number) => ReactNode;
 };
 
 type SortableListItemProps<T> = {
@@ -154,6 +156,7 @@ export default function SortableList<T>({
   itemNoun = 'item',
   canDragItem,
   canDropOnItem,
+  renderBeforeItem,
 }: SortableListProps<T>) {
   const [activeId, setActiveId] = useState<UniqueIdentifier | null>(null);
   const prefersReducedMotion = usePrefersReducedMotion();
@@ -241,17 +244,19 @@ export default function SortableList<T>({
             const isInvalidDropTarget =
               activeItem != null && id !== activeId && !isValidDropTarget(id, activeId ?? id);
             return (
-              <SortableListItem
-                key={String(id)}
-                item={item}
-                index={index}
-                id={id}
-                getItemLabel={getItemLabel}
-                renderItem={renderItem}
-                canDrag={canDragItem ? canDragItem(item, index) : true}
-                isInvalidDropTarget={isInvalidDropTarget}
-                className={itemClassName}
-              />
+              <Fragment key={String(id)}>
+                {renderBeforeItem?.(item, index)}
+                <SortableListItem
+                  item={item}
+                  index={index}
+                  id={id}
+                  getItemLabel={getItemLabel}
+                  renderItem={renderItem}
+                  canDrag={canDragItem ? canDragItem(item, index) : true}
+                  isInvalidDropTarget={isInvalidDropTarget}
+                  className={itemClassName}
+                />
+              </Fragment>
             );
           })}
         </div>

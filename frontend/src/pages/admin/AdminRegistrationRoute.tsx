@@ -55,6 +55,13 @@ export default function AdminRegistrationRoute() {
     return <ConfigPage />;
   }
 
+  if (segment === 'qa') {
+    if (subsegment) {
+      return <Navigate to={`/admin/registrations/qa${location.search}`} replace />;
+    }
+    return <ConfigPage />;
+  }
+
   if (segment === 'settings') {
     if (!subsegment || !SETTINGS_TABS.has(subsegment)) {
       return <Navigate to="/admin/registrations/settings/seasons" replace />;

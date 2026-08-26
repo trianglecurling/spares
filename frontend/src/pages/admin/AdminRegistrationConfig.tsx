@@ -15,6 +15,7 @@ import { del, get, patch, post } from '../../api/client';
 import api, { formatApiError } from '../../utils/api';
 import { memberHasScope } from '../../utils/permissions';
 import AdminRegistrationsList from './AdminRegistrationsList';
+import AdminRegistrationQa from './AdminRegistrationQa';
 import type { paths } from '../../api/generated/types';
 
 type RegistrationState = 'closed' | 'priority' | 'open';
@@ -91,7 +92,7 @@ interface PaymentDeadline {
   paymentDeadlineAt: string;
 }
 
-type PrimaryTab = 'summary' | 'list' | 'settings';
+type PrimaryTab = 'summary' | 'list' | 'qa' | 'settings';
 type TabKey = 'seasons' | 'sessions' | 'periods' | 'prices' | 'discounts';
 
 const CONFIG_TAB_KEYS = ['seasons', 'sessions', 'periods', 'prices', 'discounts'] as const;
@@ -231,6 +232,9 @@ export default function AdminRegistrationConfig() {
     const after = segments.slice(2);
     if (after[0] === 'list') {
       return { primaryTab: 'list' as PrimaryTab, activeTab: 'seasons' as TabKey };
+    }
+    if (after[0] === 'qa') {
+      return { primaryTab: 'qa' as PrimaryTab, activeTab: 'seasons' as TabKey };
     }
     if (after[0] === 'settings') {
       const next = after[1];
@@ -619,6 +623,12 @@ export default function AdminRegistrationConfig() {
       to: primaryTab === 'list' ? `${location.pathname}${location.search}` : `/admin/registrations/list${sessionQuery}`,
       isActive: primaryTab === 'list',
     },
+    {
+      key: 'qa',
+      label: 'QA checks',
+      to: primaryTab === 'qa' ? `${location.pathname}${location.search}` : `/admin/registrations/qa${sessionQuery}`,
+      isActive: primaryTab === 'qa',
+    },
     ...(canManageConfig
       ? [
           {
@@ -646,7 +656,9 @@ export default function AdminRegistrationConfig() {
       ? 'Review session registration totals. Select a count to open the matching filtered list.'
       : primaryTab === 'list'
         ? 'Search and filter registrations for the selected session.'
-        : 'Configure seasons, sessions, registration schedule, and pricing.';
+        : primaryTab === 'qa'
+          ? 'Sanity checks to confirm expected returning players have registered, and registered the way we expect.'
+          : 'Configure seasons, sessions, registration schedule, and pricing.';
 
   return (
     <>
@@ -657,6 +669,7 @@ export default function AdminRegistrationConfig() {
 
         {primaryTab === 'summary' ? <AdminRegistrationsList mode="summary" /> : null}
         {primaryTab === 'list' ? <AdminRegistrationsList mode="list" /> : null}
+        {primaryTab === 'qa' ? <AdminRegistrationQa /> : null}
 
         {isConfigTab ? <PageTabs items={settingsTabs} ariaLabel="Registration settings" /> : null}
 

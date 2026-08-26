@@ -8,6 +8,10 @@ type HelpCalloutProps = {
   label?: string;
   align?: 'start' | 'end';
   className?: string;
+  /** Extra classes for the trigger button. */
+  triggerClassName?: string;
+  /** Custom trigger content. Defaults to the question-mark icon. */
+  children?: ReactNode;
 };
 
 function joinClasses(...parts: Array<string | false | null | undefined>): string {
@@ -19,12 +23,15 @@ export default function HelpCallout({
   label = 'More information',
   align = 'start',
   className,
+  triggerClassName,
+  children,
 }: HelpCalloutProps) {
   const tooltipId = useId();
   const rootRef = useRef<HTMLSpanElement>(null);
   const [pinned, setPinned] = useState(false);
   const [hovered, setHovered] = useState(false);
   const open = pinned || hovered;
+  const hasCustomTrigger = Boolean(children);
 
   useEffect(() => {
     if (!pinned) return;
@@ -45,13 +52,19 @@ export default function HelpCallout({
     >
       <button
         type="button"
-        className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-gray-400 transition-colors hover:text-gray-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40 dark:text-gray-500 dark:hover:text-gray-300"
+        className={joinClasses(
+          'shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40',
+          hasCustomTrigger
+            ? 'cursor-pointer'
+            : 'inline-flex h-5 w-5 items-center justify-center rounded-full text-gray-400 transition-colors hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300',
+          triggerClassName,
+        )}
         aria-label={label}
         aria-expanded={open}
         aria-describedby={open ? tooltipId : undefined}
         onClick={() => setPinned((value) => !value)}
       >
-        <HiQuestionMarkCircle className="h-5 w-5" aria-hidden />
+        {children ?? <HiQuestionMarkCircle className="h-5 w-5" aria-hidden />}
       </button>
       <div
         id={tooltipId}

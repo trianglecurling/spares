@@ -12,7 +12,7 @@ import {
   getRegistrationById,
 } from './registrationShellService.js';
 import { evaluateRegistrantPlayInEntry } from './leagueEntryService.js';
-import { listRegistrationOutboundMessages, sendRegistrationEmailForDashboard } from './registrationEmailService.js';
+import { listRegistrationOutboundMessages } from './registrationEmailService.js';
 import {
   buildRegistrationContextForDraft,
   syncCurlingRegistrationPaymentConfirmationForOrder,
@@ -22,15 +22,16 @@ import type { LeaguePriorityGuaranteeLabel } from './leaguePriorityRules.js';
 import { resolvePlacementLeagueForWaitlist } from './waitlistEntityService.js';
 import { formatRegistrationTeammatesDisplay } from './registrationEmailService.js';
 import { formatWaitlistTeamRosterDisplay, recordAndDeleteWaitlistEntry, waitlistMemberDisplayName } from './waitlistAudit.js';
+import { sendWaitlistEntryRemovedNotifications } from './waitlistJoinedNotificationService.js';
 import {
   isPrimaryWaitlistEntryMember,
   waitlistEntryIncludesMember,
-  waitlistTeammateContactMessage,
 } from './waitlistMemberMembership.js';
 import {
   enrichTeamRosterPlacements,
   hydrateTeamRosterPlacementsForEntry,
   parseTeamRosterPlacements,
+  waitlistEntryRosterMemberIds,
   waitlistRosterEntries,
 } from './waitlistTeamRoster.js';
 
@@ -560,8 +561,9 @@ export async function getMemberRegistrationDetail(registrationId: number, actor:
     .orderBy(asc(schema.registrationLeaguePriorities.priority_rank));
   const guaranteeLabels = await loadPriorityGuaranteeLabels(registrationId);
   const priorities = await Promise.all(
-    priorityRows.map(async ({ teamRosterPlacementsJson, isPlayInBased: _isPlayInBased, ...rest }) => ({
+    priorityRows.map(async ({ teamRosterPlacementsJson, isPlayInBased, ...rest }) => ({
       ...rest,
+      isPlayInBased: booleanFromSqliteFlag(isPlayInBased) === true,
       guaranteeLabel: guaranteeLabels.get(rest.leagueId) ?? null,
       teamRosterDisplay: await selectionTeamRosterDisplay({
         byotTeammateText: rest.byotTeammateText,
@@ -632,11 +634,9 @@ export async function getMemberRegistrationDetail(registrationId: number, actor:
               leagueName: entry.leagueName,
               waitlistName: entry.waitlistName,
               isPrimaryMember,
-              canRemoveSelf: isPrimaryMember,
+              canRemoveSelf: true,
               primaryMemberName,
-              teammateContactMessage: isPrimaryMember
-                ? null
-                : waitlistTeammateContactMessage(primaryMemberName),
+              teammateContactMessage: null,
               teamRosterDisplay: await waitlistTeamRosterDisplay({
                 memberId: entry.memberId,
                 teamRosterPlacements: entry.teamRosterPlacements,
@@ -768,29 +768,19 @@ export async function removeMemberWaitlistEntry(input: { entryId: number; actor:
   }
   const removedByStaff = isAdmin(input.actor) || isServerAdmin(input.actor);
   if (!removedByStaff) {
-    const [primaryMember] = await db
-      .select()
-      .from(schema.members)
-      .where(eq(schema.members.id, entry.member_id))
-      .limit(1);
-    const primaryMemberName = primaryMember ? waitlistMemberDisplayName(primaryMember) : 'the team contact';
-    if (
-      waitlistEntryIncludesMember(input.actor.id, entry) &&
-      !isPrimaryWaitlistEntryMember(entry, input.actor.id)
-    ) {
-      throw new RegistrationMemberValidationError({
-        waitlistEntry: waitlistTeammateContactMessage(primaryMemberName),
-      });
-    }
-    const canRemoveAsPrimary =
-      isPrimaryWaitlistEntryMember(entry, input.actor.id) ||
-      (await canActorImpersonateTarget(input.actor.id, entry.member_id));
-    if (!canRemoveAsPrimary) {
+    const onRoster = waitlistEntryIncludesMember(input.actor.id, entry);
+    const canImpersonatePrimary = await canActorImpersonateTarget(input.actor.id, entry.member_id);
+    if (!onRoster && !canImpersonatePrimary) {
       throw new RegistrationMemberValidationError({ waitlistEntry: 'You do not have access to remove this waitlist entry.' });
     }
   }
   const placement = await resolvePlacementLeagueForWaitlist(entry.waitlist_id);
-  const [member] = await db.select().from(schema.members).where(eq(schema.members.id, entry.member_id)).limit(1);
+  const rosterMemberIds = waitlistEntryRosterMemberIds(entry);
+  const rosterMembers =
+    rosterMemberIds.length > 0
+      ? await db.select().from(schema.members).where(inArray(schema.members.id, rosterMemberIds))
+      : [];
+  const [primaryMember] = rosterMembers.filter((member) => member.id === entry.member_id);
   await db.transaction(async (tx) => {
     await recordAndDeleteWaitlistEntry(tx, {
       entry,
@@ -799,22 +789,15 @@ export async function removeMemberWaitlistEntry(input: { entryId: number; actor:
       source: removedByStaff ? 'staff_action' : 'member_self',
       reason: 'WAITLIST_REMOVED_BY_MEMBER',
       metadata: { sourceRegistrationId: entry.source_registration_id },
-      memberName: member ? waitlistMemberDisplayName(member) : null,
+      memberName: primaryMember ? waitlistMemberDisplayName(primaryMember) : null,
       actorMemberName: waitlistMemberDisplayName(input.actor),
     });
   });
-  if (member?.email) {
-    await sendRegistrationEmailForDashboard({
-      messageType: 'waitlist_removed_by_member',
-      recipientEmail: member.email,
-      recipientName: memberName(member),
-      recipientMemberId: member.id,
-      registrationId: entry.source_registration_id ?? null,
-      waitlistEntryId: null,
-      payload: {
-        leagueName: placement?.leagueName,
-      },
-    });
-  }
+  await sendWaitlistEntryRemovedNotifications({
+    leagueName: placement?.leagueName,
+    registrationId: entry.source_registration_id ?? null,
+    actor: input.actor,
+    rosterMembers,
+  });
   return { entryId: entry.id, deleted: true };
 }

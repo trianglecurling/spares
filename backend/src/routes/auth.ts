@@ -38,6 +38,8 @@ import type {
   AuthRequestCodeBody,
   AuthRequestCodeResponse,
   AuthSelectMemberBody,
+  AuthSignInAsBody,
+  AuthTokenBody,
   AuthVerifyCodeBody,
   AuthVerifyCodeResponse,
   AuthVerifySuccessResponse,
@@ -46,11 +48,15 @@ import type {
 import { sendApiError } from '../api/errors.js';
 import { logEvent } from '../services/observability.js';
 import { issueAuthSession, refreshAuthSession, revokeRefreshToken } from '../services/authSessionService.js';
+import {
+  developerSignInErrorMessage,
+  developerSignInErrorStatus,
+  evaluateDeveloperSignIn,
+} from '../services/developerSignIn.js';
 import { memberIsSocialMember, memberIsSpareOnly } from '../utils/memberMembershipHelpers.js';
 import { listOwnedEventIds } from '../services/eventService.js';
 import { personAccountsOnly } from '../utils/accountKind.js';
 import { findMemberByPersonalAccessToken } from '../services/personalAccessTokenService.js';
-import type { AuthTokenBody } from '../api/types.js';
 
 function normalizePhoneDigits10(input: string): string | null {
   const digits = input.replace(/\D/g, '');
@@ -477,6 +483,19 @@ const authImpersonateBodySchema = {
   },
   required: ['targetMemberId'],
 } as const;
+
+const authSignInAsBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    targetMemberId: { type: 'number' },
+  },
+  required: ['targetMemberId'],
+} as const;
+
+const signInAsSchema = z.object({
+  targetMemberId: z.number().int().positive(),
+});
 
 export async function publicAuthRoutes(fastify: FastifyInstance) {
   fastify.post<{
@@ -1017,6 +1036,73 @@ export async function protectedAuthRoutes(fastify: FastifyInstance) {
         actorMemberId: actorId,
         isImpersonating: actorId !== targetMemberId,
         accountSwitchOptions: await listAccountSwitchOptions(actorId),
+      };
+    }
+  );
+
+  fastify.post<{
+    Body: AuthSignInAsBody;
+    Reply:
+      | {
+          accessToken: string;
+          refreshToken: string;
+          member: AuthenticatedMember;
+          actorMemberId: number;
+          isImpersonating: boolean;
+          accountSwitchOptions: Array<{ id: number; name: string }>;
+        }
+      | ApiErrorResponse;
+  }>(
+    '/auth/sign-in-as',
+    {
+      schema: {
+        tags: ['auth'],
+        body: authSignInAsBodySchema,
+        response: {
+          200: authSessionTokenResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const operator = request.member;
+      if (!operator) {
+        return sendApiError(reply, 401, 'Unauthorized');
+      }
+
+      const { targetMemberId } = signInAsSchema.parse(request.body);
+      const { db, schema } = getDrizzleDb();
+      const targets = await db
+        .select()
+        .from(schema.members)
+        .where(eq(schema.members.id, targetMemberId))
+        .limit(1);
+      const rawTarget = targets[0] ?? null;
+
+      const denial = evaluateDeveloperSignIn({
+        actorIsServerAdmin: isServerAdmin(operator),
+        actorIsImpersonating: request.isImpersonating === true,
+        actorMemberId: operator.id,
+        target: rawTarget,
+      });
+      if (denial) {
+        return sendApiError(reply, developerSignInErrorStatus(denial), developerSignInErrorMessage(denial));
+      }
+
+      const targetMember = rawTarget as Member;
+      const session = await issueAuthSession(targetMember);
+
+      logEvent({
+        eventType: 'auth.developer_signin',
+        memberId: operator.id,
+        relatedId: targetMember.id,
+      }).catch(() => {});
+
+      return {
+        ...session,
+        member: await buildAuthenticatedMember(targetMember),
+        actorMemberId: targetMember.id,
+        isImpersonating: false,
+        accountSwitchOptions: await listAccountSwitchOptions(targetMember.id),
       };
     }
   );
