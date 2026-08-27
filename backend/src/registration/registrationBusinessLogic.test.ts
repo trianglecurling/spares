@@ -219,7 +219,8 @@ describe('registration business logic', () => {
         desiredLeagueCount: 1,
       }),
     );
-    expect(fees.lineItems.map((item) => item.lineType)).toEqual(['regular_membership_fee']);
+    expect(fees.lineItems.map((item) => item.lineType)).toEqual([]);
+    expect(fees.totalDueMinor).toBe(0);
     expect(fees.estimatedMaximumTotalDueMinor).toBeGreaterThan(fees.totalDueMinor);
   });
 
@@ -623,9 +624,80 @@ describe('registration business logic', () => {
     const draft = evaluateRegistrationDraft(context);
     expect(draft.paymentDecision.outcome).toBe('deferred_payment');
     expectReason(draft.paymentDecision, 'non_guaranteed_league_defers_payment');
-    expect(draft.feePreview.lineItems.map((item) => item.lineType)).toEqual(['regular_membership_fee']);
-    expect(draft.feePreview.totalDueMinor).toBe(10000);
+    expect(draft.feePreview.lineItems.map((item) => item.lineType)).toEqual([]);
+    expect(draft.feePreview.totalDueMinor).toBe(0);
     expect(draft.feePreview.estimatedMaximumTotalDueMinor).toBe(40000);
+    expect(draft.paymentDecision.estimatedMinimumDueMinor).toBe(0);
+  });
+
+  test('unresolved leftover leagues do not defer payment when they cannot change the amount due', () => {
+    const daytimeA = league({
+      id: 200,
+      name: 'Tuesday Daytime',
+      registrationFeeMinor: 0,
+      predecessorLeagueId: null,
+      minExperienceYears: 0,
+    });
+    const daytimeB = league({
+      id: 201,
+      name: 'Thursday Daytime',
+      registrationFeeMinor: 0,
+      predecessorLeagueId: null,
+      minExperienceYears: 0,
+    });
+    const context = registrationContext({
+      leagues: {
+        100: league({ id: 100, predecessorLeagueId: 90 }),
+        101: league({ id: 101, predecessorLeagueId: 91 }),
+        [daytimeA.id]: daytimeA,
+        [daytimeB.id]: daytimeB,
+        90: league({ id: 90, predecessorLeagueId: null }),
+        91: league({ id: 91, predecessorLeagueId: null }),
+      },
+      participatedLeagueIds: [90, 91],
+      priorities: [
+        priority({ leagueId: 100, priorityRank: 1 }),
+        priority({ leagueId: 101, priorityRank: 2 }),
+        priority({ leagueId: daytimeA.id, priorityRank: 3 }),
+        priority({ leagueId: daytimeB.id, priorityRank: 4 }),
+      ],
+      desiredLeagueCount: 4,
+    });
+    const draft = evaluateRegistrationDraft(context);
+    expect(draft.priorityValidation.evaluation.entries.map((entry) => entry.label)).toEqual([
+      'guaranteed_return',
+      'guaranteed_return',
+      'subject_to_availability',
+      'subject_to_availability',
+    ]);
+    expect(draft.feePreview.totalDueMinor).toBe(70000);
+    expect(draft.feePreview.estimatedMaximumTotalDueMinor).toBe(70000);
+    expect(draft.paymentDecision.outcome).toBe('immediate_payment');
+    expect(draft.paymentDecision.deferralReasons).toEqual([]);
+    expect(draft.paymentDecision.createStripeCheckoutNow).toBe(true);
+  });
+
+  test('unresolved free leagues still defer payment when they would add the basic ice fee', () => {
+    const daytime = league({
+      id: 200,
+      name: 'Tuesday Daytime',
+      registrationFeeMinor: 0,
+      predecessorLeagueId: null,
+      minExperienceYears: 0,
+    });
+    const context = registrationContext({
+      leagues: { [daytime.id]: daytime },
+      participatedLeagueIds: [],
+      priorities: [priority({ leagueId: daytime.id, priorityRank: 1 })],
+      desiredLeagueCount: 1,
+    });
+    const draft = evaluateRegistrationDraft(context);
+    expect(draft.priorityValidation.evaluation.entries.map((entry) => entry.label)).toEqual(['waitlisted']);
+    expect(draft.feePreview.totalDueMinor).toBe(0);
+    expect(draft.feePreview.estimatedMaximumTotalDueMinor).toBe(12500);
+    expect(draft.paymentDecision.estimatedMinimumDueMinor).toBe(0);
+    expect(draft.paymentDecision.outcome).toBe('deferred_payment');
+    expectReason(draft.paymentDecision, 'waitlist_placement_pending');
   });
 
   test('two guaranteed returns plus a third subject-to-availability league defers payment', () => {
@@ -723,6 +795,8 @@ describe('registration business logic', () => {
     const regularOnly = evaluateRegistrationDraft(membershipOnly());
     expect(regularOnly.paymentDecision.outcome).toBe('immediate_payment');
     expect(regularOnly.feePreview.lineItems.map((item) => item.lineType)).toEqual(['regular_membership_fee']);
+    expect(regularOnly.feePreview.totalDueMinor).toBe(10000);
+    expect(regularOnly.paymentDecision.estimatedMinimumDueMinor).toBe(10000);
 
     const socialOnly = evaluateRegistrationDraft(membershipOnly({ membershipOption: 'social' }));
     expect(socialOnly.paymentDecision.outcome).toBe('immediate_payment');

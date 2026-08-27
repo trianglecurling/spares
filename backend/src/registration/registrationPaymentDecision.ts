@@ -13,17 +13,17 @@ export type RegistrationPaymentDecision = BusinessDecision<RegistrationPaymentOu
   totalDueMinor: number;
   /**
    * Quoted range for a deferred registration. Equal to `totalDueMinor` on both
-   * ends when the registrant's guarantees already fill their desired count.
+   * ends when unresolved leftovers cannot change the amount due.
    */
   estimatedMinimumDueMinor: number;
   estimatedMaximumDueMinor: number;
 };
 
 /**
- * Payment can be collected now when billed-now leagues (guarantees plus
- * available and temporary-fill entries) fill the desired league count.
- * Waitlists, incomplete rosters, play-in misses, and subject-to-availability
- * leftovers still leave the amount unresolved.
+ * Unresolved waitlists, incomplete rosters, play-in misses, and
+ * subject-to-availability leftovers. Payment only waits on these when they can
+ * still change the quoted total; fee-0 leftovers that leave floor equal to
+ * ceiling do not defer checkout.
  */
 function leagueDeferralReasons(context: RegistrationContext): RegistrationReasonCode[] {
   return leaguePlacementDeferralReasons(evaluateLeaguePriorities(context));
@@ -52,16 +52,19 @@ export function decideRegistrationPayment(input: {
   placementSettled?: boolean;
 }): RegistrationPaymentDecision {
   const staffReviewReasons = input.priorityValidation?.requiresStaffReview ? ['staff_review_required' as const] : [];
+  const totalDueMinor = input.feePreview.totalDueMinor;
+  const estimatedMaximumDueMinor = Math.max(totalDueMinor, input.feePreview.estimatedMaximumTotalDueMinor);
+  // Quoted floor, not a membership-only placeholder. Unconfirmed leftover
+  // leagues still defer when they can change this range.
+  const amountDueIsSettled = estimatedMaximumDueMinor <= totalDueMinor;
   const deferralReasons = Array.from(
     new Set([
-      ...(input.placementSettled ? [] : leagueDeferralReasons(input.context)),
+      ...(input.placementSettled || amountDueIsSettled ? [] : leagueDeferralReasons(input.context)),
       ...assistanceDeferralReasons(input.context),
       ...staffReviewReasons,
     ]),
   );
 
-  const totalDueMinor = input.feePreview.totalDueMinor;
-  const estimatedMaximumDueMinor = Math.max(totalDueMinor, input.feePreview.estimatedMaximumTotalDueMinor);
   const hasCharge = totalDueMinor > 0 || estimatedMaximumDueMinor > 0;
   const outcome: RegistrationPaymentOutcome = !hasCharge
     ? 'no_payment_required'

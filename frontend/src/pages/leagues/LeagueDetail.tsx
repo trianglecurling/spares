@@ -29,6 +29,11 @@ import {
   type LeagueExtraDraw,
   type LeaguePlayFormat,
 } from '../../utils/leagueSchedule';
+import {
+  declaredTeamMemberLabel,
+  rosterMembersNotOnDeclaredTeams,
+  type LeagueDeclaredTeam,
+} from './leagueRosterDeclaredTeams';
 
 const WEEKDAY_SELECT_OPTIONS: ChoiceOption<number>[] = [
   'Sunday',
@@ -402,6 +407,7 @@ export default function LeagueDetail() {
   const [waitlistActionLoading, setWaitlistActionLoading] = useState(false);
 
   const [rosterMembers, setRosterMembers] = useState<LeagueRosterMember[]>([]);
+  const [declaredTeams, setDeclaredTeams] = useState<LeagueDeclaredTeam[]>([]);
   const [bulkRosterModalOpen, setBulkRosterModalOpen] = useState(false);
   const [bulkRosterNames, setBulkRosterNames] = useState('');
   const [bulkRosterSubmitting, setBulkRosterSubmitting] = useState(false);
@@ -464,6 +470,16 @@ export default function LeagueDetail() {
   const rosterMemberIds = useMemo(() => {
     return new Set(rosterMembers.map((member) => member.memberId));
   }, [rosterMembers]);
+  const rosterMemberById = useMemo(
+    () => new Map(rosterMembers.map((member) => [member.memberId, member])),
+    [rosterMembers],
+  );
+  const showsDeclaredTeams =
+    league?.leagueType === 'bring_your_own_team' && league.isPlayInBased !== true;
+  const ungroupedRosterMembers = useMemo(
+    () => (showsDeclaredTeams ? rosterMembersNotOnDeclaredTeams(rosterMembers, declaredTeams) : rosterMembers),
+    [declaredTeams, rosterMembers, showsDeclaredTeams],
+  );
   const sabbaticalMemberIds = useMemo(() => {
     return new Set(sabbaticalMembers.map((entry) => entry.memberId));
   }, [sabbaticalMembers]);
@@ -627,10 +643,12 @@ export default function LeagueDetail() {
 
 
   const loadRoster = async () => {
-    const rosterResponse = await get('/leagues/{id}/roster', undefined, {
-      id: String(numericLeagueId),
-    });
+    const [rosterResponse, declaredResponse] = await Promise.all([
+      get('/leagues/{id}/roster', undefined, { id: String(numericLeagueId) }),
+      get('/leagues/{id}/declared-teams', undefined, { id: String(numericLeagueId) }),
+    ]);
     setRosterMembers(rosterResponse);
+    setDeclaredTeams(declaredResponse);
   };
 
   const loadManagers = async () => {
@@ -763,6 +781,7 @@ export default function LeagueDetail() {
         divisionsResponse,
         teamsResponse,
         rosterResponse,
+        declaredTeamsResponse,
         managersResponse,
         sabbaticalsResponse,
         settingsResponse,
@@ -771,6 +790,7 @@ export default function LeagueDetail() {
         get('/leagues/{id}/divisions', undefined, { id: String(numericLeagueId) }),
         get('/leagues/{id}/teams', undefined, { id: String(numericLeagueId) }),
         get('/leagues/{id}/roster', undefined, { id: String(numericLeagueId) }),
+        get('/leagues/{id}/declared-teams', undefined, { id: String(numericLeagueId) }),
         get('/leagues/{id}/managers', undefined, { id: String(numericLeagueId) }),
         get('/leagues/{id}/sabbaticals', undefined, { id: String(numericLeagueId) }),
         (
@@ -793,6 +813,7 @@ export default function LeagueDetail() {
       setDivisions(divisionsResponse);
       setTeams(teamsResponse);
       setRosterMembers(rosterResponse);
+      setDeclaredTeams(declaredTeamsResponse);
       setManagers(managersResponse);
       setSabbaticalMembers(sabbaticalsResponse);
       setLeagueSettings(
@@ -3335,14 +3356,83 @@ export default function LeagueDetail() {
               </div>
             )}
 
+            {showsDeclaredTeams ? (
+              <div className="app-card space-y-3">
+                <div>
+                  <h2 className="app-section-title">Team registrations</h2>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    {league?.format === 'doubles'
+                      ? 'Pairs declared during registration, including teammates who have not registered yet.'
+                      : 'Teams declared during registration, including teammates who have not registered yet.'}
+                  </p>
+                </div>
+                {declaredTeams.length === 0 ? (
+                  <InlineStateMessage
+                    title="No team registrations yet"
+                    description="Declared teams appear here once someone registers for this league with a roster."
+                  />
+                ) : (
+                  <ul className="space-y-3">
+                    {declaredTeams.map((team) => (
+                      <li
+                        key={team.id}
+                        className="rounded-md border border-gray-200 px-3 py-2 dark:border-gray-700"
+                      >
+                        <ul>
+                          {team.members.map((member, index) => {
+                            const rosterEntry =
+                              member.memberId != null ? rosterMemberById.get(member.memberId) : undefined;
+                            return (
+                              <li
+                                key={`${member.memberId ?? member.pendingName ?? index}`}
+                                className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 py-1.5"
+                              >
+                                <div className="min-w-0">
+                                  <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-gray-800 dark:text-gray-200">
+                                    <span>{declaredTeamMemberLabel(member)}</span>
+                                    {!member.onLeagueRoster ? (
+                                      <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-900 dark:bg-amber-900/40 dark:text-amber-200">
+                                        Not yet registered
+                                      </span>
+                                    ) : null}
+                                  </p>
+                                </div>
+                                {canManageRoster && rosterEntry ? (
+                                  <Button
+                                    variant="outline-danger"
+                                    className="shrink-0"
+                                    onClick={() => handleRemoveRosterMember(rosterEntry)}
+                                    disabled={Boolean(rosterEntry.assignedTeamId)}
+                                    aria-label={`Remove ${rosterEntry.name} from the roster`}
+                                  >
+                                    Remove
+                                  </Button>
+                                ) : null}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ) : null}
+
+            {(!showsDeclaredTeams ||
+              ungroupedRosterMembers.length > 0 ||
+              rosterMembers.length === 0) && (
             <div className="app-card">
-              {rosterMembers.length === 0 ? (
+              {showsDeclaredTeams && declaredTeams.length > 0 && ungroupedRosterMembers.length > 0 ? (
+                <h3 className="app-section-title mb-3">Members without a declared team</h3>
+              ) : null}
+              {ungroupedRosterMembers.length === 0 ? (
                 <div className="text-center py-8 text-gray-500 dark:text-gray-400">
                   No roster members yet.
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {rosterMembers.map((entry) => (
+                  {ungroupedRosterMembers.map((entry) => (
                     <div
                       key={entry.memberId}
                       className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 border border-gray-200 dark:border-gray-700 rounded-md p-3"
@@ -3382,6 +3472,7 @@ export default function LeagueDetail() {
                 </div>
               )}
             </div>
+            )}
           </div>
         )}
       </AppPage>

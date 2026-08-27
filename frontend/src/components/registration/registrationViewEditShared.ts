@@ -155,6 +155,25 @@ export type RegistrationPlayInEntrySummary = {
   guaranteeThresholdPoints: number | null;
 };
 
+/** Declared non-play-in BYOT team the registrant may already be listed on. */
+export type RegistrationByotDeclaredTeamSummary = {
+  leagueId: number;
+  teamSize: number;
+  onExistingTeam: boolean;
+  existingTeam: {
+    id: number;
+    name: string | null;
+    createdByName: string | null;
+    members: Array<{
+      memberId: number | null;
+      memberName: string | null;
+      pendingName: string | null;
+    }>;
+  } | null;
+  committedOtherMemberIds: number[];
+  committedOtherMemberTeams?: RegistrationPlayInCommittedOtherMemberTeam[];
+};
+
 export type RegistrationMembershipPaymentPayload = {
   selection: {
     membershipOption: 'none' | 'regular' | 'social' | 'regular_spare_only' | 'junior_recreational';

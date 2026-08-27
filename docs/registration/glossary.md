@@ -53,14 +53,18 @@ For example, a parent may register a child. In that case, the child is the curle
 
 A registration payment that is not collected immediately at submission.
 
-Payment is deferred when the registration includes items requiring placement, review, or staff decision before the final amount or participation status is known.
+Payment is deferred when later placement, review, or a staff decision can still
+change the amount due.
 
 Common deferral reasons include:
 
-- Waitlist placement still needed to fill the desired league count.
-- Play-in entry that has not cleared the TLINE guarantee bar.
+- Waitlist or subject-to-availability placement that could still add a charge.
+- Play-in entry that has not cleared the TLINE guarantee bar and could still
+  add a charge.
 - Junior Recreational financial assistance review.
-- Other staff placement decisions.
+- Other staff review that must finish before the amount is known.
+
+Leftover fee-0 leagues that cannot change the quoted total do not defer payment.
 
 ## Delegated impersonation
 

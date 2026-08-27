@@ -11,6 +11,7 @@ import RegistrationViewEditModals, {
 } from '../../components/registration/RegistrationViewEditModals';
 import {
   formatCurrency,
+  type RegistrationByotDeclaredTeamSummary,
   type RegistrationPlayInEntrySummary,
   type SubmitRegistrationEditsResult,
 } from '../../components/registration/registrationViewEditShared';
@@ -83,6 +84,7 @@ type RegistrationDetail = {
   }>;
   desiredLeagueCount: number | null;
   playInEntry?: Record<number, RegistrationPlayInEntrySummary>;
+  byotEntry?: Record<number, RegistrationByotDeclaredTeamSummary>;
   waitlists: Array<{
     id: number;
     waitlistName: string;
@@ -719,6 +721,8 @@ export default function AdminRegistrationDetail() {
               {priorities.length === 0 ? <p>No leagues are on this registrant's list.</p> : null}
               {priorities.map((priority) => {
                 const playInSummary = detail.playInEntry?.[priority.leagueId];
+                const declaredTeam =
+                  playInSummary?.existingTeam ?? detail.byotEntry?.[priority.leagueId]?.existingTeam;
                 const waitlistEntry = waitlistByLeagueId.get(priority.leagueId);
                 return (
                   <div key={priority.id} className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
@@ -744,9 +748,9 @@ export default function AdminRegistrationDetail() {
                         {waitlistEntry.declineCount}
                       </p>
                     ) : null}
-                    {playInSummary?.existingTeam ? (
+                    {declaredTeam ? (
                       <p className="text-sm text-gray-600 dark:text-gray-300">
-                        Team: {playInEntryTeamMembersText(playInSummary.existingTeam)}
+                        Team: {playInEntryTeamMembersText(declaredTeam)}
                       </p>
                     ) : priority.teamRosterDisplay ? (
                       <p className="text-sm text-gray-600 dark:text-gray-300">

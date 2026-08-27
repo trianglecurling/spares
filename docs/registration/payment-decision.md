@@ -20,10 +20,10 @@ Payment is immediate when:
 
 - Registration is otherwise valid.
 - There is an amount due.
-- Billed-now leagues (guaranteed entries, available instructional programs, and
-  open-registration available or temporary-fill spots)
-  fill the desired league count, so nothing about the league outcome is still
-  unresolved.
+- The quoted floor equals the quoted ceiling, so unresolved leftover leagues
+  cannot change the amount due. That includes billed-now leagues filling the
+  desired count, and leftover waitlist or subject-to-availability slots whose
+  fees (including a possible spare-only ice fee) cannot raise the total.
 - No staff review is required.
 - No Junior Recreational financial assistance request is pending.
 
@@ -33,22 +33,31 @@ Examples:
 - Regular membership, desired league count of 2, with two guaranteed entries.
 - Regular membership, desired league count of 1, with one guaranteed entry, even
   if the priority list has four more leagues on it.
+- Regular membership, desired league count of 4, with two guaranteed paid
+  entries and two fee-0 leftover leagues. Placement of those leftovers can
+  still happen later; the invoice does not change.
 - Regular membership plus spare-only fee.
 - Sabbatical-only registration.
 - Junior Recreational without financial assistance.
 
 ## Deferred payment
 
-Payment is deferred when any selected item requires later placement or review.
+Payment is deferred when later placement or review can still change the amount
+due, or when staff must decide an assistance request.
 
 Deferral reasons include:
 
-- Fewer billed-now leagues on the priority list than the desired league count.
-- Full instructional program with remaining desired-count slots.
+- Fewer billed-now leagues on the priority list than the desired league count,
+  when those remaining slots could still add a charge.
+- Full instructional program with remaining desired-count slots that could
+  still add a charge.
 - Subject-to-availability leftover still needed to fill the desired count,
-  including a third league below two guaranteed returns.
-- Waitlist placement still needed to fill the desired count.
-- Play-in entry that has not cleared the TLINE guarantee bar.
+  including a paid third league below two guaranteed returns.
+- Waitlist placement still needed to fill the desired count, when that
+  placement could still add a charge (including the spare-only ice fee if
+  every billed league would be fee-0).
+- Play-in entry that has not cleared the TLINE guarantee bar, when that
+  entry could still add a charge.
 - Junior Recreational financial assistance request.
 - Staff review required.
 
@@ -60,10 +69,13 @@ The system should avoid multiple payments for the same registration when practic
 
 A deferred registration is quoted as a range, not a single total:
 
-- **Floor** — the confirmed total: membership and other fixed fees plus the
-  league fees for every guaranteed entry, every available instructional
-  program, and every available or temporary-fill spot filling a remaining
-  desired-count slot.
+- **Floor** — the confirmed total: sabbaticals, spare-only ice, name tags,
+  junior or social fees, and league fees for every guaranteed entry, every
+  available instructional program, and every available or temporary-fill spot
+  filling a remaining desired-count slot. If the only confirmed charge would
+  be regular membership, the floor is **$0**. Membership without leagues is
+  not a meaningful minimum; it still appears in the ceiling when a placement
+  would require it.
 - **Ceiling** — the floor plus the remaining desired-count slots' most
   expensive unbilled entries on the priority list.
 
@@ -72,7 +84,9 @@ next-by-priority entries so the quoted maximum is a true upper bound. Fees are
 summed per league because leagues differ in price and some daytime leagues are
 configured at zero.
 
-When floor and ceiling are equal, show a single total instead of a range.
+When floor and ceiling are equal, show a single total instead of a range, and
+collect payment immediately unless staff review or junior assistance still
+applies.
 
 ## No payment required
 
@@ -95,6 +109,9 @@ If the coordinator later determines the registrant is not placed, staff handles 
 Entries ranked below a registrant's desired league count never affect the floor
 and never trigger a deferral on their own. They only widen the ceiling when the
 registrant has fewer guarantees than their desired count.
+
+Unresolved leftover slots *inside* the desired count follow the same amount
+rule: they defer payment only when they can still change the quoted total.
 
 ## Junior Recreational financial assistance
 

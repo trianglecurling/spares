@@ -98,8 +98,8 @@ live as the registrant reorders, adds, or removes leagues.
 | Guaranteed fallback | The spot is held as a backstop if higher choices do not come through. Billed immediately. Priority registration only. |
 | Available | The league currently has vacancies. Billed immediately. Open registration, or instructional programs in any registration state. |
 | Temporary spot available | A sabbatical has left a temporary fill vacancy. Billed immediately, minus the sabbatical fee. Open registration only. |
-| Waitlisted | Queued on the league waitlist. Payment deferred. |
-| Subject to availability | Wanted, not waitlisted, and not yet confirmed. Payment waits until staff places the curler. Includes a third league below two guaranteed returns, a leftover with no waitlist, and a full instructional program. |
+| Waitlisted | Queued on the league waitlist. Not billed until placed. |
+| Subject to availability | Wanted, not waitlisted, and not yet confirmed. Includes a third league below two guaranteed returns, a leftover with no waitlist, and a full instructional program. Not billed until placed. |
 | Superfluous | Below confirmed placements (guaranteed, available, or temporary fill) that already fill the desired count. Not waitlisted or billed. Must be removed or moved higher before continuing. Unconfirmed subject-to-availability leftovers do not fill the count. |
 
 ### Return eligibility
@@ -316,15 +316,26 @@ still list a mixed or new team — that entry is allowed on the priority list �
 but it is labeled waitlisted (or subject to availability) rather than
 guaranteed.
 
+Last session's team is restored when the roster is still empty: teammates from
+the predecessor scheduled team or last committed declared roster are copied on,
+but only when those people themselves hold a return right. People who played
+last session on a scheduled team count as return-eligible even if they were
+missing from `league_roster`. A registrant who was already listed on a
+teammate's current declared pair is labeled from that pair, so they are not
+waitlisted while the local roster is still empty.
+
 A non-play-in BYOT entry that does earn **Guaranteed return** is shown as
-**Guaranteed return*** with a note below the list:
+**Guaranteed return*** with a note below the list, when the registrant is the
+one declaring the team:
 
 - Doubles: Doubles partner must also choose this league as their first or
   second priority.
 - Teams: All teammates must also choose this league as their first or second
   priority.
 
-Play-in guaranteed returns do not use this asterisk.
+A doubles registrant who was already listed on a teammate's declared pair does
+not get the asterisk: that partner already chose the league. Play-in guaranteed
+returns do not use this asterisk.
 
 ## Leaving a league behind
 
@@ -375,17 +386,21 @@ Subject-to-availability on a standard league means the leftover is not joining
 a waitlist and is not yet confirmed. That includes leagues with no waitlist,
 and extra leagues below two protected spots already granted above them — for
 example a third-league request after two guaranteed returns. Those leftovers
-do not consume a protected guarantee spot, and payment waits until staff
-confirms placement. A full instructional program uses the same label and the
-same deferred payment.
+do not consume a protected guarantee spot. A full instructional program uses
+the same label. Payment waits only when those leftovers can still change the
+quoted total; fee-0 leftovers that leave floor equal to ceiling are collected
+now, and placement is resolved later.
 
-- **Confirmed total** = membership and other fixed fees, plus the sum of
-  `registrationFeeMinor` for every guaranteed entry and every available or
-  temporary-fill entry that fills a remaining desired-count slot.
-- **Immediate payment** when billed-now leagues fill the desired league count,
-  and no unrelated deferral applies (for example a pending junior financial
-  assistance request, a waitlist still needed to fill the count, a play-in
-  miss, or a subject-to-availability leftover).
+- **Confirmed total** = sabbaticals, spare-only ice, name tags, junior or
+  social fees, plus the sum of `registrationFeeMinor` for every guaranteed
+  entry and every available or temporary-fill entry that fills a remaining
+  desired-count slot. Regular membership alone is quoted as **$0** while
+  leftover leagues are still unconfirmed.
+- **Immediate payment** when the quoted floor equals the quoted ceiling, and no
+  unrelated deferral applies (for example a pending junior financial assistance
+  request). That includes billed-now leagues filling the desired count, and
+  leftover waitlist or subject-to-availability slots that cannot change the
+  amount due.
 - **Deferred payment** otherwise, quoted as a range. The floor is the confirmed
   total. The ceiling adds the remaining desired-count slots' most expensive
   unbilled entries — most expensive rather than next-by-priority, so the quoted

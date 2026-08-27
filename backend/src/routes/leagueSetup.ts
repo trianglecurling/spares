@@ -22,6 +22,7 @@ import {
   rosterBulkBodySchema,
   rosterBulkResponseSchema,
   rosterListResponseSchema,
+  declaredByotTeamListResponseSchema,
   rosterSearchResponseSchema,
   rosterUnassignedResponseSchema,
   sheetCreateBodySchema,
@@ -836,6 +837,40 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
           assignedTeamName: assignment?.teamName ?? null,
         };
       });
+    }
+  );
+
+  fastify.get<{ Reply: ApiReply<unknown> }>(
+    '/leagues/:id/declared-teams',
+    {
+      schema: {
+        tags: ['league-setup'],
+        params: idParamsSchema,
+        response: {
+          200: declaredByotTeamListResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const member = request.member;
+      const { id } = request.params as { id: string };
+      const leagueId = parseInt(id, 10);
+
+      if (!member) {
+        return reply.code(401).send({ error: 'Unauthorized' });
+      }
+      if (Number.isNaN(leagueId)) {
+        return reply.code(400).send({ error: 'Invalid league id.' });
+      }
+
+      const { listDeclaredByotTeamsForLeagueRoster } = await import(
+        '../registration/byotDeclaredTeamService.js'
+      );
+      const teams = await listDeclaredByotTeamsForLeagueRoster(leagueId);
+      if (teams == null) {
+        return reply.code(404).send({ error: 'League not found.' });
+      }
+      return teams;
     }
   );
 

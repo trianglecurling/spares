@@ -191,15 +191,20 @@ Payment decision is separate, but this scenario is likely immediate payment if n
 
 ### Subject-to-availability league
 
-Charges:
+Confirmed floor:
+
+- $0 when the only other charge would be regular membership
+
+Estimate ceiling:
 
 - Regular membership
 - League fee for the subject-to-availability league
 
 Subject-to-availability leagues have no waitlist and are not yet confirmed.
 They do not consume a protected guarantee spot. Payment is deferred until
-staff places the curler; the league fee sits on the estimate ceiling, not
-the confirmed floor.
+staff places the curler. Regular membership is not a meaningful floor while
+no league or basic ice is confirmed; it sits on the ceiling with the league
+fee.
 
 ### Sabbatical-only
 

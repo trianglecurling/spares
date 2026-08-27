@@ -23,7 +23,7 @@ export type GuaranteedPlacement = {
   >;
 };
 
-const ROSTER_COMMIT_REGISTRATION_STATUS_LIST = [
+export const ROSTER_COMMIT_REGISTRATION_STATUS_LIST = [
   'confirmed',
   'paid',
   'awaiting_placement',

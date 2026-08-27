@@ -11029,6 +11029,95 @@
         }
       }
     },
+    "/leagues/{id}/declared-teams": {
+      "get": {
+        "tags": [
+          "league-setup"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "type": "number"
+                      },
+                      "createdByMemberId": {
+                        "type": "number"
+                      },
+                      "createdByName": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      },
+                      "members": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "memberId": {
+                              "type": [
+                                "null",
+                                "number"
+                              ]
+                            },
+                            "memberName": {
+                              "type": [
+                                "null",
+                                "string"
+                              ]
+                            },
+                            "pendingName": {
+                              "type": [
+                                "null",
+                                "string"
+                              ]
+                            },
+                            "onLeagueRoster": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "memberId",
+                            "memberName",
+                            "pendingName",
+                            "onLeagueRoster"
+                          ]
+                        }
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "createdByMemberId",
+                      "createdByName",
+                      "members"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/leagues/{id}/roster/unassigned": {
       "get": {
         "tags": [
@@ -28745,6 +28834,72 @@
         }
       }
     },
+    "/waitlists/{waitlistId}/freeze": {
+      "post": {
+        "tags": [
+          "waitlists"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "waitlistId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/waitlists/{waitlistId}/frozen-count": {
+      "post": {
+        "tags": [
+          "waitlists"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "waitlistId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/waitlists/{waitlistId}/entries": {
       "post": {
         "tags": [
@@ -28804,6 +28959,29 @@
             "required": true
           }
         ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/waitlists/freeze-all": {
+      "post": {
+        "tags": [
+          "waitlists"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Default Response"

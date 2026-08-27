@@ -18,6 +18,7 @@ import {
   isReadOnlyCalendarEvent,
 } from './Calendar';
 import { useAuth } from '../contexts/AuthContext';
+import { invalidateCalendarEventsCache } from '../utils/calendarEventsCache';
 
 type LocationState = { calendarEvent?: CalendarEvent; copyFromEvent?: CalendarEvent } | null;
 
@@ -110,6 +111,7 @@ export default function CalendarEventFormPage() {
   };
 
   const handleSaved = () => {
+    invalidateCalendarEventsCache();
     goBackToCalendar(event?.start ?? initialDate);
   };
 

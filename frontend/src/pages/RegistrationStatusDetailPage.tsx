@@ -8,7 +8,10 @@ import RegistrationViewEditModals, {
 } from '../components/registration/RegistrationViewEditModals';
 import RegistrationCollectedDetails from '../components/registration/RegistrationCollectedDetails';
 import type { RegistrationCollectedDetailsFields } from '../components/registration/registrationCollectedDetailsShared';
-import type { RegistrationPlayInEntrySummary } from '../components/registration/registrationViewEditShared';
+import type {
+  RegistrationByotDeclaredTeamSummary,
+  RegistrationPlayInEntrySummary,
+} from '../components/registration/registrationViewEditShared';
 import {
   guaranteeChipClassName,
   guaranteeChipLabel,
@@ -98,6 +101,7 @@ type RegistrationDetail = {
   priorities: LeaguePriority[];
   desiredLeagueCount: number | null;
   playInEntry?: Record<number, RegistrationPlayInEntrySummary>;
+  byotEntry?: Record<number, RegistrationByotDeclaredTeamSummary>;
   waitlists: WaitlistEntry[];
   payment: {
     status: string;
@@ -333,6 +337,8 @@ export default function RegistrationStatusDetailPage() {
                   {priorities.length === 0 ? <p>No leagues are on your list yet.</p> : null}
                   {priorities.map((priority) => {
                     const playInSummary = detail.playInEntry?.[priority.leagueId];
+                    const declaredTeam =
+                      playInSummary?.existingTeam ?? detail.byotEntry?.[priority.leagueId]?.existingTeam;
                     const waitlistEntry = waitlistByLeagueId.get(priority.leagueId);
                     return (
                       <div key={priority.id} className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
@@ -358,9 +364,9 @@ export default function RegistrationStatusDetailPage() {
                             {waitlistEntry.declineCount}
                           </p>
                         ) : null}
-                        {playInSummary?.existingTeam ? (
+                        {declaredTeam ? (
                           <p className="text-sm text-gray-600 dark:text-gray-300">
-                            Team: {playInEntryTeamMembersText(playInSummary.existingTeam)}
+                            Team: {playInEntryTeamMembersText(declaredTeam)}
                           </p>
                         ) : priority.teamRosterDisplay ? (
                           <p className="text-sm text-gray-600 dark:text-gray-300">

@@ -119,6 +119,35 @@ export const rosterListResponseSchema = {
   items: rosterMemberSchema,
 } as const;
 
+export const declaredByotTeamMemberSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    memberId: { type: ['number', 'null'] },
+    memberName: { type: ['string', 'null'] },
+    pendingName: { type: ['string', 'null'] },
+    onLeagueRoster: { type: 'boolean' },
+  },
+  required: ['memberId', 'memberName', 'pendingName', 'onLeagueRoster'],
+} as const;
+
+export const declaredByotTeamSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    id: { type: 'number' },
+    createdByMemberId: { type: 'number' },
+    createdByName: { type: ['string', 'null'] },
+    members: { type: 'array', items: declaredByotTeamMemberSchema },
+  },
+  required: ['id', 'createdByMemberId', 'createdByName', 'members'],
+} as const;
+
+export const declaredByotTeamListResponseSchema = {
+  type: 'array',
+  items: declaredByotTeamSchema,
+} as const;
+
 export const rosterUnassignedResponseSchema = {
   type: 'array',
   items: {

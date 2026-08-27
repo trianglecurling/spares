@@ -334,6 +334,62 @@ describe('guarantee labeling', () => {
     expect(labelsFor(withRoster)).toEqual(['guaranteed_return']);
   });
 
+  test('a registrant listed on a returning doubles pair is guaranteed even with an empty local roster', () => {
+    const byot = standard(1, { leagueType: 'bring_your_own_team', format: 'doubles' });
+    const context = contextWithLeagues([byot], {
+      priorities: [priority({ leagueId: 1, priorityRank: 1 })],
+      returnEligibleMemberIdsByLeagueId: { 1: [20, 21] },
+      byotEntry: {
+        1: {
+          onExistingTeam: true,
+          existingTeamMemberIds: [20, 21],
+          committedOtherMemberIds: [],
+        },
+      },
+    });
+    expect(labelsFor(context)).toEqual(['guaranteed_return']);
+    expect(evaluateLeaguePriorities(context).guaranteedCount).toBe(1);
+  });
+
+  test('a listed doubles teammate with the partner as free-text is still guaranteed from the existing pair', () => {
+    const byot = standard(1, { leagueType: 'bring_your_own_team', format: 'doubles' });
+    const context = contextWithLeagues([byot], {
+      priorities: [
+        priority({
+          leagueId: 1,
+          priorityRank: 1,
+          teamRosterPlacements: [],
+          byotTeammateText: 'Mike Hartman',
+        }),
+      ],
+      returnEligibleMemberIdsByLeagueId: { 1: [20, 21] },
+      byotEntry: {
+        1: {
+          onExistingTeam: true,
+          existingTeamMemberIds: [20, 21],
+          committedOtherMemberIds: [],
+        },
+      },
+    });
+    expect(labelsFor(context)).toEqual(['guaranteed_return']);
+  });
+
+  test('a listed doubles teammate is waitlisted when the existing pair is not all returning', () => {
+    const byot = standard(1, { leagueType: 'bring_your_own_team', format: 'doubles' });
+    const context = contextWithLeagues([byot], {
+      priorities: [priority({ leagueId: 1, priorityRank: 1 })],
+      returnEligibleMemberIdsByLeagueId: { 1: [20] },
+      byotEntry: {
+        1: {
+          onExistingTeam: true,
+          existingTeamMemberIds: [20, 21],
+          committedOtherMemberIds: [],
+        },
+      },
+    });
+    expect(labelsFor(context)).toEqual(['waitlisted']);
+  });
+
   test('a bring-your-own-team league is waitlisted when any teammate is not returning', () => {
     const byot = standard(1, { leagueType: 'bring_your_own_team', format: 'doubles' });
     const context = contextWithLeagues([byot], {
@@ -752,6 +808,37 @@ describe('validation', () => {
     );
   });
 
+  test('a doubles league the registrant was added to does not require a local roster', () => {
+    const context = contextWithLeagues(
+      [standard(1, { leagueType: 'bring_your_own_team', format: 'doubles', name: 'Sunday Doubles' })],
+      {
+        priorities: [priority({ leagueId: 1, priorityRank: 1 })],
+        byotEntry: { 1: { onExistingTeam: true, committedOtherMemberIds: [] } },
+      },
+    );
+    expect(validateLeaguePriorities(context).allowed).toBe(true);
+  });
+
+  test('a doubles league still requires a full roster when the registrant declared the team', () => {
+    expectBlocked(
+      contextWithLeagues([standard(1, { leagueType: 'bring_your_own_team', format: 'doubles' })], {
+        priorities: [priority({ leagueId: 1, priorityRank: 1 })],
+        byotEntry: { 1: { onExistingTeam: false, committedOtherMemberIds: [] } },
+      }),
+      'byot_requires_full_roster',
+    );
+  });
+
+  test('a doubles teammate already on another declared team is rejected', () => {
+    expectBlocked(
+      contextWithLeagues([standard(1, { leagueType: 'bring_your_own_team', format: 'doubles' })], {
+        priorities: [priority({ leagueId: 1, priorityRank: 1, teamRosterPlacements: [{ memberId: 21 }] })],
+        byotEntry: { 1: { onExistingTeam: false, committedOtherMemberIds: [21] } },
+      }),
+      'play_in_teammate_already_committed',
+    );
+  });
+
   test('a play-in league with an empty roster asks for at least one person', () => {
     const context = contextWithLeagues(
       [standard(1, { isPlayInBased: true, leagueType: 'bring_your_own_team', format: 'teams', name: 'Tuesday League' })],
@@ -768,6 +855,17 @@ describe('validation', () => {
     expect(result.blockingErrors.map((error) => error.message)).toContain(
       'Include at least one person on your Tuesday League roster.',
     );
+  });
+
+  test('a play-in league the registrant is already on does not require a local roster', () => {
+    const context = contextWithLeagues(
+      [standard(1, { isPlayInBased: true, leagueType: 'bring_your_own_team', format: 'teams', name: 'Tuesday League' })],
+      {
+        priorities: [priority({ leagueId: 1, priorityRank: 1 })],
+        playInEntry: { 1: playInEntryContext(false, [], { onExistingTeam: true }) },
+      },
+    );
+    expect(validateLeaguePriorities(context).allowed).toBe(true);
   });
 
   test('a play-in league with fewer than two players is rejected', () => {

@@ -31,6 +31,12 @@ type Props = {
   /** Play-in only: members already committed to another declared entry team. */
   playInCommittedOtherMemberTeams?: RegistrationPlayInCommittedOtherMemberTeam[];
   playInCommittedOtherMemberIds?: number[];
+  /** Teammates already on the registrant's declared team (locked). */
+  lockPlayInTeamMembers?: Array<{
+    memberId?: number | null;
+    memberName?: string | null;
+    pendingName?: string | null;
+  }>;
 };
 
 /**
@@ -50,20 +56,60 @@ export default function PriorityRosterField({
   required = true,
   playInCommittedOtherMemberTeams,
   playInCommittedOtherMemberIds,
+  lockPlayInTeamMembers,
 }: Props) {
   const { showAlert } = useAlert();
   const { confirm } = useConfirm();
   const joinPromptInFlightRef = useRef(false);
   const expectedRosterSize = expectedByotRosterSize(league);
-  const teammateCapacity = expectedRosterSize ? Math.max(expectedRosterSize - 1, 0) : undefined;
+  const lockedExistingMemberIds = useMemo(() => {
+    const ids = new Set<number>();
+    for (const member of lockPlayInTeamMembers ?? []) {
+      if (member.memberId != null && member.memberId !== registeringCurler.id) ids.add(member.memberId);
+    }
+    return ids;
+  }, [lockPlayInTeamMembers, registeringCurler.id]);
+  const lockedExistingPendingNames = useMemo(
+    () =>
+      (lockPlayInTeamMembers ?? [])
+        .map((member) => member.pendingName?.trim())
+        .filter((name): name is string => Boolean(name)),
+    [lockPlayInTeamMembers],
+  );
+  const teammateCapacity = expectedRosterSize
+    ? Math.max(expectedRosterSize - 1 - lockedExistingMemberIds.size - lockedExistingPendingNames.length, 0)
+    : undefined;
   const selectedMemberIds = useMemo(
     () =>
       (priority.teamRosterPlacements ?? [])
         .map((placement) => placement.memberId)
-        .filter((memberId) => memberId !== registeringCurler.id),
-    [priority.teamRosterPlacements, registeringCurler.id],
+        .filter((memberId) => memberId !== registeringCurler.id && !lockedExistingMemberIds.has(memberId)),
+    [lockedExistingMemberIds, priority.teamRosterPlacements, registeringCurler.id],
   );
   const pendingNames = useMemo(() => pendingRosterNames(priority.byotTeammateText), [priority.byotTeammateText]);
+  const lockedPendingLookup = useMemo(
+    () => new Set(lockedExistingPendingNames.map((name) => name.toLowerCase())),
+    [lockedExistingPendingNames],
+  );
+  const addedPendingNames = useMemo(
+    () => pendingNames.filter((name) => !lockedPendingLookup.has(name.toLowerCase())),
+    [lockedPendingLookup, pendingNames],
+  );
+
+  const emitRoster = useCallback(
+    (memberIds: number[], nextPendingNames: string[]) => {
+      const lockedPlacements = [...lockedExistingMemberIds].map((memberId) => ({ memberId }));
+      const addedPlacements = memberIds
+        .filter((memberId) => !lockedExistingMemberIds.has(memberId) && memberId !== registeringCurler.id)
+        .map((memberId) => ({ memberId }));
+      const pending = [...lockedExistingPendingNames, ...nextPendingNames];
+      onChange({
+        teamRosterPlacements: [...lockedPlacements, ...addedPlacements],
+        byotTeammateText: pending.length > 0 ? pending.join('\n') : null,
+      });
+    },
+    [lockedExistingMemberIds, lockedExistingPendingNames, onChange, registeringCurler.id],
+  );
 
   const committedOtherTeamByMemberId = useMemo(() => {
     const map = new Map<number, RegistrationPlayInCommittedOtherMemberTeam['team'] | null>();
@@ -87,7 +133,9 @@ export default function PriorityRosterField({
     if (newlyAddedCommittedId != null) {
       const team = committedOtherTeamByMemberId.get(newlyAddedCommittedId) ?? null;
       const memberName = memberDisplayName(newlyAddedCommittedId, team);
-      if (team && playInEntryTeamIsJoinable(team, expectedRosterSize)) {
+      const canJoinOtherTeam =
+        lockPlayInTeamMembers == null && Boolean(team && playInEntryTeamIsJoinable(team, expectedRosterSize));
+      if (canJoinOtherTeam && team) {
         joinPromptInFlightRef.current = true;
         void confirm({
           title: 'Join this team?',
@@ -106,40 +154,53 @@ export default function PriorityRosterField({
         return;
       }
       showAlert(playInCommittedMemberConflictMessage({ memberName, team }), 'warning', 'Already on another team');
-      onChange({
-        teamRosterPlacements: memberIds
-          .filter((memberId) => alreadySelected.has(memberId) || !committedOtherTeamByMemberId.has(memberId))
-          .map((memberId) => ({ memberId })),
-      });
+      emitRoster(
+        memberIds.filter((memberId) => alreadySelected.has(memberId) || !committedOtherTeamByMemberId.has(memberId)),
+        addedPendingNames,
+      );
       return;
     }
 
-    onChange({ teamRosterPlacements: memberIds.map((memberId) => ({ memberId })) });
+    emitRoster(memberIds, addedPendingNames);
   };
 
   const removePendingName = useCallback(
     (index: number) => {
-      onChange({ byotTeammateText: pendingNames.filter((_, current) => current !== index).join('\n') || null });
+      emitRoster(
+        selectedMemberIds,
+        addedPendingNames.filter((_, current) => current !== index),
+      );
     },
-    [onChange, pendingNames],
+    [addedPendingNames, emitRoster, selectedMemberIds],
   );
 
   const addPendingName = useCallback(
     (name: string) => {
       const trimmed = name.trim();
       if (!trimmed) return;
-      if (teammateCapacity != null && selectedMemberIds.length + pendingNames.length >= teammateCapacity) return;
+      if (teammateCapacity != null && selectedMemberIds.length + addedPendingNames.length >= teammateCapacity) return;
       const normalized = trimmed.toLowerCase();
       if (pendingNames.some((pending) => pending.toLowerCase() === normalized)) return;
+      if (lockedPendingLookup.has(normalized)) return;
       if (registeringCurler.name.trim().toLowerCase() === normalized) return;
       if (selectedMemberIds.some((memberId) => memberNameById.get(memberId)?.trim().toLowerCase() === normalized)) {
         return;
       }
-      onChange({ byotTeammateText: [...pendingNames, trimmed].join('\n') });
+      if (
+        [...lockedExistingMemberIds].some(
+          (memberId) => memberNameById.get(memberId)?.trim().toLowerCase() === normalized,
+        )
+      ) {
+        return;
+      }
+      emitRoster(selectedMemberIds, [...addedPendingNames, trimmed]);
     },
     [
+      addedPendingNames,
+      emitRoster,
+      lockedExistingMemberIds,
+      lockedPendingLookup,
       memberNameById,
-      onChange,
       pendingNames,
       registeringCurler.name,
       selectedMemberIds,
@@ -147,15 +208,40 @@ export default function PriorityRosterField({
     ],
   );
 
+  const lockedPills = useMemo(() => {
+    const pills: Array<{ key: string; label: string; detail?: string }> = [
+      { key: 'registering-curler', label: registeringCurler.name },
+    ];
+    for (const member of lockPlayInTeamMembers ?? []) {
+      if (member.memberId != null && member.memberId === registeringCurler.id) continue;
+      if (member.memberId != null) {
+        pills.push({
+          key: `existing-${member.memberId}`,
+          label: member.memberName ?? memberNameById.get(member.memberId) ?? 'Teammate',
+        });
+        continue;
+      }
+      const pendingName = member.pendingName?.trim();
+      if (pendingName) {
+        pills.push({
+          key: `existing-pending-${pendingName}`,
+          label: pendingName,
+          detail: 'Not yet registered',
+        });
+      }
+    }
+    return pills;
+  }, [lockPlayInTeamMembers, memberNameById, registeringCurler.id, registeringCurler.name]);
+
   const pendingPills = useMemo(
     () =>
-      pendingNames.map((name, index) => ({
+      addedPendingNames.map((name, index) => ({
         key: `pending-${index}-${name}`,
         label: name,
         detail: 'Not yet registered',
         onRemove: () => removePendingName(index),
       })),
-    [pendingNames, removePendingName],
+    [addedPendingNames, removePendingName],
   );
 
   return (
@@ -173,8 +259,8 @@ export default function PriorityRosterField({
         onChange={updateMembers}
         maxSelections={teammateCapacity}
         placeholder="Search members..."
-        filterOption={(option) => option.id !== registeringCurler.id}
-        lockedPills={[{ key: 'registering-curler', label: registeringCurler.name }]}
+        filterOption={(option) => option.id !== registeringCurler.id && !lockedExistingMemberIds.has(option.id)}
+        lockedPills={lockedPills}
         extraPills={pendingPills}
         manualNameEntry={{
           linkLabel: 'Manually add by name',

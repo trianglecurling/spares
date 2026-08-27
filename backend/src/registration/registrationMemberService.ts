@@ -12,6 +12,7 @@ import {
   getRegistrationById,
 } from './registrationShellService.js';
 import { evaluateRegistrantPlayInEntry } from './leagueEntryService.js';
+import type { ByotDeclaredTeamSummary } from './byotDeclaredTeamService.js';
 import { listRegistrationOutboundMessages } from './registrationEmailService.js';
 import {
   buildRegistrationContextForDraft,
@@ -685,6 +686,18 @@ export async function getMemberRegistrationDetail(registrationId: number, actor:
       // Leagues that cannot be evaluated are omitted.
     }
   }
+  let byotEntry: Record<number, ByotDeclaredTeamSummary> = {};
+  try {
+    const { buildByotDeclaredTeamSummaries } = await import('./byotDeclaredTeamService.js');
+    const context = await buildRegistrationContextForDraft(registrationId);
+    byotEntry = await buildByotDeclaredTeamSummaries({
+      memberId: registration.curler_member_id,
+      registrationId,
+      leagues: context.leagues,
+    });
+  } catch {
+    // Catalog leagues that cannot be loaded omit BYOT declared-team summaries.
+  }
   return {
     registration: {
       id: registration.id,
@@ -737,6 +750,7 @@ export async function getMemberRegistrationDetail(registrationId: number, actor:
     priorities,
     desiredLeagueCount: registration.desired_league_count ?? null,
     playInEntry,
+    byotEntry,
     waitlists: waitlistDetails,
     payment: {
       status: invoice?.status ?? (registration.status === 'confirmed' ? 'paid' : 'not_required'),

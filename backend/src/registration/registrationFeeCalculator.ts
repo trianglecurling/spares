@@ -312,6 +312,36 @@ function zeroRegistrationFeePreview(): RegistrationFeePreview {
   };
 }
 
+const REGULAR_MEMBERSHIP_ONLY_DISCOUNT_TYPES = new Set([
+  'student_discount',
+  'winter_only_discount',
+  'reciprocal_discount',
+]);
+
+/**
+ * Regular membership without confirmed ice is not a meaningful floor: there is
+ * little reason to keep that membership if no league (or basic ice) lands.
+ * Social, spare-only, sabbatical, name tags, and junior fees still count.
+ */
+function isRegularMembershipOnlyPreview(preview: RegistrationFeePreview): boolean {
+  if (preview.lineItems.length === 0) return false;
+  if (preview.lineItems.some((item) => item.lineType !== 'regular_membership_fee')) return false;
+  return preview.discountLineItems.every((item) => REGULAR_MEMBERSHIP_ONLY_DISCOUNT_TYPES.has(item.lineType));
+}
+
+function dropUnconfirmedRegularMembershipFloor(preview: RegistrationFeePreview): RegistrationFeePreview {
+  return {
+    ...preview,
+    lineItems: [],
+    discountLineItems: [],
+    subtotalMinor: 0,
+    discountTotalMinor: 0,
+    totalDueMinor: 0,
+    discountEligibleSubtotalMinor: 0,
+    nonDiscountableSubtotalMinor: 0,
+  };
+}
+
 function computePreview(
   context: RegistrationContext,
   chargedLeagueIds: number[],
@@ -413,6 +443,10 @@ function computePreview(
  * guaranteed leagues, and available or temporary-fill spots. Waitlisted,
  * play-in-pending, and subject-to-availability leagues are not billed; they
  * only widen `estimatedMaximumTotalDueMinor`.
+ *
+ * A confirmed total that is only regular membership is quoted as $0 while
+ * league placement is still open. Membership is included in the ceiling if a
+ * placement would require it.
  */
 export function calculateRegistrationFees(
   context: RegistrationContext,
@@ -453,8 +487,13 @@ export function calculateRegistrationFees(
   if (ceiling.length === 0) return confirmed;
 
   const maximum = computePreview(context, [...billedLeagueIds, ...ceiling]);
+  const estimatedMaximumTotalDueMinor = Math.max(confirmed.totalDueMinor, maximum.totalDueMinor);
+  const floor =
+    isRegularMembershipOnlyPreview(confirmed)
+      ? dropUnconfirmedRegularMembershipFloor(confirmed)
+      : confirmed;
   return {
-    ...confirmed,
-    estimatedMaximumTotalDueMinor: Math.max(confirmed.totalDueMinor, maximum.totalDueMinor),
+    ...floor,
+    estimatedMaximumTotalDueMinor,
   };
 }

@@ -260,11 +260,13 @@ async function catalogPayloadFromContext(
   extras: {
     desiredLeagueCount: number | null;
     basicIceFallbackInterest: boolean | null;
+    registrationId?: number | null;
   },
 ) {
   const leagues = await leaguesWithActiveWaitlistEntryCounts(
     await sortLeaguesByDayThenFirstDraw(Object.values(context.leagues)),
   );
+  const { buildByotDeclaredTeamSummaries } = await import('./byotDeclaredTeamService.js');
   return {
     leagues,
     registrationState: context.registrationState,
@@ -294,6 +296,11 @@ async function catalogPayloadFromContext(
     basicIceFallbackInterest: extras.basicIceFallbackInterest,
     collectBasicIceFallback: shouldCollectBasicIceFallback(context),
     playInEntry: await buildPlayInEntrySummaries(context),
+    byotEntry: await buildByotDeclaredTeamSummaries({
+      memberId: context.registrant.memberId ?? null,
+      registrationId: extras.registrationId ?? null,
+      leagues: context.leagues,
+    }),
     evaluation: evaluateRegistrationDraft(context),
   };
 }
@@ -312,6 +319,7 @@ async function buildLeagueCatalogPayload(registrationId: number) {
   return catalogPayloadFromContext(context, {
     desiredLeagueCount: registration?.desired_league_count ?? null,
     basicIceFallbackInterest: basicIceFallbackInterestFromRow(registration?.basic_ice_fallback_interest),
+    registrationId,
   });
 }
 
@@ -350,7 +358,19 @@ export async function putRegistrationLeaguePriorities(
   const currentContext = await buildRegistrationContextForDraft(registrationId);
 
   const desiredLeagueCount = normalizeDesiredLeagueCount(input.desiredLeagueCount);
-  const priorities = normalizePriorities(input.priorities ?? [], currentContext.leagues);
+  const { applyExistingByotTeamRosterIfEmpty, buildByotDeclaredTeamSummaries } = await import(
+    './byotDeclaredTeamService.js'
+  );
+  const byotSummaries = await buildByotDeclaredTeamSummaries({
+    memberId: currentContext.registrant.memberId ?? null,
+    registrationId,
+    leagues: currentContext.leagues,
+  });
+  const priorities = applyExistingByotTeamRosterIfEmpty(
+    normalizePriorities(input.priorities ?? [], currentContext.leagues),
+    byotSummaries,
+    currentContext.registrant.memberId ?? null,
+  );
   const programSelections = currentContext.selections.filter(
     (selection) => selection.selectionType === 'junior_recreational' || selection.selectionType === 'spare_only',
   );

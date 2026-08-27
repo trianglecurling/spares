@@ -820,6 +820,20 @@ async function loadReturnEligibleMemberIdsByLeagueId(
     membersByPredecessor.set(row.leagueId, set);
   }
 
+  const teamMemberRows = await db
+    .select({
+      memberId: schema.teamMembers.member_id,
+      leagueId: schema.leagueTeams.league_id,
+    })
+    .from(schema.teamMembers)
+    .innerJoin(schema.leagueTeams, eq(schema.teamMembers.team_id, schema.leagueTeams.id))
+    .where(inArray(schema.leagueTeams.league_id, predecessorIds));
+  for (const row of teamMemberRows) {
+    const set = membersByPredecessor.get(row.leagueId) ?? new Set<number>();
+    set.add(row.memberId);
+    membersByPredecessor.set(row.leagueId, set);
+  }
+
   const sabbaticalRows = await db
     .select({
       memberId: schema.curlingLeagueSabbaticals.member_id,
@@ -1033,6 +1047,16 @@ async function buildRegistrationContextFromSourceRow(
       })
     : undefined;
 
+  const { loadByotDeclaredTeamContextsForRegistration } = await import('./byotDeclaredTeamService.js');
+  const byotEntry =
+    Object.keys(leagues).length > 0
+      ? await loadByotDeclaredTeamContextsForRegistration({
+          memberId,
+          registrationId: options.registrationId,
+          leagues,
+        })
+      : undefined;
+
   return {
     season: {
       id: window.season.id,
@@ -1090,6 +1114,7 @@ async function buildRegistrationContextFromSourceRow(
     ...settings,
     juniorAssistance,
     playInEntry,
+    byotEntry,
     sabbaticalDurationLimitYears: defaultSabbaticalDurationLimitYears(),
     desiredLeagueCount: registration.desired_league_count ?? null,
     nameTagReplacementQuantity: registration.name_tag_replacement_quantity ?? null,

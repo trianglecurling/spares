@@ -12,7 +12,13 @@ import {
   incompletePlayInLeagueNames,
   isFreeLeague,
   mergeActiveWaitlistLeagues,
+  mergeExistingPlayInTeamLeagues,
+  mergeNewlyDiscoveredPlayInTeamLeagues,
   mergeNewlyJoinedWaitlistLeagues,
+  addedExistingPlayInTeamCount,
+  bumpDesiredLeagueCount,
+  applyExistingPlayInTeamRosterIfEmpty,
+  priorityRosterFromPlayInTeamMembers,
   omitLeaveBehindDecisionsForListedLeagues,
   movePriorityInList,
   normalizePriorityOrder,
@@ -44,6 +50,8 @@ import {
   editValidationErrorMessage,
   type ContinuingSabbaticalSummary,
   type LeagueCatalogItem,
+  type RegistrationByotDeclaredTeamSummary,
+  type RegistrationPlayInEntrySummary,
 } from './registrationViewEditShared';
 
 function catalogLeague(overrides: Partial<LeagueCatalogItem> & Pick<LeagueCatalogItem, 'id'>): LeagueCatalogItem {
@@ -79,6 +87,54 @@ const playInLeague = catalogLeague({
 
 const allLeagues = [standardA, standardB, standardC, teamLeague, playInLeague];
 
+function existingPlayInSummary(
+  overrides: Partial<RegistrationPlayInEntrySummary> = {},
+): RegistrationPlayInEntrySummary {
+  return {
+    leagueId: 5,
+    autoEntryCount: 18,
+    playInSpotCount: 2,
+    teamSize: 4,
+    onExistingTeam: true,
+    existingTeam: {
+      id: 9,
+      name: null,
+      createdByName: 'Alice Skip',
+      members: [
+        { memberId: 21, memberName: 'Alice Skip', pendingName: null, priorityRank: null },
+        { memberId: 100, memberName: 'Bob Vice', pendingName: null, priorityRank: null },
+      ],
+    },
+    committedOtherMemberIds: [],
+    teamTotalPoints: 40,
+    meetsReturningRule: true,
+    guaranteed: true,
+    guaranteeThresholdPoints: 24,
+    ...overrides,
+  };
+}
+
+function existingByotSummary(
+  overrides: Partial<RegistrationByotDeclaredTeamSummary> = {},
+): RegistrationByotDeclaredTeamSummary {
+  return {
+    leagueId: 4,
+    teamSize: 2,
+    onExistingTeam: true,
+    existingTeam: {
+      id: 11,
+      name: null,
+      createdByName: 'Alice Skip',
+      members: [
+        { memberId: 21, memberName: 'Alice Skip', pendingName: null },
+        { memberId: 100, memberName: 'Bob Vice', pendingName: null },
+      ],
+    },
+    committedOtherMemberIds: [],
+    ...overrides,
+  };
+}
+
 function ranked(...leagueIds: number[]): LeaguePriorityInput[] {
   return leagueIds.map((leagueId, index) => ({ leagueId, priorityRank: index + 1 }));
 }
@@ -89,6 +145,7 @@ function evaluate(input: {
   returnRightLeagueIds?: number[];
   returnEligibleMemberIdsByLeagueId?: Record<number, number[]>;
   playInEntry?: RegistrationLeagueCatalogPayload['playInEntry'];
+  byotEntry?: RegistrationLeagueCatalogPayload['byotEntry'];
   sabbaticalLeagueIds?: number[];
   registrationState?: RegistrationLeagueCatalogPayload['registrationState'];
   leagues?: LeagueCatalogItem[];
@@ -100,6 +157,7 @@ function evaluate(input: {
     returnRightLeagueIds: input.returnRightLeagueIds ?? [],
     returnEligibleMemberIdsByLeagueId: input.returnEligibleMemberIdsByLeagueId,
     playInEntry: input.playInEntry,
+    byotEntry: input.byotEntry,
     priorLeagueDecisions: (input.sabbaticalLeagueIds ?? []).map((leagueId) => ({
       leagueId,
       decision: 'sabbatical' as const,
@@ -205,6 +263,227 @@ describe('seeding the priority list', () => {
 
   test('seeding does not lift a bring-your-own-team league that is not play-in based', () => {
     expect(seedPriorityList({ ...basePayload, priorSeasonLeagueIds: [1, 4] })).toEqual(ranked(1, 4));
+  });
+
+  test('an existing play-in team seeds the league onto an empty list', () => {
+    expect(
+      seedPriorityList({
+        ...basePayload,
+        playInEntry: { 5: existingPlayInSummary() },
+      }).map((priority) => priority.leagueId),
+    ).toEqual([5, 1, 2]);
+  });
+
+  test('an existing play-in team is added onto a saved list that omitted it', () => {
+    expect(
+      hydratePriorityList({
+        ...basePayload,
+        priorities: ranked(1, 2),
+        playInEntry: { 5: existingPlayInSummary() },
+      }).map((priority) => priority.leagueId),
+    ).toEqual([5, 1, 2]);
+  });
+
+  test('an existing play-in team fills an empty roster from the declared team', () => {
+    const priorities = hydratePriorityList({
+      ...basePayload,
+      priorSeasonLeagueIds: [5],
+      playInEntry: { 5: existingPlayInSummary() },
+    });
+    expect(priorities).toEqual([
+      {
+        leagueId: 5,
+        priorityRank: 1,
+        teamRosterPlacements: [{ memberId: 21 }, { memberId: 100 }],
+        byotTeammateText: null,
+      },
+    ]);
+  });
+
+  test('an existing play-in team does not overwrite a roster the registrant already declared', () => {
+    const saved = [
+      {
+        leagueId: 5,
+        priorityRank: 1,
+        teamRosterPlacements: [{ memberId: 30 }],
+        byotTeammateText: 'Dana Pending',
+      },
+    ];
+    expect(
+      hydratePriorityList({
+        ...basePayload,
+        priorities: saved,
+        playInEntry: { 5: existingPlayInSummary() },
+      }),
+    ).toEqual(saved);
+  });
+
+  test('merge leaves the list unchanged when the existing play-in league is already present with a roster', () => {
+    const current = [
+      {
+        leagueId: 5,
+        priorityRank: 1,
+        teamRosterPlacements: [{ memberId: 21 }, { memberId: 100 }],
+        byotTeammateText: null,
+      },
+    ];
+    expect(
+      mergeExistingPlayInTeamLeagues(current, {
+        ...basePayload,
+        playInEntry: { 5: existingPlayInSummary() },
+      }),
+    ).toBe(current);
+  });
+
+  test('a catalog refresh only inserts play-in teams discovered since the last snapshot', () => {
+    const current = ranked(1, 2);
+    const payload = { ...basePayload, playInEntry: { 5: existingPlayInSummary() } };
+    expect(mergeNewlyDiscoveredPlayInTeamLeagues(current, payload, new Set([5]))).toBe(current);
+    expect(
+      mergeNewlyDiscoveredPlayInTeamLeagues(current, payload, new Set()).map((priority) => priority.leagueId),
+    ).toEqual([5, 1, 2]);
+  });
+
+  test('auto-seeded existing play-in teams raise the desired league count', () => {
+    const payload: RegistrationLeagueCatalogPayload = {
+      ...basePayload,
+      playInEntry: { 5: existingPlayInSummary() },
+    };
+    const next = hydratePriorityList(payload);
+    expect(addedExistingPlayInTeamCount(payload, next)).toBe(1);
+    expect(bumpDesiredLeagueCount(defaultDesiredLeagueCount(payload), 1)).toBe(3);
+  });
+
+  test('copying an existing play-in roster omits the registering curler', () => {
+    expect(
+      priorityRosterFromPlayInTeamMembers(
+        [
+          { memberId: 100, pendingName: null },
+          { memberId: 21, pendingName: null },
+          { memberId: null, pendingName: 'Dana Pending' },
+        ],
+        100,
+      ),
+    ).toEqual({
+      teamRosterPlacements: [{ memberId: 21 }],
+      byotTeammateText: 'Dana Pending',
+    });
+  });
+
+  test('an existing doubles team seeds the league onto an empty list', () => {
+    expect(
+      seedPriorityList({
+        ...basePayload,
+        byotEntry: { 4: existingByotSummary() },
+      }).map((priority) => priority.leagueId),
+    ).toEqual([4, 1, 2]);
+  });
+
+  test('an existing doubles team is added onto a saved list that omitted it', () => {
+    expect(
+      hydratePriorityList({
+        ...basePayload,
+        priorities: ranked(1, 2),
+        byotEntry: { 4: existingByotSummary() },
+      }).map((priority) => priority.leagueId),
+    ).toEqual([4, 1, 2]);
+  });
+
+  test('an existing doubles team fills an empty roster from the declared pair', () => {
+    const priorities = hydratePriorityList({
+      ...basePayload,
+      priorSeasonLeagueIds: [4],
+      byotEntry: { 4: existingByotSummary() },
+    });
+    expect(priorities).toEqual([
+      {
+        leagueId: 4,
+        priorityRank: 1,
+        teamRosterPlacements: [{ memberId: 21 }, { memberId: 100 }],
+        byotTeammateText: null,
+      },
+    ]);
+  });
+
+  test('an existing doubles team does not overwrite a roster the registrant already declared', () => {
+    const saved = [
+      {
+        leagueId: 4,
+        priorityRank: 1,
+        teamRosterPlacements: [{ memberId: 30 }],
+        byotTeammateText: null,
+      },
+    ];
+    expect(
+      hydratePriorityList({
+        ...basePayload,
+        priorities: saved,
+        byotEntry: { 4: existingByotSummary() },
+      }),
+    ).toEqual(saved);
+  });
+
+  test('an existing doubles team replaces a free-text partner name with linked members', () => {
+    expect(
+      hydratePriorityList({
+        ...basePayload,
+        priorSeasonLeagueIds: [4],
+        priorities: [
+          {
+            leagueId: 4,
+            priorityRank: 1,
+            teamRosterPlacements: [],
+            byotTeammateText: 'Alice Skip',
+          },
+        ],
+        byotEntry: { 4: existingByotSummary() },
+      }),
+    ).toEqual([
+      {
+        leagueId: 4,
+        priorityRank: 1,
+        teamRosterPlacements: [{ memberId: 21 }, { memberId: 100 }],
+        byotTeammateText: null,
+      },
+    ]);
+  });
+
+  test('a catalog refresh only inserts doubles teams discovered since the last snapshot', () => {
+    const current = ranked(1, 2);
+    const payload = { ...basePayload, byotEntry: { 4: existingByotSummary() } };
+    expect(mergeNewlyDiscoveredPlayInTeamLeagues(current, payload, new Set([4]))).toBe(current);
+    expect(
+      mergeNewlyDiscoveredPlayInTeamLeagues(current, payload, new Set()).map((priority) => priority.leagueId),
+    ).toEqual([4, 1, 2]);
+  });
+
+  test('auto-seeded existing doubles teams raise the desired league count', () => {
+    const payload: RegistrationLeagueCatalogPayload = {
+      ...basePayload,
+      byotEntry: { 4: existingByotSummary() },
+    };
+    const next = hydratePriorityList(payload);
+    expect(addedExistingPlayInTeamCount(payload, next)).toBe(1);
+    expect(bumpDesiredLeagueCount(defaultDesiredLeagueCount(payload), 1)).toBe(3);
+  });
+
+  test('adding a league copies an empty existing play-in roster', () => {
+    expect(
+      applyExistingPlayInTeamRosterIfEmpty(
+        ranked(5, 1),
+        5,
+        existingPlayInSummary().existingTeam!,
+        100,
+      ),
+    ).toEqual([
+      {
+        leagueId: 5,
+        priorityRank: 1,
+        teamRosterPlacements: [{ memberId: 21 }],
+        byotTeammateText: null,
+      },
+      { leagueId: 1, priorityRank: 2 },
+    ]);
   });
 
   test('desired league count defaults to prior-session play only', () => {
@@ -521,6 +800,37 @@ describe('guarantee labels shown while reordering', () => {
     ).toBe('subject_to_availability');
   });
 
+  test('a registrant listed on a returning doubles pair is guaranteed even with an empty local roster', () => {
+    expect(
+      evaluate({
+        priorities: [{ leagueId: 4, priorityRank: 1 }],
+        desiredLeagueCount: 1,
+        returnRightLeagueIds: [4],
+        returnEligibleMemberIdsByLeagueId: { 4: [100, 21] },
+        byotEntry: { 4: existingByotSummary() },
+      }).entries[0]?.label,
+    ).toBe('guaranteed_return');
+  });
+
+  test('a listed doubles teammate with the partner as free-text is still guaranteed from the existing pair', () => {
+    expect(
+      evaluate({
+        priorities: [
+          {
+            leagueId: 4,
+            priorityRank: 1,
+            teamRosterPlacements: [],
+            byotTeammateText: 'Mike Hartman',
+          },
+        ],
+        desiredLeagueCount: 1,
+        returnRightLeagueIds: [4],
+        returnEligibleMemberIdsByLeagueId: { 4: [100, 21] },
+        byotEntry: { 4: existingByotSummary() },
+      }).entries[0]?.label,
+    ).toBe('guaranteed_return');
+  });
+
   test('wanting one league caps the guarantees at one', () => {
     const result = evaluate({ priorities: ranked(1, 2), desiredLeagueCount: 1, returnRightLeagueIds: [1, 2] });
     expect(result.entries.map((entry) => entry.label)).toEqual(['guaranteed_return', 'superfluous']);
@@ -605,6 +915,14 @@ describe('guarantee labels shown while reordering', () => {
         text: '* All teammates must also choose this league as their first or second priority.',
       },
     ]);
+    expect(guaranteeChipLabel('guaranteed_return', teamLeague, { onExistingTeam: true })).toBe('Guaranteed return');
+    expect(guaranteeChipLabel('guaranteed_return', teamsByot, { onExistingTeam: true })).toBe('Guaranteed return*');
+    expect(
+      byotGuaranteedReturnFootnotes(
+        [{ label: 'guaranteed_return', league: teamLeague, onExistingTeam: true }],
+        'caveat',
+      ),
+    ).toEqual([]);
   });
 
   test('open registration uses vacancy labels instead of return guarantees', () => {

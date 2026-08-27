@@ -32,6 +32,7 @@ export function isCalendarRangeFresh(entry: { fetchedAt: number }, now = Date.no
   return now - entry.fetchedAt < CALENDAR_RANGE_STALE_MS;
 }
 
+/** Drop all cached ranges so the next calendar view refetches. Call after create/update/delete. */
 export function invalidateCalendarEventsCache(): void {
   cacheByKey.clear();
 }

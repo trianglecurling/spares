@@ -151,6 +151,17 @@ export type PlayInEntryContext = {
   guaranteed: boolean;
 };
 
+export type ByotDeclaredTeamContext = {
+  /** The registrant was listed on someone else's declared team for this league. */
+  onExistingTeam: boolean;
+  existingTeamId?: number | null;
+  /** Account-linked members on that existing team, used to label an empty local roster. */
+  existingTeamMemberIds?: number[];
+  committedOtherMemberIds: number[];
+  committedOtherMemberTeams?: PlayInCommittedOtherMemberTeam[];
+  teamSize?: number | null;
+};
+
 export type RegistrationContext = {
   /** How many leagues the registrant wants to play in, 1..MAX_DESIRED_LEAGUE_COUNT. */
   desiredLeagueCount?: number | null;
@@ -208,6 +219,8 @@ export type RegistrationContext = {
   juniorAssistance?: JuniorAssistanceRequest;
   /** Keyed by league id; present for play-in based leagues with a play_in_request selection. */
   playInEntry?: Record<number, PlayInEntryContext>;
+  /** Keyed by league id; non-play-in bring-your-own-team leagues the registrant may already be listed on. */
+  byotEntry?: Record<number, ByotDeclaredTeamContext>;
   priceConfig: PriceConfigInput;
   discountSettings: RegistrationDiscountSettingsStored;
   sabbaticalDurationLimitYears: number;

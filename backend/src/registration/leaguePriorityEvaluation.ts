@@ -14,6 +14,8 @@ import {
   expectedByotRosterSize,
   isPriorityOrderClamped,
   labelPriorityEntries,
+  memberIdsFromExistingByotTeam,
+  overlayExistingByotTeamRoster,
   pendingRosterNames,
   priorityHasDeclaredRoster,
   priorityRosterAllReturning,
@@ -128,6 +130,11 @@ export type LeaguePriorityEvaluation = {
 export function evaluateLeaguePriorities(context: RegistrationContext): LeaguePriorityEvaluation {
   const candidates: PriorityLabelCandidate[] = orderedPriorities(context).map((priority) => {
     const league = getLeague(context, priority.leagueId);
+    const labeledRoster = overlayExistingByotTeamRoster(
+      priority,
+      memberIdsFromExistingByotTeam(context.byotEntry?.[priority.leagueId]),
+      context.registrant.memberId,
+    );
     const returnEligibleMemberIds = new Set(context.returnEligibleMemberIdsByLeagueId?.[priority.leagueId] ?? []);
     // The registrant themselves always counts when they hold the return right —
     // the map may omit them if they only have a sabbatical right loaded later.
@@ -138,9 +145,9 @@ export function evaluateLeaguePriorities(context: RegistrationContext): LeaguePr
       leagueId: priority.leagueId,
       priorityRank: priority.priorityRank,
       hasReturnRight: hasReturnRight(context, priority),
-      rosterComplete: league ? priorityRosterIsComplete(league, priority, context.registrant.memberId) : false,
+      rosterComplete: league ? priorityRosterIsComplete(league, labeledRoster, context.registrant.memberId) : false,
       rosterAllReturning: league
-        ? priorityRosterAllReturning(league, priority, returnEligibleMemberIds, context.registrant.memberId)
+        ? priorityRosterAllReturning(league, labeledRoster, returnEligibleMemberIds, context.registrant.memberId)
         : false,
       feeMinor: league?.registrationFeeMinor ?? 0,
       allowsWaitlist: league?.allowsWaitlist === true,
@@ -232,7 +239,7 @@ function validateRanks(context: RegistrationContext, blockingErrors: DecisionMes
 function playInDraftJoinsCommittedIncompleteTeam(
   context: RegistrationContext,
   priority: LeaguePriorityInput,
-  entry: PlayInEntryContext,
+  entry: Pick<PlayInEntryContext, 'teamSize' | 'committedOtherMemberIds' | 'committedOtherMemberTeams'>,
   expectedSize: number,
 ): boolean {
   const teamSize = entry.teamSize ?? expectedSize;
@@ -278,9 +285,10 @@ function validateRoster(
       );
       return;
     }
+    const entry = context.playInEntry?.[league.id];
     const counts = countPriorityRoster(priority, context.registrant.memberId);
     const minSize = Math.min(MIN_PLAY_IN_ROSTER_SIZE, expectedSize);
-    if (counts.total < minSize) {
+    if (!entry?.onExistingTeam && counts.total < minSize) {
       blockingErrors.push(
         blockingError(
           'byot_play_in_requires_minimum_roster',
@@ -300,7 +308,6 @@ function validateRoster(
       );
       return;
     }
-    const entry = context.playInEntry?.[league.id];
     if (entry) {
       const committed = new Set(entry.committedOtherMemberIds);
       const conflicting = (priority.teamRosterPlacements ?? []).filter((placement) =>
@@ -327,13 +334,28 @@ function validateRoster(
     return;
   }
   const counts = countPriorityRoster(priority, context.registrant.memberId);
-  if (counts.total !== expectedSize) {
+  const byot = context.byotEntry?.[league.id];
+  if (!byot?.onExistingTeam && counts.total !== expectedSize) {
     blockingErrors.push(
       blockingError(
         'byot_requires_full_roster',
         `Bring-your-own-team leagues require exactly ${expectedSize} players for this league.`,
       ),
     );
+  }
+  if (byot) {
+    const committed = new Set(byot.committedOtherMemberIds);
+    const conflicting = (priority.teamRosterPlacements ?? []).filter((placement) =>
+      committed.has(placement.memberId),
+    );
+    if (conflicting.length > 0 && !playInDraftJoinsCommittedIncompleteTeam(context, priority, byot, expectedSize)) {
+      blockingErrors.push(
+        blockingError(
+          'play_in_teammate_already_committed',
+          'One or more selected teammates are already on another declared team for this league. Contact membership@trianglecurling.com to sort out team assignments.',
+        ),
+      );
+    }
   }
   const pending = pendingRosterNames(priority.byotTeammateText).map((name) => name.toLowerCase());
   if (new Set(pending).size !== pending.length) {
@@ -559,8 +581,8 @@ export function validateLeaguePriorities(context: RegistrationContext): Priority
 
 /**
  * Waitlists, incomplete rosters, play-in misses, and subject-to-availability
- * leftovers still leave the bill unresolved. Payment waits until billed-now
- * leagues fill the desired count.
+ * leftovers that still sit inside the desired count. The payment decision
+ * ignores these when they cannot change the quoted total (floor equals ceiling).
  */
 export function leaguePlacementDeferralReasons(evaluation: LeaguePriorityEvaluation): RegistrationReasonCode[] {
   const billed = immediateChargeEntries(evaluation);

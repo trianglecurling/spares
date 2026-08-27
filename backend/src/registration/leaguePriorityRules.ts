@@ -126,6 +126,11 @@ export function priorityHasDeclaredRoster(priority: PriorityRosterShape): boolea
   return (priority.teamRosterPlacements?.length ?? 0) > 0 || pendingRosterNames(priority.byotTeammateText).length > 0;
 }
 
+/** Account-linked teammates only. A free-text name is not a linked roster. */
+export function priorityHasLinkedMemberRoster(priority: PriorityRosterShape): boolean {
+  return (priority.teamRosterPlacements?.length ?? 0) > 0;
+}
+
 /**
  * Drop and sabbatical answers only apply to leagues left off the list. A league
  * that is on the priority list is being kept, so a leftover leave-behind
@@ -188,6 +193,63 @@ export function priorityRosterAllReturning(
     if (!returnEligibleMemberIds.has(memberId)) return false;
   }
   return true;
+}
+
+/** Member ids on a teammate's declared BYOT pair, when this registrant was listed. */
+export function memberIdsFromExistingByotTeam(input: {
+  onExistingTeam?: boolean;
+  existingTeamMemberIds?: number[] | null;
+  existingTeam?: { members?: Array<{ memberId?: number | null } | null> | null } | null;
+} | null | undefined): number[] | undefined {
+  if (!input?.onExistingTeam) return undefined;
+  if (input.existingTeamMemberIds && input.existingTeamMemberIds.length > 0) {
+    return input.existingTeamMemberIds;
+  }
+  const fromMembers = (input.existingTeam?.members ?? [])
+    .map((member) => member?.memberId)
+    .filter((id): id is number => id != null);
+  return fromMembers.length > 0 ? fromMembers : undefined;
+}
+
+/**
+ * When the registrant was listed on someone else's BYOT team and has not
+ * linked any teammates locally, label from that existing team's members.
+ * Free-text pending names (for example typing the partner who already listed
+ * them) must not block this, or the pair is waitlisted as a mixed team.
+ */
+export function overlayExistingByotTeamRoster(
+  priority: PriorityRosterShape,
+  existingTeamMemberIds: number[] | undefined,
+  registrantMemberId?: number | null,
+): PriorityRosterShape {
+  if (priorityHasLinkedMemberRoster(priority)) return priority;
+  if (!existingTeamMemberIds?.length) return priority;
+  const teamRosterPlacements = existingTeamMemberIds
+    .filter((memberId) => registrantMemberId == null || memberId !== registrantMemberId)
+    .map((memberId) => ({ memberId }));
+  if (teamRosterPlacements.length === 0) return priority;
+  return { ...priority, teamRosterPlacements, byotTeammateText: null };
+}
+
+/** Copies last-session or existing-team member ids onto empty priority rosters. */
+export function applyMemberIdsToEmptyPriorityRosters<T extends RankedPriority>(
+  priorities: T[],
+  memberIdsByLeagueId: Record<number, number[]> | undefined,
+): T[] {
+  if (!memberIdsByLeagueId) return priorities;
+  let changed = false;
+  const next = priorities.map((priority) => {
+    if (priorityHasDeclaredRoster(priority)) return priority;
+    const ids = memberIdsByLeagueId[priority.leagueId] ?? [];
+    if (ids.length === 0) return priority;
+    changed = true;
+    return {
+      ...priority,
+      teamRosterPlacements: ids.map((memberId) => ({ memberId })),
+      byotTeammateText: null,
+    };
+  });
+  return changed ? next : priorities;
 }
 
 // ---------------------------------------------------------------------------

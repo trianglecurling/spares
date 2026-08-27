@@ -1155,6 +1155,7 @@ export default function RegistrationShellPage() {
         returnRightLeagueIds: leaguePayload?.returnRightLeagueIds ?? [],
         returnEligibleMemberIdsByLeagueId: leaguePayload?.returnEligibleMemberIdsByLeagueId ?? {},
         playInEntry: leaguePayload?.playInEntry,
+        byotEntry: leaguePayload?.byotEntry,
         priorLeagueDecisions: leaguePayload?.priorLeagueDecisions ?? [],
         registrantMemberId: registeringCurlerMemberId,
         registrationState: leaguePayload?.registrationState ?? windowState?.state,
@@ -1173,10 +1174,11 @@ export default function RegistrationShellPage() {
         priorityReviewEntries.map((entry) => ({
           label: entry.label,
           league: priorityReviewLeagueById.get(entry.leagueId),
+          onExistingTeam: leaguePayload?.byotEntry?.[entry.leagueId]?.onExistingTeam === true,
         })),
         byotReturnCaveatIdPrefix,
       ),
-    [byotReturnCaveatIdPrefix, priorityReviewEntries, priorityReviewLeagueById],
+    [byotReturnCaveatIdPrefix, leaguePayload?.byotEntry, priorityReviewEntries, priorityReviewLeagueById],
   );
 
   const hideDroppedPriorLeagueDecisions =
@@ -4857,6 +4859,7 @@ export default function RegistrationShellPage() {
                 {priorityReviewEntries.map((entry, index) => {
                   const rosterText = priorityRosterTextByLeagueId.get(entry.leagueId);
                   const league = priorityReviewLeagueById.get(entry.leagueId);
+                  const onExistingByotTeam = leaguePayload?.byotEntry?.[entry.leagueId]?.onExistingTeam === true;
                   return (
                     <div key={entry.leagueId} className="rounded-xl bg-gray-50 p-3">
                       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -4867,12 +4870,14 @@ export default function RegistrationShellPage() {
                           <span
                             className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-primary-teal shadow-sm"
                             aria-describedby={
-                              isByotGuaranteedReturnCaveat(entry.label, league)
+                              isByotGuaranteedReturnCaveat(entry.label, league, {
+                                onExistingTeam: onExistingByotTeam,
+                              })
                                 ? byotGuaranteedReturnFootnoteId(league, byotReturnCaveatIdPrefix)
                                 : undefined
                             }
                           >
-                            {guaranteeChipLabel(entry.label, league)}
+                            {guaranteeChipLabel(entry.label, league, { onExistingTeam: onExistingByotTeam })}
                           </span>
                         ) : null}
                       </div>

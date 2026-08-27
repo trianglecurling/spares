@@ -75,6 +75,7 @@ import {
   getVisibleHours,
   HOUR_HEIGHT,
 } from '../utils/calendarDayGrid';
+import { countFreeMonthDaySlots, packMonthDayEventSlots } from '../utils/calendarMonthBands';
 import {
   DEFAULT_EVENT_TYPES,
   type CalendarEventType,
@@ -219,10 +220,12 @@ function eventSpansSingleCalendarDay(ev: CalendarEvent): boolean {
 }
 
 /** Time segment for compact bands; omit when the event spans more than one calendar day. */
-function eventBandTimeLabel(ev: CalendarEvent): string | null {
+function eventBandTimeLabel(ev: CalendarEvent, style: 'range' | 'start' = 'range'): string | null {
   if (!eventSpansSingleCalendarDay(ev)) return null;
   if (ev.allDay) return 'All day';
-  return formatCompactTimeRange(ev.start, ev.end);
+  return style === 'start'
+    ? formatCompactStartTime(ev.start)
+    : formatCompactTimeRange(ev.start, ev.end);
 }
 
 /**
@@ -264,6 +267,7 @@ function EventBandRowContent({
   sheetNameById,
   iconClassName,
   layout = 'truncate',
+  variant = 'default',
 }: {
   ev: CalendarEvent;
   type: CalendarEventType;
@@ -271,10 +275,13 @@ function EventBandRowContent({
   iconClassName: string;
   /** `wrap` breaks long text within narrow week all-day cells so grid columns stay aligned. */
   layout?: 'truncate' | 'wrap';
+  /** Month bands lead with start time only and omit location to keep the event name readable. */
+  variant?: 'default' | 'month';
 }) {
   const Icon = type.icon;
-  const loc = getEventBandLocationSummary(ev, sheetNameById);
-  const timeLabel = eventBandTimeLabel(ev);
+  const isMonthBand = variant === 'month';
+  const loc = isMonthBand ? null : getEventBandLocationSummary(ev, sheetNameById);
+  const timeLabel = eventBandTimeLabel(ev, isMonthBand ? 'start' : 'range');
   const titleClass =
     layout === 'wrap'
       ? 'min-w-0 break-words text-sm font-medium leading-snug [overflow-wrap:anywhere]'
@@ -283,6 +290,8 @@ function EventBandRowContent({
     layout === 'wrap'
       ? 'min-w-0 break-words text-sm leading-snug [overflow-wrap:anywhere]'
       : 'shrink-0 truncate min-w-0';
+  const timeClass =
+    layout === 'wrap' ? 'shrink-0 text-xs leading-snug opacity-90' : 'shrink-0';
   return (
     <>
       {layout === 'wrap' ? (
@@ -292,6 +301,12 @@ function EventBandRowContent({
       ) : (
         <Icon className={`${iconClassName} shrink-0`} />
       )}
+      {isMonthBand && timeLabel && (
+        <>
+          <span className={timeClass}>{timeLabel}</span>
+          <span className="shrink-0 leading-snug">·</span>
+        </>
+      )}
       <span className={titleClass}>{ev.title}</span>
       {loc && (
         <>
@@ -299,16 +314,10 @@ function EventBandRowContent({
           <span className={locClass}>{loc}</span>
         </>
       )}
-      {timeLabel && (
+      {!isMonthBand && timeLabel && (
         <>
           <span className="shrink-0 leading-snug">·</span>
-          <span
-            className={
-              layout === 'wrap' ? 'shrink-0 text-xs leading-snug opacity-90' : 'shrink-0'
-            }
-          >
-            {timeLabel}
-          </span>
+          <span className={timeClass}>{timeLabel}</span>
         </>
       )}
     </>
@@ -508,6 +517,15 @@ function formatCompactTime(date: Date): string {
   const h = date.getHours();
   const m = date.getMinutes();
   const period = h < 12 ? 'a' : 'p';
+  const hour12 = h % 12 || 12;
+  return m === 0 ? `${hour12}${period}` : `${hour12}:${m.toString().padStart(2, '0')}${period}`;
+}
+
+/** Month-band start time: "7pm" or "7:30pm". Minutes only when not on the hour. */
+function formatCompactStartTime(date: Date): string {
+  const h = date.getHours();
+  const m = date.getMinutes();
+  const period = h < 12 ? 'am' : 'pm';
   const hour12 = h % 12 || 12;
   return m === 0 ? `${hour12}${period}` : `${hour12}:${m.toString().padStart(2, '0')}${period}`;
 }
@@ -1625,7 +1643,7 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
 }
 
 const ESTIMATED_EVENT_HEIGHT = 26;
-/** space-y-0.5 between month day event rows */
+/** space-y / gap between month day event rows (2px). */
 const EVENT_STACK_GAP_PX = 2;
 /** Slot stride used by multi-day band positioning (event + following gap). */
 const SLOT_HEIGHT = ESTIMATED_EVENT_HEIGHT + EVENT_STACK_GAP_PX;
@@ -1643,6 +1661,9 @@ function eventStackHeight(count: number): number {
 const MONTH_CELL_PADDING_Y_PX = 8; // p-1 top + bottom
 const MONTH_CELL_DATE_PX = 24; // h-6 date button
 const MONTH_CELL_EVENTS_MT_PX = 4; // mt-1 above event list
+/** Fallback offset from week-row top to the first event slot (padding + date + mt-1). */
+const MONTH_CELL_EVENTS_OFFSET_PX =
+  MONTH_CELL_PADDING_Y_PX / 2 + MONTH_CELL_DATE_PX + MONTH_CELL_EVENTS_MT_PX;
 /** "+N more" text-xs + py-0.5; padded for tablet/font metrics that run taller than 20px. */
 const MONTH_CELL_MORE_LINE_PX = 24;
 /** Extra room so 4 bars + more still fit when borders/subpixels eat space. */
@@ -1745,11 +1766,25 @@ function getMultiDaySegments(events: CalendarEvent[], weeks: Date[][]): MultiDay
   return segments;
 }
 
+function occupiedBandIndicesForDay(
+  segments: MultiDaySegment[],
+  weekIndex: number,
+  dayCol: number
+): number[] {
+  const indices: number[] = [];
+  for (const seg of segments) {
+    if (seg.weekIndex === weekIndex && seg.startCol <= dayCol && dayCol <= seg.endCol) {
+      indices.push(seg.bandIndex);
+    }
+  }
+  return indices;
+}
+
 /** Shows as many events as fit, then "+N more" if there are more. Uses ResizeObserver. */
 function MonthDayEvents({
   day,
   events,
-  continuingCount = 0,
+  occupiedBandIndices = [],
   getEventType,
   sheetNameById,
   onEventClick,
@@ -1758,7 +1793,8 @@ function MonthDayEvents({
 }: {
   day: Date;
   events: CalendarEvent[];
-  continuingCount?: number;
+  /** Band rows already used by multi-day overlays on this day (may have holes). */
+  occupiedBandIndices?: number[];
   getEventType: (id: string) => CalendarEventType;
   sheetNameById: Map<number, string>;
   onEventClick?: (ev: CalendarEvent) => void;
@@ -1767,6 +1803,7 @@ function MonthDayEvents({
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const moreRef = useRef<HTMLButtonElement>(null);
+  const occupiedKey = [...occupiedBandIndices].sort((a, b) => a - b).join(',');
   const [visibleCount, setVisibleCount] = useState(() =>
     Math.min(MONTH_CELL_MIN_EVENT_SLOTS, events.length)
   );
@@ -1779,42 +1816,42 @@ function MonthDayEvents({
       const rootH = root.clientHeight;
       if (rootH <= 0) return;
 
-      const slotsIfNoMore = Math.max(0, eventSlotsForHeight(rootH) - continuingCount);
-      if (events.length <= slotsIfNoMore) {
+      const slotsIfNoMore = Math.max(0, eventSlotsForHeight(rootH));
+      const fitIfNoMore = countFreeMonthDaySlots(occupiedBandIndices, slotsIfNoMore);
+      if (events.length <= fitIfNoMore) {
         setVisibleCount((prev) => (prev !== events.length ? events.length : prev));
         return;
       }
 
       const moreH = moreRef.current?.offsetHeight || MONTH_CELL_MORE_LINE_PX;
       const listH = Math.max(0, rootH - moreH);
-      const slotsWithMore = Math.max(0, eventSlotsForHeight(listH) - continuingCount);
+      const slotsWithMore = Math.max(0, eventSlotsForHeight(listH));
+      const fitWithMore = countFreeMonthDaySlots(occupiedBandIndices, slotsWithMore);
       // Row min-height guarantees room for 4 total slots; don't drop below that when overflow exists.
-      const count = Math.max(
-        0,
-        Math.min(
-          events.length,
-          Math.max(slotsWithMore, MONTH_CELL_MIN_EVENT_SLOTS - continuingCount)
-        )
-      );
+      const minFit = countFreeMonthDaySlots(occupiedBandIndices, MONTH_CELL_MIN_EVENT_SLOTS);
+      const count = Math.max(0, Math.min(events.length, Math.max(fitWithMore, minFit)));
       setVisibleCount((prev) => (prev !== count ? count : prev));
     };
     updateCount();
     const ro = new ResizeObserver(updateCount);
     ro.observe(root);
     return () => ro.disconnect();
+    // occupiedKey stands in for occupiedBandIndices so a new array identity does not retrigger.
     // Re-run when visibleCount changes so a newly mounted "+N more" can be measured.
-  }, [events.length, continuingCount, visibleCount]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- occupiedKey captures occupancy
+  }, [events.length, occupiedKey, visibleCount]);
 
   const visibleEvents = events.slice(0, visibleCount);
   const overflowCount = events.length - visibleCount;
   const showOverflow = overflowCount > 0;
+  const packedSlots = packMonthDayEventSlots(occupiedBandIndices, visibleEvents);
 
   return (
     <div ref={rootRef} className="mt-1 flex min-h-0 flex-1 flex-col">
       <div
         data-events-area
-        className={`min-h-0 flex-1 overflow-hidden space-y-0.5 ${onEmptyCellClick ? 'cursor-pointer [&:hover:not(:has(*:hover))]:bg-gray-100 dark:[&:hover:not(:has(*:hover))]:bg-gray-700/50 transition-colors' : ''}`}
-        style={{ minHeight: MONTH_CELL_MIN_LIST_HEIGHT_PX }}
+        className={`flex min-h-0 flex-1 flex-col overflow-hidden ${onEmptyCellClick ? 'cursor-pointer [&:hover:not(:has(*:hover))]:bg-gray-100 dark:[&:hover:not(:has(*:hover))]:bg-gray-700/50 transition-colors' : ''}`}
+        style={{ minHeight: MONTH_CELL_MIN_LIST_HEIGHT_PX, gap: EVENT_STACK_GAP_PX }}
         onClick={(e) => {
           if (e.defaultPrevented) return;
           if (e.target === e.currentTarget) onEmptyCellClick?.(day);
@@ -1830,20 +1867,24 @@ function MonthDayEvents({
             : undefined
         }
       >
-        {Array.from({ length: continuingCount }, (_, i) => (
-          <div
-            key={`continuing-${i}`}
-            data-slot
-            className="shrink-0 invisible"
-            style={{ height: ESTIMATED_EVENT_HEIGHT, minHeight: ESTIMATED_EVENT_HEIGHT }}
-            aria-hidden
-          />
-        ))}
-        {visibleEvents.map((ev) => {
+        {packedSlots.map((slot, i) => {
+          if (slot.type === 'spacer') {
+            return (
+              <div
+                key={`spacer-${i}`}
+                data-slot
+                className="shrink-0 invisible"
+                style={{ height: ESTIMATED_EVENT_HEIGHT, minHeight: ESTIMATED_EVENT_HEIGHT }}
+                aria-hidden
+              />
+            );
+          }
+          const ev = slot.event;
           const type = getEventType(ev.typeId);
           return (
             <div
               key={ev.id}
+              data-slot
               role="button"
               tabIndex={0}
               onClick={(e) => {
@@ -1854,7 +1895,8 @@ function MonthDayEvents({
                 if (e.defaultPrevented || e.key !== 'Enter') return;
                 onEventClick?.(ev);
               }}
-              className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-sm truncate shrink-0 border cursor-pointer hover:opacity-90 ${type.color}`}
+              className={`box-border flex items-center gap-1 overflow-hidden px-1.5 py-0.5 rounded text-sm truncate shrink-0 border cursor-pointer hover:opacity-90 ${type.color}`}
+              style={{ height: ESTIMATED_EVENT_HEIGHT }}
               title={ev.title}
             >
               <EventBandRowContent
@@ -1862,6 +1904,7 @@ function MonthDayEvents({
                 type={type}
                 sheetNameById={sheetNameById}
                 iconClassName="w-3.5 h-3.5 shrink-0"
+                variant="month"
               />
             </div>
           );
@@ -1952,9 +1995,7 @@ function MonthView({
   const maxBandsPerWeek =
     multiDaySegments.length === 0 ? 0 : Math.max(...multiDaySegments.map((s) => s.bandIndex)) + 1;
 
-  const [slotMetrics, setSlotMetrics] = useState<{ dateOffset: number; slotHeight: number } | null>(
-    null
-  );
+  const [slotMetrics, setSlotMetrics] = useState<{ dateOffset: number } | null>(null);
   const measureRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -1962,39 +2003,19 @@ function MonthView({
     const el = measureRef.current;
     if (!el || maxBandsPerWeek === 0) return;
     const measure = () => {
-      const dateBtn = el.querySelector('button');
       const eventsWrap = el.querySelector('[data-events-area]');
-      if (!dateBtn || !eventsWrap) return;
-      const dateOffset = dateBtn.offsetHeight + 4; // mt-1
-      const firstSlot = eventsWrap.querySelector('[data-slot]') as HTMLElement | null;
-      const slotHeight = firstSlot ? firstSlot.offsetHeight + 2 : SLOT_HEIGHT; // +space-y-0.5
-      setSlotMetrics((prev) =>
-        prev?.dateOffset === dateOffset && prev.slotHeight === slotHeight
-          ? prev
-          : { dateOffset, slotHeight }
+      if (!eventsWrap) return;
+      const dateOffset = Math.round(
+        eventsWrap.getBoundingClientRect().top - el.getBoundingClientRect().top
       );
+      if (dateOffset <= 0) return;
+      setSlotMetrics((prev) => (prev?.dateOffset === dateOffset ? prev : { dateOffset }));
     };
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
     return () => ro.disconnect();
   }, [maxBandsPerWeek, weeks.length, compact]);
-
-  const getReservedSlotCount = (day: Date) => {
-    const dayStartD = new Date(day);
-    dayStartD.setHours(0, 0, 0, 0);
-    const dayEndD = new Date(day);
-    dayEndD.setHours(23, 59, 59, 999);
-    return events.filter((e) => {
-      if (!isMultiDay(e)) return false;
-      const start = new Date(e.start);
-      const end = new Date(e.end);
-      start.setHours(0, 0, 0, 0);
-      end.setHours(23, 59, 59, 999);
-      const overlaps = start <= dayEndD && end >= dayStartD;
-      return overlaps;
-    }).length;
-  };
 
   const weekdayLabels = compact ? ['S', 'M', 'T', 'W', 'T', 'F', 'S'] : WEEKDAYS;
   const weekMinRowPx = MONTH_WEEK_MIN_ROW_PX;
@@ -2129,7 +2150,7 @@ function MonthView({
                 <MonthDayEvents
                   day={day}
                   events={sortedEvents}
-                  continuingCount={getReservedSlotCount(day)}
+                  occupiedBandIndices={occupiedBandIndicesForDay(multiDaySegments, wi, di)}
                   getEventType={getEventType}
                   sheetNameById={sheetNameById}
                   onEventClick={onEventClick}
@@ -2204,8 +2225,7 @@ function MonthView({
             }}
           >
             {weeks.map((_, wi) => {
-              const dateOffset = slotMetrics?.dateOffset ?? 36;
-              const slotHeight = slotMetrics?.slotHeight ?? SLOT_HEIGHT;
+              const dateOffset = slotMetrics?.dateOffset ?? MONTH_CELL_EVENTS_OFFSET_PX;
               return (
                 <div key={`week-bands-${wi}`} className="relative min-h-0">
                   {multiDaySegments
@@ -2224,9 +2244,9 @@ function MonthView({
                       return (
                         <div
                           key={`${seg.ev.id}-${seg.weekIndex}-${seg.bandIndex}-${i}`}
-                          className={`pointer-events-auto absolute flex items-center gap-1 px-1.5 py-0.5 text-sm truncate cursor-pointer hover:opacity-90 border min-h-0 ${type.color} ${roundClass}`}
+                          className={`pointer-events-auto absolute box-border flex items-center gap-1 overflow-hidden px-1.5 py-0.5 text-sm truncate cursor-pointer hover:opacity-90 border min-h-0 ${type.color} ${roundClass}`}
                           style={{
-                            top: dateOffset + seg.bandIndex * slotHeight,
+                            top: dateOffset + seg.bandIndex * SLOT_HEIGHT,
                             left: `calc(${(seg.startCol / 7) * 100}% + 4px)`,
                             width: `calc(${(spanDays / 7) * 100}% - 6px)`,
                             height: ESTIMATED_EVENT_HEIGHT,
@@ -2248,6 +2268,7 @@ function MonthView({
                             type={type}
                             sheetNameById={sheetNameById}
                             iconClassName="w-3.5 h-3.5 shrink-0"
+                            variant="month"
                           />
                         </div>
                       );

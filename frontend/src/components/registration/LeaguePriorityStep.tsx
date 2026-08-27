@@ -10,6 +10,11 @@ import InlineStateMessage from '../InlineStateMessage';
 import PublicStateCard from '../PublicStateCard';
 import SortableList from '../dragDrop/SortableList';
 import PriorityRosterField from './PriorityRosterField';
+import {
+  playInEntryTeamIsJoinable,
+  RegistrationPlayInExistingTeamNotice,
+  RegistrationPlayInGuaranteeResult,
+} from './RegistrationPlayInEntryPanel';
 import { useAlert } from '../../contexts/AlertContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { useMemberOptions } from '../../contexts/MemberOptionsContext';
@@ -31,8 +36,13 @@ import {
   hydratePriorityList,
   incompletePlayInLeagueNames,
   seedableWaitlistLeagueIds,
+  seedableExistingPlayInTeamLeagueIds,
+  addedExistingPlayInTeamCount,
+  bumpDesiredLeagueCount,
+  applyExistingPlayInTeamRosterIfEmpty,
   isFreeLeague,
   mergeNewlyJoinedWaitlistLeagues,
+  mergeNewlyDiscoveredPlayInTeamLeagues,
   omitLeaveBehindDecisionsForListedLeagues,
   MAX_DESIRED_LEAGUE_COUNT,
   MIN_PLAY_IN_ROSTER_SIZE,
@@ -71,6 +81,7 @@ import {
   leagueScheduleText,
   type LeagueCatalogItem,
   type LeagueEligibilityInput,
+  type RegistrationByotDeclaredTeamSummary,
   type RegistrationPlayInEntrySummary,
 } from './registrationViewEditShared';
 import {
@@ -192,8 +203,10 @@ export default function LeaguePriorityStep({
   const [removalPrompt, setRemovalPrompt] = useState<RemovalPrompt | null>(null);
   const [validationMessage, setValidationMessage] = useState<string | null>(null);
   const [playInEntry, setPlayInEntry] = useState<Record<number, RegistrantPlayInEntrySummaryLike>>({});
+  const [byotEntry, setByotEntry] = useState<Record<number, RegistrationByotDeclaredTeamSummary>>({});
   const hydratedRef = useRef(false);
   const knownWaitlistLeagueIdsRef = useRef<Set<number>>(new Set());
+  const knownPlayInExistingTeamLeagueIdsRef = useRef<Set<number>>(new Set());
 
   const leagues = useMemo(() => payload?.leagues ?? [], [payload]);
   const leagueById = useMemo(
@@ -208,6 +221,9 @@ export default function LeaguePriorityStep({
     const turnedOnSabbaticalOnly = sabbaticalOnly && !sabbaticalOnlyHydratedRef.current;
     sabbaticalOnlyHydratedRef.current = sabbaticalOnly;
     const currentWaitlistIds = new Set(seedableWaitlistLeagueIds(payload));
+    const currentPlayInExistingTeamIds = new Set(
+      seedableExistingPlayInTeamLeagueIds(payload, { freeLeaguesOnly: restrictToFreeLeagues }),
+    );
     if (!hydratedRef.current || turnedOnFreeOnly || turnedOnSabbaticalOnly) {
       hydratedRef.current = true;
       if (sabbaticalOnly) {
@@ -224,35 +240,51 @@ export default function LeaguePriorityStep({
       } else {
         const nextPriorities = hydratePriorityList(payload, { freeLeaguesOnly: restrictToFreeLeagues });
         setPriorities(nextPriorities);
-        setDesiredLeagueCount(defaultDesiredLeagueCount(payload, { freeLeaguesOnly: restrictToFreeLeagues }));
+        setDesiredLeagueCount(
+          bumpDesiredLeagueCount(
+            defaultDesiredLeagueCount(payload, { freeLeaguesOnly: restrictToFreeLeagues }),
+            addedExistingPlayInTeamCount(payload, nextPriorities),
+          ),
+        );
         setPriorLeagueDecisions(
           omitLeaveBehindDecisionsForListedLeagues(payload.priorLeagueDecisions ?? [], nextPriorities),
         );
       }
       setBasicIceFallbackInterest(payload.basicIceFallbackInterest === true);
       setPlayInEntry(payload.playInEntry ?? {});
+      setByotEntry(payload.byotEntry ?? {});
       knownWaitlistLeagueIdsRef.current = currentWaitlistIds;
+      knownPlayInExistingTeamLeagueIdsRef.current = currentPlayInExistingTeamIds;
       return;
     }
     // Catalog may refresh after the registrant joins a waitlist elsewhere —
     // pull only newly joined leagues onto the list without putting back ones
-    // they already removed.
+    // they already removed. Same for declared teams they were newly added to.
     const previouslyKnownWaitlistLeagueIds = knownWaitlistLeagueIdsRef.current;
     knownWaitlistLeagueIdsRef.current = currentWaitlistIds;
+    const previouslyKnownPlayInExistingTeamIds = knownPlayInExistingTeamLeagueIdsRef.current;
+    knownPlayInExistingTeamLeagueIdsRef.current = currentPlayInExistingTeamIds;
     if (sabbaticalOnly) {
       setPlayInEntry(payload.playInEntry ?? {});
+      setByotEntry(payload.byotEntry ?? {});
       return;
     }
     setPriorities((current) =>
       filterPrioritiesToAllowedLeagues(
-        mergeNewlyJoinedWaitlistLeagues(current, payload, previouslyKnownWaitlistLeagueIds, {
-          freeLeaguesOnly: restrictToFreeLeagues,
-        }),
+        mergeNewlyDiscoveredPlayInTeamLeagues(
+          mergeNewlyJoinedWaitlistLeagues(current, payload, previouslyKnownWaitlistLeagueIds, {
+            freeLeaguesOnly: restrictToFreeLeagues,
+          }),
+          payload,
+          previouslyKnownPlayInExistingTeamIds,
+          { freeLeaguesOnly: restrictToFreeLeagues },
+        ),
         payload.leagues,
         restrictToFreeLeagues,
       ),
     );
     setPlayInEntry(payload.playInEntry ?? {});
+    setByotEntry(payload.byotEntry ?? {});
   }, [payload, restrictToFreeLeagues, sabbaticalOnly]);
 
   const memberNameById = useMemo(
@@ -269,11 +301,13 @@ export default function LeaguePriorityStep({
         returnRightLeagueIds: payload?.returnRightLeagueIds ?? [],
         returnEligibleMemberIdsByLeagueId: payload?.returnEligibleMemberIdsByLeagueId ?? {},
         playInEntry: playInEntry as Record<number, RegistrationPlayInEntrySummary>,
+        byotEntry,
         priorLeagueDecisions,
         registrantMemberId: registeringCurler.id,
         registrationState: registrationState ?? payload?.registrationState,
       }),
     [
+      byotEntry,
       desiredLeagueCount,
       leagues,
       payload?.registrationState,
@@ -303,10 +337,11 @@ export default function LeaguePriorityStep({
         evaluation.entries.map((entry) => ({
           label: entry.label,
           league: leagueById.get(entry.leagueId),
+          onExistingTeam: byotEntry[entry.leagueId]?.onExistingTeam === true,
         })),
         byotReturnCaveatIdPrefix,
       ),
-    [byotReturnCaveatIdPrefix, evaluation.entries, leagueById],
+    [byotEntry, byotReturnCaveatIdPrefix, evaluation.entries, leagueById],
   );
 
   const eligibleLeagues = useMemo(
@@ -484,7 +519,12 @@ export default function LeaguePriorityStep({
     if (sabbaticalOnly) return;
     const league = leagueById.get(leagueId);
     if (restrictToFreeLeagues && !isFreeLeague(league)) return;
-    setPriorities((current) => addPriority(current, leagueId, leagues));
+    setPriorities((current) => {
+      const next = addPriority(current, leagueId, leagues);
+      const summary = playInEntry[leagueId] ?? byotEntry[leagueId];
+      if (!summary?.onExistingTeam || !summary.existingTeam) return next;
+      return applyExistingPlayInTeamRosterIfEmpty(next, leagueId, summary.existingTeam, registeringCurler.id);
+    });
     setPriorLeagueDecisions((current) => current.filter((entry) => entry.leagueId !== leagueId));
     setValidationMessage(null);
   };
@@ -591,15 +631,19 @@ export default function LeaguePriorityStep({
       if (!league) continue;
       const roster = countPriorityRoster(priority, registeringCurler.id);
       const expectedSize = expectedByotRosterSize(league);
-      if (league.isPlayInBased && roster.total === 0) {
+      const onExistingDeclaredTeam =
+        (league.isPlayInBased && playInEntry[league.id]?.onExistingTeam === true) ||
+        (!league.isPlayInBased && byotEntry[league.id]?.onExistingTeam === true);
+      if (league.isPlayInBased && !onExistingDeclaredTeam && roster.total === 0) {
         return `Include at least one person on your ${league.name} roster.`;
       }
-      if (league.isPlayInBased && roster.total < MIN_PLAY_IN_ROSTER_SIZE) {
+      if (league.isPlayInBased && !onExistingDeclaredTeam && roster.total < MIN_PLAY_IN_ROSTER_SIZE) {
         return `${league.name} needs at least ${MIN_PLAY_IN_ROSTER_SIZE} players on the team to enter.`;
       }
       if (
         league.leagueType === 'bring_your_own_team' &&
         !league.isPlayInBased &&
+        !onExistingDeclaredTeam &&
         expectedSize != null &&
         roster.total !== expectedSize
       ) {
@@ -824,6 +868,17 @@ export default function LeaguePriorityStep({
                   const label = labelByLeagueId.get(item.leagueId) ?? 'subject_to_availability';
                   const needsRoster =
                     league.leagueType === 'bring_your_own_team' || league.isPlayInBased === true;
+                  const playInSummary = playInEntry[league.id];
+                  const declaredTeamSummary = league.isPlayInBased === true ? playInSummary : byotEntry[league.id];
+                  const onExistingDeclaredTeam =
+                    declaredTeamSummary?.onExistingTeam === true && declaredTeamSummary.existingTeam != null;
+                  const onExistingByotTeam = !league.isPlayInBased && byotEntry[league.id]?.onExistingTeam === true;
+                  const existingDeclaredTeamIsFull =
+                    onExistingDeclaredTeam &&
+                    !playInEntryTeamIsJoinable(
+                      declaredTeamSummary.existingTeam,
+                      declaredTeamSummary.teamSize ?? expectedByotRosterSize(league),
+                    );
                   const canMoveUp = canMovePriority(priorities, item.leagueId, 'up', leagues);
                   const canMoveDown = canMovePriority(priorities, item.leagueId, 'down', leagues);
                   const moveUpTitle = priorityMoveButtonTitle(
@@ -856,12 +911,14 @@ export default function LeaguePriorityStep({
                               <span
                                 className={`rounded-full px-2 py-0.5 text-xs font-medium ${guaranteeChipClassName(label)}`}
                                 aria-describedby={
-                                  isByotGuaranteedReturnCaveat(label, league)
+                                  isByotGuaranteedReturnCaveat(label, league, {
+                                    onExistingTeam: onExistingByotTeam,
+                                  })
                                     ? byotGuaranteedReturnFootnoteId(league, byotReturnCaveatIdPrefix)
                                     : undefined
                                 }
                               >
-                                {guaranteeChipLabel(label, league)}
+                                {guaranteeChipLabel(label, league, { onExistingTeam: onExistingByotTeam })}
                               </span>
                             ) : null}
                           </div>
@@ -911,7 +968,20 @@ export default function LeaguePriorityStep({
                           </div>
                         </div>
                       </div>
-                      {needsRoster ? (
+                      {onExistingDeclaredTeam && declaredTeamSummary.existingTeam ? (
+                        <RegistrationPlayInExistingTeamNotice
+                          leagueName={league.name}
+                          summary={declaredTeamSummary}
+                        />
+                      ) : null}
+                      {onExistingDeclaredTeam && league.isPlayInBased && playInSummary ? (
+                        <RegistrationPlayInGuaranteeResult
+                          leagueName={league.name}
+                          summary={playInSummary as RegistrationPlayInEntrySummary}
+                          isReturning={(payload?.priorSeasonLeagueIds ?? []).includes(league.id)}
+                        />
+                      ) : null}
+                      {needsRoster && !existingDeclaredTeamIsFull ? (
                         <PriorityRosterField
                           league={league}
                           priority={item}
@@ -920,12 +990,15 @@ export default function LeaguePriorityStep({
                           memberNameById={memberNameById}
                           required={!league.isPlayInBased}
                           helperText={
-                            league.isPlayInBased
+                            onExistingDeclaredTeam
+                              ? 'You can add remaining players. Teammates already on this team cannot be removed here.'
+                              : league.isPlayInBased
                               ? `List at least ${MIN_PLAY_IN_ROSTER_SIZE} players to enter as a team.`
                               : 'Guaranteed return requires a full roster of returning players. Teams with new players go on the waitlist.'
                           }
-                          playInCommittedOtherMemberTeams={playInEntry[league.id]?.committedOtherMemberTeams}
-                          playInCommittedOtherMemberIds={playInEntry[league.id]?.committedOtherMemberIds}
+                          playInCommittedOtherMemberTeams={declaredTeamSummary?.committedOtherMemberTeams}
+                          playInCommittedOtherMemberIds={declaredTeamSummary?.committedOtherMemberIds}
+                          lockPlayInTeamMembers={onExistingDeclaredTeam ? declaredTeamSummary.existingTeam?.members : undefined}
                           onChange={(update) => updateRoster(league.id, update)}
                         />
                       ) : null}

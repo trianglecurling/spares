@@ -246,11 +246,15 @@ Staff may manually correct BYOT placements and refunds as needed.
 
 A registration may have deferred payment because of:
 
-- Waitlist placement.
-- Non-guaranteed league request.
-- Third-league interest.
+- Waitlist or subject-to-availability placement that could still change the
+  amount due.
+- A paid leftover below guaranteed returns (third-league interest that still
+  adds a charge).
 - Junior Recreational financial assistance review.
-- Staff placement review.
+- Staff review required before the amount is known.
+
+Fee-0 leftover leagues that leave the quoted floor equal to the ceiling do not
+defer payment. Placement of those leagues is still resolved later.
 
 When staff resolves the uncertainty, staff may trigger a payment link.
 

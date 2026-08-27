@@ -1,4 +1,5 @@
 import type { RegistrationPlayInEntrySummary } from './registrationViewEditShared';
+import { priorityRosterFromPlayInTeamMembers } from './leaguePriorityShared';
 
 const MEMBERSHIP_CONTACT_EMAIL = 'membership@trianglecurling.com';
 
@@ -105,24 +106,11 @@ export function playInJoinableTeamRosterUpdate(input: {
   teamRosterPlacements: Array<{ memberId: number }>;
   byotTeammateText: string | null;
 } {
-  const teamRosterPlacements: Array<{ memberId: number }> = [];
-  const pendingNames: string[] = [];
-  for (const member of input.team.members) {
-    if (member.memberId != null && member.memberId !== input.registeringMemberId) {
-      teamRosterPlacements.push({ memberId: member.memberId });
-      continue;
-    }
-    const pendingName = member.pendingName?.trim();
-    if (pendingName) pendingNames.push(pendingName);
-  }
-  return {
-    teamRosterPlacements,
-    byotTeammateText: pendingNames.length > 0 ? pendingNames.join('\n') : null,
-  };
+  return priorityRosterFromPlayInTeamMembers(input.team.members, input.registeringMemberId);
 }
 
 /**
- * Read-only view of the declared play-in entry team the registrant is already on,
+ * Read-only view of the declared team the registrant is already on,
  * shown instead of the team roster editor.
  */
 export function RegistrationPlayInExistingTeamNotice({
@@ -130,12 +118,24 @@ export function RegistrationPlayInExistingTeamNotice({
   summary,
 }: {
   leagueName: string;
-  summary: RegistrationPlayInEntrySummary;
+  summary: {
+    existingTeam: {
+      createdByName: string | null;
+      members: Array<{
+        memberId?: number | null;
+        memberName: string | null;
+        pendingName: string | null;
+      }>;
+    } | null;
+  };
 }) {
   const team = summary.existingTeam;
   if (!team) return null;
   return (
-    <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+    <div
+      className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900"
+      role="status"
+    >
       <p className="font-semibold">
         You've already been added to a {leagueName} team
         {team.createdByName ? ` by ${team.createdByName}` : ''}.

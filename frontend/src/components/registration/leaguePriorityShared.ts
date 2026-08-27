@@ -19,7 +19,11 @@ import {
   MAX_PROTECTED_CLAIMS,
   MAX_SIMULTANEOUS_SABBATICALS,
   MIN_PLAY_IN_ROSTER_SIZE,
+  overlayExistingByotTeamRoster,
+  memberIdsFromExistingByotTeam,
   pendingRosterNames,
+  priorityHasDeclaredRoster,
+  priorityHasLinkedMemberRoster,
   priorityRosterAllReturning,
   priorityRosterIsComplete,
   omitLeaveBehindDecisionsForListedLeagues,
@@ -32,6 +36,7 @@ import {
 import type {
   ContinuingSabbaticalSummary,
   LeagueCatalogItem,
+  RegistrationByotDeclaredTeamSummary,
   RegistrationLeagueEvaluation,
   RegistrationPlayInEntrySummary,
 } from './registrationViewEditShared';
@@ -52,8 +57,10 @@ export {
   MAX_SIMULTANEOUS_SABBATICALS,
   MIN_PLAY_IN_ROSTER_SIZE,
   pendingRosterNames,
+  priorityHasDeclaredRoster,
   priorityRosterAllReturning,
   priorityRosterIsComplete,
+  overlayExistingByotTeamRoster,
   omitLeaveBehindDecisionsForListedLeagues,
 };
 export type { LabeledPriorityEntry, LeaguePriorityGuaranteeLabel, PriorityLabelMode, PriorityLabelResult };
@@ -103,6 +110,7 @@ export type RegistrationLeagueCatalogPayload = {
   basicIceFallbackInterest: boolean | null;
   collectBasicIceFallback: boolean;
   playInEntry?: Record<number, RegistrationPlayInEntrySummary>;
+  byotEntry?: Record<number, RegistrationByotDeclaredTeamSummary>;
   evaluation?: RegistrationLeagueEvaluation;
 };
 
@@ -192,6 +200,7 @@ export function evaluatePriorityList(input: {
   returnRightLeagueIds: number[];
   returnEligibleMemberIdsByLeagueId?: Record<number, number[]>;
   playInEntry?: Record<number, RegistrationPlayInEntrySummary>;
+  byotEntry?: Record<number, RegistrationByotDeclaredTeamSummary>;
   priorLeagueDecisions: PriorLeagueDecision[];
   registrantMemberId: number | null;
   registrationState?: PriorityLabelMode | 'closed';
@@ -200,6 +209,11 @@ export function evaluatePriorityList(input: {
   const returnRightLeagueIds = new Set(input.returnRightLeagueIds);
   const candidates: PriorityLabelCandidate[] = input.priorities.map((priority) => {
     const league = leagues[priority.leagueId];
+    const labeledRoster = overlayExistingByotTeamRoster(
+      priority,
+      memberIdsFromExistingByotTeam(input.byotEntry?.[priority.leagueId]),
+      input.registrantMemberId,
+    );
     const hasRight = hasReturnRight({
       league,
       priority,
@@ -216,9 +230,9 @@ export function evaluatePriorityList(input: {
       leagueId: priority.leagueId,
       priorityRank: priority.priorityRank,
       hasReturnRight: hasRight,
-      rosterComplete: league ? priorityRosterIsComplete(league, priority, input.registrantMemberId) : false,
+      rosterComplete: league ? priorityRosterIsComplete(league, labeledRoster, input.registrantMemberId) : false,
       rosterAllReturning: league
-        ? priorityRosterAllReturning(league, priority, returnEligibleMemberIds, input.registrantMemberId)
+        ? priorityRosterAllReturning(league, labeledRoster, returnEligibleMemberIds, input.registrantMemberId)
         : false,
       feeMinor: league?.registrationFeeMinor ?? 0,
       allowsWaitlist: league?.allowsWaitlist === true,
@@ -247,8 +261,9 @@ export function normalizePriorityOrder(
 
 /**
  * Seeds an empty list: the leagues the registrant played last session, plus any
- * league they are already waitlisted for. Waitlisted leagues lead because the
- * registrant already told us they want in.
+ * league they are already waitlisted for or already declared onto as a teammate.
+ * Waitlisted and existing declared-team leagues lead because the registrant
+ * already has a stake in them.
  */
 export function seedPriorityList(
   payload: RegistrationLeagueCatalogPayload,
@@ -258,10 +273,14 @@ export function seedPriorityList(
   const priorSeasonLeagueIds = allowed
     ? payload.priorSeasonLeagueIds.filter((leagueId) => allowed.has(leagueId))
     : payload.priorSeasonLeagueIds;
-  return mergeActiveWaitlistLeagues(
-    normalizePriorityOrder(
-      priorSeasonLeagueIds.map((leagueId, index) => ({ leagueId, priorityRank: index + 1 })),
-      payload.leagues,
+  return mergeExistingPlayInTeamLeagues(
+    mergeActiveWaitlistLeagues(
+      normalizePriorityOrder(
+        priorSeasonLeagueIds.map((leagueId, index) => ({ leagueId, priorityRank: index + 1 })),
+        payload.leagues,
+      ),
+      payload,
+      options,
     ),
     payload,
     options,
@@ -271,8 +290,10 @@ export function seedPriorityList(
 /**
  * Initial list for the priority page. A saved list is the registrant's last
  * confirmed order and is not re-seeded with waitlist leagues they already
- * removed. An empty list still seeds last-session leagues plus active waitlist
- * entries (first visit, or joining a waitlist before any save).
+ * removed. Leagues they were already added to as a teammate still join the list,
+ * because another teammate declared them. An empty list still seeds
+ * last-session leagues plus active waitlist entries (first visit, or joining a
+ * waitlist before any save).
  */
 export function hydratePriorityList(
   payload: RegistrationLeagueCatalogPayload,
@@ -283,7 +304,11 @@ export function hydratePriorityList(
     const source = allowed
       ? payload.priorities.filter((priority) => allowed.has(priority.leagueId))
       : payload.priorities;
-    return normalizePriorityOrder(source, payload.leagues);
+    return mergeExistingPlayInTeamLeagues(
+      normalizePriorityOrder(source, payload.leagues),
+      payload,
+      options,
+    );
   }
   const source = payload.priorSeasonLeagueIds.map((leagueId, index) => ({
     leagueId,
@@ -293,7 +318,11 @@ export function hydratePriorityList(
     allowed ? source.filter((priority) => allowed.has(priority.leagueId)) : source,
     payload.leagues,
   );
-  return mergeActiveWaitlistLeagues(base, payload, options);
+  return mergeExistingPlayInTeamLeagues(
+    mergeActiveWaitlistLeagues(base, payload, options),
+    payload,
+    options,
+  );
 }
 
 function isSeedableWaitlistEntry(entry: { status: string }): boolean {
@@ -367,6 +396,179 @@ export function mergeNewlyJoinedWaitlistLeagues(
     { ...payload, existingWaitlistEntries: newEntries },
     options,
   );
+}
+
+type ExistingDeclaredTeamSummary = {
+  onExistingTeam?: boolean;
+  existingTeam?: { members: Array<{ memberId?: number | null; pendingName?: string | null }> } | null;
+};
+
+function existingDeclaredTeamEntries(
+  payload: RegistrationLeagueCatalogPayload,
+): Array<[number, ExistingDeclaredTeamSummary]> {
+  return [
+    ...Object.entries(payload.playInEntry ?? {}),
+    ...Object.entries(payload.byotEntry ?? {}),
+  ].map(([key, summary]) => [Number(key), summary]);
+}
+
+/** Play-in or BYOT leagues the registrant is already a declared teammate on. */
+export function seedableExistingPlayInTeamLeagueIds(
+  payload: RegistrationLeagueCatalogPayload,
+  options?: PriorityListOptions,
+): number[] {
+  const allowed = allowedLeagueIds(payload.leagues, options?.freeLeaguesOnly);
+  const catalogIds = new Set(payload.leagues.map((league) => league.id));
+  const ids: number[] = [];
+  for (const [leagueId, summary] of existingDeclaredTeamEntries(payload)) {
+    if (!summary?.onExistingTeam || !summary.existingTeam) continue;
+    if (!catalogIds.has(leagueId)) continue;
+    if (allowed != null && !allowed.has(leagueId)) continue;
+    ids.push(leagueId);
+  }
+  return ids;
+}
+
+/**
+ * Copies an existing play-in entry team's members onto a priority roster.
+ * The registering curler is omitted from placements; they occupy a locked pill.
+ */
+export function priorityRosterFromPlayInTeamMembers(
+  members: Array<{ memberId?: number | null; pendingName?: string | null }>,
+  registeringMemberId?: number | null,
+): {
+  teamRosterPlacements: Array<{ memberId: number }>;
+  byotTeammateText: string | null;
+} {
+  const teamRosterPlacements: Array<{ memberId: number }> = [];
+  const pendingNames: string[] = [];
+  for (const member of members) {
+    if (member.memberId != null && member.memberId !== registeringMemberId) {
+      teamRosterPlacements.push({ memberId: member.memberId });
+      continue;
+    }
+    const pendingName = member.pendingName?.trim();
+    if (pendingName) pendingNames.push(pendingName);
+  }
+  return {
+    teamRosterPlacements,
+    byotTeammateText: pendingNames.length > 0 ? pendingNames.join('\n') : null,
+  };
+}
+
+export function applyExistingPlayInTeamRosterIfEmpty(
+  priorities: LeaguePriorityInput[],
+  leagueId: number,
+  team: { members: Array<{ memberId?: number | null; pendingName?: string | null }> },
+  registeringMemberId?: number | null,
+): LeaguePriorityInput[] {
+  return priorities.map((priority) => {
+    if (priority.leagueId !== leagueId) return priority;
+    if (priorityHasLinkedMemberRoster(priority)) return priority;
+    return { ...priority, ...priorityRosterFromPlayInTeamMembers(team.members, registeringMemberId) };
+  });
+}
+
+/**
+ * Inserts play-in or BYOT leagues the registrant was already declared onto, and
+ * fills an empty roster from that existing team. Saved rosters are left as-is.
+ * Returns the same array reference when nothing needs to change.
+ */
+export function mergeExistingPlayInTeamLeagues(
+  priorities: LeaguePriorityInput[],
+  payload: RegistrationLeagueCatalogPayload,
+  options?: PriorityListOptions,
+): LeaguePriorityInput[] {
+  const missingLeagueIds = seedableExistingPlayInTeamLeagueIds(payload, options).filter(
+    (leagueId) => !priorities.some((priority) => priority.leagueId === leagueId),
+  );
+  const filtered = filterPrioritiesToAllowedLeagues(priorities, payload.leagues, options?.freeLeaguesOnly);
+  let next = filtered;
+  if (missingLeagueIds.length > 0) {
+    const additions = missingLeagueIds.map((leagueId, index) => ({
+      leagueId,
+      priorityRank: index + 1,
+    }));
+    const existing = filtered.map((priority, index) => ({
+      ...priority,
+      priorityRank: additions.length + index + 1,
+    }));
+    next = normalizePriorityOrder([...additions, ...existing], payload.leagues);
+  }
+
+  const summaryByLeagueId = new Map(existingDeclaredTeamEntries(payload));
+  let filledRoster = false;
+  next = next.map((priority) => {
+    const summary = summaryByLeagueId.get(priority.leagueId);
+    if (!summary?.onExistingTeam || !summary.existingTeam) return priority;
+    if (priorityHasLinkedMemberRoster(priority)) return priority;
+    filledRoster = true;
+    return {
+      ...priority,
+      ...priorityRosterFromPlayInTeamMembers(summary.existingTeam.members),
+    };
+  });
+  if (missingLeagueIds.length === 0 && !filledRoster) return filtered;
+  return next;
+}
+
+/**
+ * Adds declared-team leagues that became existing-team memberships since the last
+ * catalog snapshot. Already-known ones stay off the list if the registrant
+ * removed them during this visit.
+ */
+export function mergeNewlyDiscoveredPlayInTeamLeagues(
+  priorities: LeaguePriorityInput[],
+  payload: RegistrationLeagueCatalogPayload,
+  previouslyKnownExistingTeamLeagueIds: ReadonlySet<number>,
+  options?: PriorityListOptions,
+): LeaguePriorityInput[] {
+  const discoveredPlayIn: NonNullable<RegistrationLeagueCatalogPayload['playInEntry']> = {};
+  const discoveredByot: NonNullable<RegistrationLeagueCatalogPayload['byotEntry']> = {};
+  for (const [key, summary] of Object.entries(payload.playInEntry ?? {})) {
+    const leagueId = Number(key);
+    if (!summary?.onExistingTeam || !summary.existingTeam) continue;
+    if (previouslyKnownExistingTeamLeagueIds.has(leagueId)) continue;
+    discoveredPlayIn[leagueId] = summary;
+  }
+  for (const [key, summary] of Object.entries(payload.byotEntry ?? {})) {
+    const leagueId = Number(key);
+    if (!summary?.onExistingTeam || !summary.existingTeam) continue;
+    if (previouslyKnownExistingTeamLeagueIds.has(leagueId)) continue;
+    discoveredByot[leagueId] = summary;
+  }
+  if (Object.keys(discoveredPlayIn).length === 0 && Object.keys(discoveredByot).length === 0) {
+    return priorities;
+  }
+  return mergeExistingPlayInTeamLeagues(
+    priorities,
+    { ...payload, playInEntry: discoveredPlayIn, byotEntry: discoveredByot },
+    options,
+  );
+}
+
+/** How many existing-team leagues hydrate added that were not already listed or last-session seeded. */
+export function addedExistingPlayInTeamCount(
+  payload: RegistrationLeagueCatalogPayload,
+  nextPriorities: LeaguePriorityInput[],
+): number {
+  const previouslyListed = new Set(
+    payload.priorities.length > 0
+      ? payload.priorities.map((priority) => priority.leagueId)
+      : payload.priorSeasonLeagueIds,
+  );
+  const summaryByLeagueId = new Map(existingDeclaredTeamEntries(payload));
+  return nextPriorities.filter((priority) => {
+    const summary = summaryByLeagueId.get(priority.leagueId);
+    return Boolean(summary?.onExistingTeam && summary.existingTeam && !previouslyListed.has(priority.leagueId));
+  }).length;
+}
+
+/** Raises the desired count so auto-seeded existing play-in teams are not immediately superfluous. */
+export function bumpDesiredLeagueCount(baseCount: number | null, addedCount: number): number | null {
+  if (addedCount <= 0) return baseCount;
+  const next = Math.min(MAX_DESIRED_LEAGUE_COUNT, Math.max(0, baseCount ?? 0) + addedCount);
+  return next > 0 ? next : null;
 }
 
 /** "Monday", "Monday and Tuesday", or "Monday, Tuesday, and Wednesday". */
@@ -775,16 +977,28 @@ export function movePriorityInList(
 type ByotGuaranteedReturnCaveatLeague = Pick<LeagueCatalogItem, 'isPlayInBased'> &
   Partial<Pick<LeagueCatalogItem, 'leagueType' | 'format'>>;
 
+type ByotGuaranteedReturnCaveatOptions = {
+  /** Listed on a teammate's already-declared pair; that partner already chose this league. */
+  onExistingTeam?: boolean;
+};
+
 /** Non-play-in BYOT guaranteed returns carry a teammate-priority caveat. */
 export function isByotGuaranteedReturnCaveat(
   label: LeaguePriorityGuaranteeLabel | null | undefined,
   league: ByotGuaranteedReturnCaveatLeague | undefined,
+  options?: ByotGuaranteedReturnCaveatOptions,
 ): league is ByotGuaranteedReturnCaveatLeague {
-  return (
-    label === 'guaranteed_return' &&
-    league?.leagueType === 'bring_your_own_team' &&
-    league.isPlayInBased !== true
-  );
+  if (
+    label !== 'guaranteed_return' ||
+    league?.leagueType !== 'bring_your_own_team' ||
+    league.isPlayInBased === true
+  ) {
+    return false;
+  }
+  // Doubles: the only partner already declared this pair. Teams can still have
+  // other teammates who have not registered, so those keep the caveat.
+  if (options?.onExistingTeam === true && league.format === 'doubles') return false;
+  return true;
 }
 
 export function byotGuaranteedReturnFootnote(
@@ -807,13 +1021,14 @@ export function byotGuaranteedReturnFootnotes(
   entries: Array<{
     label: LeaguePriorityGuaranteeLabel | null | undefined;
     league: ByotGuaranteedReturnCaveatLeague | undefined;
+    onExistingTeam?: boolean;
   }>,
   idPrefix: string,
 ): Array<{ id: string; text: string }> {
   const seen = new Set<string>();
   const footnotes: Array<{ id: string; text: string }> = [];
   for (const entry of entries) {
-    if (!entry.league || !isByotGuaranteedReturnCaveat(entry.label, entry.league)) continue;
+    if (!entry.league || !isByotGuaranteedReturnCaveat(entry.label, entry.league, entry)) continue;
     const id = byotGuaranteedReturnFootnoteId(entry.league, idPrefix);
     if (seen.has(id)) continue;
     seen.add(id);
@@ -825,9 +1040,10 @@ export function byotGuaranteedReturnFootnotes(
 export function guaranteeChipLabel(
   label: LeaguePriorityGuaranteeLabel,
   league?: ByotGuaranteedReturnCaveatLeague,
+  options?: ByotGuaranteedReturnCaveatOptions,
 ): string {
   const text = leaguePriorityGuaranteeLabelText(label, league);
-  return isByotGuaranteedReturnCaveat(label, league) ? `${text}*` : text;
+  return isByotGuaranteedReturnCaveat(label, league, options) ? `${text}*` : text;
 }
 
 /** Leftover spots without a waitlist or guarantee still show their derived status. */

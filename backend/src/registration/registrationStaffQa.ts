@@ -530,6 +530,19 @@ export async function getStaffReturningPlayersQa(input: {
       set.add(row.memberId);
       membersByPredecessorId.set(row.predecessorLeagueId, set);
     }
+    const teamMemberRows = await db
+      .select({
+        memberId: schema.teamMembers.member_id,
+        predecessorLeagueId: schema.leagueTeams.league_id,
+      })
+      .from(schema.teamMembers)
+      .innerJoin(schema.leagueTeams, eq(schema.teamMembers.team_id, schema.leagueTeams.id))
+      .where(inArray(schema.leagueTeams.league_id, predecessorIds));
+    for (const row of teamMemberRows) {
+      const set = membersByPredecessorId.get(row.predecessorLeagueId) ?? new Set<number>();
+      set.add(row.memberId);
+      membersByPredecessorId.set(row.predecessorLeagueId, set);
+    }
     for (const league of leaguesSorted) {
       if (league.predecessor_league_id == null) continue;
       returnEligibleMemberIdsByLeagueId.set(
