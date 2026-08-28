@@ -1,6 +1,7 @@
 import { eq, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { normalizeEmail } from '../utils/auth.js';
+import { formatMemberDisplayName, normalizePersonName } from '../utils/memberName.js';
 
 export type MemberGuardianInput = {
   firstName: string;
@@ -36,19 +37,21 @@ export function validateMemberGuardian(input: MemberGuardianInput): void {
 }
 
 export function guardianEmergencyContactName(input: MemberGuardianInput): string {
-  return `${input.firstName.trim()} ${input.lastName.trim()}`.trim();
+  return formatMemberDisplayName(input.firstName, input.lastName);
 }
 
 /** Persist parent/guardian contact on a member and mirror it to emergency contact fields. */
 export async function applyMemberGuardianUpdate(memberId: number, input: MemberGuardianInput): Promise<void> {
   validateMemberGuardian(input);
   const { db, schema } = getDrizzleDb();
-  const emergencyName = guardianEmergencyContactName(input);
+  const firstName = normalizePersonName(input.firstName);
+  const lastName = normalizePersonName(input.lastName);
+  const emergencyName = formatMemberDisplayName(firstName, lastName);
   await db
     .update(schema.members)
     .set({
-      guardian_first_name: input.firstName.trim(),
-      guardian_last_name: input.lastName.trim(),
+      guardian_first_name: firstName,
+      guardian_last_name: lastName,
       guardian_email: normalizeEmail(input.email),
       guardian_phone: input.phone.trim(),
       emergency_contact_name: emergencyName,

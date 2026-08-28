@@ -25,6 +25,7 @@ import {
   parseNameTagReplacementQuantity,
   resolveNameTagIncludePronounsForSave,
 } from '../utils/nameTag.js';
+import { formatMemberDisplayName, normalizePersonName } from '../utils/memberName.js';
 import { applyMemberGuardianUpdate } from '../services/memberGuardian.js';
 
 export const REQUIRED_REGISTRATION_POLICIES: Array<{
@@ -111,7 +112,7 @@ function normalizeDateTime(value: unknown): string | null {
 }
 
 function memberName(input: Pick<MemberDemographicsInput, 'firstName' | 'lastName'>): string {
-  return `${input.firstName.trim()} ${input.lastName.trim()}`.trim();
+  return formatMemberDisplayName(input.firstName, input.lastName);
 }
 
 function assertNonEmpty(value: string, field: string): void {
@@ -683,8 +684,8 @@ async function findReusableDraft(registrationId: number, curlerMemberId: number)
 export async function createMemberForRegistration(input: Partial<MemberDemographicsInput> & { email: string }): Promise<MemberSummary> {
   assertValidEmail(input.email);
   const normalizedEmail = normalizeEmail(input.email);
-  const firstName = input.firstName?.trim() || 'New';
-  const lastName = input.lastName?.trim() || 'Curler';
+  const firstName = normalizePersonName(input.firstName) || 'New';
+  const lastName = normalizePersonName(input.lastName) || 'Curler';
   if (input.dateOfBirth) assertValidDateOfBirth(input.dateOfBirth);
 
   const { db, schema } = getDrizzleDb();
@@ -942,8 +943,8 @@ export async function updateGuardian(registrationId: number, input: GuardianInpu
   await db
     .update(schema.curlingRegistrations)
     .set({
-      guardian_first_name: input.firstName.trim(),
-      guardian_last_name: input.lastName.trim(),
+      guardian_first_name: normalizePersonName(input.firstName),
+      guardian_last_name: normalizePersonName(input.lastName),
       guardian_email: normalizeEmail(input.email),
       guardian_phone: input.phone.trim(),
       updated_at: sql`CURRENT_TIMESTAMP`,

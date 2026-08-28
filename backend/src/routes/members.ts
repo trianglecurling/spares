@@ -90,7 +90,7 @@ import {
 } from '../services/memberGuardian.js';
 import { isMemberMinor } from '../utils/memberAge.js';
 import { sendValidationError } from '../api/errors.js';
-import { resolveMemberNameFields, splitMemberDisplayName } from '../utils/memberName.js';
+import { normalizeOptionalPersonName, normalizePersonName, resolveMemberNameFields, splitMemberDisplayName } from '../utils/memberName.js';
 import {
   countServerAdminsFromRows,
   countServerAdminsInDb,
@@ -499,8 +499,8 @@ function normalizeTimestamp(value: string | Date | number | null | undefined): s
 }
 
 function memberSummaryNameFields(member: Member): { firstName: string | null; lastName: string | null } {
-  const storedFirst = member.first_name?.trim() ?? '';
-  const storedLast = member.last_name?.trim() ?? '';
+  const storedFirst = normalizePersonName(member.first_name);
+  const storedLast = normalizePersonName(member.last_name);
   if (storedFirst || storedLast) {
     return {
       firstName: storedFirst || null,
@@ -517,8 +517,8 @@ function memberSummaryNameFields(member: Member): { firstName: string | null; la
 function buildMemberProfileResponse(member: Member): MemberProfileResponse {
   const dateOfBirth = normalizeDateString(member.date_of_birth);
   const minor = isMemberMinor(dateOfBirth);
-  const guardianFirstName = member.guardian_first_name ?? null;
-  const guardianLastName = member.guardian_last_name ?? null;
+  const guardianFirstName = normalizeOptionalPersonName(member.guardian_first_name);
+  const guardianLastName = normalizeOptionalPersonName(member.guardian_last_name);
   const guardianPhone = member.guardian_phone ?? null;
   const guardianEmergencyName =
     guardianFirstName || guardianLastName
@@ -531,14 +531,16 @@ function buildMemberProfileResponse(member: Member): MemberProfileResponse {
       : null;
   return {
     id: member.id,
-    name: member.name,
+    name: normalizePersonName(member.name) || member.name,
     email: member.email,
     phone: member.phone,
-    firstName: member.first_name ?? null,
-    lastName: member.last_name ?? null,
+    firstName: normalizeOptionalPersonName(member.first_name),
+    lastName: normalizeOptionalPersonName(member.last_name),
     dateOfBirth,
     mailingAddress: member.mailing_address ?? null,
-    emergencyContactName: minor ? guardianEmergencyName ?? member.emergency_contact_name ?? null : member.emergency_contact_name ?? null,
+    emergencyContactName: minor
+      ? guardianEmergencyName ?? normalizeOptionalPersonName(member.emergency_contact_name)
+      : normalizeOptionalPersonName(member.emergency_contact_name),
     emergencyContactPhone: minor ? guardianPhone ?? member.emergency_contact_phone ?? null : member.emergency_contact_phone ?? null,
     preferredPronouns: member.preferred_pronouns ?? null,
     usaCurlingCompetitionGender: member.usa_curling_competition_gender ?? null,
@@ -965,7 +967,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
       // Ensure proper boolean conversion
       const response: MemberSummaryResponse = {
         id: m.id,
-        name: m.name,
+        name: normalizePersonName(m.name) || m.name,
         isAdmin: memberHasAdminAccess(m, { generalAdminMemberIds }),
         isServerAdmin: isServerAdmin(m),
         isCalendarAdmin: (m.is_calendar_admin ?? 0) === 1,
@@ -1140,7 +1142,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
       items: members.map((m) => {
         const response: MemberSummaryResponse = {
           id: m.id,
-          name: m.name,
+          name: normalizePersonName(m.name) || m.name,
           isAdmin: memberHasAdminAccess(m, { generalAdminMemberIds }),
           isServerAdmin: isServerAdmin(m),
           isCalendarAdmin: (m.is_calendar_admin ?? 0) === 1,

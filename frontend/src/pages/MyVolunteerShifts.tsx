@@ -230,7 +230,7 @@ function EditCommentDialog({
           label="Comments"
           htmlFor={commentsInputId}
           optional
-          helperText="Visible to the owners of this volunteer program."
+          helperText="Visible to members viewing this program."
           error={error ?? undefined}
         >
           <textarea
@@ -239,7 +239,7 @@ function EditCommentDialog({
             value={comments}
             onChange={(e) => setComments(e.target.value)}
             maxLength={2000}
-            placeholder="Anything the program owners should know"
+            placeholder="Anything other volunteers or program owners should know"
           />
         </FormField>
         <div className="flex flex-wrap justify-end gap-2 pt-2">

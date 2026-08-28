@@ -1,9 +1,11 @@
 import { useMemo, useState, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import { HiChevronDown } from 'react-icons/hi2';
 import Button from '../Button';
 import VolunteerSignupDialog, {
   type VolunteerSignupTarget,
 } from './VolunteerSignupDialog';
+import VolunteerSpotsStatusBadge from './VolunteerSpotsStatusBadge';
 import { del } from '../../api/client';
 import { useAlert } from '../../contexts/AlertContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
@@ -14,10 +16,14 @@ import {
   formatVolunteerRange,
   formatVolunteerRoleShiftPreview,
   formatVolunteerTimeRange,
+  volunteerProgramHasIneligibleCredentialRoles,
+  volunteerProgramMissingCredentialNames,
+  volunteerProgramShiftsForCaller,
   volunteerShiftDayKey,
   type VolunteerProgramView,
   type VolunteerShiftRoleView,
   type VolunteerShiftView,
+  type VolunteerSignupView,
 } from '../../utils/volunteering';
 
 export type VolunteerProgramGroupBy = 'shift' | 'role';
@@ -26,12 +32,14 @@ type VolunteerProgramShiftsBodyProps = {
   program: VolunteerProgramView;
   groupBy: VolunteerProgramGroupBy;
   onChanged: () => Promise<void>;
+  heldCredentialIds?: Iterable<number>;
 };
 
 export default function VolunteerProgramShiftsBody({
   program,
   groupBy,
   onChanged,
+  heldCredentialIds,
 }: VolunteerProgramShiftsBodyProps) {
   const { showAlert } = useAlert();
   const { confirm } = useConfirm();
@@ -39,6 +47,7 @@ export default function VolunteerProgramShiftsBody({
   const [expandedRoles, setExpandedRoles] = useState<Set<string>>(new Set());
   const [busyShiftRoleId, setBusyShiftRoleId] = useState<number | null>(null);
   const [signupTarget, setSignupTarget] = useState<VolunteerSignupTarget | null>(null);
+  const [showIneligibleRoles, setShowIneligibleRoles] = useState(false);
 
   const toggleInSet = <T,>(prev: Set<T>, key: T): Set<T> => {
     const next = new Set(prev);
@@ -47,7 +56,11 @@ export default function VolunteerProgramShiftsBody({
     return next;
   };
 
-  const openSignUp = (role: VolunteerShiftRoleView, shift: VolunteerShiftView) => {
+  const openSignUp = (
+    role: VolunteerShiftRoleView,
+    shift: VolunteerShiftView,
+    manageForOthers = false
+  ) => {
     const remaining = Math.max(0, role.volunteersNeeded - role.volunteersRegistered);
     setSignupTarget({
       shiftRoleId: role.id,
@@ -56,6 +69,10 @@ export default function VolunteerProgramShiftsBody({
       remainingSpots: remaining,
       requiresCredentials: role.requiredCredentials.length > 0,
       callerIsSignedUp: role.callerIsSignedUp,
+      manageForOthers,
+      signedUpMemberIds: role.signups
+        .map((signup) => signup.memberId)
+        .filter((id): id is number => id != null),
     });
   };
 
@@ -78,27 +95,51 @@ export default function VolunteerProgramShiftsBody({
     }
   };
 
+  const displayProgram = useMemo(
+    () => ({
+      ...program,
+      shifts: volunteerProgramShiftsForCaller(program, {
+        includeIneligible: showIneligibleRoles,
+      }),
+    }),
+    [program, showIneligibleRoles]
+  );
+  const hasHiddenCredentialRoles =
+    !program.canManage && volunteerProgramHasIneligibleCredentialRoles(program);
+  const hasVisibleShifts = displayProgram.shifts.some((shift) => shift.roles.length > 0);
+
   return (
     <>
-      {groupBy === 'shift' ? (
-        <ProgramByShiftView
-          program={program}
-          expandedDays={expandedDays}
-          onToggleDay={(key) => setExpandedDays((prev) => toggleInSet(prev, key))}
-          busyShiftRoleId={busyShiftRoleId}
-          onSignUp={openSignUp}
-          onCancel={handleCancel}
-        />
-      ) : (
-        <ProgramByRoleView
-          program={program}
-          expandedRoles={expandedRoles}
-          onToggleRole={(key) => setExpandedRoles((prev) => toggleInSet(prev, key))}
-          busyShiftRoleId={busyShiftRoleId}
-          onSignUp={openSignUp}
-          onCancel={handleCancel}
-        />
-      )}
+      <div className="space-y-4">
+        {hasVisibleShifts ? (
+          groupBy === 'shift' ? (
+            <ProgramByShiftView
+              program={displayProgram}
+              expandedDays={expandedDays}
+              onToggleDay={(key) => setExpandedDays((prev) => toggleInSet(prev, key))}
+              busyShiftRoleId={busyShiftRoleId}
+              onSignUp={openSignUp}
+              onCancel={handleCancel}
+            />
+          ) : (
+            <ProgramByRoleView
+              program={displayProgram}
+              expandedRoles={expandedRoles}
+              onToggleRole={(key) => setExpandedRoles((prev) => toggleInSet(prev, key))}
+              busyShiftRoleId={busyShiftRoleId}
+              onSignUp={openSignUp}
+              onCancel={handleCancel}
+            />
+          )
+        ) : null}
+
+        {hasHiddenCredentialRoles ? (
+          <MissingCredentialsNote
+            credentialNames={volunteerProgramMissingCredentialNames(program, heldCredentialIds)}
+            onShowAnyway={showIneligibleRoles ? undefined : () => setShowIneligibleRoles(true)}
+          />
+        ) : null}
+      </div>
 
       {signupTarget ? (
         <VolunteerSignupDialog
@@ -107,9 +148,13 @@ export default function VolunteerProgramShiftsBody({
           onSuccess={async (count) => {
             setSignupTarget(null);
             showAlert(
-              count === 1
-                ? 'Signed up. Confirmation emails are on the way for selected members.'
-                : `${count} volunteers signed up. Confirmation emails are on the way for selected members.`,
+              signupTarget.manageForOthers
+                ? count === 1
+                  ? 'Volunteer signed up. A confirmation email is on the way.'
+                  : `${count} volunteers signed up. Confirmation emails are on the way.`
+                : count === 1
+                  ? 'Signed up. Confirmation emails are on the way for selected members.'
+                  : `${count} volunteers signed up. Confirmation emails are on the way for selected members.`,
               'success'
             );
             await onChanged();
@@ -117,6 +162,35 @@ export default function VolunteerProgramShiftsBody({
         />
       ) : null}
     </>
+  );
+}
+
+const credentialNoteLinkClass =
+  'text-primary-teal-link hover:underline rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/50';
+
+function MissingCredentialsNote({
+  credentialNames,
+  onShowAnyway,
+}: {
+  credentialNames: string[];
+  onShowAnyway?: () => void;
+}) {
+  return (
+    <p className="text-sm text-gray-500 dark:text-gray-400">
+      There are additional shifts on this program that you are missing{' '}
+      <Link to="/volunteering?tab=credentials" className={credentialNoteLinkClass}>
+        credentials
+      </Link>
+      {` for${credentialNames.length > 0 ? ` (${credentialNames.join(', ')})` : ''}.`}
+      {onShowAnyway ? (
+        <>
+          {' '}
+          <button type="button" onClick={onShowAnyway} className={credentialNoteLinkClass}>
+            Show anyway.
+          </button>
+        </>
+      ) : null}
+    </p>
   );
 }
 
@@ -132,7 +206,7 @@ function ProgramByShiftView({
   expandedDays: Set<string>;
   onToggleDay: (key: string) => void;
   busyShiftRoleId: number | null;
-  onSignUp: (role: VolunteerShiftRoleView, shift: VolunteerShiftView) => void;
+  onSignUp: (role: VolunteerShiftRoleView, shift: VolunteerShiftView, manageForOthers?: boolean) => void;
   onCancel: (shiftRoleId: number, roleName: string) => void;
 }) {
   const shiftsWithRoles = useMemo(
@@ -160,6 +234,7 @@ function ProgramByShiftView({
             key={shift.id}
             shift={shift}
             headingMode="full"
+            canManage={program.canManage}
             busyShiftRoleId={busyShiftRoleId}
             onSignUp={onSignUp}
             onCancel={onCancel}
@@ -185,8 +260,11 @@ function ProgramByShiftView({
               aria-expanded={dayExpanded}
             >
               <div className="min-w-0">
-                <div className="font-medium text-gray-900 dark:text-gray-100">
-                  {formatVolunteerDayHeading(dayKey)}
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <div className="font-medium text-gray-900 dark:text-gray-100">
+                    {formatVolunteerDayHeading(dayKey)}
+                  </div>
+                  <VolunteerSpotsStatusBadge roles={shifts.flatMap((shift) => shift.roles)} />
                 </div>
                 {!dayExpanded ? <AccordionPreview items={rolePreview} /> : null}
               </div>
@@ -201,6 +279,7 @@ function ProgramByShiftView({
                     key={shift.id}
                     shift={shift}
                     headingMode="time"
+                    canManage={program.canManage}
                     busyShiftRoleId={busyShiftRoleId}
                     onSignUp={onSignUp}
                     onCancel={onCancel}
@@ -227,7 +306,7 @@ function ProgramByRoleView({
   expandedRoles: Set<string>;
   onToggleRole: (key: string) => void;
   busyShiftRoleId: number | null;
-  onSignUp: (role: VolunteerShiftRoleView, shift: VolunteerShiftView) => void;
+  onSignUp: (role: VolunteerShiftRoleView, shift: VolunteerShiftView, manageForOthers?: boolean) => void;
   onCancel: (shiftRoleId: number, roleName: string) => void;
 }) {
   const roleGroups = useMemo(() => {
@@ -281,7 +360,10 @@ function ProgramByRoleView({
               aria-expanded={expanded}
             >
               <div className="min-w-0 space-y-1">
-                <div className="font-medium text-gray-900 dark:text-gray-100">{group.roleName}</div>
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <div className="font-medium text-gray-900 dark:text-gray-100">{group.roleName}</div>
+                  <VolunteerSpotsStatusBadge roles={group.entries.map(({ role }) => role)} />
+                </div>
                 {group.roleDescription ? (
                   <p className="text-sm text-gray-600 dark:text-gray-400 whitespace-pre-wrap">
                     {group.roleDescription}
@@ -315,8 +397,9 @@ function ProgramByRoleView({
                     role={role}
                     heading={formatVolunteerRange(shift.startDt, shift.endDt)}
                     subheading={formatVolunteerDuration(shift.startDt, shift.endDt)}
+                    canManage={program.canManage}
                     busy={busyShiftRoleId === role.id}
-                    onSignUp={() => onSignUp(role, shift)}
+                    onSignUp={(manageForOthers) => onSignUp(role, shift, manageForOthers)}
                     onCancel={() => onCancel(role.id, role.roleName)}
                   />
                 ))}
@@ -347,14 +430,16 @@ function AccordionPreview({ items }: { items: string[] }) {
 function ShiftRolesBlock({
   shift,
   headingMode,
+  canManage,
   busyShiftRoleId,
   onSignUp,
   onCancel,
 }: {
   shift: VolunteerShiftView;
   headingMode: 'full' | 'time';
+  canManage: boolean;
   busyShiftRoleId: number | null;
-  onSignUp: (role: VolunteerShiftRoleView, shift: VolunteerShiftView) => void;
+  onSignUp: (role: VolunteerShiftRoleView, shift: VolunteerShiftView, manageForOthers?: boolean) => void;
   onCancel: (shiftRoleId: number, roleName: string) => void;
 }) {
   const duration = formatVolunteerDuration(shift.startDt, shift.endDt);
@@ -377,8 +462,9 @@ function ShiftRolesBlock({
             heading={role.roleName}
             subheading={role.roleDescription}
             showCredentials
+            canManage={canManage}
             busy={busyShiftRoleId === role.id}
-            onSignUp={() => onSignUp(role, shift)}
+            onSignUp={(manageForOthers) => onSignUp(role, shift, manageForOthers)}
             onCancel={() => onCancel(role.id, role.roleName)}
           />
         ))}
@@ -392,6 +478,7 @@ function RoleSignupRow({
   heading,
   subheading,
   showCredentials = false,
+  canManage = false,
   busy,
   onSignUp,
   onCancel,
@@ -400,12 +487,14 @@ function RoleSignupRow({
   heading: string;
   subheading?: string | null;
   showCredentials?: boolean;
+  canManage?: boolean;
   busy: boolean;
-  onSignUp: () => void;
+  onSignUp: (manageForOthers?: boolean) => void;
   onCancel: () => void;
 }) {
+  const canSignSelf = role.callerHasCredentials && !role.callerIsSignedUp;
   let action: ReactNode = null;
-  if (!role.callerHasCredentials) {
+  if (!canManage && !role.callerHasCredentials && !role.callerIsSignedUp) {
     action = (
       <span className="text-sm text-amber-700 dark:text-amber-300">Missing required credentials</span>
     );
@@ -419,9 +508,19 @@ function RoleSignupRow({
             {busy ? 'Cancelling…' : 'Cancel signup'}
           </Button>
         ) : null}
-        {!role.isFull ? (
-          <Button type="button" disabled={busy} onClick={onSignUp}>
-            {role.callerIsSignedUp ? 'Add volunteers' : 'Sign up'}
+        {!role.isFull && canSignSelf ? (
+          <Button type="button" disabled={busy} onClick={() => onSignUp(false)}>
+            Sign up
+          </Button>
+        ) : null}
+        {!role.isFull && (canManage || role.callerIsSignedUp) ? (
+          <Button
+            type="button"
+            variant={canSignSelf ? 'secondary' : 'primary'}
+            disabled={busy}
+            onClick={() => onSignUp(true)}
+          >
+            Add volunteers
           </Button>
         ) : null}
       </div>
@@ -429,7 +528,7 @@ function RoleSignupRow({
   }
 
   return (
-    <div className="px-4 py-3 space-y-2">
+    <div className="px-4 py-3 space-y-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1 space-y-1">
           <div className="font-medium text-gray-900 dark:text-gray-100">{heading}</div>
@@ -452,16 +551,40 @@ function RoleSignupRow({
               ))}
             </div>
           ) : null}
-          {role.signups.length > 0 ? (
-            <p className="text-sm text-gray-600 dark:text-gray-400">
-              Signed up: {role.signups.map((s) => s.memberName).join(', ')}
-            </p>
-          ) : (
-            <p className="text-sm text-gray-500 dark:text-gray-400">No volunteers signed up yet.</p>
-          )}
         </div>
         <div className="shrink-0">{action}</div>
       </div>
+      <RoleSignupsList signups={role.signups} />
+    </div>
+  );
+}
+
+function RoleSignupsList({ signups }: { signups: VolunteerSignupView[] }) {
+  if (signups.length === 0) {
+    return <p className="text-sm text-gray-500 dark:text-gray-400">No volunteers signed up yet.</p>;
+  }
+
+  return (
+    <div className="app-card-subtle">
+      <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Signed up</h3>
+      <ul className="mt-2 space-y-2">
+        {signups.map((signup) => {
+          const comments = signup.comments?.trim();
+          return (
+            <li key={signup.id}>
+              <div className="font-medium text-gray-900 dark:text-gray-100">
+                {signup.memberName}
+                {!signup.memberId ? ' (non-member)' : ''}
+              </div>
+              {comments ? (
+                <p className="mt-0.5 text-sm text-gray-600 dark:text-gray-400 whitespace-pre-wrap">
+                  {comments}
+                </p>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }

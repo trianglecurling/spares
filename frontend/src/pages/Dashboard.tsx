@@ -31,6 +31,7 @@ import { useConfirm } from '../contexts/ConfirmContext';
 import { useAuth } from '../contexts/AuthContext';
 import { formatPhone } from '../utils/phone';
 import { renderMe } from '../utils/me';
+import ExpandableMarkdown from '../components/volunteering/ExpandableMarkdown';
 import VolunteerSignupDialog, {
   type VolunteerSignupTarget,
 } from '../components/volunteering/VolunteerSignupDialog';
@@ -1129,38 +1130,65 @@ export default function Dashboard() {
                   const hasMoreShifts = program.totalShifts > program.shifts.length;
                   return (
                     <div key={program.programId} className="app-card overflow-hidden p-0">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setExpandedVolunteerPrograms((prev) => {
-                            const next = new Set(prev);
-                            if (next.has(program.programId)) next.delete(program.programId);
-                            else next.add(program.programId);
-                            return next;
-                          });
-                        }}
-                        className="flex w-full items-start justify-between gap-3 px-5 py-4 text-left hover:bg-gray-50 dark:hover:bg-gray-800/60"
-                        aria-expanded={expanded}
+                      <div
+                        className={`relative hover:bg-gray-50 dark:hover:bg-gray-800/60 ${
+                          program.description?.trim() ? 'px-5 pt-4 pb-2' : 'px-5 py-4'
+                        }`}
                       >
-                        <div className="min-w-0 space-y-1.5">
-                          <div className="font-medium text-gray-900 dark:text-gray-100">
-                            {program.programTitle}
-                          </div>
-                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-gray-600 dark:text-gray-400">
-                            <span className="inline-flex rounded-full bg-primary-teal-solid px-2 py-0.5 text-xs font-medium text-white">
-                              {program.totalShifts} open shift
-                              {program.totalShifts === 1 ? '' : 's'}
-                            </span>
-                            {program.location ? <span>{program.location}</span> : null}
-                          </div>
-                        </div>
-                        <HiChevronDown
-                          className={`mt-1 h-5 w-5 shrink-0 text-gray-500 transition-transform ${
-                            expanded ? 'rotate-180' : ''
-                          }`}
-                          aria-hidden="true"
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setExpandedVolunteerPrograms((prev) => {
+                              const next = new Set(prev);
+                              if (next.has(program.programId)) next.delete(program.programId);
+                              else next.add(program.programId);
+                              return next;
+                            });
+                          }}
+                          className="absolute inset-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-teal/50"
+                          aria-expanded={expanded}
+                          aria-label={
+                            expanded
+                              ? `Hide shifts for ${program.programTitle}`
+                              : `Show shifts for ${program.programTitle}`
+                          }
                         />
-                      </button>
+                        <div className="relative flex items-start justify-between gap-3 pointer-events-none">
+                          <div className="min-w-0 space-y-1">
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                              <Link
+                                to={programHref}
+                                className="relative z-10 pointer-events-auto rounded-sm font-medium text-gray-900 hover:text-primary-teal-link hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/50 dark:text-gray-100"
+                              >
+                                {program.programTitle}
+                              </Link>
+                              <span className="inline-flex shrink-0 rounded-full bg-primary-teal-solid px-2 py-0.5 text-xs font-medium text-white">
+                                {program.totalShifts} open shift
+                                {program.totalShifts === 1 ? '' : 's'}
+                              </span>
+                            </div>
+                            {program.location ? (
+                              <div className="text-sm text-gray-600 dark:text-gray-400">
+                                {program.location}
+                              </div>
+                            ) : null}
+                          </div>
+                          <HiChevronDown
+                            className={`mt-1 h-5 w-5 shrink-0 text-gray-500 transition-transform ${
+                              expanded ? 'rotate-180' : ''
+                            }`}
+                            aria-hidden="true"
+                          />
+                        </div>
+                      </div>
+                      {program.description?.trim() ? (
+                        <div className="px-5 pb-4">
+                          <ExpandableMarkdown
+                            markdown={program.description}
+                            title={program.programTitle}
+                          />
+                        </div>
+                      ) : null}
 
                       {expanded ? (
                         <div className="border-t border-gray-200 dark:border-gray-700 px-5 py-4 space-y-3">

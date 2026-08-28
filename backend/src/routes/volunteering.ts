@@ -28,6 +28,7 @@ import {
   listManagedCredentialIds,
   listManagedProgramIds,
   listMySignups,
+  listVolunteerStats,
   removeSignupAsManager,
   revokeCredential,
   signUpForShiftRole,
@@ -203,6 +204,16 @@ export async function volunteeringRoutes(fastify: FastifyInstance): Promise<void
     if (!member) return sendApiError(reply, 401, 'Unauthorized');
     try {
       return await listMySignups(member.id);
+    } catch (err) {
+      return handleServiceError(reply, err);
+    }
+  });
+
+  fastify.get('/volunteering/stats', { schema: { tags: ['volunteering'] } }, async (request, reply) => {
+    const member = getMember(request as AuthenticatedRequest);
+    if (!member) return sendApiError(reply, 401, 'Unauthorized');
+    try {
+      return await listVolunteerStats(member.id);
     } catch (err) {
       return handleServiceError(reply, err);
     }

@@ -19,6 +19,9 @@ import PageTabs from '../../components/PageTabs';
 import RecurrenceFields, { useRecurrenceState } from '../../components/RecurrenceFields';
 import IncludeArchivedToggle from '../../components/softDelete/IncludeArchivedToggle';
 import VolunteerProgramLocationField from '../../components/VolunteerProgramLocationField';
+import VolunteerSignupDialog, {
+  type VolunteerSignupTarget,
+} from '../../components/volunteering/VolunteerSignupDialog';
 import { resolveSiteName } from '../../components/SeoMeta';
 import { useAlert } from '../../contexts/AlertContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -28,6 +31,7 @@ import { useSiteBranding } from '../../hooks/useSiteBranding';
 import api, { formatApiError } from '../../utils/api';
 import { memberHasScope } from '../../utils/permissions';
 import { getWeekdayFromDate } from '../calendarEventFormShared';
+import { formatPhone } from '../../utils/phone';
 import {
   addMinutesToDateTimeLocal,
   formatDurationMinutes,
@@ -44,6 +48,7 @@ import {
   type VolunteerProgramView,
   type VolunteerRoleView,
   type VolunteerShiftView,
+  type VolunteerSignupView,
 } from '../../utils/volunteering';
 
 type TabKey = 'settings' | 'description' | 'roles' | 'shifts' | 'signups';
@@ -59,6 +64,41 @@ type NewShiftTimeRow = {
 };
 
 type UploadedFile = { id: number; publicUrl: string };
+
+/** Skip values that would break mailto/BCC lists. */
+const EMAIL_ADDRESS_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function isValidEmailAddress(email: string): boolean {
+  return EMAIL_ADDRESS_RE.test(email);
+}
+
+function volunteerSignupContactEmail(signup: VolunteerSignupView): string {
+  return (signup.memberEmail || signup.guestEmail || '').trim();
+}
+
+function buildVolunteerSignupEmailEntries(
+  shifts: VolunteerShiftView[],
+  roleIds: number[]
+): string[] {
+  const roleSet = new Set(roleIds);
+  const entries: string[] = [];
+  const seenEmails = new Set<string>();
+  for (const shift of shifts) {
+    for (const role of shift.roles) {
+      if (!roleSet.has(role.roleId)) continue;
+      for (const signup of role.signups) {
+        const email = volunteerSignupContactEmail(signup);
+        if (!email || !isValidEmailAddress(email)) continue;
+        const emailKey = email.toLowerCase();
+        if (seenEmails.has(emailKey)) continue;
+        seenEmails.add(emailKey);
+        const displayName = signup.memberName.trim() || email;
+        entries.push(`"${displayName}" <${email}>`);
+      }
+    }
+  }
+  return entries;
+}
 
 function extensionFromMimeType(mimeType: string): string {
   if (mimeType === 'image/jpeg') return 'jpg';
@@ -154,6 +194,10 @@ export default function AdminVolunteerProgramEditor() {
   const [recurringMode, setRecurringMode] = useState(false);
   const [deleteShiftTarget, setDeleteShiftTarget] = useState<VolunteerShiftView | null>(null);
   const [deletingShift, setDeletingShift] = useState(false);
+  const [signupTarget, setSignupTarget] = useState<VolunteerSignupTarget | null>(null);
+  const [copyEmailsDialogOpen, setCopyEmailsDialogOpen] = useState(false);
+  const [copyEmailRoleIds, setCopyEmailRoleIds] = useState<number[]>([]);
+  const copyEmailRolesLabelId = `${baseId}-copy-email-roles`;
 
   const loadProgram = useCallback(async () => {
     if (isNew || !id) return;
@@ -236,6 +280,11 @@ export default function AdminVolunteerProgramEditor() {
     const nowIso = new Date().toISOString();
     return program.shifts.filter((shift) => !volunteerShiftHasEnded(shift.endDt, nowIso));
   }, [program, includeArchivedSignups]);
+  const copyEmailRoleOptions = useMemo(
+    (): ChoiceOption<number>[] =>
+      (program?.roles ?? []).map((role) => ({ value: role.id, label: role.name })),
+    [program]
+  );
   const newShiftStartLocal = newShiftTimes[0]?.startLocal ?? '';
   const newShiftRecurrence = useRecurrenceState(
     '',
@@ -609,6 +658,30 @@ export default function AdminVolunteerProgramEditor() {
       showAlert(formatApiError(err, 'Failed to delete shift'), 'error');
     } finally {
       setDeletingShift(false);
+    }
+  };
+
+  const openCopyEmailsDialog = () => {
+    setCopyEmailRoleIds(program?.roles.map((role) => role.id) ?? []);
+    setCopyEmailsDialogOpen(true);
+  };
+
+  const handleCopyEmailsFromDialog = async () => {
+    if (copyEmailRoleIds.length === 0) {
+      showAlert('Select at least one role', 'warning');
+      return;
+    }
+    const entries = buildVolunteerSignupEmailEntries(visibleSignupShifts, copyEmailRoleIds);
+    if (entries.length === 0) {
+      showAlert('No signup emails to copy', 'warning');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(entries.join(', '));
+      showAlert('Signup emails copied', 'success');
+      setCopyEmailsDialogOpen(false);
+    } catch {
+      showAlert('Failed to copy emails', 'error');
     }
   };
 
@@ -1237,11 +1310,22 @@ export default function AdminVolunteerProgramEditor() {
         <>
           {program.shifts.length > 0 ? (
             <AppPageControlsRow
-              right={
+              left={
                 <IncludeArchivedToggle
+                  label="Include past shifts"
                   checked={includeArchivedSignups}
                   onChange={setIncludeArchivedSignups}
                 />
+              }
+              right={
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={openCopyEmailsDialog}
+                  disabled={program.roles.length === 0}
+                >
+                  Copy emails
+                </Button>
               }
             />
           ) : null}
@@ -1251,7 +1335,7 @@ export default function AdminVolunteerProgramEditor() {
             ) : visibleSignupShifts.length === 0 ? (
               <AppStateCard
                 title="No upcoming sign-ups"
-                description="Past shifts are hidden. Include archived items to review them."
+                description="Past shifts are hidden. Include past shifts to review them."
               />
             ) : (
               visibleSignupShifts.map((shift) => (
@@ -1261,38 +1345,89 @@ export default function AdminVolunteerProgramEditor() {
                   </div>
                   {shift.roles.map((role) => (
                     <div key={role.id} className="rounded-md border border-gray-200 dark:border-gray-700 p-3">
-                      <div className="flex flex-wrap items-baseline justify-between gap-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="font-medium">{role.roleName}</div>
-                        <div className="text-sm text-gray-600 dark:text-gray-400">
-                          {role.volunteersRegistered}/{role.volunteersNeeded}
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div className="text-sm text-gray-600 dark:text-gray-400">
+                            {role.volunteersRegistered}/{role.volunteersNeeded}
+                          </div>
+                          {!volunteerShiftHasEnded(shift.endDt, new Date().toISOString()) &&
+                          role.volunteersRegistered < role.volunteersNeeded ? (
+                            <Button
+                              type="button"
+                              className="!px-3 !py-1.5"
+                              onClick={() =>
+                                setSignupTarget({
+                                  shiftRoleId: role.id,
+                                  roleName: role.roleName,
+                                  shiftLabel: formatVolunteerRange(shift.startDt, shift.endDt),
+                                  remainingSpots: Math.max(
+                                    0,
+                                    role.volunteersNeeded - role.volunteersRegistered
+                                  ),
+                                  requiresCredentials: role.requiredCredentials.length > 0,
+                                  callerIsSignedUp: role.callerIsSignedUp,
+                                  manageForOthers: true,
+                                  signedUpMemberIds: role.signups
+                                    .map((signup) => signup.memberId)
+                                    .filter((id): id is number => id != null),
+                                })
+                              }
+                            >
+                              Add volunteers
+                            </Button>
+                          ) : null}
                         </div>
                       </div>
                       {role.signups.length === 0 ? (
                         <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">No signups</p>
                       ) : (
                         <ul className="mt-2 space-y-2">
-                          {role.signups.map((signup) => (
-                            <li key={signup.id} className="flex items-start justify-between gap-3 text-sm">
-                              <div className="min-w-0 space-y-0.5">
-                                <div>{signup.memberName}{!signup.memberId ? ' (non-member)' : ''}</div>
-                                {signup.guestEmail ? (
-                                  <p className="text-gray-600 dark:text-gray-400">{signup.guestEmail}</p>
-                                ) : null}
+                          {role.signups.map((signup) => {
+                            const email = volunteerSignupContactEmail(signup);
+                            const phone = formatPhone(signup.memberPhone);
+                            return (
+                              <li key={signup.id} className="text-sm">
+                                <div className="flex items-center justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <span>
+                                      {signup.memberName}
+                                      {!signup.memberId ? ' (non-member)' : ''}
+                                    </span>
+                                    {email ? (
+                                      <>
+                                        <span className="text-gray-400 dark:text-gray-500" aria-hidden="true">
+                                          {' · '}
+                                        </span>
+                                        <span className="text-gray-600 dark:text-gray-400">{email}</span>
+                                      </>
+                                    ) : null}
+                                    {phone ? (
+                                      <>
+                                        <span className="text-gray-400 dark:text-gray-500" aria-hidden="true">
+                                          {' · '}
+                                        </span>
+                                        <span className="text-gray-600 dark:text-gray-400">{phone}</span>
+                                      </>
+                                    ) : null}
+                                  </div>
+                                  <Button
+                                    type="button"
+                                    variant="secondary"
+                                    className="shrink-0 !px-3 !py-1.5"
+                                    onClick={() => handleRemoveSignup(signup.id, signup.memberName)}
+                                  >
+                                    Remove
+                                  </Button>
+                                </div>
                                 {signup.comments ? (
-                                  <p className="text-gray-600 dark:text-gray-400 whitespace-pre-wrap">
+                                  <p className="mt-0.5 text-gray-600 dark:text-gray-400 whitespace-pre-wrap">
                                     {signup.comments}
                                   </p>
                                 ) : null}
-                              </div>
-                              <Button
-                                type="button"
-                                variant="secondary"
-                                onClick={() => handleRemoveSignup(signup.id, signup.memberName)}
-                              >
-                                Remove
-                              </Button>
-                            </li>
-                          ))}
+                              </li>
+                            );
+                          })}
                         </ul>
                       )}
                     </div>
@@ -1303,6 +1438,45 @@ export default function AdminVolunteerProgramEditor() {
           </div>
         </>
       ) : null}
+      <Modal
+        isOpen={copyEmailsDialogOpen}
+        onClose={() => setCopyEmailsDialogOpen(false)}
+        title="Copy emails"
+        size="md"
+      >
+        <div className="space-y-5">
+          <FormField
+            label="Roles"
+            labelId={copyEmailRolesLabelId}
+            helperText="Copies unique emails from sign-ups currently listed on this page."
+          >
+            {({ describedBy }) => (
+              <ChoiceInput<number>
+                ariaLabelledBy={copyEmailRolesLabelId}
+                ariaDescribedBy={describedBy}
+                options={copyEmailRoleOptions}
+                value={copyEmailRoleIds}
+                onChange={(next) =>
+                  setCopyEmailRoleIds(Array.isArray(next) ? next : next != null ? [next] : [])
+                }
+                layout="block"
+                maxSelectedItems={null}
+                multiSelectionIndicatorStyle="checkboxes"
+                listboxLabel="Roles"
+                name="copy-email-roles"
+              />
+            )}
+          </FormField>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={() => setCopyEmailsDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="button" onClick={() => void handleCopyEmailsFromDialog()}>
+              Copy
+            </Button>
+          </div>
+        </div>
+      </Modal>
       <Modal
         isOpen={!!deleteShiftTarget}
         onClose={() => {
@@ -1345,6 +1519,22 @@ export default function AdminVolunteerProgramEditor() {
           </div>
         ) : null}
       </Modal>
+      {signupTarget ? (
+        <VolunteerSignupDialog
+          target={signupTarget}
+          onClose={() => setSignupTarget(null)}
+          onSuccess={async (count) => {
+            setSignupTarget(null);
+            showAlert(
+              count === 1
+                ? 'Volunteer signed up. A confirmation email is on the way.'
+                : `${count} volunteers signed up. Confirmation emails are on the way.`,
+              'success'
+            );
+            await loadProgram();
+          }}
+        />
+      ) : null}
     </AppPage>
   );
 }

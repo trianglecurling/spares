@@ -42,14 +42,16 @@ export default function FormCheckbox({
           disabled && 'cursor-not-allowed opacity-80'
         )}
       >
-        <input
-          type="checkbox"
-          checked={checked}
-          onChange={(event) => onChange(event.target.checked)}
-          disabled={disabled}
-          className="rounded"
-        />
-        <span className={labelToneClasses[tone]}>{label}</span>
+        <span className="flex h-5 w-4 shrink-0 items-center justify-center">
+          <input
+            type="checkbox"
+            checked={checked}
+            onChange={(event) => onChange(event.target.checked)}
+            disabled={disabled}
+            className="h-4 w-4 shrink-0 rounded accent-primary-teal"
+          />
+        </span>
+        <span className={joinClasses(labelToneClasses[tone], 'leading-5')}>{label}</span>
       </label>
       {helperText ? (
         <FormFieldMessage tone={tone} intent="helper" className="pl-6">

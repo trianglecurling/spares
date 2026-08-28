@@ -64,6 +64,87 @@ export async function resolveRelevantSessionIdForLeagues(today: string): Promise
   return recentSession?.id ?? null;
 }
 
+export type SessionSeason = {
+  sessionId: number;
+  sessionName: string;
+  seasonId: number;
+  seasonName: string;
+  seasonStartDate: string;
+  seasonEndDate: string;
+};
+
+function dateOnly(value: unknown): string | null {
+  if (value == null) return null;
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return null;
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${value.getUTCFullYear()}-${pad(value.getUTCMonth() + 1)}-${pad(value.getUTCDate())}`;
+  }
+  const raw = String(value).trim();
+  if (!raw) return null;
+  if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+  return null;
+}
+
+/**
+ * Season attached to a calendar date: the session underway on that date,
+ * otherwise the next session that starts after it.
+ */
+export async function resolveSeasonAttachedToDate(
+  asOfDate: string
+): Promise<SessionSeason | null> {
+  const { db, schema } = getDrizzleDb();
+  const asOfValue = dateColumnBindValue(asOfDate);
+
+  const selectFields = {
+    sessionId: schema.curlingSessions.id,
+    sessionName: schema.curlingSessions.name,
+    seasonId: schema.curlingSeasons.id,
+    seasonName: schema.curlingSeasons.name,
+    seasonStartDate: schema.curlingSeasons.start_date,
+    seasonEndDate: schema.curlingSeasons.end_date,
+  };
+
+  const [currentSession] = await db
+    .select(selectFields)
+    .from(schema.curlingSessions)
+    .innerJoin(schema.curlingSeasons, eq(schema.curlingSessions.season_id, schema.curlingSeasons.id))
+    .where(
+      and(
+        lte(schema.curlingSessions.start_date, asOfValue as never),
+        gte(schema.curlingSessions.end_date, asOfValue as never)
+      )
+    )
+    .orderBy(desc(schema.curlingSessions.start_date))
+    .limit(1);
+
+  const row =
+    currentSession ??
+    (
+      await db
+        .select(selectFields)
+        .from(schema.curlingSessions)
+        .innerJoin(schema.curlingSeasons, eq(schema.curlingSessions.season_id, schema.curlingSeasons.id))
+        .where(gt(schema.curlingSessions.start_date, asOfValue as never))
+        .orderBy(asc(schema.curlingSessions.start_date))
+        .limit(1)
+    )[0] ??
+    null;
+
+  if (!row) return null;
+  const seasonStartDate = dateOnly(row.seasonStartDate);
+  const seasonEndDate = dateOnly(row.seasonEndDate);
+  if (!seasonStartDate || !seasonEndDate) return null;
+  return {
+    sessionId: row.sessionId,
+    sessionName: row.sessionName,
+    seasonId: row.seasonId,
+    seasonName: row.seasonName,
+    seasonStartDate,
+    seasonEndDate,
+  };
+}
+
 export type PublicSessionNavItem = {
   id: number;
   name: string;

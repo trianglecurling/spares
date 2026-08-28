@@ -19,6 +19,7 @@ import { initializeDatabase } from '../db/index.js';
 import { getDatabaseConfig } from '../db/config.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { normalizeEmail } from '../utils/auth.js';
+import { normalizePersonName } from '../utils/memberName.js';
 
 type TsvRow = { name: string; email: string; leagueCode: string };
 
@@ -103,7 +104,7 @@ function parseTsv(filePath: string): TsvRow[] {
       console.error(`Line ${li + 1}: invalid email (no @): ${c1}`);
       process.exit(1);
     }
-    rows.push({ name: c0, email: c1, leagueCode: c2 });
+    rows.push({ name: normalizePersonName(c0) || c0, email: c1, leagueCode: c2 });
   }
   return rows;
 }

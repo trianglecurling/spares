@@ -9,6 +9,7 @@ import {
   resolvePreferredPronounsForSave,
 } from '../utils/preferredPronouns.js';
 import { resolveUsaCurlingCompetitionGenderForSave } from '../utils/usaCurlingCompetitionGender.js';
+import { formatMemberDisplayName, normalizePersonName } from '../utils/memberName.js';
 import { queueMemberContactInfoSync } from './mauticMembershipSyncService.js';
 
 export type MemberDemographicsInput = {
@@ -40,7 +41,7 @@ export class MemberDemographicsUpdateError extends Error {
 }
 
 function memberName(input: Pick<MemberDemographicsInput, 'firstName' | 'lastName'>): string {
-  return `${input.firstName.trim()} ${input.lastName.trim()}`.trim();
+  return formatMemberDisplayName(input.firstName, input.lastName);
 }
 
 function assertNonEmpty(value: string, field: string): void {
@@ -168,16 +169,16 @@ export async function applyMemberDemographicsUpdate(
     });
   }
 
-  const firstName = input.firstName.trim();
-  const lastName = input.lastName.trim();
+  const firstName = normalizePersonName(input.firstName);
+  const lastName = normalizePersonName(input.lastName);
   const updateData: Record<string, unknown> = {
-    name: memberName(input),
+    name: memberName({ firstName, lastName }),
     email: normalizedEmail,
     phone: input.phone.trim(),
     first_name: firstName,
     last_name: lastName,
     mailing_address: input.mailingAddress.trim(),
-    emergency_contact_name: input.emergencyContactName.trim(),
+    emergency_contact_name: normalizePersonName(input.emergencyContactName),
     emergency_contact_phone: input.emergencyContactPhone.trim(),
     preferred_pronouns: resolvePreferredPronounsForSave(input.preferredPronouns),
     usa_curling_competition_gender: resolveUsaCurlingCompetitionGenderForSave(input.usaCurlingCompetitionGender),

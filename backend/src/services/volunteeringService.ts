@@ -22,12 +22,15 @@ import {
 } from '../utils/calendarRecurrence.js';
 import { DEFAULT_SITE_NAME } from './spaDocumentMeta.js';
 import { VolunteeringServiceError } from './volunteeringServiceError.js';
+import { normalizePersonName } from '../utils/memberName.js';
 import {
   sendVolunteerSignupConfirmationEmail,
   sendVolunteerCancellationEmails,
 } from './email.js';
 import { ensureUniqueVolunteerProgramSlug } from './volunteerProgramSlugs.js';
 import { compareVolunteerProgramsForDiscovery } from '../utils/volunteerProgramSort.js';
+import { aggregateVolunteerStats, type VolunteerStatsResult } from '../utils/volunteerStats.js';
+import { resolveSeasonAttachedToDate } from './curlingSessionService.js';
 import {
   heldVolunteerCredentialIdsOn,
   memberHasAllVolunteerCredentials,
@@ -382,6 +385,8 @@ export type VolunteerSignupView = {
   memberName: string;
   guestName: string | null;
   guestEmail: string | null;
+  memberEmail: string | null;
+  memberPhone: string | null;
   comments: string | null;
   signedUpByMemberId: number | null;
   status: 'confirmed' | 'cancelled';
@@ -495,6 +500,7 @@ export type DashboardOpportunityProgram = {
   programId: number;
   programSlug: string;
   programTitle: string;
+  description: string | null;
   location: string | null;
   totalShifts: number;
   shifts: DashboardOpportunityShift[];
@@ -1835,6 +1841,8 @@ async function buildProgramViews(options: {
             shiftRoleId: schema.volunteerSignups.shift_role_id,
             memberId: schema.volunteerSignups.member_id,
             memberName: schema.members.name,
+            memberEmail: schema.members.email,
+            memberPhone: schema.members.phone,
             guestName: schema.volunteerSignups.guest_name,
             guestEmail: schema.volunteerSignups.guest_email,
             comments: schema.volunteerSignups.comments,
@@ -1882,8 +1890,8 @@ async function buildProgramViews(options: {
               .filter((su) => su.shiftRoleId === sr.id)
               .map((su) => {
                 const displayName =
-                  (su.memberName && String(su.memberName).trim()) ||
-                  (su.guestName && String(su.guestName).trim()) ||
+                  normalizePersonName(su.memberName) ||
+                  normalizePersonName(su.guestName) ||
                   'Volunteer';
                 return {
                   id: su.id,
@@ -1891,6 +1899,8 @@ async function buildProgramViews(options: {
                   memberName: displayName,
                   guestName: su.guestName ?? null,
                   guestEmail: su.guestEmail ?? null,
+                  memberEmail: options.forHub ? null : su.memberEmail ?? null,
+                  memberPhone: options.forHub ? null : su.memberPhone ?? null,
                   comments: su.comments ?? null,
                   signedUpByMemberId: su.signedUpByMemberId ?? null,
                   status: su.status as 'confirmed' | 'cancelled',
@@ -2064,6 +2074,7 @@ export async function listDashboardOpportunities(memberId: number): Promise<Dash
       programId: schema.volunteerPrograms.id,
       programSlug: schema.volunteerPrograms.slug,
       programTitle: schema.volunteerPrograms.title,
+      description: schema.volunteerPrograms.description,
       location: schema.volunteerPrograms.location,
       priority: schema.volunteerPrograms.priority,
       startDt: schema.volunteerShifts.start_dt,
@@ -2142,6 +2153,7 @@ export async function listDashboardOpportunities(memberId: number): Promise<Dash
     programId: number;
     programSlug: string;
     programTitle: string;
+    description: string | null;
     location: string | null;
     priority: number | null;
     shifts: Map<
@@ -2172,6 +2184,7 @@ export async function listDashboardOpportunities(memberId: number): Promise<Dash
         programId: shift.programId,
         programSlug: shift.programSlug,
         programTitle: shift.programTitle,
+        description: shift.description?.trim() || null,
         location: normalizeVolunteerLocation(shift.location, clubName),
         priority: normalizePriority(shift.priority),
         shifts: new Map(),
@@ -2213,6 +2226,7 @@ export async function listDashboardOpportunities(memberId: number): Promise<Dash
         programId: program.programId,
         programSlug: program.programSlug,
         programTitle: program.programTitle,
+        description: program.description,
         location: program.location,
         priority: program.priority,
         totalShifts: sortedShifts.length,
@@ -2315,7 +2329,7 @@ export async function signUpForShiftRole(
   const requestedMemberIds = [...new Set((input.memberIds ?? []).filter((id) => Number.isFinite(id) && id > 0))];
   const guestNames = [...new Set(
     (input.guestNames ?? [])
-      .map((name) => String(name ?? '').trim())
+      .map((name) => normalizePersonName(String(name ?? '')))
       .filter((name) => name.length > 0)
   )];
   const commentsRaw = input.comments == null ? null : String(input.comments).trim();
@@ -2355,7 +2369,12 @@ export async function signUpForShiftRole(
     .limit(1);
 
   const target = rows[0];
-  if (!target || target.archivedAt || Number(target.published) !== 1) {
+  if (!target || target.archivedAt) {
+    throw new VolunteeringServiceError('Opportunity not found', 404);
+  }
+
+  const actorCanManage = await canManageProgram(actor, target.programId);
+  if (Number(target.published) !== 1 && !actorCanManage) {
     throw new VolunteeringServiceError('Opportunity not found', 404);
   }
 
@@ -2369,7 +2388,7 @@ export async function signUpForShiftRole(
   const required = requiredMap.get(target.roleId) ?? [];
   const asOfDate = shiftDateOnly(startDt);
   const actorHeld = await getMemberCredentials(actor.id, asOfDate);
-  if (!memberHasAllVolunteerCredentials(actorHeld, required)) {
+  if (!actorCanManage && !memberHasAllVolunteerCredentials(actorHeld, required)) {
     throw new VolunteeringServiceError('Missing required credentials for this role', 403);
   }
   if (guestNames.length > 0 && required.length > 0) {
@@ -2844,7 +2863,7 @@ export async function signUpPublicGuest(
   const { generateVolunteerSignupAccessToken } = await import('../utils/volunteerSignupAccessToken.js');
   const { volunteerSignupManageUrl } = await import('../utils/volunteerSignupManageUrl.js');
 
-  const name = input.name.trim();
+  const name = normalizePersonName(input.name);
   const email = normalizeEmail(input.email);
   if (!name) throw new VolunteeringServiceError('Name is required', 400);
   if (!email) throw new VolunteeringServiceError('Email is required', 400);
@@ -3170,4 +3189,79 @@ export async function processVolunteerReminders(): Promise<number> {
     }
   }
   return sent;
+}
+
+const SEASON_MEMBERSHIP_STATUSES_FOR_COUNT = ['active', 'pending'] as const;
+
+export async function listVolunteerStats(memberId: number): Promise<VolunteerStatsResult> {
+  const { db, schema } = getDrizzleDb();
+  const now = await getCurrentTimeAsync();
+  const nowIso = now.toISOString();
+  const today = clubDateOnly(now);
+  const monthPrefix = today.slice(0, 7);
+
+  const [sessionSeason, signupRows] = await Promise.all([
+    resolveSeasonAttachedToDate(addCalendarDays(today, 30)),
+    db
+      .select({
+        signupId: schema.volunteerSignups.id,
+        memberId: schema.volunteerSignups.member_id,
+        memberName: schema.members.name,
+        shiftId: schema.volunteerShifts.id,
+        startDt: schema.volunteerShifts.start_dt,
+        endDt: schema.volunteerShifts.end_dt,
+      })
+      .from(schema.volunteerSignups)
+      .innerJoin(
+        schema.volunteerShiftRoles,
+        eq(schema.volunteerShiftRoles.id, schema.volunteerSignups.shift_role_id)
+      )
+      .innerJoin(schema.volunteerShifts, eq(schema.volunteerShifts.id, schema.volunteerShiftRoles.shift_id))
+      .leftJoin(schema.members, eq(schema.members.id, schema.volunteerSignups.member_id))
+      .where(eq(schema.volunteerSignups.status, 'confirmed')),
+  ]);
+
+  let membershipCount = 0;
+  if (sessionSeason) {
+    const [countRow] = await db
+      .select({
+        n: sql<number>`count(distinct ${schema.seasonMemberships.member_id})`,
+      })
+      .from(schema.seasonMemberships)
+      .where(
+        and(
+          eq(schema.seasonMemberships.season_id, sessionSeason.seasonId),
+          inArray(schema.seasonMemberships.status, [...SEASON_MEMBERSHIP_STATUSES_FOR_COUNT])
+        )
+      );
+    membershipCount = Number(countRow?.n ?? 0);
+  }
+
+  const completed = signupRows.map((row) => {
+    const startDt = requireIso(row.startDt as any, 'startDt');
+    return {
+      signupId: row.signupId,
+      memberId: row.memberId ?? null,
+      memberName: row.memberName ? normalizePersonName(row.memberName) || row.memberName : null,
+      shiftId: row.shiftId,
+      startDt,
+      endDt: requireIso(row.endDt as any, 'endDt'),
+      startDateOnly: shiftDateOnly(startDt),
+    };
+  });
+
+  return aggregateVolunteerStats(completed, {
+    viewerMemberId: memberId,
+    nowIso,
+    monthPrefix,
+    season: sessionSeason
+      ? {
+          id: sessionSeason.seasonId,
+          name: sessionSeason.seasonName,
+          startDate: sessionSeason.seasonStartDate,
+          endDate: sessionSeason.seasonEndDate,
+        }
+      : null,
+    membershipCount,
+  });
 }

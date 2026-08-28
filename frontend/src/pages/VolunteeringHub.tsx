@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Navigate, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { HiChevronDown } from 'react-icons/hi2';
 import { AppPage, AppPageHeader } from '../components/AppPage';
 import AppPageControlsRow from '../components/AppPageControlsRow';
@@ -20,18 +20,21 @@ import {
   localDateOnly,
   volunteerCredentialIsValidOn,
   volunteerProgramAppearsInDiscovery,
-  volunteerProgramHasOpenShifts,
+  volunteerProgramHasIneligibleCredentialRoles,
+  volunteerProgramShiftsForCaller,
   volunteerProgramVisibleGivenCredentials,
   type VolunteerHubCredential,
   type VolunteerProgramView,
 } from '../utils/volunteering';
 import { MyVolunteerShiftsPanel } from './MyVolunteerShifts';
+import VolunteerStatsPanel from '../components/volunteering/VolunteerStatsPanel';
 
-type HubTab = 'programs' | 'shifts' | 'credentials';
+type HubTab = 'programs' | 'shifts' | 'stats' | 'credentials';
 
 function resolveHubTab(tabParam: string | null): HubTab {
   if (tabParam === 'credentials') return 'credentials';
   if (tabParam === 'shifts' || tabParam === 'my-shifts') return 'shifts';
+  if (tabParam === 'stats') return 'stats';
   return 'programs';
 }
 
@@ -63,7 +66,9 @@ export default function VolunteeringHub() {
       setPrograms(nextPrograms);
       setCredentials(data.credentials || []);
       // Expand the first program with shifts so Group by is visible without an extra click.
-      const firstWithShifts = nextPrograms.find((p) => p.shifts.some((s) => s.roles.length > 0));
+      const firstWithShifts = nextPrograms.find(
+        (p) => volunteerProgramShiftsForCaller(p).length > 0
+      );
       setExpandedPrograms((prev) => {
         if (prev.size > 0 || !firstWithShifts) return prev;
         return new Set([firstWithShifts.id]);
@@ -95,21 +100,11 @@ export default function VolunteeringHub() {
     [programs, heldCredentialIds]
   );
   const hasAnyOpenShifts = useMemo(
-    () => visiblePrograms.some(volunteerProgramHasOpenShifts),
+    () => visiblePrograms.some((program) => volunteerProgramShiftsForCaller(program).length > 0),
     [visiblePrograms]
   );
 
-  const hasCredentialGrants = useMemo(
-    () => credentials.some((credential) => credential.held || credential.expiresAt != null),
-    [credentials]
-  );
-
-  useEffect(() => {
-    if (loading || activeTab !== 'credentials' || hasCredentialGrants) return;
-    const next = new URLSearchParams(searchParams);
-    next.delete('tab');
-    setSearchParams(next, { replace: true });
-  }, [loading, activeTab, hasCredentialGrants, searchParams, setSearchParams]);
+  const hasClubCredentials = credentials.length > 0;
 
   if (legacyProgramId != null) {
     return <Navigate to={`/volunteering/programs/${legacyProgramId}`} replace />;
@@ -150,7 +145,7 @@ export default function VolunteeringHub() {
             isActive: activeTab === 'shifts',
             onClick: () => setTab('shifts'),
           },
-          ...(hasCredentialGrants
+          ...(hasClubCredentials
             ? [
                 {
                   key: 'credentials',
@@ -160,14 +155,22 @@ export default function VolunteeringHub() {
                 },
               ]
             : []),
+          {
+            key: 'stats',
+            label: 'Volunteering stats',
+            isActive: activeTab === 'stats',
+            onClick: () => setTab('stats'),
+          },
         ]}
       />
 
       {activeTab === 'shifts' ? (
         <MyVolunteerShiftsPanel />
+      ) : activeTab === 'stats' ? (
+        <VolunteerStatsPanel />
       ) : loading ? (
         <AppStateCard title="Loading opportunities" description="Fetching volunteer programs and shifts." />
-      ) : activeTab === 'credentials' && hasCredentialGrants ? (
+      ) : activeTab === 'credentials' && hasClubCredentials ? (
         <CredentialsTab credentials={credentials} />
       ) : (
         <div className="space-y-4">
@@ -201,13 +204,21 @@ export default function VolunteeringHub() {
                 />
               ) : null}
 
-              <div className="space-y-3">
+              <div className="space-y-5">
                 {visiblePrograms.map((program) => {
-                  const hasShifts = volunteerProgramHasOpenShifts(program);
+                  const visibleShifts = volunteerProgramShiftsForCaller(program);
+                  const hasHiddenCredentialRoles =
+                    !program.canManage && volunteerProgramHasIneligibleCredentialRoles(program);
+                  const hasShifts = visibleShifts.length > 0 || hasHiddenCredentialRoles;
+                  const programHref = `/volunteering/programs/${program.slug}`;
+                  const programTitleLinkClass =
+                    'relative z-10 rounded-sm font-medium text-gray-900 hover:text-primary-teal-link hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/50 dark:text-gray-100';
                   if (!hasShifts) {
                     return (
                       <div key={program.id} className="app-card space-y-3 p-5">
-                        <div className="font-medium text-gray-900 dark:text-gray-100">{program.title}</div>
+                        <Link to={programHref} className={programTitleLinkClass}>
+                          {program.title}
+                        </Link>
                         <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600 dark:text-gray-400">
                           {program.location ? <span>{program.location}</span> : null}
                           <span>Contact: {program.pointOfContact}</span>
@@ -222,26 +233,42 @@ export default function VolunteeringHub() {
                   const expanded = expandedPrograms.has(program.id);
                   return (
                     <div key={program.id} className="app-card overflow-hidden p-0">
-                      <button
-                        type="button"
-                        onClick={() => setExpandedPrograms((prev) => toggleInSet(prev, program.id))}
-                        className="flex w-full items-start justify-between gap-3 px-5 py-4 text-left hover:bg-gray-50 dark:hover:bg-gray-800/60"
-                        aria-expanded={expanded}
-                      >
-                        <div className="min-w-0 space-y-1">
-                          <div className="font-medium text-gray-900 dark:text-gray-100">{program.title}</div>
-                          <div className="text-sm text-gray-600 dark:text-gray-400">
-                            {formatProgramShiftDateSpan(program.shifts)}
-                          </div>
-                          <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600 dark:text-gray-400">
-                            {program.location ? <span>{program.location}</span> : null}
-                            <span>Contact: {program.pointOfContact}</span>
-                          </div>
-                        </div>
-                        <HiChevronDown
-                          className={`mt-1 h-5 w-5 shrink-0 text-gray-500 transition-transform ${expanded ? 'rotate-180' : ''}`}
+                      <div className="relative px-5 py-4 hover:bg-gray-50 dark:hover:bg-gray-800/60">
+                        <button
+                          type="button"
+                          onClick={() => setExpandedPrograms((prev) => toggleInSet(prev, program.id))}
+                          className="absolute inset-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-teal/50"
+                          aria-expanded={expanded}
+                          aria-label={
+                            expanded
+                              ? `Hide shifts for ${program.title}`
+                              : `Show shifts for ${program.title}`
+                          }
                         />
-                      </button>
+                        <div className="relative flex items-start justify-between gap-3 pointer-events-none">
+                          <div className="min-w-0 space-y-1">
+                            <Link
+                              to={programHref}
+                              className={`${programTitleLinkClass} pointer-events-auto`}
+                            >
+                              {program.title}
+                            </Link>
+                            {visibleShifts.length > 0 ? (
+                              <div className="text-sm text-gray-600 dark:text-gray-400">
+                                {formatProgramShiftDateSpan(visibleShifts)}
+                              </div>
+                            ) : null}
+                            <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600 dark:text-gray-400">
+                              {program.location ? <span>{program.location}</span> : null}
+                              <span>Contact: {program.pointOfContact}</span>
+                            </div>
+                          </div>
+                          <HiChevronDown
+                            className={`mt-1 h-5 w-5 shrink-0 text-gray-500 transition-transform ${expanded ? 'rotate-180' : ''}`}
+                            aria-hidden="true"
+                          />
+                        </div>
+                      </div>
 
                       {expanded ? (
                         <div className="border-t border-gray-200 dark:border-gray-700 px-5 py-4 space-y-4">
@@ -252,6 +279,7 @@ export default function VolunteeringHub() {
                             program={program}
                             groupBy={groupBy}
                             onChanged={load}
+                            heldCredentialIds={heldCredentialIds}
                           />
                         </div>
                       ) : null}

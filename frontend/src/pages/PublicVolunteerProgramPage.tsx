@@ -11,6 +11,7 @@ import { ArticleMarkdown } from '../components/ArticleMarkdown';
 import { useAuth } from '../contexts/AuthContext';
 import { useAlert } from '../contexts/AlertContext';
 import api, { formatApiError } from '../utils/api';
+import VolunteerSpotsStatusBadge from '../components/volunteering/VolunteerSpotsStatusBadge';
 import {
   formatProgramShiftDateSpan,
   formatVolunteerDayHeading,
@@ -250,9 +251,14 @@ export default function PublicVolunteerProgramPage() {
                       aria-expanded={expanded}
                     >
                       <div className="min-w-0">
-                        <h2 className="font-medium text-gray-900">
-                          {formatVolunteerDayHeading(dayKey)}
-                        </h2>
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <h2 className="font-medium text-gray-900">
+                            {formatVolunteerDayHeading(dayKey)}
+                          </h2>
+                          <VolunteerSpotsStatusBadge
+                            roles={shifts.flatMap((shift) => shift.roles)}
+                          />
+                        </div>
                         {!expanded ? <AccordionPreview items={rolePreview} /> : null}
                       </div>
                       <HiChevronDown
@@ -333,7 +339,7 @@ export default function PublicVolunteerProgramPage() {
               label="Comments"
               htmlFor={commentsId}
               optional
-              helperText="Visible to the owners of this volunteer program."
+              helperText="Visible to members viewing this program."
             >
               <textarea
                 id={commentsId}

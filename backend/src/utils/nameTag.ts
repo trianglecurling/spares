@@ -1,3 +1,4 @@
+import { normalizePersonName } from './memberName.js';
 import {
   PREFERRED_PRONOUN_PREFER_NOT_TO_SAY,
   resolvePreferredPronounsForSave,
@@ -27,7 +28,7 @@ export function replacementNameTagLineDescription(quantity: number): string {
 }
 
 export function normalizeNameTagName(value: string | null | undefined): string {
-  return (value ?? '').trim().replace(/\s+/g, ' ');
+  return normalizePersonName(value);
 }
 
 export function defaultNameTagPrintName(

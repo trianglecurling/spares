@@ -1,4 +1,4 @@
-import type { AnchorHTMLAttributes, ImgHTMLAttributes } from 'react';
+import { forwardRef, type AnchorHTMLAttributes, type ImgHTMLAttributes } from 'react';
 import ReactMarkdown, { defaultUrlTransform, type ExtraProps, type UrlTransform } from 'react-markdown';
 import rehypeRaw from 'rehype-raw';
 import remarkBreaks from 'remark-breaks';
@@ -62,20 +62,23 @@ const articleMarkdownComponents = {
 type ArticleMarkdownProps = {
   markdown: string;
   className?: string;
+  id?: string;
 };
 
 /** Shared remark/rehype stack and components for article-style markdown (public + admin preview). */
-export function ArticleMarkdown({ markdown, className }: ArticleMarkdownProps) {
-  return (
-    <div className={className ?? 'markdown-content max-w-none'}>
-      <ReactMarkdown
-        remarkPlugins={[...ARTICLE_MARKDOWN_REMARK_PLUGINS]}
-        rehypePlugins={[...ARTICLE_MARKDOWN_REHYPE_PLUGINS]}
-        urlTransform={articleMarkdownUrlTransform}
-        components={articleMarkdownComponents}
-      >
-        {stripAccordionOpenStateFromMarkdown(repairMarkdownLinksInRawHtmlBlocks(markdown))}
-      </ReactMarkdown>
-    </div>
-  );
-}
+export const ArticleMarkdown = forwardRef<HTMLDivElement, ArticleMarkdownProps>(
+  function ArticleMarkdown({ markdown, className, id }, ref) {
+    return (
+      <div ref={ref} id={id} className={className ?? 'markdown-content max-w-none'}>
+        <ReactMarkdown
+          remarkPlugins={[...ARTICLE_MARKDOWN_REMARK_PLUGINS]}
+          rehypePlugins={[...ARTICLE_MARKDOWN_REHYPE_PLUGINS]}
+          urlTransform={articleMarkdownUrlTransform}
+          components={articleMarkdownComponents}
+        >
+          {stripAccordionOpenStateFromMarkdown(repairMarkdownLinksInRawHtmlBlocks(markdown))}
+        </ReactMarkdown>
+      </div>
+    );
+  }
+);

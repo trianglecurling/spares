@@ -22,6 +22,8 @@ export type VolunteerSignupView = {
   memberName: string;
   guestName: string | null;
   guestEmail: string | null;
+  memberEmail: string | null;
+  memberPhone: string | null;
   comments: string | null;
   signedUpByMemberId: number | null;
   status: 'confirmed' | 'cancelled';
@@ -144,6 +146,7 @@ export type DashboardVolunteerOpportunityProgram = {
   programId: number;
   programSlug: string;
   programTitle: string;
+  description: string | null;
   location: string | null;
   totalShifts: number;
   shifts: DashboardVolunteerOpportunityShift[];
@@ -162,6 +165,35 @@ export type MyVolunteerSignup = {
   status: 'confirmed' | 'cancelled';
   comments: string | null;
   canCancel: boolean;
+};
+
+export type VolunteerStatsView = {
+  season: {
+    id: number;
+    name: string;
+    startDate: string;
+    endDate: string;
+  } | null;
+  club: {
+    hours: { month: number; season: number; lifetime: number };
+    shifts: { month: number; season: number; lifetime: number };
+    uniqueVolunteersSeason: number;
+    membershipCountSeason: number;
+    uniqueVolunteerPercentSeason: number | null;
+    hoursPerMemberSeason: number | null;
+  };
+  me: {
+    hours: { month: number; season: number; lifetime: number };
+    shifts: { month: number; season: number; lifetime: number };
+    seasonRank: number | null;
+  };
+  leaderboard: Array<{
+    rank: number;
+    memberId: number;
+    name: string;
+    hours: number;
+    isViewer: boolean;
+  }>;
 };
 
 /** Sentinel for the club (default) location radio in program editors. */
@@ -224,18 +256,114 @@ export function formatVolunteerDuration(startDt: string, endDt: string): string 
     const ms = new Date(endDt).getTime() - new Date(startDt).getTime();
     if (!Number.isFinite(ms) || ms <= 0) return '';
     const hours = Math.round((ms / (1000 * 60 * 60)) * 10) / 10;
-    if (hours === 1) return '1 hour';
-    if (Number.isInteger(hours)) return `${hours} hours`;
-    return `${hours} hours`;
+    return formatVolunteerHoursLabel(hours);
   } catch {
     return '';
   }
+}
+
+export function formatVolunteerHoursLabel(hours: number): string {
+  const rounded = Math.round(hours * 10) / 10;
+  if (rounded === 1) return '1 hour';
+  if (Number.isInteger(rounded)) return `${rounded} hours`;
+  return `${rounded} hours`;
 }
 
 export function volunteerProgramHasOpenShifts(program: {
   shifts: Array<{ roles: unknown[] }>;
 }): boolean {
   return program.shifts.some((shift) => shift.roles.length > 0);
+}
+
+function volunteerRoleHiddenByCredentials(role: {
+  callerHasCredentials: boolean;
+  callerIsSignedUp?: boolean;
+}): boolean {
+  return !role.callerHasCredentials && !role.callerIsSignedUp;
+}
+
+export function volunteerProgramHasIneligibleCredentialRoles(program: {
+  shifts: Array<{ roles: Array<{ callerHasCredentials: boolean; callerIsSignedUp?: boolean }> }>;
+}): boolean {
+  return program.shifts.some((shift) => shift.roles.some(volunteerRoleHiddenByCredentials));
+}
+
+/**
+ * Names of credentials the caller does not hold that gate hidden shift roles.
+ * Credentials required by a role they already qualify for are omitted.
+ */
+export function volunteerProgramMissingCredentialNames(
+  program: {
+    canManage?: boolean;
+    shifts: Array<{
+      roles: Array<{
+        callerHasCredentials: boolean;
+        callerIsSignedUp?: boolean;
+        requiredCredentials: Array<{ id: number; name: string }>;
+      }>;
+    }>;
+  },
+  heldCredentialIds?: Iterable<number>
+): string[] {
+  if (program.canManage) return [];
+  const held = new Set(heldCredentialIds ?? []);
+  if (heldCredentialIds == null) {
+    for (const shift of program.shifts) {
+      for (const role of shift.roles) {
+        if (!role.callerHasCredentials) continue;
+        for (const credential of role.requiredCredentials) {
+          held.add(credential.id);
+        }
+      }
+    }
+  }
+  const names = new Map<number, string>();
+  for (const shift of program.shifts) {
+    for (const role of shift.roles) {
+      if (!volunteerRoleHiddenByCredentials(role)) continue;
+      for (const credential of role.requiredCredentials) {
+        if (held.has(credential.id)) continue;
+        names.set(credential.id, credential.name);
+      }
+    }
+  }
+  return [...names.values()].sort((a, b) => a.localeCompare(b, 'en'));
+}
+
+/**
+ * Shifts and roles the caller can see. Credential-gated roles they cannot take
+ * are omitted unless they already signed up, they asked to show them, or they
+ * manage the program (owners still need to add others).
+ */
+export function volunteerProgramShiftsForCaller<
+  TRole extends { callerHasCredentials: boolean; callerIsSignedUp?: boolean },
+  TShift extends { roles: TRole[] },
+>(
+  program: { canManage?: boolean; shifts: TShift[] },
+  options?: { includeIneligible?: boolean }
+): TShift[] {
+  if (program.canManage || options?.includeIneligible) {
+    return program.shifts.filter((shift) => shift.roles.length > 0);
+  }
+  return program.shifts
+    .map((shift) => ({
+      ...shift,
+      roles: shift.roles.filter((role) => !volunteerRoleHiddenByCredentials(role)),
+    }))
+    .filter((shift) => shift.roles.length > 0);
+}
+
+/** Distinct role ids across shifts (same role on many shifts counts once). */
+export function volunteerShiftsDistinctRoleCount(
+  shifts: Array<{ roles: Array<{ roleId: number }> }>
+): number {
+  const ids = new Set<number>();
+  for (const shift of shifts) {
+    for (const role of shift.roles) {
+      ids.add(role.roleId);
+    }
+  }
+  return ids.size;
 }
 
 /** A shift is past once its end date/time is before now. */
@@ -286,6 +414,30 @@ export function volunteerProgramSignupTotals(
     }
   }
   return { signedUp, needed };
+}
+
+export type VolunteerSpotCounts = {
+  remaining: number;
+  needed: number;
+};
+
+export function volunteerSpotsTotals(
+  roles: Array<{ volunteersRegistered: number; volunteersNeeded: number }>
+): VolunteerSpotCounts {
+  let registered = 0;
+  let needed = 0;
+  for (const role of roles) {
+    registered += role.volunteersRegistered;
+    needed += role.volunteersNeeded;
+  }
+  return { remaining: Math.max(0, needed - registered), needed };
+}
+
+export function volunteerSpotsStatusLabel(remaining: number, needed: number): string {
+  if (remaining <= 0) return 'Full';
+  if (remaining === 1 && needed > 1) return '1 spot left!';
+  if (remaining === 2 && needed > 2) return '2 spots left!';
+  return remaining === 1 ? '1 open spot' : `${remaining} open spots`;
 }
 
 /** Local calendar date (YYYY-MM-DD) of the earliest shift, if any. */

@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import Button from '../Button';
 import FormField from '../FormField';
 import MemberMultiSelect from '../MemberMultiSelect';
@@ -14,6 +14,9 @@ export type VolunteerSignupTarget = {
   remainingSpots: number;
   requiresCredentials: boolean;
   callerIsSignedUp: boolean;
+  /** Program owner adding people without pre-selecting themselves. */
+  manageForOthers?: boolean;
+  signedUpMemberIds?: number[];
 };
 
 type VolunteerSignupDialogProps = {
@@ -32,15 +35,22 @@ export default function VolunteerSignupDialog({
   const volunteersInputId = useId();
   const commentsInputId = useId();
   const volunteersLabelId = useId();
+  const manageForOthers = Boolean(target.manageForOthers);
+  const signedUpMemberIds = useMemo(
+    () => new Set(target.signedUpMemberIds ?? []),
+    [target.signedUpMemberIds]
+  );
   const [selectedIds, setSelectedIds] = useState<number[]>(() =>
-    target.callerIsSignedUp || currentMemberId == null ? [] : [currentMemberId],
+    manageForOthers || target.callerIsSignedUp || currentMemberId == null ? [] : [currentMemberId],
   );
   const [guestNames, setGuestNames] = useState<string[]>([]);
   const [comments, setComments] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Already signed up: picker is the main action. Otherwise start collapsed behind the link.
-  const [showMemberPicker, setShowMemberPicker] = useState(() => target.callerIsSignedUp);
+  // Already signed up or adding on behalf of others: picker is the main action.
+  const [showMemberPicker, setShowMemberPicker] = useState(
+    () => manageForOthers || target.callerIsSignedUp
+  );
   const [memberPickerFocusKey, setMemberPickerFocusKey] = useState(0);
 
   const totalSelected = selectedIds.length + guestNames.length;
@@ -110,7 +120,7 @@ export default function VolunteerSignupDialog({
     <Modal
       isOpen
       onClose={onClose}
-      title={`Sign up · ${target.roleName}`}
+      title={manageForOthers ? `Add volunteers · ${target.roleName}` : `Sign up · ${target.roleName}`}
       size="lg"
       verticalAlign="start"
       contentOverflow="visible"
@@ -123,6 +133,12 @@ export default function VolunteerSignupDialog({
             ? ' This role requires credentials, so only eligible members can be added.'
             : null}
         </p>
+        {manageForOthers ? (
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            You're adding volunteers as a program owner. Confirmation emails are sent to selected
+            members.
+          </p>
+        ) : null}
 
         {showMemberPicker ? (
           <FormField
@@ -140,10 +156,12 @@ export default function VolunteerSignupDialog({
               placeholder="Search members..."
               focusRequestKey={memberPickerFocusKey}
               isOptionDisabled={(option) =>
+                signedUpMemberIds.has(option.id) ||
                 Boolean(target.callerIsSignedUp && option.id === currentMemberId)
               }
               getOptionStatusText={(option) =>
-                target.callerIsSignedUp && option.id === currentMemberId
+                signedUpMemberIds.has(option.id) ||
+                (target.callerIsSignedUp && option.id === currentMemberId)
                   ? 'Already signed up'
                   : null
               }
@@ -211,7 +229,7 @@ export default function VolunteerSignupDialog({
           label="Comments"
           htmlFor={commentsInputId}
           optional
-          helperText="Visible to the owners of this volunteer program."
+          helperText="Visible to members viewing this program."
         >
           <textarea
             id={commentsInputId}
@@ -219,7 +237,7 @@ export default function VolunteerSignupDialog({
             value={comments}
             onChange={(e) => setComments(e.target.value)}
             maxLength={2000}
-            placeholder="Anything the program owners should know"
+            placeholder="Anything other volunteers or program owners should know"
           />
         </FormField>
 
@@ -234,7 +252,7 @@ export default function VolunteerSignupDialog({
             Cancel
           </Button>
           <Button type="button" onClick={() => void submit()} disabled={submitting || totalSelected < 1}>
-            {submitting ? 'Signing up…' : 'Confirm signup'}
+            {submitting ? (manageForOthers ? 'Adding…' : 'Signing up…') : manageForOthers ? 'Add volunteers' : 'Confirm signup'}
           </Button>
         </div>
       </div>

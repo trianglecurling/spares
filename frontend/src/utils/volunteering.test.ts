@@ -2,15 +2,237 @@ import { describe, expect, test } from 'bun:test';
 import {
   volunteerProgramAppearsInDiscovery,
   volunteerProgramFirstShiftDate,
+  volunteerProgramHasIneligibleCredentialRoles,
+  volunteerProgramMissingCredentialNames,
   volunteerProgramHasOpenShifts,
   volunteerProgramLastShiftHasEnded,
+  volunteerProgramShiftsForCaller,
+  volunteerShiftsDistinctRoleCount,
   volunteerProgramSignupTotals,
   volunteerProgramVisibleGivenCredentials,
+  volunteerSpotsStatusLabel,
+  volunteerSpotsTotals,
   formatVolunteerDateOnly,
   volunteerCredentialIsValidOn,
   volunteerShiftDayKey,
   volunteerShiftHasEnded,
 } from './volunteering';
+
+describe('volunteerProgramShiftsForCaller', () => {
+  const eligible = { callerHasCredentials: true };
+  const ineligible = { callerHasCredentials: false };
+
+  test('omits roles the caller cannot take', () => {
+    expect(
+      volunteerProgramShiftsForCaller({
+        shifts: [
+          { id: 1, roles: [eligible, ineligible] },
+          { id: 2, roles: [ineligible] },
+        ],
+      })
+    ).toEqual([{ id: 1, roles: [eligible] }]);
+  });
+
+  test('keeps ineligible roles for program managers', () => {
+    expect(
+      volunteerProgramShiftsForCaller({
+        canManage: true,
+        shifts: [
+          { id: 1, roles: [eligible, ineligible] },
+          { id: 2, roles: [ineligible] },
+        ],
+      })
+    ).toEqual([
+      { id: 1, roles: [eligible, ineligible] },
+      { id: 2, roles: [ineligible] },
+    ]);
+  });
+
+  test('returns no shifts when every role is ineligible', () => {
+    expect(
+      volunteerProgramShiftsForCaller({
+        shifts: [{ id: 1, roles: [ineligible] }],
+      })
+    ).toEqual([]);
+  });
+
+  test('includes ineligible roles when asked to show them', () => {
+    expect(
+      volunteerProgramShiftsForCaller(
+        {
+          shifts: [
+            { id: 1, roles: [eligible, ineligible] },
+            { id: 2, roles: [ineligible] },
+          ],
+        },
+        { includeIneligible: true }
+      )
+    ).toEqual([
+      { id: 1, roles: [eligible, ineligible] },
+      { id: 2, roles: [ineligible] },
+    ]);
+  });
+
+  test('keeps ineligible roles the caller is already signed up for', () => {
+    const signedUp = { callerHasCredentials: false, callerIsSignedUp: true };
+    expect(
+      volunteerProgramShiftsForCaller({
+        shifts: [
+          { id: 1, roles: [signedUp, ineligible] },
+          { id: 2, roles: [ineligible] },
+        ],
+      })
+    ).toEqual([{ id: 1, roles: [signedUp] }]);
+  });
+});
+
+describe('volunteerProgramHasIneligibleCredentialRoles', () => {
+  test('is true when any role is credential-gated for the caller', () => {
+    expect(
+      volunteerProgramHasIneligibleCredentialRoles({
+        shifts: [{ roles: [{ callerHasCredentials: true }, { callerHasCredentials: false }] }],
+      })
+    ).toBe(true);
+  });
+
+  test('is false when every role is eligible', () => {
+    expect(
+      volunteerProgramHasIneligibleCredentialRoles({
+        shifts: [{ roles: [{ callerHasCredentials: true }] }],
+      })
+    ).toBe(false);
+  });
+
+  test('is false when the only ineligible roles are ones the caller already signed up for', () => {
+    expect(
+      volunteerProgramHasIneligibleCredentialRoles({
+        shifts: [
+          {
+            roles: [
+              { callerHasCredentials: true },
+              { callerHasCredentials: false, callerIsSignedUp: true },
+            ],
+          },
+        ],
+      })
+    ).toBe(false);
+  });
+});
+
+describe('volunteerProgramMissingCredentialNames', () => {
+  const iceTech = { id: 1, name: 'Ice technician' };
+  const firstAid = { id: 2, name: 'First aid' };
+  const bar = { id: 3, name: 'Bar certified' };
+
+  test('lists unique credentials required by hidden roles', () => {
+    expect(
+      volunteerProgramMissingCredentialNames({
+        shifts: [
+          {
+            roles: [
+              {
+                callerHasCredentials: true,
+                requiredCredentials: [],
+              },
+              {
+                callerHasCredentials: false,
+                requiredCredentials: [iceTech, firstAid],
+              },
+            ],
+          },
+          {
+            roles: [
+              {
+                callerHasCredentials: false,
+                requiredCredentials: [iceTech],
+              },
+            ],
+          },
+        ],
+      })
+    ).toEqual(['First aid', 'Ice technician']);
+  });
+
+  test('omits credentials the caller already holds via an eligible role', () => {
+    expect(
+      volunteerProgramMissingCredentialNames({
+        shifts: [
+          {
+            roles: [
+              {
+                callerHasCredentials: true,
+                requiredCredentials: [iceTech],
+              },
+              {
+                callerHasCredentials: false,
+                requiredCredentials: [iceTech, firstAid],
+              },
+            ],
+          },
+        ],
+      })
+    ).toEqual(['First aid']);
+  });
+
+  test('uses explicit held ids when provided', () => {
+    expect(
+      volunteerProgramMissingCredentialNames(
+        {
+          shifts: [
+            {
+              roles: [
+                {
+                  callerHasCredentials: true,
+                  requiredCredentials: [],
+                },
+                {
+                  callerHasCredentials: false,
+                  requiredCredentials: [iceTech, bar],
+                },
+              ],
+            },
+          ],
+        },
+        [iceTech.id]
+      )
+    ).toEqual(['Bar certified']);
+  });
+
+  test('returns no names for program managers', () => {
+    expect(
+      volunteerProgramMissingCredentialNames({
+        canManage: true,
+        shifts: [
+          {
+            roles: [{ callerHasCredentials: false, requiredCredentials: [iceTech] }],
+          },
+        ],
+      })
+    ).toEqual([]);
+  });
+});
+
+describe('volunteerShiftsDistinctRoleCount', () => {
+  test('is 0 when there are no roles', () => {
+    expect(volunteerShiftsDistinctRoleCount([])).toBe(0);
+    expect(volunteerShiftsDistinctRoleCount([{ roles: [] }])).toBe(0);
+  });
+
+  test('counts the same role across shifts once', () => {
+    expect(
+      volunteerShiftsDistinctRoleCount([
+        { roles: [{ roleId: 1 }] },
+        { roles: [{ roleId: 1 }] },
+      ])
+    ).toBe(1);
+  });
+
+  test('counts different roles on one shift', () => {
+    expect(
+      volunteerShiftsDistinctRoleCount([{ roles: [{ roleId: 1 }, { roleId: 2 }] }])
+    ).toBe(2);
+  });
+});
 
 describe('volunteerProgramHasOpenShifts', () => {
   test('is false when there are no shifts', () => {
@@ -245,6 +467,48 @@ describe('volunteerCredentialIsValidOn', () => {
   test('is valid through the expiration date', () => {
     expect(volunteerCredentialIsValidOn('2026-09-01', '2026-09-01')).toBe(true);
     expect(volunteerCredentialIsValidOn('2026-09-01', '2026-09-02')).toBe(false);
+  });
+});
+
+describe('volunteerSpotsStatusLabel', () => {
+  test('is Full when no spots remain', () => {
+    expect(volunteerSpotsStatusLabel(0, 4)).toBe('Full');
+    expect(volunteerSpotsStatusLabel(0, 1)).toBe('Full');
+  });
+
+  test('uses 1 spot left! only when capacity is greater than 1', () => {
+    expect(volunteerSpotsStatusLabel(1, 4)).toBe('1 spot left!');
+    expect(volunteerSpotsStatusLabel(1, 2)).toBe('1 spot left!');
+    expect(volunteerSpotsStatusLabel(1, 1)).toBe('1 open spot');
+  });
+
+  test('uses 2 spots left! only when capacity is greater than 2', () => {
+    expect(volunteerSpotsStatusLabel(2, 4)).toBe('2 spots left!');
+    expect(volunteerSpotsStatusLabel(2, 3)).toBe('2 spots left!');
+    expect(volunteerSpotsStatusLabel(2, 2)).toBe('2 open spots');
+  });
+
+  test('uses n open spots for every other remaining count', () => {
+    expect(volunteerSpotsStatusLabel(3, 4)).toBe('3 open spots');
+    expect(volunteerSpotsStatusLabel(4, 4)).toBe('4 open spots');
+  });
+});
+
+describe('volunteerSpotsTotals', () => {
+  test('sums remaining spots across roles', () => {
+    expect(
+      volunteerSpotsTotals([
+        { volunteersRegistered: 3, volunteersNeeded: 4 },
+        { volunteersRegistered: 1, volunteersNeeded: 2 },
+      ])
+    ).toEqual({ remaining: 2, needed: 6 });
+  });
+
+  test('does not go below zero remaining', () => {
+    expect(volunteerSpotsTotals([{ volunteersRegistered: 5, volunteersNeeded: 4 }])).toEqual({
+      remaining: 0,
+      needed: 4,
+    });
   });
 });
 

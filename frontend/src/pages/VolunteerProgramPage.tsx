@@ -15,7 +15,11 @@ import { useAlert } from '../contexts/AlertContext';
 import { formatApiError } from '../utils/api';
 import {
   formatProgramShiftDateSpan,
+  volunteerProgramHasIneligibleCredentialRoles,
   volunteerProgramHasOpenShifts,
+  volunteerProgramShiftsForCaller,
+  volunteerShiftsDistinctRoleCount,
+  type VolunteerHubCredential,
   type VolunteerProgramView,
 } from '../utils/volunteering';
 
@@ -26,6 +30,7 @@ export default function VolunteerProgramPage() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [program, setProgram] = useState<VolunteerProgramView | null>(null);
+  const [heldCredentialIds, setHeldCredentialIds] = useState<Set<number> | undefined>(undefined);
   const [groupBy, setGroupBy] = useState<VolunteerProgramGroupBy>('shift');
 
   const slug = slugParam?.trim() || '';
@@ -40,17 +45,34 @@ export default function VolunteerProgramPage() {
     setLoading(true);
     setNotFound(false);
     try {
-      const data = (await get('/volunteering/programs/{slug}', undefined, {
-        slug,
-      })) as { program: VolunteerProgramView };
-      setProgram(data.program);
-    } catch (err) {
-      const status = (err as { response?: { status?: number } })?.response?.status;
-      if (status === 404) {
-        setNotFound(true);
-        setProgram(null);
+      const [programResult, credsResult] = await Promise.allSettled([
+        get('/volunteering/programs/{slug}', undefined, { slug }) as Promise<{
+          program: VolunteerProgramView;
+        }>,
+        get('/volunteering/my-credentials') as Promise<{ credentials: VolunteerHubCredential[] }>,
+      ]);
+      if (programResult.status === 'rejected') {
+        const err = programResult.reason as { response?: { status?: number } };
+        const status = err?.response?.status;
+        if (status === 404) {
+          setNotFound(true);
+          setProgram(null);
+        } else {
+          showAlert(formatApiError(err, 'Failed to load volunteer program'), 'error');
+        }
+        return;
+      }
+      setProgram(programResult.value.program);
+      if (credsResult.status === 'fulfilled') {
+        setHeldCredentialIds(
+          new Set(
+            credsResult.value.credentials
+              .filter((credential) => credential.held)
+              .map((credential) => credential.id)
+          )
+        );
       } else {
-        showAlert(formatApiError(err, 'Failed to load volunteer program'), 'error');
+        setHeldCredentialIds(undefined);
       }
     } finally {
       setLoading(false);
@@ -94,14 +116,20 @@ export default function VolunteerProgramPage() {
     return <Navigate to={`/volunteering/programs/${program.slug}`} replace />;
   }
 
-  const hasShifts = volunteerProgramHasOpenShifts(program);
-  const shiftless = program.roles.length === 0 && !hasShifts;
+  const visibleShifts = volunteerProgramShiftsForCaller(program);
+  const hasHiddenCredentialRoles =
+    !program.canManage && volunteerProgramHasIneligibleCredentialRoles(program);
+  const hasShifts = visibleShifts.length > 0 || hasHiddenCredentialRoles;
+  const shiftless = program.roles.length === 0 && !volunteerProgramHasOpenShifts(program);
+  const showGroupBy = volunteerShiftsDistinctRoleCount(visibleShifts) > 1;
 
   return (
     <AppPage>
       <AppPageHeader
         title={program.title}
-        description={hasShifts ? formatProgramShiftDateSpan(program.shifts) : undefined}
+        description={
+          visibleShifts.length > 0 ? formatProgramShiftDateSpan(visibleShifts) : undefined
+        }
         actions={<BackButton label="Back to volunteering hub" to="/volunteering" />}
       />
 
@@ -116,28 +144,35 @@ export default function VolunteerProgramPage() {
 
         {hasShifts ? (
           <>
-            <AppPageControlsRow
-              left={
-                <FormField label="Group by" htmlFor={groupById} className="mb-0">
-                  <ChoiceInput<VolunteerProgramGroupBy>
-                    inputId={groupById}
-                    listboxLabel="Group by"
-                    layout="inline"
-                    name="volunteer-program-group-by"
-                    options={[
-                      { value: 'shift', label: 'Shift time' },
-                      { value: 'role', label: 'Role' },
-                    ]}
-                    value={groupBy}
-                    onChange={(v) => {
-                      if (v === 'shift' || v === 'role') setGroupBy(v);
-                    }}
-                  />
-                </FormField>
-              }
-            />
+            {showGroupBy ? (
+              <AppPageControlsRow
+                left={
+                  <FormField label="Group by" htmlFor={groupById} className="mb-0">
+                    <ChoiceInput<VolunteerProgramGroupBy>
+                      inputId={groupById}
+                      listboxLabel="Group by"
+                      layout="inline"
+                      name="volunteer-program-group-by"
+                      options={[
+                        { value: 'shift', label: 'Shift time' },
+                        { value: 'role', label: 'Role' },
+                      ]}
+                      value={groupBy}
+                      onChange={(v) => {
+                        if (v === 'shift' || v === 'role') setGroupBy(v);
+                      }}
+                    />
+                  </FormField>
+                }
+              />
+            ) : null}
             <div className="app-card space-y-4 p-5">
-              <VolunteerProgramShiftsBody program={program} groupBy={groupBy} onChanged={load} />
+              <VolunteerProgramShiftsBody
+                program={program}
+                groupBy={groupBy}
+                onChanged={load}
+                heldCredentialIds={heldCredentialIds}
+              />
             </div>
           </>
         ) : shiftless ? null : (
