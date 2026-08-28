@@ -470,6 +470,13 @@
       "when": 1780352498508,
       "tag": "0067_add_league_waitlists_frozen_entry_count",
       "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1780352498509,
+      "tag": "0068_add_webauthn_passkeys",
+      "breakpoints": true
     }
   ]
 }

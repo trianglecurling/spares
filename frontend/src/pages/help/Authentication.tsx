@@ -73,6 +73,21 @@ export default function Authentication() {
 
                   <section>
                     <h2 className="text-2xl font-semibold mb-4 text-[#121033] dark:text-gray-100">
+                      Passkeys
+                    </h2>
+                    <p className="mb-3">
+                      You can also sign in with a passkey instead of a login code. After you are signed in, open My
+                      profile and use the Security tab to add a passkey for this device.
+                    </p>
+                    <ul className="list-disc list-inside space-y-2">
+                      <li>Passkeys use your fingerprint, face, or device PIN</li>
+                      <li>You can add more than one passkey and remove ones you no longer use</li>
+                      <li>Email login codes still work if you do not want to use a passkey</li>
+                    </ul>
+                  </section>
+
+                  <section>
+                    <h2 className="text-2xl font-semibold mb-4 text-[#121033] dark:text-gray-100">
                       Staying Logged In
                     </h2>
                     <p className="mb-3">The system uses secure tokens to keep you logged in:</p>

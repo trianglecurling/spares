@@ -11,6 +11,8 @@ type PgSchema = {
   authCodes: typeof pgSchema.authCodesPg;
   authTokens: typeof pgSchema.authTokensPg;
   personalAccessTokens: typeof pgSchema.personalAccessTokensPg;
+  webauthnCredentials: typeof pgSchema.webauthnCredentialsPg;
+  webauthnChallenges: typeof pgSchema.webauthnChallengesPg;
   roles: typeof pgSchema.rolesPg;
   roleScopeRules: typeof pgSchema.roleScopeRulesPg;
   memberRoleAssignments: typeof pgSchema.memberRoleAssignmentsPg;
@@ -164,6 +166,8 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       authCodes: sqliteSchema.authCodesSqlite,
       authTokens: sqliteSchema.authTokensSqlite,
       personalAccessTokens: sqliteSchema.personalAccessTokensSqlite,
+      webauthnCredentials: sqliteSchema.webauthnCredentialsSqlite,
+      webauthnChallenges: sqliteSchema.webauthnChallengesSqlite,
       roles: sqliteSchema.rolesSqlite,
       roleScopeRules: sqliteSchema.roleScopeRulesSqlite,
       memberRoleAssignments: sqliteSchema.memberRoleAssignmentsSqlite,
@@ -306,6 +310,8 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       authCodes: pgSchema.authCodesPg,
       authTokens: pgSchema.authTokensPg,
       personalAccessTokens: pgSchema.personalAccessTokensPg,
+      webauthnCredentials: pgSchema.webauthnCredentialsPg,
+      webauthnChallenges: pgSchema.webauthnChallengesPg,
       roles: pgSchema.rolesPg,
       roleScopeRules: pgSchema.roleScopeRulesPg,
       memberRoleAssignments: pgSchema.memberRoleAssignmentsPg,

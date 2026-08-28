@@ -314,13 +314,18 @@ export default function PublicEventTeamPage() {
                 {headingText}
               </h1>
               {showBracketDiagram ? (
-                <button
-                  type="button"
-                  className="shrink-0 text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-gray-800 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700/80"
-                  onClick={() => resetBracketPathRef.current?.()}
-                >
-                  Reset view
-                </button>
+                <div className="flex shrink-0 flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    className="text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-gray-800 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700/80"
+                    onClick={() => resetBracketPathRef.current?.()}
+                  >
+                    Reset view
+                  </button>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Drag to pan. Pinch or scroll to zoom.
+                  </p>
+                </div>
               ) : null}
             </div>
           </div>

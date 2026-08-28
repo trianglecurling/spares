@@ -62,6 +62,39 @@ export type AuthVerifyTokenResponse<TMember> = {
   accountSwitchOptions: Array<{ id: number; name: string }>;
 };
 
+export type MemberPasskeySummary = {
+  id: number;
+  name: string;
+  createdAt: string;
+  lastUsedAt: string | null;
+};
+
+export type MemberPasskeysResponse = {
+  passkeys: MemberPasskeySummary[];
+};
+
+export type UpdateMemberPasskeyBody = {
+  name: string;
+};
+
+export type WebAuthnCredentialPayload = Record<string, unknown>;
+
+export type PasskeyCeremonyOptionsResponse = {
+  challengeId: string;
+  options: Record<string, unknown>;
+};
+
+export type PasskeyRegistrationVerifyBody = {
+  challengeId: string;
+  credential: WebAuthnCredentialPayload;
+  name?: string;
+};
+
+export type PasskeyAuthenticationVerifyBody = {
+  challengeId: string;
+  credential: WebAuthnCredentialPayload;
+};
+
 export type MemberAccountAccessDelegatesResponse = {
   delegatedToMemberIds: number[];
   implicitAccessMemberIds: number[];

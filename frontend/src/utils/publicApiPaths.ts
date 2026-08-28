@@ -16,6 +16,7 @@ export function isPublicApiRequestUrl(url: string): boolean {
     normalized === '/auth/verify-code' ||
     normalized === '/auth/select-member' ||
     normalized === '/auth/refresh' ||
-    normalized === '/auth/logout'
+    normalized === '/auth/logout' ||
+    normalized.startsWith('/auth/passkeys/')
   );
 }

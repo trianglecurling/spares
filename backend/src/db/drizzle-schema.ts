@@ -104,6 +104,36 @@ export const personalAccessTokensSqlite = sqliteTable('personal_access_tokens', 
   memberIdIdx: index('idx_personal_access_tokens_member_id').on(table.member_id),
 }));
 
+export const webauthnCredentialsSqlite = sqliteTable('webauthn_credentials', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  member_id: integer('member_id').notNull().references(() => membersSqlite.id, { onDelete: 'cascade' }),
+  credential_id: text('credential_id').notNull().unique(),
+  public_key: text('public_key').notNull(),
+  counter: integer('counter').notNull().default(0),
+  device_type: text('device_type'),
+  backed_up: integer('backed_up').default(0).notNull(),
+  transports: text('transports'),
+  aaguid: text('aaguid'),
+  name: text('name').notNull(),
+  last_used_at: text('last_used_at'),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  credentialIdIdx: index('idx_webauthn_credentials_credential_id').on(table.credential_id),
+  memberIdIdx: index('idx_webauthn_credentials_member_id').on(table.member_id),
+}));
+
+export const webauthnChallengesSqlite = sqliteTable('webauthn_challenges', {
+  id: text('id').primaryKey(),
+  challenge: text('challenge').notNull(),
+  purpose: text('purpose').notNull(),
+  member_id: integer('member_id').references(() => membersSqlite.id, { onDelete: 'cascade' }),
+  expires_at: text('expires_at').notNull(),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  expiresAtIdx: index('idx_webauthn_challenges_expires_at').on(table.expires_at),
+  memberIdIdx: index('idx_webauthn_challenges_member_id').on(table.member_id),
+}));
+
 export const rolesSqlite = sqliteTable('roles', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   code: text('code').notNull().unique(),
@@ -2636,6 +2666,36 @@ export const personalAccessTokensPg = pgTable('personal_access_tokens', {
   memberIdIdx: indexPg('idx_personal_access_tokens_member_id').on(table.member_id),
 }));
 
+export const webauthnCredentialsPg = pgTable('webauthn_credentials', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  member_id: integerPg('member_id').notNull().references(() => membersPg.id, { onDelete: 'cascade' }),
+  credential_id: textPg('credential_id').notNull().unique(),
+  public_key: textPg('public_key').notNull(),
+  counter: integerPg('counter').notNull().default(0),
+  device_type: textPg('device_type'),
+  backed_up: integerPg('backed_up').default(0).notNull(),
+  transports: textPg('transports'),
+  aaguid: textPg('aaguid'),
+  name: textPg('name').notNull(),
+  last_used_at: timestamp('last_used_at', { withTimezone: false }),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  credentialIdIdx: indexPg('idx_webauthn_credentials_credential_id').on(table.credential_id),
+  memberIdIdx: indexPg('idx_webauthn_credentials_member_id').on(table.member_id),
+}));
+
+export const webauthnChallengesPg = pgTable('webauthn_challenges', {
+  id: textPg('id').primaryKey(),
+  challenge: textPg('challenge').notNull(),
+  purpose: textPg('purpose').notNull(),
+  member_id: integerPg('member_id').references(() => membersPg.id, { onDelete: 'cascade' }),
+  expires_at: timestamp('expires_at', { withTimezone: false }).notNull(),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  expiresAtIdx: indexPg('idx_webauthn_challenges_expires_at').on(table.expires_at),
+  memberIdIdx: indexPg('idx_webauthn_challenges_member_id').on(table.member_id),
+}));
+
 export const rolesPg = pgTable('roles', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
   code: textPg('code').notNull().unique(),
@@ -4814,6 +4874,8 @@ export const sqliteSchema = {
   authCodes: authCodesSqlite,
   authTokens: authTokensSqlite,
   personalAccessTokens: personalAccessTokensSqlite,
+  webauthnCredentials: webauthnCredentialsSqlite,
+  webauthnChallenges: webauthnChallengesSqlite,
   roles: rolesSqlite,
   roleScopeRules: roleScopeRulesSqlite,
   memberRoleAssignments: memberRoleAssignmentsSqlite,
@@ -4938,6 +5000,8 @@ export const pgSchema = {
   authCodes: authCodesPg,
   authTokens: authTokensPg,
   personalAccessTokens: personalAccessTokensPg,
+  webauthnCredentials: webauthnCredentialsPg,
+  webauthnChallenges: webauthnChallengesPg,
   roles: rolesPg,
   roleScopeRules: roleScopeRulesPg,
   memberRoleAssignments: memberRoleAssignmentsPg,

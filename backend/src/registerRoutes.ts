@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { publicAuthRoutes, protectedAuthRoutes } from './routes/auth.js';
+import { protectedPasskeyRoutes } from './routes/passkeys.js';
 import { memberRoutes } from './routes/members.js';
 import { leagueRoutes } from './routes/leagues.js';
 import { leagueSetupRoutes } from './routes/leagueSetup.js';
@@ -71,6 +72,7 @@ export async function registerPublicApiRoutes(fastify: FastifyInstance): Promise
 
 export async function registerProtectedApiRoutes(fastify: FastifyInstance): Promise<void> {
   await fastify.register(protectedAuthRoutes, { prefix: '/api' });
+  await fastify.register(protectedPasskeyRoutes, { prefix: '/api' });
   await fastify.register(memberRoutes, { prefix: '/api' });
   await fastify.register(leagueRoutes, { prefix: '/api' });
   await fastify.register(leagueSetupRoutes, { prefix: '/api' });

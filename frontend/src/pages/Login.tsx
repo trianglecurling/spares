@@ -8,6 +8,13 @@ import Footer from '../components/Footer';
 import DeveloperSessionBanner from '../components/DeveloperSessionBanner';
 import { buildContactPageLink } from '../constants/contactRecipients';
 import type { AuthenticatedMember } from '../../../backend/src/types.ts';
+import {
+  assertPasskey,
+  browserSupportsWebAuthn,
+  browserSupportsWebAuthnAutofill,
+  isWebAuthnCanceled,
+} from '../utils/passkeys';
+import type { PublicKeyCredentialRequestOptionsJSON } from '@simplewebauthn/browser';
 
 const MEMBERSHIP_CONTACT_HREF = buildContactPageLink('membership');
 
@@ -82,6 +89,7 @@ export default function Login() {
   const [tempToken, setTempToken] = useState('');
   const [accessToken, setAccessToken] = useState('');
   const [tokenError, setTokenError] = useState<ReactNode>(null);
+  const [passkeyLoading, setPasskeyLoading] = useState(false);
   const { login } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
@@ -94,6 +102,7 @@ export default function Login() {
   const rawRedirectParam = searchParams.get('redirect');
   const redirectParam = rawRedirectParam?.startsWith('/') ? rawRedirectParam : null;
   const from = redirectParam || (location.state as LocationState | null)?.from?.pathname || null;
+  const supportsPasskeys = browserSupportsWebAuthn();
 
   useEffect(() => {
     let isActive = true;
@@ -113,6 +122,53 @@ export default function Login() {
       isActive = false;
     };
   }, [navigate]);
+
+  const completeLogin = async (response: { accessToken: string; refreshToken: string; member: AuthenticatedMember }) => {
+    const member = normalizeMember({
+      ...response.member,
+      themePreference: normalizeThemePreference(response.member.themePreference),
+    } as AuthenticatedMember);
+    await login(response.accessToken, response.refreshToken, member, from || undefined);
+  };
+
+  const handlePasskeyLogin = async (useBrowserAutofill = false) => {
+    if (!supportsPasskeys) return;
+    if (!useBrowserAutofill) {
+      setError(null);
+      setTokenError(null);
+      setPasskeyLoading(true);
+    }
+    try {
+      const ceremony = await post('/auth/passkeys/authentication/options', {});
+      const credential = await assertPasskey(
+        ceremony.options as unknown as PublicKeyCredentialRequestOptionsJSON,
+        useBrowserAutofill
+      );
+      const response = await post('/auth/passkeys/authentication/verify', {
+        challengeId: ceremony.challengeId,
+        credential: credential as unknown as Record<string, unknown>,
+      });
+      if (!isLoginSuccessResponse(response)) {
+        if (!useBrowserAutofill) setError('Unable to sign in with that passkey.');
+        return;
+      }
+      await completeLogin(response);
+    } catch (err: unknown) {
+      if (isWebAuthnCanceled(err)) return;
+      if (useBrowserAutofill) return;
+      const message = axios.isAxiosError(err) ? err.response?.data?.error : undefined;
+      setError(typeof message === 'string' && message ? message : 'Unable to sign in with that passkey.');
+    } finally {
+      if (!useBrowserAutofill) setPasskeyLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!supportsPasskeys || !browserSupportsWebAuthnAutofill()) return;
+    void handlePasskeyLogin(true);
+    // Conditional UI should start once when the login page loads.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supportsPasskeys]);
 
   const handleTokenLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -267,7 +323,7 @@ export default function Login() {
                     onChange={(e) => setContact(e.target.value)}
                     className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md focus:ring-2 focus:ring-primary-teal focus:border-transparent"
                     placeholder="your.email@example.com"
-                    autoComplete="email"
+                    autoComplete={supportsPasskeys ? 'username webauthn' : 'email'}
                     required
                     aria-invalid={error ? true : undefined}
                     aria-describedby={error ? contactErrorId : undefined}
@@ -276,7 +332,7 @@ export default function Login() {
 
                 {error ? <LoginErrorMessage id={contactErrorId}>{error}</LoginErrorMessage> : null}
 
-                <Button type="submit" disabled={loading} className="w-full">
+                <Button type="submit" disabled={loading || passkeyLoading} className="w-full">
                   {loading ? 'Sending...' : 'Send login code'}
                 </Button>
               </form>
@@ -351,6 +407,30 @@ export default function Login() {
                 </div>
               </div>
             )}
+
+            {supportsPasskeys && step === 'contact' ? (
+              <div className="mt-6 space-y-4">
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center" aria-hidden="true">
+                    <div className="w-full border-t border-gray-200 dark:border-gray-700" />
+                  </div>
+                  <div className="relative flex justify-center text-sm">
+                    <span className="bg-white px-2 text-gray-500 dark:bg-gray-800 dark:text-gray-400">or</span>
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="w-full"
+                  disabled={loading || passkeyLoading}
+                  onClick={() => {
+                    void handlePasskeyLogin(false);
+                  }}
+                >
+                  {passkeyLoading ? 'Waiting for this device…' : 'Sign in with passkey'}
+                </Button>
+              </div>
+            ) : null}
 
             <details className="mt-6 border-t border-gray-200 pt-4 dark:border-gray-700">
               <summary className="cursor-pointer text-sm font-medium text-gray-700 dark:text-gray-300">

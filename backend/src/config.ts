@@ -143,6 +143,15 @@ export const config = {
   },
 
   /**
+   * WebAuthn relying party. `rpId` defaults to the hostname of FRONTEND_URL (e.g. localhost).
+   * Override with WEBAUTHN_RP_ID when the site is served from multiple hostnames that share one RP.
+   */
+  webauthn: {
+    rpId: (process.env.WEBAUTHN_RP_ID || '').trim(),
+    rpName: (process.env.WEBAUTHN_RP_NAME || '').trim() || 'Triangle Curling',
+  },
+
+  /**
    * IPs that skip per-IP rate limits / connection caps (e.g. club WiFi egress).
    * Comma-separated `IP_LIMIT_BYPASS_ALLOWLIST`. Defaults to the facility public IP.
    */

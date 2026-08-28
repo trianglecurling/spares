@@ -131,7 +131,8 @@ api.interceptors.response.use(
         requestUrl.includes('/auth/refresh') ||
         requestUrl.includes('/auth/request-code') ||
         requestUrl.includes('/auth/verify-code') ||
-        requestUrl.includes('/auth/select-member');
+        requestUrl.includes('/auth/select-member') ||
+        requestUrl.includes('/auth/passkeys/');
       if (
         originalRequest &&
         !originalRequest._retry &&

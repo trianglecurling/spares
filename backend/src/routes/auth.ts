@@ -57,6 +57,11 @@ import { memberIsSocialMember, memberIsSpareOnly } from '../utils/memberMembersh
 import { listOwnedEventIds } from '../services/eventService.js';
 import { personAccountsOnly } from '../utils/accountKind.js';
 import { findMemberByPersonalAccessToken } from '../services/personalAccessTokenService.js';
+import {
+  beginPasskeyAuthentication,
+  finishPasskeyAuthentication,
+  WebAuthnServiceError,
+} from '../services/webauthnService.js';
 
 function normalizePhoneDigits10(input: string): string | null {
   const digits = input.replace(/\D/g, '');
@@ -465,6 +470,31 @@ const authTokenPairResponseSchema = {
   },
   required: ['accessToken', 'refreshToken'],
 } as const;
+
+const passkeyCeremonyOptionsResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    challengeId: { type: 'string' },
+    options: { type: 'object', additionalProperties: true },
+  },
+  required: ['challengeId', 'options'],
+} as const;
+
+const passkeyAuthenticationVerifyBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    challengeId: { type: 'string', minLength: 1 },
+    credential: { type: 'object', additionalProperties: true },
+  },
+  required: ['challengeId', 'credential'],
+} as const;
+
+const passkeyAuthenticationVerifyZod = z.object({
+  challengeId: z.string().min(1),
+  credential: z.record(z.unknown()),
+});
 
 const authLogoutResponseSchema = {
   type: 'object',
@@ -940,6 +970,107 @@ export async function publicAuthRoutes(fastify: FastifyInstance) {
         ...session,
         member: await buildAuthenticatedMember(member),
       };
+    }
+  );
+
+  fastify.post<{
+    Reply: { challengeId: string; options: Record<string, unknown> } | ApiErrorResponse;
+  }>(
+    '/auth/passkeys/authentication/options',
+    {
+      config: {
+        rateLimit: abuseRouteRateLimits.authPasskey,
+      },
+      schema: {
+        tags: ['auth'],
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {},
+        },
+        response: {
+          200: passkeyCeremonyOptionsResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const result = await beginPasskeyAuthentication();
+        return {
+          challengeId: result.challengeId,
+          options: result.options as unknown as Record<string, unknown>,
+        };
+      } catch (error) {
+        if (error instanceof WebAuthnServiceError) {
+          return sendApiError(reply, error.statusCode, error.message);
+        }
+        throw error;
+      }
+    }
+  );
+
+  fastify.post<{
+    Body: { challengeId: string; credential: Record<string, unknown> };
+    Reply: AuthVerifySuccessResponse<AuthenticatedMember> | ApiErrorResponse;
+  }>(
+    '/auth/passkeys/authentication/verify',
+    {
+      config: {
+        rateLimit: abuseRouteRateLimits.authPasskey,
+      },
+      schema: {
+        tags: ['auth'],
+        body: passkeyAuthenticationVerifyBodySchema,
+        response: {
+          200: authTokenExchangeResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const body = passkeyAuthenticationVerifyZod.parse(request.body);
+      const clientIp = request.ip || 'unknown';
+      const bypassIpLimits = isIpLimitBypassed(clientIp);
+      const failKey = authVerifyFailKey(clientIp, 'passkey');
+      if (!bypassIpLimits && isAuthVerifyLockedOut(failKey)) {
+        return reply.code(429).send({ error: 'Too many failed attempts. Please try again later.' });
+      }
+
+      try {
+        const member = await finishPasskeyAuthentication({
+          challengeId: body.challengeId,
+          credential: body.credential,
+          request,
+        });
+
+        const { db, schema } = getDrizzleDb();
+        const configRows = await db
+          .select({ disable_user_login: schema.serverConfig.disable_user_login })
+          .from(schema.serverConfig)
+          .where(eq(schema.serverConfig.id, 1))
+          .limit(1);
+        const disableUserLogin = configRows[0]?.disable_user_login === 1;
+        if (isLoginDisabledForMembers([member], disableUserLogin)) {
+          return reply.code(403).send({ error: LOGIN_DISABLED_MESSAGE });
+        }
+
+        if (!bypassIpLimits) clearAuthVerifyFailures(failKey);
+        const session = await issueAuthSession(member);
+        logEvent({
+          eventType: 'auth.login_success',
+          memberId: member.id,
+          meta: { method: 'passkey' },
+        }).catch(() => {});
+        return {
+          ...session,
+          member: await buildAuthenticatedMember(member),
+        };
+      } catch (error) {
+        if (!bypassIpLimits) recordAuthVerifyFailure(failKey);
+        if (error instanceof WebAuthnServiceError) {
+          return sendApiError(reply, error.statusCode, error.message);
+        }
+        throw error;
+      }
     }
   );
 }
