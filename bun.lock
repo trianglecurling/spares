@@ -6,7 +6,6 @@
       "name": "triangle-curling-spares",
       "dependencies": {
         "@opentelemetry/exporter-logs-otlp-http": "^0.211.0",
-        "@simplewebauthn/server": "^13.3.3",
         "date-fns": "^4.1.0",
         "react": "^19.2.5",
         "react-dom": "^19.2.5",
@@ -38,6 +37,7 @@
         "@opentelemetry/sdk-node": "^0.53.0",
         "@opentelemetry/sdk-trace-base": "^1.27.0",
         "@opentelemetry/semantic-conventions": "^1.27.0",
+        "@simplewebauthn/server": "^13.3.3",
         "autoprefixer": "^10.4.27",
         "cheerio": "^1.2.0",
         "dotenv": "^16.3.1",
@@ -101,6 +101,7 @@
         "@opentelemetry/sdk-trace-base": "^1.27.0",
         "@opentelemetry/sdk-trace-web": "^1.27.0",
         "@opentelemetry/semantic-conventions": "^1.27.0",
+        "@simplewebauthn/browser": "^13.3.0",
         "@toast-ui/editor": "^3.2.2",
         "@toast-ui/react-editor": "^3.2.3",
         "axios": "^1.6.5",
@@ -733,6 +734,8 @@
     "@rollup/rollup-win32-x64-gnu": ["@rollup/rollup-win32-x64-gnu@4.60.3", "", { "os": "win32", "cpu": "x64" }, "sha512-E5Eb5H/DpxaoXH++Qkv28RcUJboMopmdDUALBczvHMf7hNIxaDZqwY5lK12UK1BHacSmvupoEWGu+n993Z0y1A=="],
 
     "@rollup/rollup-win32-x64-msvc": ["@rollup/rollup-win32-x64-msvc@4.60.3", "", { "os": "win32", "cpu": "x64" }, "sha512-hPt/bgL5cE+Qp+/TPHBqptcAgPzgj46mPcg/16zNUmbQk0j+mOEQV/+Lqu8QRtDV3Ek95Q6FeFITpuhl6OTsAA=="],
+
+    "@simplewebauthn/browser": ["@simplewebauthn/browser@13.3.0", "", {}, "sha512-BE/UWv6FOToAdVk0EokzkqQQDOWtNydYlY6+OrmiZ5SCNmb41VehttboTetUM3T/fr6EAFYVXjz4My2wg230rQ=="],
 
     "@simplewebauthn/server": ["@simplewebauthn/server@13.3.3", "", { "dependencies": { "@hexagon/base64": "^1.1.27", "@levischuck/tiny-cbor": "^0.2.2", "@peculiar/asn1-android": "^2.6.0", "@peculiar/asn1-ecc": "^2.6.1", "@peculiar/asn1-rsa": "^2.6.1", "@peculiar/asn1-schema": "^2.6.0", "@peculiar/asn1-x509": "^2.6.1", "@peculiar/x509": "^1.14.3" } }, "sha512-LelX/lcy5cjc15A86i/aNxHhB5eU7dd20QsbP0VLAf9e38+SLlsnqCCyecx3xqfGofhmX05h1J9fKRYWxw+luA=="],
 
