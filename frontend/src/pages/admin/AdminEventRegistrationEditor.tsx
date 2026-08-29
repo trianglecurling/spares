@@ -24,6 +24,7 @@ import FormField from '../../components/FormField';
 import FormSection from '../../components/FormSection';
 import InlineStateMessage from '../../components/InlineStateMessage';
 import { formatLinkedSessionEventLabel, formatLinkedSessionWhen } from '../../utils/eventLinkedSessionLabel';
+import { dateOfBirthValidationMessage, localDateOnly } from '../../utils/memberAge';
 
 type EventRegistrationField = {
   id: number;
@@ -344,6 +345,15 @@ export default function AdminEventRegistrationEditor() {
           });
         });
       });
+
+      const invalidDob = fieldValues.find((entry) => {
+        const field = event.registrationFields.find((candidate) => candidate.id === entry.fieldId);
+        return field?.field_type === 'preset_dob' && dateOfBirthValidationMessage(entry.value);
+      });
+      if (invalidDob) {
+        showAlert(dateOfBirthValidationMessage(invalidDob.value) ?? 'Enter a valid date of birth.', 'error');
+        return;
+      }
 
       const payload = {
         contactFirstName: contactFirstName.trim(),
@@ -1092,6 +1102,7 @@ function FieldInput({
         onChange={(e) => onChange(e.target.value)}
         className={className}
         required={field.required === 1}
+        max={localDateOnly()}
       />
     );
   }

@@ -8,6 +8,7 @@ import {
   DEFAULT_REGISTRATION_MAILING_STATE,
 } from '../utils/registrationMailingAddress';
 import type { MemberDemographicsFormFields } from '../utils/memberDemographicsForm';
+import { dateOfBirthValidationMessage, localDateOnly } from '../utils/memberAge';
 
 type DemographicScalarField = Exclude<
   keyof MemberDemographicsFormFields,
@@ -70,18 +71,32 @@ export default function MemberDemographicsFields({
   ) => {
     const fieldId = `${idPrefix}-${String(field)}`;
     const lockDob = field === 'dateOfBirth' && lockDateOfBirth;
+    const dobError = field === 'dateOfBirth' && !lockDob ? dateOfBirthValidationMessage(value[field]) : null;
     return (
-      <FormField key={field} label={label} htmlFor={fieldId} required={!lockDob} tone={tone} className={className}>
-        <input
-          id={fieldId}
-          type={lockDob ? 'text' : field === 'dateOfBirth' ? 'date' : field === 'email' ? 'email' : 'text'}
-          value={value[field]}
-          onChange={lockDob ? undefined : (event) => setField(field)(event.target.value)}
-          readOnly={lockDob}
-          autoComplete={autoComplete}
-          className="app-input"
-          required={!lockDob}
-        />
+      <FormField
+        key={field}
+        label={label}
+        htmlFor={fieldId}
+        required={!lockDob}
+        tone={tone}
+        className={className}
+        error={dobError}
+      >
+        {({ describedBy, invalid }) => (
+          <input
+            id={fieldId}
+            type={lockDob ? 'text' : field === 'dateOfBirth' ? 'date' : field === 'email' ? 'email' : 'text'}
+            value={value[field]}
+            onChange={lockDob ? undefined : (event) => setField(field)(event.target.value)}
+            readOnly={lockDob}
+            autoComplete={autoComplete}
+            className="app-input"
+            required={!lockDob}
+            max={field === 'dateOfBirth' && !lockDob ? localDateOnly() : undefined}
+            aria-invalid={invalid || undefined}
+            aria-describedby={describedBy}
+          />
+        )}
       </FormField>
     );
   };

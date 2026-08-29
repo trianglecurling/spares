@@ -3,7 +3,7 @@ import { MEMBER_PROFILE_EMAIL_UNAVAILABLE } from '../api/errors.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { findMemberIdWithConflictingNormalizedEmailChange } from './accountAccess.js';
 import { normalizeEmail } from '../utils/auth.js';
-import { isMemberMinor } from '../utils/memberAge.js';
+import { dateOfBirthValidationMessage, isMemberMinor } from '../utils/memberAge.js';
 import {
   preferredPronounsValidationMessage,
   resolvePreferredPronounsForSave,
@@ -59,14 +59,9 @@ function assertValidEmail(value: string, field = 'email'): void {
 
 function assertValidDateOfBirth(value: string): void {
   assertNonEmpty(value, 'dateOfBirth');
-  const parsed = new Date(`${value}T00:00:00Z`);
-  if (Number.isNaN(parsed.getTime()) || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    throw new MemberDemographicsValidationError({ dateOfBirth: 'Enter a valid date of birth.' });
-  }
-  const today = new Date();
-  const todayUtc = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
-  if (parsed.getTime() > todayUtc) {
-    throw new MemberDemographicsValidationError({ dateOfBirth: 'Date of birth cannot be in the future.' });
+  const message = dateOfBirthValidationMessage(value);
+  if (message) {
+    throw new MemberDemographicsValidationError({ dateOfBirth: message });
   }
 }
 

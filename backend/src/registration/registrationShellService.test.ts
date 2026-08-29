@@ -82,6 +82,29 @@ describe('registration shell validation', () => {
     ).toBe(false);
   });
 
+  test('demographics reject a future date of birth', () => {
+    let caught: unknown;
+    try {
+      validateDemographics({
+        firstName: 'Jamie',
+        lastName: 'Curler',
+        dateOfBirth: '2963-01-15',
+        email: 'jamie@example.com',
+        phone: '919-555-0100',
+        mailingAddress: '123 Curling Way',
+        emergencyContactName: 'Alex Curler',
+        emergencyContactPhone: '919-555-0110',
+        preferredPronouns: 'She/Her',
+      });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(RegistrationShellValidationError);
+    expect((caught as RegistrationShellValidationError).details.dateOfBirth).toBe(
+      'Date of birth cannot be in the future.',
+    );
+  });
+
   test('minor status is based on registration date', () => {
     const today = new Date();
     const minorYear = today.getUTCFullYear() - 17;

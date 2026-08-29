@@ -76,6 +76,7 @@ import {
   USA_CURLING_COMPETITION_GENDER_DEFAULT,
   resolveUsaCurlingCompetitionGenderForSave,
 } from '../utils/usaCurlingCompetitionGender';
+import { dateOfBirthValidationMessage } from '../utils/memberAge';
 import {
   nextStepFor,
   parseRegistrationResumePointer,
@@ -607,6 +608,14 @@ function resolvedCurlerDateOfBirth(
   return curlerDateOfBirth || demographics.dateOfBirth || '';
 }
 
+function collectedDateOfBirthError(
+  form: DemographicsForm,
+  curlerDateOfBirth?: string | null,
+): string | null {
+  if (curlerDateOfBirth) return null;
+  return dateOfBirthValidationMessage(form.dateOfBirth);
+}
+
 function registrationDemographicsFormIsComplete(
   form: DemographicsForm,
   curlerDateOfBirth?: string | null,
@@ -616,6 +625,7 @@ function registrationDemographicsFormIsComplete(
     form.firstName.trim() !== '' &&
     form.lastName.trim() !== '' &&
     (!curlerDateOfBirth ? form.dateOfBirth.trim() !== '' : true) &&
+    !collectedDateOfBirthError(form, curlerDateOfBirth) &&
     form.email.trim() !== '' &&
     form.phone.trim() !== '' &&
     (minor || (form.emergencyContactName.trim() !== '' && form.emergencyContactPhone.trim() !== '')) &&
@@ -2832,6 +2842,11 @@ export default function RegistrationShellPage() {
     setLoading(true);
     setError('');
     try {
+      const dateOfBirthError = collectedDateOfBirthError(form, curlerStoredDateOfBirth);
+      if (dateOfBirthError) {
+        setError(dateOfBirthError);
+        return;
+      }
       if (!registrationDemographicsFormIsComplete(form, curlerStoredDateOfBirth)) {
         setError('Enter all required curler information before continuing.');
         return;
@@ -2866,6 +2881,11 @@ export default function RegistrationShellPage() {
     setLoading(true);
     setError('');
     try {
+      const dateOfBirthError = collectedDateOfBirthError(form, curlerStoredDateOfBirth);
+      if (dateOfBirthError) {
+        setError(dateOfBirthError);
+        return;
+      }
       if (!registrationDemographicsFormIsComplete(form, curlerStoredDateOfBirth)) {
         setError('Enter all required curler information before continuing.');
         return;
@@ -2922,6 +2942,11 @@ export default function RegistrationShellPage() {
     setLoading(true);
     setError('');
     try {
+      const dateOfBirthError = collectedDateOfBirthError(form, curlerStoredDateOfBirth);
+      if (dateOfBirthError) {
+        setError(dateOfBirthError);
+        return;
+      }
       if (!registrationMailingAddressIsComplete(form)) {
         setError('Enter your full mailing address, including street address, before continuing.');
         return;
@@ -3387,6 +3412,12 @@ export default function RegistrationShellPage() {
         rememberRegistrationCurlerNameForSuccess(registrationId, registeringCurlerName);
         navigate('/registration/success');
       } else if (windowState) {
+        const dateOfBirthError = collectedDateOfBirthError(demographics, curlerStoredDateOfBirth);
+        if (dateOfBirthError) {
+          setError(dateOfBirthError);
+          setLoading(false);
+          return;
+        }
         if (!registrationMailingAddressIsComplete(demographics)) {
           setError('Enter your full mailing address before submitting.');
           setLoading(false);

@@ -23,6 +23,7 @@ import {
 } from '../utils/eventRegistrationFieldPresets';
 import { resolveEventContactFieldLabels } from '../utils/eventRegistrationContactLabels';
 import { formatLinkedSessionWhen } from '../utils/eventLinkedSessionLabel';
+import { dateOfBirthValidationMessage } from '../utils/memberAge';
 
 const publicInput = publicEventRegistrationInput;
 
@@ -479,6 +480,16 @@ export default function PublicEventRegisterPage() {
         const registrationMemberIndex = parseInt(key.slice(dash + 1), 10);
         fvArray.push({ fieldId, registrationMemberIndex, value });
       }
+    }
+
+    const invalidDob = fvArray.find((entry) => {
+      const field = event?.registrationFields.find((candidate) => candidate.id === entry.fieldId);
+      return field?.field_type === 'preset_dob' && dateOfBirthValidationMessage(entry.value);
+    });
+    if (invalidDob) {
+      setSubmitError(dateOfBirthValidationMessage(invalidDob.value));
+      setSubmitting(false);
+      return;
     }
 
     try {

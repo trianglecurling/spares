@@ -53,9 +53,15 @@ export default function PublicEventTeamPage() {
   const [publicDrawError, setPublicDrawError] = useState<string | null>(null);
   /** Holds diagram `resetView`; ref avoids setState in the child’s effect (React cross-render warning). */
   const resetBracketPathRef = useRef<(() => void) | null>(null);
+  const exportPdfRef = useRef<(() => Promise<void>) | null>(null);
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   const onBracketResetReady = useCallback((fn: (() => void) | null) => {
     resetBracketPathRef.current = fn;
+  }, []);
+
+  const onExportPdfReady = useCallback((fn: (() => Promise<void>) | null) => {
+    exportPdfRef.current = fn;
   }, []);
 
   useEffect(() => {
@@ -70,9 +76,13 @@ export default function PublicEventTeamPage() {
   }, [slug]);
 
   const showPublicTeams =
-    !!event && isBonspielCalendarType(event.calendarTypeIds) && (event.tournamentTeamsPublished ?? 0) === 1;
+    !!event &&
+    isBonspielCalendarType(event.calendarTypeIds) &&
+    (event.tournamentTeamsPublished ?? 0) === 1;
   const showPublicDraw =
-    !!event && isBonspielCalendarType(event.calendarTypeIds) && (event.tournamentDrawPublished ?? 0) === 1;
+    !!event &&
+    isBonspielCalendarType(event.calendarTypeIds) &&
+    (event.tournamentDrawPublished ?? 0) === 1;
 
   useEffect(() => {
     if (!slug || !showPublicTeams) {
@@ -86,13 +96,13 @@ export default function PublicEventTeamPage() {
     setPublicTeamsError(null);
     api
       .get<{ tournamentFormat: TournamentFormat | null; teams: PublicTournamentTeam[] }>(
-        `/public/events/${slug}/tournament-teams`,
+        `/public/events/${slug}/tournament-teams`
       )
       .then((res) => {
         setPublicTeamsFormat(
           res.data.tournamentFormat === 'fours' || res.data.tournamentFormat === 'doubles'
             ? res.data.tournamentFormat
-            : null,
+            : null
         );
         setPublicTeams(res.data.teams ?? []);
       })
@@ -161,15 +171,17 @@ export default function PublicEventTeamPage() {
 
   const team = useMemo(
     () => publicTeams.find((t) => t.id === teamId) ?? null,
-    [publicTeams, teamId],
+    [publicTeams, teamId]
   );
 
   const drawTabTeamsById = useMemo(
     () =>
       new Map(
-        publicTeams.map((t) => [t.id, { teamName: t.teamName, sortOrder: t.sortOrder }] as const),
+        publicTeams.map(
+          (t) => [t.id, { teamName: t.teamName, sortOrder: t.sortOrder, roster: t.roster }] as const
+        )
       ),
-    [publicTeams],
+    [publicTeams]
   );
 
   const teamsListHref = useMemo(() => {
@@ -194,7 +206,10 @@ export default function PublicEventTeamPage() {
             title="Invalid link"
             description="This team link is not valid."
             action={
-              <Link to="/events" className="text-sm font-medium text-primary-teal-link hover:underline">
+              <Link
+                to="/events"
+                className="text-sm font-medium text-primary-teal-link hover:underline"
+              >
                 All events
               </Link>
             }
@@ -262,7 +277,10 @@ export default function PublicEventTeamPage() {
             title="Unable to load team"
             description={publicTeamsError ?? 'No team format is configured for this event.'}
             action={
-              <Link to={teamsListHref} className="text-sm font-medium text-primary-teal-link hover:underline">
+              <Link
+                to={teamsListHref}
+                className="text-sm font-medium text-primary-teal-link hover:underline"
+              >
                 Back to teams
               </Link>
             }
@@ -310,17 +328,32 @@ export default function PublicEventTeamPage() {
           </Link>
           <div className="public-page-title-rule">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <h1 className="public-heading text-2xl sm:text-3xl min-w-0 flex-1">
-                {headingText}
-              </h1>
+              <h1 className="public-heading text-2xl sm:text-3xl min-w-0 flex-1">{headingText}</h1>
               {showBracketDiagram ? (
                 <div className="flex shrink-0 flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    className="text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-gray-800 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700/80"
+                    className="text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-gray-800 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white dark:disabled:hover:bg-gray-800"
                     onClick={() => resetBracketPathRef.current?.()}
                   >
                     Reset view
+                  </button>
+                  <button
+                    type="button"
+                    className="text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-gray-800 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white dark:disabled:hover:bg-gray-800"
+                    onClick={() => {
+                      if (!exportPdfRef.current || exportingPdf) return;
+                      setExportingPdf(true);
+                      void exportPdfRef
+                        .current()
+                        .catch(() => undefined)
+                        .finally(() => setExportingPdf(false));
+                    }}
+                    disabled={exportingPdf}
+                    aria-busy={exportingPdf}
+                    aria-label="Export PDF"
+                  >
+                    {exportingPdf ? 'Exporting…' : 'Export PDF'}
                   </button>
                   <p className="text-xs text-gray-500 dark:text-gray-400">
                     Drag to pan. Pinch or scroll to zoom.
@@ -359,7 +392,10 @@ export default function PublicEventTeamPage() {
                 draw={publicDraw}
                 teamId={team.id}
                 teamsById={drawTabTeamsById}
+                title={headingText}
+                filenameBase={`${event.slug || event.title}-${pageTitle}`}
                 onResetViewReady={onBracketResetReady}
+                onExportPdfReady={onExportPdfReady}
               />
             </div>
           ) : null

@@ -88,7 +88,7 @@ import {
   guardianEmergencyContactName,
   MemberGuardianValidationError,
 } from '../services/memberGuardian.js';
-import { isMemberMinor } from '../utils/memberAge.js';
+import { dateOfBirthValidationMessage, isMemberMinor } from '../utils/memberAge.js';
 import { sendValidationError } from '../api/errors.js';
 import { normalizeOptionalPersonName, normalizePersonName, resolveMemberNameFields, splitMemberDisplayName } from '../utils/memberName.js';
 import {
@@ -1758,17 +1758,10 @@ export async function memberRoutes(fastify: FastifyInstance) {
       if (!dateOfBirth) {
         updateData.date_of_birth = null;
       } else {
-        const parsed = new Date(`${dateOfBirth}T00:00:00Z`);
-        if (Number.isNaN(parsed.getTime()) || !/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth)) {
+        const dateOfBirthMessage = dateOfBirthValidationMessage(dateOfBirth);
+        if (dateOfBirthMessage) {
           return sendValidationError(_reply, 'Validation failed', {
-            dateOfBirth: 'Enter a valid date of birth.',
-          });
-        }
-        const today = new Date();
-        const todayUtc = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
-        if (parsed.getTime() > todayUtc) {
-          return sendValidationError(_reply, 'Validation failed', {
-            dateOfBirth: 'Date of birth cannot be in the future.',
+            dateOfBirth: dateOfBirthMessage,
           });
         }
         updateData.date_of_birth = dateOfBirth;

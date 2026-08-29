@@ -1041,6 +1041,80 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/public/calendar/ice-day": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    /** @description Club operating date (YYYY-MM-DD). A day runs 4:00am–3:59am the next morning in the club time zone. Omit to use the current operating day. */
+                    date?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** @description Operating date (YYYY-MM-DD). */
+                            date: string;
+                            timeZone: string;
+                            /** @description Inclusive 4:00am start (ISO). */
+                            dayStart: string;
+                            /** @description Exclusive next 4:00am (ISO). */
+                            dayEnd: string;
+                            sheets: {
+                                id: number;
+                                name: string;
+                                activities: {
+                                    id: string;
+                                    calendarEventId: string;
+                                    typeId: string;
+                                    source: string;
+                                    /** @enum {string} */
+                                    kind: "league" | "bonspiel" | "other";
+                                    title: string;
+                                    start: string;
+                                    end: string;
+                                    slug?: string;
+                                    gameLabel?: string;
+                                    teams?: {
+                                        name: string;
+                                        clubName?: string | null;
+                                        stoneColor?: string | null;
+                                        players: {
+                                            position: string;
+                                            name: string | null;
+                                            isSkip?: boolean;
+                                            isVice?: boolean;
+                                        }[];
+                                    }[];
+                                }[];
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/public/menus/{type}": {
         parameters: {
             query?: never;
@@ -21231,6 +21305,39 @@ export interface paths {
         trace?: never;
     };
     "/volunteering/my-signups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/volunteering/stats": {
         parameters: {
             query?: never;
             header?: never;

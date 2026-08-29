@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { isMemberMinor } from '../../utils/memberAge';
+import { dateOfBirthValidationMessage, isMemberMinor, localDateOnly } from '../../utils/memberAge';
 import FormField from '../FormField';
 import PhysicalAddressCollect from '../PhysicalAddressCollect';
 import PreferredPronounsField from '../PreferredPronounsField';
@@ -132,6 +132,7 @@ type DemographicScalarFieldRowProps = {
   type: string;
   disabled: boolean;
   className?: string;
+  max?: string;
   onFieldChange: (field: DemographicScalarField, value: string) => void;
 };
 
@@ -144,26 +145,34 @@ const DemographicScalarFieldRow = memo(function DemographicScalarFieldRow({
   type,
   disabled,
   className,
+  max,
   onFieldChange,
 }: DemographicScalarFieldRowProps) {
   const [value, setValue] = useState(initialValue);
+  const displayedValue = disabled ? initialValue : value;
+  const dobError = field === 'dateOfBirth' ? dateOfBirthValidationMessage(displayedValue) : null;
 
   return (
-    <FormField label={label} htmlFor={fieldId} required tone="public" className={className}>
-      <input
-        id={fieldId}
-        type={type}
-        value={disabled ? initialValue : value}
-        onChange={(event) => {
-          const nextValue = event.target.value;
-          setValue(nextValue);
-          onFieldChange(field, nextValue);
-        }}
-        className="app-input"
-        autoComplete={autoComplete}
-        required
-        disabled={disabled}
-      />
+    <FormField label={label} htmlFor={fieldId} required tone="public" className={className} error={dobError}>
+      {({ describedBy, invalid }) => (
+        <input
+          id={fieldId}
+          type={type}
+          value={displayedValue}
+          onChange={(event) => {
+            const nextValue = event.target.value;
+            setValue(nextValue);
+            onFieldChange(field, nextValue);
+          }}
+          className="app-input"
+          autoComplete={autoComplete}
+          required
+          disabled={disabled}
+          max={max}
+          aria-invalid={invalid || undefined}
+          aria-describedby={describedBy}
+        />
+      )}
     </FormField>
   );
 });
@@ -336,6 +345,7 @@ const RegistrationDemographicFields = forwardRef<
         type={field === 'dateOfBirth' ? 'date' : field === 'email' ? 'email' : 'text'}
         disabled={emailLocked}
         className={className}
+        max={field === 'dateOfBirth' ? localDateOnly() : undefined}
         onFieldChange={handleScalarFieldChange}
       />
     );

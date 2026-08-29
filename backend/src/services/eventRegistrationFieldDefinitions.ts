@@ -1,3 +1,4 @@
+import { dateOfBirthValidationMessage } from '../utils/memberAge.js';
 import { EventServiceError } from './eventServiceError.js';
 
 export const PRESET_FIELD_TYPES = [
@@ -300,8 +301,11 @@ function validateValueForFieldType(field: RegistrationFieldRow, value: string): 
     case 'radio':
       return;
     case 'preset_dob': {
-      if (value && !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-        throw new EventServiceError(`Invalid date for "${field.label}"`, 400);
+      if (value) {
+        const message = dateOfBirthValidationMessage(value);
+        if (message) {
+          throw new EventServiceError(message, 400);
+        }
       }
       return;
     }

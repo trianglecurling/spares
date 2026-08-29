@@ -4,7 +4,11 @@ import { config } from '../config.js';
 import { getFileStorageAdapter } from '../utils/fileStorage.js';
 import { publicFileUrl, sanitizeFilename, shouldUseInlineContentDisposition } from '../utils/managedFiles.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
+import { sendApiError } from '../api/errors.js';
 import { getPublicCalendarBundle, getUpcomingBonspiels } from '../domains/calendar/queries/calendarReadFacade.js';
+import { optionalAuthMiddleware } from '../middleware/auth.js';
+import { getIceDaySchedule, IceDayScheduleError } from '../services/iceDayScheduleService.js';
+import type { Member } from '../types.js';
 import {
   getPublicArticleBySlug,
   getPublishedPublicEventSlugForArticlePathAlias,
@@ -184,6 +188,123 @@ export async function publicRoutes(fastify: FastifyInstance) {
       }
       reply.header('Cache-Control', 'public, max-age=60');
       return getPublicCalendarBundle(q.start, q.end);
+    }
+  );
+
+  // GET /public/calendar/ice-day?date=YYYY-MM-DD
+  // On-ice activities for the club operating day (4:00am–3:59am), grouped by sheet.
+  fastify.get<{ Querystring: { date?: string } }>(
+    '/public/calendar/ice-day',
+    {
+      preHandler: optionalAuthMiddleware,
+      schema: {
+        tags: ['public'],
+        querystring: {
+          type: 'object',
+          properties: {
+            date: {
+              type: 'string',
+              description:
+                'Club operating date (YYYY-MM-DD). A day runs 4:00am–3:59am the next morning in the club time zone. Omit to use the current operating day.',
+            },
+          },
+        },
+        response: {
+          200: {
+            type: 'object',
+            required: ['date', 'timeZone', 'dayStart', 'dayEnd', 'sheets'],
+            properties: {
+              date: { type: 'string', description: 'Operating date (YYYY-MM-DD).' },
+              timeZone: { type: 'string' },
+              dayStart: { type: 'string', description: 'Inclusive 4:00am start (ISO).' },
+              dayEnd: { type: 'string', description: 'Exclusive next 4:00am (ISO).' },
+              sheets: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  required: ['id', 'name', 'activities'],
+                  properties: {
+                    id: { type: 'number' },
+                    name: { type: 'string' },
+                    activities: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        required: [
+                          'id',
+                          'calendarEventId',
+                          'typeId',
+                          'source',
+                          'kind',
+                          'title',
+                          'start',
+                          'end',
+                        ],
+                        properties: {
+                          id: { type: 'string' },
+                          calendarEventId: { type: 'string' },
+                          typeId: { type: 'string' },
+                          source: { type: 'string' },
+                          kind: { type: 'string', enum: ['league', 'bonspiel', 'other'] },
+                          title: { type: 'string' },
+                          start: { type: 'string' },
+                          end: { type: 'string' },
+                          slug: { type: 'string' },
+                          gameLabel: { type: 'string' },
+                          teams: {
+                            type: 'array',
+                            items: {
+                              type: 'object',
+                              required: ['name', 'players'],
+                              properties: {
+                                name: { type: 'string' },
+                                clubName: { type: 'string', nullable: true },
+                                stoneColor: { type: 'string', nullable: true },
+                                players: {
+                                  type: 'array',
+                                  items: {
+                                    type: 'object',
+                                    required: ['position', 'name'],
+                                    properties: {
+                                      position: { type: 'string' },
+                                      name: { type: 'string', nullable: true },
+                                      isSkip: { type: 'boolean' },
+                                      isVice: { type: 'boolean' },
+                                    },
+                                  },
+                                },
+                              },
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const schedule = await getIceDaySchedule({
+          date: request.query.date,
+          member: (request as { member?: Member }).member,
+        });
+        if ((request as { member?: Member }).member) {
+          reply.header('Cache-Control', 'private, no-store');
+        } else {
+          reply.header('Cache-Control', 'public, max-age=30');
+        }
+        return schedule;
+      } catch (err) {
+        if (err instanceof IceDayScheduleError) {
+          return sendApiError(reply, err.statusCode, err.message);
+        }
+        throw err;
+      }
     }
   );
 

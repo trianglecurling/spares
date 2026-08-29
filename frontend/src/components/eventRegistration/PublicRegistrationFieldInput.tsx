@@ -13,6 +13,7 @@ import {
   PRESET_BONSPIEL_COMMENTS_HELPER_TEXT,
 } from '../../utils/eventRegistrationFieldPresets';
 import { structuredPostalFromEventJson, structuredPostalToEventJson } from '../../utils/structuredPostalAddress';
+import { dateOfBirthValidationMessage, localDateOnly } from '../../utils/memberAge';
 
 export const publicEventRegistrationInput =
   'w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-primary-teal focus:outline-none focus:ring-2 focus:ring-primary-teal/20 disabled:cursor-not-allowed disabled:border-gray-200 disabled:bg-gray-100 disabled:text-gray-500 disabled:placeholder:text-gray-400 disabled:opacity-80 disabled:focus:border-gray-200 disabled:focus:ring-0 read-only:cursor-default read-only:border-gray-200 read-only:bg-gray-50 read-only:text-gray-700 read-only:focus:border-gray-300 read-only:focus:ring-0';
@@ -82,15 +83,26 @@ export default function PublicRegistrationFieldInput({
       );
     case 'preset_dob':
       return (
-        <FormField tone="public" label={field.label} htmlFor={`field-${gk}`} required={field.required === 1}>
-          <input
-            id={`field-${gk}`}
-            type="date"
-            required={field.required === 1}
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            className={publicEventRegistrationInput}
-          />
+        <FormField
+          tone="public"
+          label={field.label}
+          htmlFor={`field-${gk}`}
+          required={field.required === 1}
+          error={dateOfBirthValidationMessage(value)}
+        >
+          {({ describedBy, invalid }) => (
+            <input
+              id={`field-${gk}`}
+              type="date"
+              required={field.required === 1}
+              value={value}
+              onChange={(e) => onChange(e.target.value)}
+              className={publicEventRegistrationInput}
+              max={localDateOnly()}
+              aria-invalid={invalid || undefined}
+              aria-describedby={describedBy}
+            />
+          )}
         </FormField>
       );
     case 'preset_bonspiel_comments':

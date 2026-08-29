@@ -13,7 +13,7 @@ import {
 import type { Member } from '../types.js';
 import { isAdmin, isServerAdmin, normalizeEmail } from '../utils/auth.js';
 import { memberCanManageRegistrations } from '../utils/registrationStaffAccess.js';
-import { isMemberMinor } from '../utils/memberAge.js';
+import { dateOfBirthValidationMessage, isMemberMinor } from '../utils/memberAge.js';
 import { resolvePreferredPronounsForSave } from '../utils/preferredPronouns.js';
 import { resolveUsaCurlingCompetitionGenderForSave } from '../utils/usaCurlingCompetitionGender.js';
 import {
@@ -130,14 +130,9 @@ function assertValidEmail(value: string, field = 'email'): void {
 
 function assertValidDateOfBirth(value: string): void {
   assertNonEmpty(value, 'dateOfBirth');
-  const parsed = new Date(`${value}T00:00:00Z`);
-  if (Number.isNaN(parsed.getTime()) || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    throw new RegistrationShellValidationError({ dateOfBirth: 'Enter a valid date of birth.' });
-  }
-  const today = new Date();
-  const todayUtc = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
-  if (parsed.getTime() > todayUtc) {
-    throw new RegistrationShellValidationError({ dateOfBirth: 'Date of birth cannot be in the future.' });
+  const message = dateOfBirthValidationMessage(value);
+  if (message) {
+    throw new RegistrationShellValidationError({ dateOfBirth: message });
   }
 }
 

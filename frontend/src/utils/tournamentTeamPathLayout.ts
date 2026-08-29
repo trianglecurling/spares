@@ -1,6 +1,6 @@
 import type { TournamentDrawState } from './tournamentDrawModel';
 import { ordinalPlaceLabel } from './tournamentDrawModel';
-import { CARD_H, CARD_W } from './tournamentDrawBracketLayout';
+import { CARD_H, CARD_W, PRINT_BRACKET_LAYOUT_METRICS } from './tournamentDrawBracketLayout';
 
 export type TeamPathLayoutBox = { x: number; y: number; w: number; h: number };
 
@@ -45,6 +45,18 @@ const defaultParams: LayoutParams = {
   cardH: CARD_H,
 };
 
+/** Compact path metrics so a landscape letter page stays readable. */
+export const PRINT_PATH_LAYOUT_METRICS: LayoutParams = {
+  paddingX: 12,
+  paddingBottom: 16,
+  columnTitleH: 16,
+  columnTitleGap: 6,
+  hGap: 48,
+  vGap: 14,
+  cardW: PRINT_BRACKET_LAYOUT_METRICS.cardW,
+  cardH: PRINT_BRACKET_LAYOUT_METRICS.cardH,
+};
+
 /** Internal tree node for layout: `x` = grid column, `y` = grid row (after placement). */
 type LayoutWorkNode = {
   id: string;
@@ -72,7 +84,7 @@ function connectionForPlace(draw: TournamentDrawState, fromGameId: string, place
 function terminalSinkLabel(
   fromGame: { id: string; slots: { length: number } },
   place: number,
-  terminalType: 'tbd' | 'out',
+  terminalType: 'tbd' | 'out'
 ): string {
   const k = fromGame.slots.length;
   if (terminalType === 'tbd') return 'TBD';
@@ -87,7 +99,7 @@ function expandGame(
   draw: TournamentDrawState,
   gameId: string,
   reachable: Set<string>,
-  makeId: () => string,
+  makeId: () => string
 ): LayoutWorkNode {
   const g = draw.games[gameId];
   const k = g?.slots.length ?? 0;
@@ -158,7 +170,7 @@ function flattenWorkTree(
   treeDepth: number,
   nodes: Map<string, TeamPathTreeNode>,
   edges: TeamPathTreeEdge[],
-  draw: TournamentDrawState,
+  draw: TournamentDrawState
 ): void {
   nodes.set(node.id, {
     id: node.id,
@@ -188,7 +200,7 @@ function flattenWorkTree(
 export function expandTeamPathTree(
   draw: TournamentDrawState,
   seeds: Set<string>,
-  reachable: Set<string>,
+  reachable: Set<string>
 ): {
   nodes: Map<string, TeamPathTreeNode>;
   edges: TeamPathTreeEdge[];
@@ -206,7 +218,9 @@ export function expandTeamPathTree(
 
   const seedList = [...seeds].filter((s) => reachable.has(s));
   seedList.sort((a, b) =>
-    (draw.games[a]?.label ?? a).localeCompare(draw.games[b]?.label ?? b, undefined, { numeric: true }),
+    (draw.games[a]?.label ?? a).localeCompare(draw.games[b]?.label ?? b, undefined, {
+      numeric: true,
+    })
   );
 
   const layoutRoots: LayoutWorkNode[] = [];
@@ -283,7 +297,7 @@ function buildGridForRoot(root: LayoutWorkNode, rowOffset: number): { maxLocalRo
     if (isOccupied(targetRow, targetCol)) {
       if (typeof import.meta !== 'undefined' && import.meta.env?.DEV) {
         console.warn(
-          `[TeamPathLayout] winning placement collision at (${targetRow},${targetCol}) from ${id}`,
+          `[TeamPathLayout] winning placement collision at (${targetRow},${targetCol}) from ${id}`
         );
       }
       return;
@@ -337,7 +351,7 @@ function buildGridForRoot(root: LayoutWorkNode, rowOffset: number): { maxLocalRo
       if (isOccupied(targetRow, targetCol)) {
         if (typeof import.meta !== 'undefined' && import.meta.env?.DEV) {
           console.warn(
-            `[TeamPathLayout] losing placement collision at (${targetRow},${targetCol}) from ${id}`,
+            `[TeamPathLayout] losing placement collision at (${targetRow},${targetCol}) from ${id}`
           );
         }
         continue;
@@ -409,14 +423,18 @@ function verifyLayoutInvariants(layoutRoots: LayoutWorkNode[], edges: TeamPathTr
     if (!a || !b) continue;
     if (b.x !== a.x + 1) {
       console.warn(
-        `[TeamPathLayout] edge target not in next column: ${e.fromId} (${a.x},${a.y}) -> ${e.toId} (${b.x},${b.y})`,
+        `[TeamPathLayout] edge target not in next column: ${e.fromId} (${a.x},${a.y}) -> ${e.toId} (${b.x},${b.y})`
       );
     }
     if (e.place === 1 && a.y !== b.y) {
-      console.warn(`[TeamPathLayout] primary edge not horizontal row: ${e.fromId} y=${a.y} -> ${e.toId} y=${b.y}`);
+      console.warn(
+        `[TeamPathLayout] primary edge not horizontal row: ${e.fromId} y=${a.y} -> ${e.toId} y=${b.y}`
+      );
     }
     if (e.place >= 2 && b.y <= a.y) {
-      console.warn(`[TeamPathLayout] non-primary edge must go strictly down: ${e.fromId} -> ${e.toId}`);
+      console.warn(
+        `[TeamPathLayout] non-primary edge must go strictly down: ${e.fromId} -> ${e.toId}`
+      );
     }
   }
 }
@@ -434,7 +452,7 @@ export function layoutTournamentTeamPathTree(
     roots: string[];
     layoutRoots: LayoutWorkNode[];
   },
-  params: Partial<LayoutParams> = {},
+  params: Partial<LayoutParams> = {}
 ): {
   positions: Record<string, TeamPathLayoutBox>;
   width: number;
@@ -513,7 +531,7 @@ export function routeTeamPathEdge(
   a: TeamPathLayoutBox,
   b: TeamPathLayoutBox,
   place: number,
-  opts: { srcRow: number; tgtRow: number; topBody: number; pitch: number },
+  opts: { srcRow: number; tgtRow: number; topBody: number; pitch: number }
 ): string {
   const { srcRow, tgtRow, topBody, pitch } = opts;
   const yCenter = (row: number) => topBody + row * pitch + a.h / 2;

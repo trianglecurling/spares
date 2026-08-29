@@ -1917,6 +1917,180 @@
         }
       }
     },
+    "/public/calendar/ice-day": {
+      "get": {
+        "tags": [
+          "public"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "date",
+            "required": false,
+            "description": "Club operating date (YYYY-MM-DD). A day runs 4:00am–3:59am the next morning in the club time zone. Omit to use the current operating day."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "date",
+                    "timeZone",
+                    "dayStart",
+                    "dayEnd",
+                    "sheets"
+                  ],
+                  "properties": {
+                    "date": {
+                      "type": "string",
+                      "description": "Operating date (YYYY-MM-DD)."
+                    },
+                    "timeZone": {
+                      "type": "string"
+                    },
+                    "dayStart": {
+                      "type": "string",
+                      "description": "Inclusive 4:00am start (ISO)."
+                    },
+                    "dayEnd": {
+                      "type": "string",
+                      "description": "Exclusive next 4:00am (ISO)."
+                    },
+                    "sheets": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "name",
+                          "activities"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "activities": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "required": [
+                                "id",
+                                "calendarEventId",
+                                "typeId",
+                                "source",
+                                "kind",
+                                "title",
+                                "start",
+                                "end"
+                              ],
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "calendarEventId": {
+                                  "type": "string"
+                                },
+                                "typeId": {
+                                  "type": "string"
+                                },
+                                "source": {
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "league",
+                                    "bonspiel",
+                                    "other"
+                                  ]
+                                },
+                                "title": {
+                                  "type": "string"
+                                },
+                                "start": {
+                                  "type": "string"
+                                },
+                                "end": {
+                                  "type": "string"
+                                },
+                                "slug": {
+                                  "type": "string"
+                                },
+                                "gameLabel": {
+                                  "type": "string"
+                                },
+                                "teams": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "required": [
+                                      "name",
+                                      "players"
+                                    ],
+                                    "properties": {
+                                      "name": {
+                                        "type": "string"
+                                      },
+                                      "clubName": {
+                                        "type": "string",
+                                        "nullable": true
+                                      },
+                                      "stoneColor": {
+                                        "type": "string",
+                                        "nullable": true
+                                      },
+                                      "players": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "required": [
+                                            "position",
+                                            "name"
+                                          ],
+                                          "properties": {
+                                            "position": {
+                                              "type": "string"
+                                            },
+                                            "name": {
+                                              "type": "string",
+                                              "nullable": true
+                                            },
+                                            "isSkip": {
+                                              "type": "boolean"
+                                            },
+                                            "isVice": {
+                                              "type": "boolean"
+                                            }
+                                          }
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/public/menus/{type}": {
       "get": {
         "parameters": [
@@ -30302,6 +30476,18 @@
       }
     },
     "/volunteering/my-signups": {
+      "get": {
+        "tags": [
+          "volunteering"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/volunteering/stats": {
       "get": {
         "tags": [
           "volunteering"

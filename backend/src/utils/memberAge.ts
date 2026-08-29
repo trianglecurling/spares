@@ -1,3 +1,34 @@
+const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+export const DATE_OF_BIRTH_INVALID_MESSAGE = 'Enter a valid date of birth.';
+export const DATE_OF_BIRTH_FUTURE_MESSAGE = 'Date of birth cannot be in the future.';
+
+/** UTC calendar date as YYYY-MM-DD. */
+export function utcDateOnly(date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}`;
+}
+
+/** True when value is a real YYYY-MM-DD calendar date (rejects overflow like 2026-02-31). */
+export function isValidDateOnly(value: string): boolean {
+  if (!DATE_ONLY_PATTERN.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime())) return false;
+  return parsed.toISOString().slice(0, 10) === value;
+}
+
+/** Field message for a supplied date of birth, or null when empty/valid. */
+export function dateOfBirthValidationMessage(
+  value: string | null | undefined,
+  asOf: Date = new Date(),
+): string | null {
+  const trimmed = value?.trim() ?? '';
+  if (!trimmed) return null;
+  if (!isValidDateOnly(trimmed)) return DATE_OF_BIRTH_INVALID_MESSAGE;
+  if (trimmed > utcDateOnly(asOf)) return DATE_OF_BIRTH_FUTURE_MESSAGE;
+  return null;
+}
+
 /** True when date of birth indicates the member is under 18 today (UTC calendar). */
 export function isMemberMinor(dateOfBirth: string | null | undefined): boolean {
   if (!dateOfBirth) return false;

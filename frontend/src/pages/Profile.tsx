@@ -34,6 +34,7 @@ import {
   memberGuardianPayloadForSave,
   type MemberGuardianFormFields,
 } from '../utils/memberGuardianForm';
+import { dateOfBirthValidationMessage } from '../utils/memberAge';
 
 const PROFILE_BASE_PATH = '/profile';
 
@@ -226,6 +227,8 @@ export default function Profile() {
   };
 
   const validateDemographicsForTab = (tab: 'personal-information' | 'emergency-contact'): string | null => {
+    const dateOfBirthError = dateOfBirthValidationMessage(demographics.dateOfBirth);
+    if (dateOfBirthError) return dateOfBirthError;
     if (tab === 'personal-information' && !memberDemographicsPersonalFormIsComplete(demographics)) {
       return 'Enter your full personal information and mailing address before saving.';
     }

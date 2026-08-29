@@ -1,4 +1,8 @@
-import type { TournamentDrawState, TournamentGameNode, TournamentSheet } from './tournamentDrawModel';
+import type {
+  TournamentDrawState,
+  TournamentGameNode,
+  TournamentSheet,
+} from './tournamentDrawModel';
 
 export type ClubSheet = {
   id: number;
@@ -111,23 +115,34 @@ function formatDrawBlockLineForGameCard(b: { name: string; startTime?: string | 
   }
 }
 
-export function formatGameScheduleSummary(
+export function formatGameScheduleParts(
   draw: TournamentDrawState,
-  g: TournamentGameNode,
-): string | null {
+  g: TournamentGameNode
+): { drawLine: string | null; sheetName: string | null } {
   const sch = g.schedule;
-  if (!sch) return null;
-  const parts: string[] = [];
+  if (!sch) return { drawLine: null, sheetName: null };
+  let drawLine: string | null = null;
   if (sch.drawBlockId) {
     const b = draw.drawBlocks.find((x) => x.id === sch.drawBlockId);
-    if (b) parts.push(formatDrawBlockLineForGameCard(b));
-    else parts.push('Draw');
+    drawLine = b ? formatDrawBlockLineForGameCard(b) : 'Draw';
   }
+  let sheetName: string | null = null;
   if (sch.sheetId != null) {
     const sh = draw.sheets.find((s) => s.clubSheetId === sch.sheetId);
     const name = sh?.name ?? String(sch.sheetId);
-    parts.push(`Sheet ${name}`);
+    sheetName = name.trim() || null;
   }
+  return { drawLine, sheetName };
+}
+
+export function formatGameScheduleSummary(
+  draw: TournamentDrawState,
+  g: TournamentGameNode
+): string | null {
+  const { drawLine, sheetName } = formatGameScheduleParts(draw, g);
+  const parts: string[] = [];
+  if (drawLine) parts.push(drawLine);
+  if (sheetName) parts.push(`Sheet ${sheetName}`);
   if (parts.length === 0) return null;
   return parts.join(' · ');
 }

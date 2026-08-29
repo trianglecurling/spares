@@ -1,5 +1,15 @@
 import type { RefObject } from 'react';
-import { Fragment, useEffect, useId, useLayoutEffect, useMemo, useRef } from 'react';
+import {
+  Fragment,
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { useAlert } from '../contexts/AlertContext';
 import { useBracketCanvasView } from '../hooks/useBracketCanvasView';
 import type { TournamentDrawState, TournamentGameNode } from '../utils/tournamentDrawModel';
 import {
@@ -8,17 +18,26 @@ import {
   slotIndexForPlaceAfterResult,
 } from '../utils/tournamentDrawRouting';
 import { CARD_H, CARD_W, placeRoutingLinesOnCard } from '../utils/tournamentDrawBracketLayout';
+import { exportTournamentPathChartPdf } from '../utils/tournamentDrawPdfExport';
+import { sheetBadgeGlyph } from '../utils/tournamentDrawPrintCard';
 import {
+  PRINT_PATH_LAYOUT_METRICS,
   expandTeamPathTree,
   layoutTournamentTeamPathTree,
   routeTeamPathEdge,
+  type TeamPathLayoutBox,
+  type TeamPathTreeEdge,
+  type TeamPathTreeNode,
 } from '../utils/tournamentTeamPathLayout';
 import {
   competitorLabelsLineSegments,
   orderCompetitorSegmentsFocusedTeamFirst,
 } from '../utils/tournamentDrawRouting';
 import { outcomeFromResult } from '../utils/tournamentDrawResult';
-import { formatGameScheduleSummary } from '../utils/tournamentDrawSchedule';
+import {
+  formatGameScheduleParts,
+  formatGameScheduleSummary,
+} from '../utils/tournamentDrawSchedule';
 import { formatTeamDisplayName } from '../utils/tournamentDisplay';
 import { resolveSheetStoneColorHex } from '../utils/sheetStoneColors';
 import type { PublicTournamentDrawTeamRef } from './PublicTournamentDrawBracket';
@@ -31,7 +50,14 @@ type Props = {
   alignContentColumnRef?: RefObject<HTMLElement | null>;
   /** When the bracket canvas is ready, pass `resetView`; pass `null` when unavailable (e.g. no seed). Toolbar is omitted when `alignContentColumnRef` is set. */
   onResetViewReady?: (resetView: (() => void) | null) => void;
+  /** When the print scene is ready, pass `exportPdf`; pass `null` when unavailable. */
+  onExportPdfReady?: (exportPdf: (() => Promise<void>) | null) => void;
+  title?: string;
+  filenameBase?: string;
 };
+
+const BRACKET_TOOLBAR_BUTTON_CLASS =
+  'text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-gray-800 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-white dark:disabled:hover:bg-gray-800';
 
 const PADDING_X = 16;
 const PADDING_BOTTOM = 36;
@@ -75,12 +101,12 @@ function teamFinishedPlaceIfPlayed(
   draw: TournamentDrawState,
   g: TournamentGameNode,
   teamId: number,
-  teamsById: Map<number, PublicTournamentDrawTeamRef>,
+  teamsById: Map<number, PublicTournamentDrawTeamRef>
 ): number | null {
   if (!g.result) return null;
   const label = formatTeamDisplayName(
     teamsById.get(teamId)?.teamName ?? null,
-    teamsById.get(teamId)?.sortOrder ?? 0,
+    teamsById.get(teamId)?.sortOrder ?? 0
   );
   const k = g.slots.length;
   for (let place = 1; place <= k; place++) {
@@ -97,7 +123,7 @@ function collectStillPossibleGameIds(
   teamId: number,
   teamsById: Map<number, PublicTournamentDrawTeamRef>,
   reachable: Set<string>,
-  seeds: Set<string>,
+  seeds: Set<string>
 ): Set<string> {
   const possible = new Set<string>();
   const queue: string[] = [...seeds];
@@ -113,7 +139,7 @@ function collectStillPossibleGameIds(
 
     const outgoing = draw.connections.filter(
       (c) =>
-        c.fromGameId === gid && c.terminalType === 'game' && c.toGameId && reachable.has(c.toGameId),
+        c.fromGameId === gid && c.terminalType === 'game' && c.toGameId && reachable.has(c.toGameId)
     );
 
     if (!g.result) {
@@ -135,7 +161,10 @@ function collectStillPossibleGameIds(
   return possible;
 }
 
-function filterDrawToReachable(full: TournamentDrawState, reachable: Set<string>): TournamentDrawState {
+function filterDrawToReachable(
+  full: TournamentDrawState,
+  reachable: Set<string>
+): TournamentDrawState {
   const games: TournamentDrawState['games'] = {};
   for (const id of reachable) {
     const g = full.games[id];
@@ -169,7 +198,7 @@ function buildMutedConnectionIds(
   teamId: number,
   teamsById: Map<number, PublicTournamentDrawTeamRef>,
   reachable: Set<string>,
-  stillPossible: Set<string>,
+  stillPossible: Set<string>
 ): Set<string> {
   const mutedConnectionIds = new Set<string>();
   for (const c of draw.connections) {
@@ -206,7 +235,7 @@ function buildMutedConnectionIds(
 function collectViableTreeNodeIds(
   roots: string[],
   edges: Array<{ fromId: string; toId: string; connId: string }>,
-  mutedConnectionIds: Set<string>,
+  mutedConnectionIds: Set<string>
 ): Set<string> {
   const outgoing = new Map<string, Array<{ fromId: string; toId: string; connId: string }>>();
   for (const e of edges) {
@@ -237,13 +266,31 @@ function collectViableTreeNodeIds(
   return viable;
 }
 
-function TeamPathSinkCard({ label, muted }: { label: string; muted: boolean }) {
+function TeamPathSinkCard({
+  label,
+  muted,
+  print,
+}: {
+  label: string;
+  muted: boolean;
+  print?: boolean;
+}) {
   return (
     <div
-      className="text-left rounded-lg border shadow-sm p-2 border-dashed border-gray-300 dark:border-gray-500 bg-gray-50/90 dark:bg-gray-900/80 h-full w-full box-border flex flex-col justify-center"
+      className={
+        print
+          ? 'text-left rounded-md border border-dashed border-gray-300 bg-gray-50 h-full w-full box-border flex flex-col justify-center p-1.5'
+          : 'text-left rounded-lg border shadow-sm p-2 border-dashed border-gray-300 dark:border-gray-500 bg-gray-50/90 dark:bg-gray-900/80 h-full w-full box-border flex flex-col justify-center'
+      }
       style={{ opacity: muted ? 0.42 : undefined }}
     >
-      <div className="text-[11px] font-semibold text-gray-600 dark:text-gray-300 text-center leading-tight">
+      <div
+        className={
+          print
+            ? 'text-[10px] font-semibold text-gray-600 text-center leading-tight'
+            : 'text-[11px] font-semibold text-gray-600 dark:text-gray-300 text-center leading-tight'
+        }
+      >
         {label}
       </div>
     </div>
@@ -257,23 +304,31 @@ function TeamPathGameCard({
   teamsById,
   teamId,
   muted,
+  print,
 }: {
   draw: TournamentDrawState;
   g: TournamentGameNode;
   teamsById: Map<number, PublicTournamentDrawTeamRef>;
   teamId: number;
   muted: boolean;
+  print?: boolean;
 }) {
-  const routingLines = placeRoutingLinesOnCard(draw, g);
-  // Keep focused team first; attach rock colors without sheet color1→color2 reorder.
-  const competitorSegments = orderCompetitorSegmentsFocusedTeamFirst(
-    draw,
-    g,
-    competitorLabelsLineSegments(draw, g, teamsById, { rockColorOrder: 'slot' }),
-    teamId,
-    teamsById,
-  );
-  const schedLine = formatGameScheduleSummary(draw, g);
+  const routingLines = print ? [] : placeRoutingLinesOnCard(draw, g);
+  const competitorSegments = print
+    ? []
+    : orderCompetitorSegmentsFocusedTeamFirst(
+        draw,
+        g,
+        competitorLabelsLineSegments(draw, g, teamsById, { rockColorOrder: 'slot' }),
+        teamId,
+        teamsById
+      );
+  const schedLine = print ? null : formatGameScheduleSummary(draw, g);
+  const printSchedule = print ? formatGameScheduleParts(draw, g) : null;
+  const printSheetBadge = printSchedule?.sheetName
+    ? sheetBadgeGlyph(printSchedule.sheetName)
+    : null;
+  const showPrintMeta = print && !!(printSchedule?.drawLine || printSheetBadge);
   const outcome = outcomeFromResult(g);
   const twoSlot = g.slots.length === 2;
   const winnerSlotIdx =
@@ -284,55 +339,83 @@ function TeamPathGameCard({
     <div
       data-draw-game-card
       data-game-node-id={g.id}
-      className="text-left rounded-lg border shadow-sm p-2 border-gray-200 dark:border-gray-600 bg-white/90 dark:bg-gray-800/90 h-full w-full box-border"
+      className={
+        print
+          ? 'text-left rounded-md border p-1.5 border-gray-300 bg-white h-full w-full box-border'
+          : 'text-left rounded-lg border shadow-sm p-2 border-gray-200 dark:border-gray-600 bg-white/90 dark:bg-gray-800/90 h-full w-full box-border'
+      }
       style={{
         opacity: muted ? 0.42 : undefined,
       }}
     >
-      <div className="text-xs font-bold text-gray-900 dark:text-gray-100">{g.label}</div>
-      <div className="text-[10px] leading-tight mt-1 min-w-0 line-clamp-2">
-        {competitorSegments.map((seg, i) => {
-          const si = seg.slotIndex;
-          const isWinner = winnerSlotIdx != null && si != null && si === winnerSlotIdx;
-          const isLoser = loserSlotIdx != null && si != null && si === loserSlotIdx;
-          return (
-            <Fragment key={i}>
-              {i > 0 ? (
-                <span className="text-gray-500 dark:text-gray-400" aria-hidden>
-                  {' v. '}
-                </span>
-              ) : null}
-              <span
-                style={!isWinner && !isLoser && seg.color ? { color: seg.color } : undefined}
-                className={
-                  isWinner
-                    ? 'inline font-bold text-gray-950 dark:text-white'
-                    : isLoser
-                      ? 'font-normal text-gray-500 dark:text-gray-400'
-                      : seg.color
-                        ? undefined
-                        : 'text-gray-600 dark:text-gray-400'
-                }
-              >
-                {seg.rockColor ? (
-                  <span
-                    className="mr-0.5 inline-block h-1.5 w-1.5 translate-y-[-1px] rounded-full border border-black/20 align-middle dark:border-white/25"
-                    style={{ backgroundColor: resolveSheetStoneColorHex(seg.rockColor) }}
-                    aria-hidden
-                  />
-                ) : null}
-                {seg.text}
-              </span>
-            </Fragment>
-          );
-        })}
+      <div
+        className={
+          print
+            ? 'text-[10px] font-bold leading-tight text-gray-900'
+            : 'text-xs font-bold text-gray-900 dark:text-gray-100'
+        }
+      >
+        {g.label}
       </div>
-      {schedLine ? (
+      {!print && competitorSegments.length > 0 ? (
+        <div className="text-[10px] leading-tight mt-1 min-w-0 line-clamp-2">
+          {competitorSegments.map((seg, i) => {
+            const si = seg.slotIndex;
+            const isWinner = winnerSlotIdx != null && si != null && si === winnerSlotIdx;
+            const isLoser = loserSlotIdx != null && si != null && si === loserSlotIdx;
+            return (
+              <Fragment key={i}>
+                {i > 0 ? (
+                  <span className="text-gray-500 dark:text-gray-400" aria-hidden>
+                    {' v. '}
+                  </span>
+                ) : null}
+                <span
+                  style={!isWinner && !isLoser && seg.color ? { color: seg.color } : undefined}
+                  className={
+                    isWinner
+                      ? 'inline font-bold text-gray-950 dark:text-white'
+                      : isLoser
+                        ? 'font-normal text-gray-500 dark:text-gray-400'
+                        : seg.color
+                          ? undefined
+                          : 'text-gray-600 dark:text-gray-400'
+                  }
+                >
+                  {seg.rockColor ? (
+                    <span
+                      className="mr-0.5 inline-block h-1.5 w-1.5 translate-y-[-1px] rounded-full border border-black/20 align-middle dark:border-white/25"
+                      style={{ backgroundColor: resolveSheetStoneColorHex(seg.rockColor) }}
+                      aria-hidden
+                    />
+                  ) : null}
+                  {seg.text}
+                </span>
+              </Fragment>
+            );
+          })}
+        </div>
+      ) : null}
+      {showPrintMeta ? (
+        <div className="mt-0.5 flex min-w-0 items-center gap-1 text-[9px] leading-none text-teal-800">
+          {printSchedule?.drawLine ? (
+            <span className="min-w-0 truncate">{printSchedule.drawLine}</span>
+          ) : null}
+          {printSheetBadge ? (
+            <span
+              className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border border-teal-800 text-[8px] font-semibold"
+              aria-label={`Sheet ${printSheetBadge}`}
+            >
+              {printSheetBadge}
+            </span>
+          ) : null}
+        </div>
+      ) : schedLine ? (
         <div className="text-[10px] text-teal-700 dark:text-teal-300/90 leading-tight truncate">
           {schedLine}
         </div>
       ) : null}
-      {routingLines.length > 0 ? (
+      {!print && routingLines.length > 0 ? (
         <div className="text-[10px] font-medium tabular-nums mt-1 pt-0.5 border-t border-gray-100 dark:border-gray-700/80 space-y-0.5">
           {routingLines.map((line) => (
             <div key={line.key}>
@@ -350,6 +433,167 @@ function TeamPathGameCard({
   );
 }
 
+function buildPathEdgeList(
+  edges: TeamPathTreeEdge[],
+  geom: {
+    positions: Record<string, TeamPathLayoutBox>;
+    gridRow: Record<string, number>;
+    topBody: number;
+    pitch: number;
+  },
+  mutedConnectionIds: Set<string>,
+  viableTreeNodeIds: Set<string>
+): Array<{ key: string; connId: string; d: string; muted: boolean }> {
+  const edgeList: Array<{ key: string; connId: string; d: string; muted: boolean }> = [];
+  for (const e of edges) {
+    const a = geom.positions[e.fromId];
+    const b = geom.positions[e.toId];
+    const srcRow = geom.gridRow[e.fromId];
+    const tgtRow = geom.gridRow[e.toId];
+    if (!a || !b || srcRow == null || tgtRow == null) continue;
+    const muted = mutedConnectionIds.has(e.connId) || !viableTreeNodeIds.has(e.fromId);
+    edgeList.push({
+      key: `${e.connId}-${e.fromId}-${e.toId}`,
+      connId: e.connId,
+      d: routeTeamPathEdge(a, b, e.place, {
+        srcRow,
+        tgtRow,
+        topBody: geom.topBody,
+        pitch: geom.pitch,
+      }),
+      muted,
+    });
+  }
+  return edgeList;
+}
+
+function TeamPathDiagramScene({
+  filteredDraw,
+  labelingDraw,
+  treeNodes,
+  positions,
+  width,
+  height,
+  maxColumn,
+  viableTreeNodeIds,
+  edgeList,
+  teamsById,
+  teamId,
+  markerId,
+  paddingX,
+  hGap,
+  cardW,
+  cardH,
+  print,
+}: {
+  filteredDraw: TournamentDrawState;
+  labelingDraw: TournamentDrawState;
+  treeNodes: Map<string, TeamPathTreeNode>;
+  positions: Record<string, TeamPathLayoutBox>;
+  width: number;
+  height: number;
+  maxColumn: number;
+  viableTreeNodeIds: Set<string>;
+  edgeList: Array<{ key: string; connId: string; d: string; muted: boolean }>;
+  teamsById: Map<number, PublicTournamentDrawTeamRef>;
+  teamId: number;
+  markerId: string;
+  paddingX: number;
+  hGap: number;
+  cardW: number;
+  cardH: number;
+  print?: boolean;
+}) {
+  return (
+    <div style={{ position: 'relative', width, height, background: print ? '#ffffff' : undefined }}>
+      <svg
+        className={
+          print
+            ? 'absolute left-0 top-0 pointer-events-none text-slate-600'
+            : 'absolute left-0 top-0 pointer-events-none text-slate-600 dark:text-slate-300'
+        }
+        width={width}
+        height={height}
+        aria-hidden
+      >
+        <defs>
+          <marker
+            id={markerId}
+            markerWidth="8"
+            markerHeight="8"
+            refX="7"
+            refY="4"
+            orient="auto"
+            markerUnits="strokeWidth"
+          >
+            <path d="M0,0 L8,4 L0,8 z" className="fill-current" />
+          </marker>
+        </defs>
+        {edgeList.map((e) => (
+          <path
+            key={e.key}
+            d={e.d}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={print ? 1.5 : 2}
+            opacity={e.muted ? 0.28 : 0.92}
+            markerEnd={`url(#${markerId})`}
+          />
+        ))}
+      </svg>
+
+      {Array.from({ length: maxColumn + 1 }, (_, col) => (
+        <div
+          key={col}
+          className={
+            print
+              ? 'absolute text-[10px] font-medium text-gray-500 pointer-events-none'
+              : 'absolute text-[11px] font-medium text-gray-500 dark:text-gray-400 pointer-events-none'
+          }
+          style={{
+            left: paddingX + col * (cardW + hGap),
+            top: paddingX,
+            width: cardW,
+            textAlign: 'center',
+          }}
+        >
+          Game {col + 1}
+        </div>
+      ))}
+
+      {[...treeNodes.values()].map((node) => {
+        const box = positions[node.id];
+        if (!box) return null;
+        const g = node.gameId ? filteredDraw.games[node.gameId] : undefined;
+        return (
+          <div
+            key={node.id}
+            className="absolute z-[1]"
+            style={{ left: box.x, top: box.y, width: cardW, height: cardH }}
+          >
+            {g ? (
+              <TeamPathGameCard
+                draw={labelingDraw}
+                g={g}
+                teamsById={teamsById}
+                teamId={teamId}
+                muted={!viableTreeNodeIds.has(node.id)}
+                print={print}
+              />
+            ) : (
+              <TeamPathSinkCard
+                label={node.sinkLabel ?? 'End'}
+                muted={!viableTreeNodeIds.has(node.id)}
+                print={print}
+              />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /**
  * Team path: grid layout (Game 1…N by column) with horizontal winner links and drop-then-right links for
  * other outcomes. Same card content as the draw canvas, without event lanes.
@@ -360,8 +604,15 @@ export default function TeamTournamentDrawPathDiagram({
   teamsById,
   alignContentColumnRef,
   onResetViewReady,
+  onExportPdfReady,
+  title,
+  filenameBase,
 }: Props) {
+  const { showAlert } = useAlert();
+  const printSceneRef = useRef<HTMLDivElement>(null);
+  const [exporting, setExporting] = useState(false);
   const svgMarkerId = useId().replace(/:/g, '');
+  const printMarkerId = `${svgMarkerId}-print`;
   const normalized = useMemo(() => normalizeDrawState(rawDraw), [rawDraw]);
 
   const pathModel = useMemo(() => {
@@ -375,7 +626,7 @@ export default function TeamTournamentDrawPathDiagram({
       teamId,
       teamsById,
       reachable,
-      seeds,
+      seeds
     );
     const filtered = filterDrawToReachable(normalized, reachable);
     const mutedConnectionIds = buildMutedConnectionIds(
@@ -383,13 +634,13 @@ export default function TeamTournamentDrawPathDiagram({
       teamId,
       teamsById,
       reachable,
-      stillPossible,
+      stillPossible
     );
     const expansion = expandTeamPathTree(filtered, seeds, reachable);
     const viableTreeNodeIds = collectViableTreeNodeIds(
       expansion.roots,
       expansion.edges,
-      mutedConnectionIds,
+      mutedConnectionIds
     );
     const geom = layoutTournamentTeamPathTree(filtered, expansion, {
       paddingX: PADDING_X,
@@ -401,29 +652,19 @@ export default function TeamTournamentDrawPathDiagram({
       cardW: CARD_W,
       cardH: CARD_H,
     });
-
-    const edgeList: Array<{ key: string; connId: string; d: string; muted: boolean }> = [];
-    for (const e of expansion.edges) {
-      const a = geom.positions[e.fromId];
-      const b = geom.positions[e.toId];
-      const srcRow = geom.gridRow[e.fromId];
-      const tgtRow = geom.gridRow[e.toId];
-      if (!a || !b || srcRow == null || tgtRow == null) continue;
-      // Same draw `connId` can appear on multiple tree edges (duplicate parents for one logical game); mute by parent-path viability too.
-      const muted =
-        mutedConnectionIds.has(e.connId) || !viableTreeNodeIds.has(e.fromId);
-      edgeList.push({
-        key: `${e.connId}-${e.fromId}-${e.toId}`,
-        connId: e.connId,
-        d: routeTeamPathEdge(a, b, e.place, {
-          srcRow,
-          tgtRow,
-          topBody: geom.topBody,
-          pitch: geom.pitch,
-        }),
-        muted,
-      });
-    }
+    const printGeom = layoutTournamentTeamPathTree(filtered, expansion, PRINT_PATH_LAYOUT_METRICS);
+    const edgeList = buildPathEdgeList(
+      expansion.edges,
+      geom,
+      mutedConnectionIds,
+      viableTreeNodeIds
+    );
+    const printEdgeList = buildPathEdgeList(
+      expansion.edges,
+      printGeom,
+      mutedConnectionIds,
+      viableTreeNodeIds
+    );
 
     return {
       kind: 'ok' as const,
@@ -437,6 +678,11 @@ export default function TeamTournamentDrawPathDiagram({
       maxColumn: geom.maxColumn,
       viableTreeNodeIds,
       edgeList,
+      printPositions: printGeom.positions,
+      printWidth: printGeom.width,
+      printHeight: printGeom.height,
+      printMaxColumn: printGeom.maxColumn,
+      printEdgeList,
     };
   }, [normalized, teamId, teamsById]);
 
@@ -447,6 +693,27 @@ export default function TeamTournamentDrawPathDiagram({
   const { setBaselinePan, snapPanToBaseline, resetView } = bracketView;
   const didSnapInitialPan = useRef(false);
 
+  const exportingRef = useRef(false);
+  const handleExportPdf = useCallback(async () => {
+    const scene = printSceneRef.current;
+    if (!scene || pathModel.kind !== 'ok' || exportingRef.current) return;
+    exportingRef.current = true;
+    setExporting(true);
+    try {
+      await exportTournamentPathChartPdf({
+        sceneElement: scene,
+        layout: { width: pathModel.printWidth, height: pathModel.printHeight },
+        title: title?.trim() || 'Bracket path',
+        filenameBase: filenameBase ?? 'tournament',
+      });
+    } catch {
+      showAlert("Couldn't export the bracket path. Try again.", 'error');
+    } finally {
+      exportingRef.current = false;
+      setExporting(false);
+    }
+  }, [filenameBase, pathModel, showAlert, title]);
+
   useEffect(() => {
     if (!onResetViewReady) return;
     if (pathModel.kind !== 'ok') {
@@ -456,6 +723,16 @@ export default function TeamTournamentDrawPathDiagram({
     onResetViewReady(() => resetView());
     return () => onResetViewReady(null);
   }, [onResetViewReady, pathModel.kind, resetView]);
+
+  useEffect(() => {
+    if (!onExportPdfReady) return;
+    if (pathModel.kind !== 'ok') {
+      onExportPdfReady(null);
+      return;
+    }
+    onExportPdfReady(handleExportPdf);
+    return () => onExportPdfReady(null);
+  }, [handleExportPdf, onExportPdfReady, pathModel.kind]);
 
   useLayoutEffect(() => {
     didSnapInitialPan.current = false;
@@ -515,9 +792,22 @@ export default function TeamTournamentDrawPathDiagram({
     maxColumn,
     viableTreeNodeIds,
     edgeList,
+    printPositions,
+    printWidth,
+    printHeight,
+    printMaxColumn,
+    printEdgeList,
   } = pathModel;
 
   const fullPage = !!alignContentColumnRef;
+  const sceneProps = {
+    filteredDraw,
+    labelingDraw,
+    treeNodes,
+    teamsById,
+    teamId,
+    viableTreeNodeIds,
+  };
 
   return (
     <div
@@ -531,10 +821,20 @@ export default function TeamTournamentDrawPathDiagram({
         <div className="mb-2 flex shrink-0 flex-wrap items-center gap-2">
           <button
             type="button"
-            className="text-sm font-medium rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2 text-gray-800 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700/80"
+            className={BRACKET_TOOLBAR_BUTTON_CLASS}
             onClick={() => resetView()}
           >
             Reset view
+          </button>
+          <button
+            type="button"
+            className={BRACKET_TOOLBAR_BUTTON_CLASS}
+            onClick={() => void handleExportPdf()}
+            disabled={exporting}
+            aria-busy={exporting}
+            aria-label="Export PDF"
+          >
+            {exporting ? 'Exporting…' : 'Export PDF'}
           </button>
         </div>
       ) : null}
@@ -561,81 +861,55 @@ export default function TeamTournamentDrawPathDiagram({
               position: 'relative',
             }}
           >
-            <svg
-              className="absolute left-0 top-0 pointer-events-none text-slate-600 dark:text-slate-300"
+            <TeamPathDiagramScene
+              {...sceneProps}
+              positions={positions}
               width={width}
               height={height}
-              aria-hidden
-            >
-              <defs>
-                <marker
-                  id={svgMarkerId}
-                  markerWidth="8"
-                  markerHeight="8"
-                  refX="7"
-                  refY="4"
-                  orient="auto"
-                  markerUnits="strokeWidth"
-                >
-                  <path d="M0,0 L8,4 L0,8 z" className="fill-current" />
-                </marker>
-              </defs>
-              {edgeList.map((e) => (
-                <path
-                  key={e.key}
-                  d={e.d}
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth={2}
-                  opacity={e.muted ? 0.28 : 0.92}
-                  markerEnd={`url(#${svgMarkerId})`}
-                />
-              ))}
-            </svg>
-
-            {Array.from({ length: maxColumn + 1 }, (_, col) => (
-              <div
-                key={col}
-                className="absolute text-[11px] font-medium text-gray-500 dark:text-gray-400 pointer-events-none"
-                style={{
-                  left: PADDING_X + col * (CARD_W + H_GAP),
-                  top: PADDING_X,
-                  width: CARD_W,
-                  textAlign: 'center',
-                }}
-              >
-                Game {col + 1}
-              </div>
-            ))}
-
-            {[...treeNodes.values()].map((node) => {
-              const box = positions[node.id];
-              if (!box) return null;
-              const g = node.gameId ? filteredDraw.games[node.gameId] : undefined;
-              return (
-                <div
-                  key={node.id}
-                  className="absolute z-[1]"
-                  style={{ left: box.x, top: box.y, width: CARD_W, height: CARD_H }}
-                >
-                  {g ? (
-                    <TeamPathGameCard
-                      draw={labelingDraw}
-                      g={g}
-                      teamsById={teamsById}
-                      teamId={teamId}
-                      muted={!viableTreeNodeIds.has(node.id)}
-                    />
-                  ) : (
-                    <TeamPathSinkCard
-                      label={node.sinkLabel ?? 'End'}
-                      muted={!viableTreeNodeIds.has(node.id)}
-                    />
-                  )}
-                </div>
-              );
-            })}
+              maxColumn={maxColumn}
+              edgeList={edgeList}
+              markerId={svgMarkerId}
+              paddingX={PADDING_X}
+              hGap={H_GAP}
+              cardW={CARD_W}
+              cardH={CARD_H}
+            />
           </div>
+        </div>
+      </div>
+      <div
+        aria-hidden
+        style={{
+          position: 'fixed',
+          left: -10000,
+          top: 0,
+          pointerEvents: 'none',
+          zIndex: -1,
+        }}
+      >
+        <div
+          ref={printSceneRef}
+          style={{
+            position: 'relative',
+            width: printWidth,
+            height: printHeight,
+            background: '#ffffff',
+          }}
+        >
+          <TeamPathDiagramScene
+            {...sceneProps}
+            positions={printPositions}
+            width={printWidth}
+            height={printHeight}
+            maxColumn={printMaxColumn}
+            edgeList={printEdgeList}
+            markerId={printMarkerId}
+            paddingX={PRINT_PATH_LAYOUT_METRICS.paddingX}
+            hGap={PRINT_PATH_LAYOUT_METRICS.hGap}
+            cardW={PRINT_PATH_LAYOUT_METRICS.cardW}
+            cardH={PRINT_PATH_LAYOUT_METRICS.cardH}
+            print
+          />
         </div>
       </div>
     </div>

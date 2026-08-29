@@ -33,6 +33,7 @@ import {
   serializeRegistrationMailingAddress,
 } from '../../utils/registrationMailingAddress';
 import { resolveUsaCurlingCompetitionGenderForSave } from '../../utils/usaCurlingCompetitionGender';
+import { dateOfBirthValidationMessage, localDateOnly } from '../../utils/memberAge';
 
 function memberNameParts(member: Pick<Member, 'name' | 'firstName' | 'lastName'>): {
   firstName: string;
@@ -585,6 +586,11 @@ export default function AdminMemberEditorModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const dateOfBirthError = dateOfBirthValidationMessage(demographics.dateOfBirth);
+    if (dateOfBirthError) {
+      showAlert(dateOfBirthError, 'error');
+      return;
+    }
     setSubmitting(true);
 
     try {
@@ -836,17 +842,26 @@ export default function AdminMemberEditorModal({
             <InlineStateMessage title="Loading member details…" />
           ) : (
             <div className="space-y-4">
-              <FormField label="Date of birth" htmlFor={dateOfBirthInputId}>
-                <input
-                  type="date"
-                  id={dateOfBirthInputId}
-                  value={demographics.dateOfBirth}
-                  onChange={(event) =>
-                    setDemographics((current) => ({ ...current, dateOfBirth: event.target.value }))
-                  }
-                  autoComplete="bday"
-                  className="app-input"
-                />
+              <FormField
+                label="Date of birth"
+                htmlFor={dateOfBirthInputId}
+                error={dateOfBirthValidationMessage(demographics.dateOfBirth)}
+              >
+                {({ describedBy, invalid }) => (
+                  <input
+                    type="date"
+                    id={dateOfBirthInputId}
+                    value={demographics.dateOfBirth}
+                    onChange={(event) =>
+                      setDemographics((current) => ({ ...current, dateOfBirth: event.target.value }))
+                    }
+                    autoComplete="bday"
+                    className="app-input"
+                    max={localDateOnly()}
+                    aria-invalid={invalid || undefined}
+                    aria-describedby={describedBy}
+                  />
+                )}
               </FormField>
 
               <div className="grid gap-4 sm:grid-cols-2">
