@@ -85,7 +85,9 @@ A sabbatical-only registrant does not need regular membership.
 
 ## Sabbatical-fill discount
 
-A registrant filling a temporary sabbatical spot receives a discount equal to the sabbatical fee.
+A registrant filling a temporary sabbatical spot — after accepting a waitlist
+offer for that spot — receives a discount equal to the sabbatical fee. The
+discount is not shown or applied during registration.
 
 This discount:
 

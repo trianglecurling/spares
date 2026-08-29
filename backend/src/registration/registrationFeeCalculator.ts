@@ -287,12 +287,6 @@ function addSabbaticalFillDiscounts(
     if (!league) continue;
     pushDiscount(league);
   }
-  for (const entry of evaluateLeaguePriorities(context).entries) {
-    if (entry.label !== 'temporary_spot_available' || !charged.has(entry.leagueId)) continue;
-    const league = getLeague(context, entry.leagueId);
-    if (!league) continue;
-    pushDiscount(league);
-  }
 
   return discountLineItems;
 }
@@ -440,7 +434,7 @@ function computePreview(
 
 /**
  * Fees for what the registrant is committed to today: membership, sabbaticals,
- * guaranteed leagues, and available or temporary-fill spots. Waitlisted,
+ * guaranteed leagues, and available spots. Waitlisted,
  * play-in-pending, and subject-to-availability leagues are not billed; they
  * only widen `estimatedMaximumTotalDueMinor`.
  *

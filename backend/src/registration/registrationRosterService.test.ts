@@ -59,7 +59,7 @@ describe('roster placements derived from the priority list', () => {
     expect(guaranteedPlacementsFromEvaluation(evaluateLeaguePriorities(context))).toEqual([]);
   });
 
-  test('an open-registration temporary fill is rostered as a temporary sabbatical fill', () => {
+  test('an open-registration sabbatical-fill vacancy is not rostered from the priority list', () => {
     const context = registrationContext({
       registrationState: 'open',
       desiredLeagueCount: 1,
@@ -75,9 +75,7 @@ describe('roster placements derived from the priority list', () => {
         }),
       },
     });
-    expect(rosterPlacementsForRegistration(context, evaluateLeaguePriorities(context))).toEqual([
-      { leagueId: 50, placementType: 'temporary_sabbatical_fill' },
-    ]);
+    expect(rosterPlacementsForRegistration(context, evaluateLeaguePriorities(context))).toEqual([]);
   });
 
   test('a subject-to-availability league is not rostered until staff places it', () => {

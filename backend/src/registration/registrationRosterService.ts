@@ -11,9 +11,9 @@ type DbExecutor = Pick<
 
 /**
  * A league spot committed at submit. Guaranteed returns/fallbacks and
- * available or temporary-fill entries come from the priority list. Junior
- * Recreational uses `new_placement` because that program never goes through
- * the priority list.
+ * available entries come from the priority list. Temporary sabbatical-fill
+ * spots are placed only from a waitlist offer. Junior Recreational uses
+ * `new_placement` because that program never goes through the priority list.
  */
 export type GuaranteedPlacement = {
   leagueId: number;
@@ -111,9 +111,9 @@ export async function ensureJuniorRecreationalRosterForMember(memberId: number):
 }
 
 /**
- * Places available and temporary-fill registrants onto this league when they
- * were charged at submit but never rostered. Waitlisted, play-in-miss, and
- * subject-to-availability entries are left off until staff place them.
+ * Places available registrants onto this league when they were charged at
+ * submit but never rostered. Waitlisted, play-in-miss, subject-to-availability,
+ * and temporary sabbatical-fill entries are left off until staff place them.
  *
  * Do not call this from league roster GET handlers. It rebuilds a full
  * registration context (including play-in packing) for every unrostered
@@ -238,10 +238,7 @@ function availableNowPlacements(
     .filter((entry) => !entry.guaranteed)
     .map((entry) => ({
       leagueId: entry.leagueId,
-      placementType:
-        entry.label === 'temporary_spot_available'
-          ? ('temporary_sabbatical_fill' as const)
-          : ('new_placement' as const),
+      placementType: 'new_placement' as const,
     }));
 }
 
@@ -309,7 +306,13 @@ export async function removeOrphanedRegistrationRosterPlacements(input: {
       ),
     );
 
-  const rowsToRemove = rosterRows.filter((row: (typeof rosterRows)[number]) => !keepLeagueIds.has(row.league_id));
+  const rowsToRemove = rosterRows.filter((row: (typeof rosterRows)[number]) => {
+    if (keepLeagueIds.has(row.league_id)) return false;
+    // Waitlist-accepted temporary fills are not created from the priority list
+    // and must not be removed when registration is saved or submitted.
+    if (row.is_temporary_sabbatical_fill === 1) return false;
+    return true;
+  });
   await removeRegistrationRosterRows(executor, rowsToRemove);
 }
 

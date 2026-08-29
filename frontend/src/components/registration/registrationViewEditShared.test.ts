@@ -946,7 +946,7 @@ describe('guarantee labels shown while reordering', () => {
     expect(result.guaranteedCount).toBe(0);
   });
 
-  test('open registration labels a sabbatical-fill vacancy as a temporary spot', () => {
+  test('open registration waitlists a sabbatical-fill vacancy instead of placing it', () => {
     const result = evaluate({
       priorities: ranked(1),
       desiredLeagueCount: 1,
@@ -961,7 +961,7 @@ describe('guarantee labels shown while reordering', () => {
         }),
       ],
     });
-    expect(result.entries[0]?.label).toBe('temporary_spot_available');
+    expect(result.entries[0]?.label).toBe('waitlisted');
   });
 });
 

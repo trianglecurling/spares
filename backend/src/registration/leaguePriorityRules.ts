@@ -318,8 +318,8 @@ export type PriorityLabelCandidate = {
    */
   hasVacancies?: boolean;
   /**
-   * A sabbatical has left a temporary fill vacancy. Used in open registration,
-   * and for instructional programs in every registration state.
+   * A sabbatical has left a temporary fill vacancy. Registration never places
+   * those spots; they are offered only through the waitlist.
    */
   hasTemporaryFillVacancy?: boolean;
   /**
@@ -383,16 +383,17 @@ export function leagueHasTemporaryFillVacancy(league: {
  * Leagues billed today: protected guarantees, open-registration available
  * spots, and instructional programs with remaining space. Subject-to-availability
  * entries — including no-waitlist leftovers and a third league below two
- * guarantees — stay unconfirmed until staff places them.
+ * guarantees — stay unconfirmed until staff places them. Temporary sabbatical-fill
+ * vacancies are never billed or placed from this list.
  */
 export function isImmediateChargeEntry(entry: LabeledPriorityEntry): boolean {
-  return entry.guaranteed || entry.label === 'available' || entry.label === 'temporary_spot_available';
+  return entry.guaranteed || entry.label === 'available';
 }
 
 /**
- * Guaranteed entries are always billed. Available and temporary-fill entries
- * fill remaining desired-count slots in rank order, and only among ranks at or
- * above the desired count so backups below that line stay off the floor.
+ * Guaranteed entries are always billed. Available entries fill remaining
+ * desired-count slots in rank order, and only among ranks at or above the
+ * desired count so backups below that line stay off the floor.
  */
 export function immediateChargeEntries(
   result: Pick<PriorityLabelResult, 'entries' | 'desiredLeagueCount'>,
@@ -418,13 +419,14 @@ export function guaranteeBudgetFor(desiredLeagueCount: number): number {
 
 /**
  * An entry that already counts toward the desired league count: a held
- * guarantee, an available spot, or a temporary fill. Those are confirmed
- * placements. Subject-to-availability leftovers are unconfirmed, so they do
- * not fill a slot — later rows stay valid backups. Waitlists, incomplete
- * rosters, and play-in misses also do not secure a slot.
+ * guarantee or an available spot. Those are confirmed placements.
+ * Subject-to-availability leftovers are unconfirmed, so they do not fill a
+ * slot — later rows stay valid backups. Waitlists, incomplete rosters,
+ * play-in misses, and temporary sabbatical-fill vacancies also do not
+ * secure a slot.
  */
 function entrySecuresDesiredSlot(entry: LabeledPriorityEntry): boolean {
-  return entry.guaranteed || entry.label === 'available' || entry.label === 'temporary_spot_available';
+  return entry.guaranteed || entry.label === 'available';
 }
 
 /**
@@ -474,7 +476,7 @@ function markSuperfluousEntries(entries: LabeledPriorityEntry[], desiredLeagueCo
  * Available and billed now; a full program is subject to availability and
  * payment waits.
  *
- * Once guaranteed spots plus available or temporary-fill entries already fill
+ * Once guaranteed spots plus available entries already fill
  * the desired league count, every later entry is `superfluous`. Those rows
  * are not waitlisted or billed. Subject-to-availability leftovers do not fill
  * the count, so extra rows remain backups while confirmed placements are still
@@ -488,10 +490,6 @@ function markSuperfluousEntries(entries: LabeledPriorityEntry[], desiredLeagueCo
 function labelInstructionalByVacancies(entry: LabeledPriorityEntry): void {
   if (entry.hasVacancies) {
     entry.label = 'available';
-    return;
-  }
-  if (entry.hasTemporaryFillVacancy) {
-    entry.label = 'temporary_spot_available';
     return;
   }
   entry.label = 'subject_to_availability';
@@ -525,9 +523,6 @@ function labelOpenRegistrationEntries(entries: LabeledPriorityEntry[], desiredLe
         entry.label = 'subject_to_availability';
         continue;
       }
-    } else if (entry.hasTemporaryFillVacancy) {
-      entry.label = 'temporary_spot_available';
-      continue;
     }
     entry.label = 'waitlisted';
   }

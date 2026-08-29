@@ -277,7 +277,7 @@ describe('registration business logic', () => {
     expect(social.totalDueMinor).toBe(4000);
   });
 
-  test('open registration temporary fill discounts the league by the sabbatical fee', () => {
+  test('open registration does not place or discount a sabbatical-fill vacancy', () => {
     const fees = calculateRegistrationFees(
       registrationContext({
         registrationState: 'open',
@@ -294,6 +294,29 @@ describe('registration business logic', () => {
         priorities: [priority({ leagueId: 100 })],
         desiredLeagueCount: 1,
       }),
+    );
+    expect(fees.lineItems.find((item) => item.lineType === 'league_fee')).toBeUndefined();
+    expect(fees.discountLineItems.find((item) => item.lineType === 'sabbatical_fill_discount')).toBeUndefined();
+  });
+
+  test('a waitlist-placed temporary fill discounts the league by the sabbatical fee', () => {
+    const fees = calculateRegistrationFees(
+      registrationContext({
+        registrationState: 'open',
+        leagues: {
+          100: league({
+            id: 100,
+            predecessorLeagueId: null,
+            openSpotCount: 0,
+            activeWaitlistEntryCount: 3,
+            temporarySabbaticalFillVacancyCount: 1,
+          }),
+        },
+        participatedLeagueIds: [],
+        priorities: [priority({ leagueId: 100 })],
+        desiredLeagueCount: 1,
+      }),
+      { chargedLeagueIds: [100], temporaryFillLeagueIds: [100] },
     );
     expect(fees.lineItems.find((item) => item.lineType === 'league_fee')?.amountMinor).toBe(30000);
     expect(fees.discountLineItems.find((item) => item.lineType === 'sabbatical_fill_discount')?.amountMinor).toBe(-5000);

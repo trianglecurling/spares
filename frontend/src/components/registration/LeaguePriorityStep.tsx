@@ -30,7 +30,6 @@ import {
   filterPrioritiesToAllowedLeagues,
   guaranteeChipClassName,
   guaranteeChipLabel,
-  leagueHasTemporaryFillVacancy,
   leagueHasVacancies,
   shouldShowGuaranteeChip,
   hydratePriorityList,
@@ -112,7 +111,6 @@ type RemovalPrompt = {
 function leagueDisplayFeeMinor(
   league: LeagueCatalogItem,
   discountClaims?: RegistrationDiscountClaims,
-  sabbaticalFillDiscountMinor = 0,
 ): number {
   const discounted = discountClaims
     ? computeDiscountedEligibleFeeMinor(
@@ -121,35 +119,22 @@ function leagueDisplayFeeMinor(
         league.discountEligible !== false,
       )
     : league.registrationFeeMinor;
-  return Math.max(0, discounted - Math.max(0, sabbaticalFillDiscountMinor));
+  return Math.max(0, discounted);
 }
 
 function leagueRowSubtitle(
   league: LeagueCatalogItem,
   discountClaims?: RegistrationDiscountClaims,
-  sabbaticalFillDiscountMinor = 0,
 ): string {
   const schedule = leagueScheduleText(league);
-  return [schedule, formatCurrency(leagueDisplayFeeMinor(league, discountClaims, sabbaticalFillDiscountMinor))]
+  return [schedule, formatCurrency(leagueDisplayFeeMinor(league, discountClaims))]
     .filter(Boolean)
     .join(' · ');
 }
 
 function leagueDropdownAvailabilityLabel(league: LeagueCatalogItem): string {
   if (leagueHasVacancies(league)) return 'Available';
-  if (leagueHasTemporaryFillVacancy(league)) return 'Temporary spot available';
   return 'Waitlist';
-}
-
-function sabbaticalFillDiscountForLeague(
-  league: LeagueCatalogItem,
-  sabbaticalFeeMinor: number,
-  label?: string,
-): number {
-  if (label === 'temporary_spot_available') return sabbaticalFeeMinor;
-  if (label) return 0;
-  if (!leagueHasVacancies(league) && leagueHasTemporaryFillVacancy(league)) return sabbaticalFeeMinor;
-  return 0;
 }
 
 function omittedWaitlistNotice(leagues: LeagueCatalogItem[]) {
@@ -923,15 +908,7 @@ export default function LeaguePriorityStep({
                             ) : null}
                           </div>
                           <p className="mt-1 text-sm text-gray-600">
-                            {leagueRowSubtitle(
-                              league,
-                              discountClaims,
-                              sabbaticalFillDiscountForLeague(
-                                league,
-                                payload?.sabbaticalFeeMinor ?? 0,
-                                label,
-                              ),
-                            )}
+                            {leagueRowSubtitle(league, discountClaims)}
                           </p>
                         </div>
                         <div className="flex shrink-0 items-center gap-2">
@@ -1077,11 +1054,7 @@ export default function LeaguePriorityStep({
                       (registrationState ?? payload?.registrationState) === 'open'
                         ? `${league.name} · ${leagueDropdownAvailabilityLabel(league)}`
                         : league.name,
-                    description: leagueRowSubtitle(
-                      league,
-                      discountClaims,
-                      sabbaticalFillDiscountForLeague(league, payload?.sabbaticalFeeMinor ?? 0),
-                    ),
+                    description: leagueRowSubtitle(league, discountClaims),
                   }))}
                 />
               </FormField>

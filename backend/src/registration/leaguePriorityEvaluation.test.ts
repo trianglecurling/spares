@@ -472,7 +472,7 @@ describe('guarantee labeling', () => {
     expect(evaluateLeaguePriorities(context).confirmedLeagueFeeMinor).toBe(90000);
   });
 
-  test('open registration labels a sabbatical-fill vacancy as a temporary spot', () => {
+  test('open registration waitlists a sabbatical-fill vacancy instead of placing it', () => {
     const context = contextWithLeagues(
       [
         standard(1, {
@@ -483,8 +483,26 @@ describe('guarantee labeling', () => {
       ],
       { registrationState: 'open', desiredLeagueCount: 1 },
     );
-    expect(labelsFor(context)).toEqual(['temporary_spot_available']);
-    expect(evaluateLeaguePriorities(context).confirmedLeagueFeeMinor).toBe(30000);
+    expect(labelsFor(context)).toEqual(['waitlisted']);
+    expect(evaluateLeaguePriorities(context).confirmedLeagueFeeMinor).toBe(0);
+  });
+
+  test('an instructional program with only a sabbatical-fill vacancy stays subject to availability', () => {
+    const context = contextWithLeagues(
+      [
+        standard(1, {
+          format: 'instructional',
+          predecessorLeagueId: null,
+          allowsWaitlist: false,
+          openSpotCount: 0,
+          activeWaitlistEntryCount: 0,
+          temporarySabbaticalFillVacancyCount: 1,
+        }),
+      ],
+      { registrationState: 'open', desiredLeagueCount: 1 },
+    );
+    expect(labelsFor(context)).toEqual(['subject_to_availability']);
+    expect(evaluateLeaguePriorities(context).confirmedLeagueFeeMinor).toBe(0);
   });
 
   test('open registration prefers a permanent vacancy over a temporary fill', () => {
