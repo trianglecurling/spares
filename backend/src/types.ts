@@ -293,6 +293,10 @@ export interface AuthenticatedMember {
   leagueManagerLeagueIds: number[];
   /** Event ids this member is listed as an owner for (separate from events.manage). */
   ownedEventIds: number[];
+  /** Credential ids this member is listed as a manager for (separate from credentials.manage). */
+  managedCredentialIds: number[];
+  /** Volunteer program ids this member is listed as a manager for (separate from volunteering.manage). */
+  managedVolunteerProgramIds: number[];
   isLeagueAdministrator: boolean;
   isLeagueAdministratorGlobal: boolean;
   roleCodes: string[];

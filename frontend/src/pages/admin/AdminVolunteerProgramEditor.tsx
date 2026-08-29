@@ -29,6 +29,7 @@ import { useConfirm } from '../../contexts/ConfirmContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useSiteBranding } from '../../hooks/useSiteBranding';
 import api, { formatApiError } from '../../utils/api';
+import { memberCanManageCredentials } from '../../utils/credentialAccess';
 import { memberHasScope } from '../../utils/permissions';
 import { getWeekdayFromDate } from '../calendarEventFormShared';
 import { formatPhone } from '../../utils/phone';
@@ -159,6 +160,7 @@ export default function AdminVolunteerProgramEditor() {
   const descriptionLabelId = `${baseId}-description-label`;
   const canCreate =
     memberHasScope(member, 'volunteering.manage') || Boolean(member?.isServerAdmin);
+  const canManageCredentials = memberCanManageCredentials(member);
 
   const activeTab: TabKey =
     !isNew && tab && (secondaryTabs as readonly string[]).includes(tab) ? (tab as TabKey) : 'settings';
@@ -260,7 +262,7 @@ export default function AdminVolunteerProgramEditor() {
 
   useEffect(() => {
     api
-      .get('/volunteering/admin/credentials')
+      .get('/volunteering/admin/credential-options')
       .then((res) => {
         const list = (res.data?.credentials || []) as Array<{ id: number; name: string }>;
         setAllCredentials(list.map((c) => ({ id: c.id, name: c.name })));
@@ -983,9 +985,13 @@ export default function AdminVolunteerProgramEditor() {
                   <InlineStateMessage
                     title="No credentials defined yet."
                     description={
-                      <Link to="/admin/volunteering/credentials" className="text-primary-teal-link hover:underline">
-                        Manage credentials
-                      </Link>
+                      canManageCredentials ? (
+                        <Link to="/admin/members/credentials" className="text-primary-teal-link hover:underline">
+                          Manage credentials
+                        </Link>
+                      ) : (
+                        'Ask a credential manager to add credentials if a role should require them.'
+                      )
                     }
                   />
                 ) : (

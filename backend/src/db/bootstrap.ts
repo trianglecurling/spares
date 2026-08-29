@@ -41,7 +41,7 @@ async function seedRbacRolesAndScopes(isPostgres: boolean): Promise<void> {
         ('sponsor_admin', 'Sponsor admin', 'Sponsorship administration permissions', 1, 0, 1),
         ('league_admin', 'League admin', 'League administration permissions', 1, 0, 1),
         ('league_manager', 'League manager', 'League management permissions', 1, 0, 1),
-        ('volunteer_manager', 'Volunteer manager', 'Volunteer program and credential administration', 1, 0, 1)
+        ('volunteer_manager', 'Volunteer manager', 'Volunteer program administration', 1, 0, 1)
       ON CONFLICT (code) DO NOTHING
     `));
 
@@ -67,6 +67,7 @@ async function seedRbacRolesAndScopes(isPostgres: boolean): Promise<void> {
           ('member_with_ice_privileges', 'ice_bookings.manage_own', 'allow'),
           ('general_admin', 'admin.manage', 'allow'),
           ('general_admin', 'members.manage', 'allow'),
+          ('general_admin', 'credentials.manage', 'allow'),
           ('general_admin', 'governance.manage', 'allow'),
           ('general_admin', 'feedback.manage', 'allow'),
           ('general_admin', 'payments.read', 'allow'),
@@ -82,7 +83,8 @@ async function seedRbacRolesAndScopes(isPostgres: boolean): Promise<void> {
           ('sponsor_admin', 'sponsorship.manage', 'allow'),
           ('league_admin', 'leagues.manage', 'allow'),
           ('league_manager', 'leagues.manage', 'allow'),
-          ('volunteer_manager', 'volunteering.manage', 'allow')
+          ('volunteer_manager', 'volunteering.manage', 'allow'),
+          ('volunteer_manager', 'credentials.manage', 'allow')
       ) AS v(role_code, scope, effect)
         ON r.code = v.role_code
       ON CONFLICT (role_id, scope) DO NOTHING
@@ -110,7 +112,7 @@ async function seedRbacRolesAndScopes(isPostgres: boolean): Promise<void> {
     INSERT OR IGNORE INTO roles (code, name, description, is_system, is_computed, is_assignable)
     VALUES ('league_manager', 'League manager', 'League management permissions', 1, 0, 1);
     INSERT OR IGNORE INTO roles (code, name, description, is_system, is_computed, is_assignable)
-    VALUES ('volunteer_manager', 'Volunteer manager', 'Volunteer program and credential administration', 1, 0, 1);
+    VALUES ('volunteer_manager', 'Volunteer manager', 'Volunteer program administration', 1, 0, 1);
   `));
 
   await db.execute(sql.raw(`
@@ -147,6 +149,8 @@ async function seedRbacRolesAndScopes(isPostgres: boolean): Promise<void> {
     INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
     SELECT r.id, 'members.manage', 'allow' FROM roles r WHERE r.code = 'general_admin';
     INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+    SELECT r.id, 'credentials.manage', 'allow' FROM roles r WHERE r.code = 'general_admin';
+    INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
     SELECT r.id, 'governance.manage', 'allow' FROM roles r WHERE r.code = 'general_admin';
     INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
     SELECT r.id, 'feedback.manage', 'allow' FROM roles r WHERE r.code = 'general_admin';
@@ -178,6 +182,8 @@ async function seedRbacRolesAndScopes(isPostgres: boolean): Promise<void> {
     SELECT r.id, 'leagues.manage', 'allow' FROM roles r WHERE r.code = 'league_manager';
     INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
     SELECT r.id, 'volunteering.manage', 'allow' FROM roles r WHERE r.code = 'volunteer_manager';
+    INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+    SELECT r.id, 'credentials.manage', 'allow' FROM roles r WHERE r.code = 'volunteer_manager';
   `));
 }
 

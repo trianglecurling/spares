@@ -55,6 +55,8 @@ import {
 } from '../services/developerSignIn.js';
 import { memberIsSocialMember, memberIsSpareOnly } from '../utils/memberMembershipHelpers.js';
 import { listOwnedEventIds } from '../services/eventService.js';
+import { listAssignedManagedCredentialIds } from '../services/credentialService.js';
+import { listManagedVolunteerProgramIds } from '../services/volunteeringService.js';
 import { personAccountsOnly } from '../utils/accountKind.js';
 import { findMemberByPersonalAccessToken } from '../services/personalAccessTokenService.js';
 import {
@@ -168,6 +170,8 @@ const authMemberResponseSchema = {
     isSponsorAdmin: { type: 'boolean' },
     leagueManagerLeagueIds: { type: 'array', items: { type: 'number' } },
     ownedEventIds: { type: 'array', items: { type: 'number' } },
+    managedCredentialIds: { type: 'array', items: { type: 'number' } },
+    managedVolunteerProgramIds: { type: 'array', items: { type: 'number' } },
     isLeagueAdministrator: { type: 'boolean' },
     isLeagueAdministratorGlobal: { type: 'boolean' },
     roleCodes: { type: 'array', items: { type: 'string' } },
@@ -206,6 +210,8 @@ const authMemberResponseSchema = {
     'isSponsorAdmin',
     'leagueManagerLeagueIds',
     'ownedEventIds',
+    'managedCredentialIds',
+    'managedVolunteerProgramIds',
     'isLeagueAdministrator',
     'isLeagueAdministratorGlobal',
     'roleCodes',
@@ -242,6 +248,8 @@ async function buildAuthenticatedMember(member: Member): Promise<AuthenticatedMe
   const leagueManagerLeagueIds = getLeagueManagerLeagueIdsFromRules(authz.scopeRules);
   const isLeagueAdministratorGlobal = hasScope(authz, 'leagues.manage');
   const ownedEventIds = await listOwnedEventIds(member.id);
+  const managedCredentialIds = await listAssignedManagedCredentialIds(member.id);
+  const managedVolunteerProgramIds = await listManagedVolunteerProgramIds(member.id);
 
   return {
     id: member.id,
@@ -257,6 +265,8 @@ async function buildAuthenticatedMember(member: Member): Promise<AuthenticatedMe
     isSponsorAdmin: isSponsorAdmin(member),
     leagueManagerLeagueIds,
     ownedEventIds,
+    managedCredentialIds,
+    managedVolunteerProgramIds,
     isLeagueAdministrator: isLeagueAdministratorGlobal,
     isLeagueAdministratorGlobal,
     roleCodes: authz.roleCodes,

@@ -10,7 +10,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { useMemberOptions } from '../../contexts/MemberOptionsContext';
 import api, { formatApiError } from '../../utils/api';
-import { memberHasScope } from '../../utils/permissions';
+import { memberHasCredentialsManageScope } from '../../utils/credentialAccess';
 import {
   formatVolunteerDateOnly,
   localDateOnly,
@@ -65,13 +65,13 @@ function credentialHolderEmailEntries(
   return entries;
 }
 
-export default function AdminVolunteerCredentials() {
+export default function AdminMemberCredentials() {
   const { showAlert } = useAlert();
   const { confirm } = useConfirm();
   const { member } = useAuth();
   const { options: memberOptions } = useMemberOptions();
   const baseId = useId();
-  const canCreate = memberHasScope(member, 'volunteering.manage') || Boolean(member?.isServerAdmin);
+  const canCreate = memberHasCredentialsManageScope(member);
 
   const [loading, setLoading] = useState(true);
   const [credentials, setCredentials] = useState<CredentialAdmin[]>([]);
@@ -92,7 +92,7 @@ export default function AdminVolunteerCredentials() {
     const quiet = opts?.quiet ?? false;
     if (!quiet) setLoading(true);
     try {
-      const res = await api.get('/volunteering/admin/credentials');
+      const res = await api.get('/members/admin/credentials');
       const list = (res.data?.credentials || []) as CredentialAdmin[];
       setCredentials(list);
       setSelectedCredentialId((prev) => {
@@ -146,10 +146,10 @@ export default function AdminVolunteerCredentials() {
         managerIds,
       };
       if (editingId) {
-        await api.patch(`/volunteering/admin/credentials/${editingId}`, payload);
+        await api.patch(`/members/admin/credentials/${editingId}`, payload);
         showAlert('Credential updated', 'success');
       } else {
-        const res = await api.post('/volunteering/admin/credentials', payload);
+        const res = await api.post('/members/admin/credentials', payload);
         showAlert('Credential created', 'success');
         setSelectedCredentialId(res.data.id);
       }
@@ -170,7 +170,7 @@ export default function AdminVolunteerCredentials() {
     });
     if (!ok) return;
     try {
-      await api.delete(`/volunteering/admin/credentials/${cred.id}`);
+      await api.delete(`/members/admin/credentials/${cred.id}`);
       showAlert('Credential deleted', 'success');
       if (editingId === cred.id) resetForm();
       setCredentials((prev) => prev.filter((c) => c.id !== cred.id));
@@ -197,7 +197,7 @@ export default function AdminVolunteerCredentials() {
     try {
       for (const memberId of toGrant) {
         try {
-          const res = await api.post(`/volunteering/admin/credentials/${selected.id}/grants`, {
+          const res = await api.post(`/members/admin/credentials/${selected.id}/grants`, {
             memberId,
             expiresAt: grantExpiresAt.trim() || null,
           });
@@ -240,7 +240,7 @@ export default function AdminVolunteerCredentials() {
     }));
     setSavingExpiresMemberId(memberId);
     try {
-      await api.patch(`/volunteering/admin/credentials/${selected.id}/grants/${memberId}`, {
+      await api.patch(`/members/admin/credentials/${selected.id}/grants/${memberId}`, {
         expiresAt,
       });
     } catch (err) {
@@ -264,7 +264,7 @@ export default function AdminVolunteerCredentials() {
     if (!ok) return;
     setRevokingMemberId(memberId);
     try {
-      await api.delete(`/volunteering/admin/credentials/${selected.id}/grants/${memberId}`);
+      await api.delete(`/members/admin/credentials/${selected.id}/grants/${memberId}`);
       patchCredential(selected.id, (cred) => ({
         ...cred,
         grants: cred.grants.filter((g) => g.memberId !== memberId),
@@ -333,6 +333,7 @@ export default function AdminVolunteerCredentials() {
               </FormField>
               <FormField label="Managers" htmlFor={`${baseId}-managers`}>
                 <MemberMultiSelect
+                  inputId={`${baseId}-managers`}
                   selectedIds={managerIds}
                   onChange={setManagerIds}
                   placeholder="Search members..."
@@ -419,6 +420,7 @@ export default function AdminVolunteerCredentials() {
               ) : null}
               <FormField label="Grant to members" htmlFor={`${baseId}-grant`}>
                 <MemberMultiSelect
+                  inputId={`${baseId}-grant`}
                   selectedIds={grantMemberIds}
                   onChange={setGrantMemberIds}
                   placeholder="Search members to grant..."

@@ -109,6 +109,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     scopeRules: value.scopeRules ?? [],
     leagueManagerLeagueIds: value.leagueManagerLeagueIds ?? [],
     ownedEventIds: value.ownedEventIds ?? [],
+    managedCredentialIds: value.managedCredentialIds ?? [],
+    managedVolunteerProgramIds: value.managedVolunteerProgramIds ?? [],
   });
 
   const applySessionPayload = useCallback((data: SessionPayload) => {

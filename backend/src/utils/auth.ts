@@ -101,6 +101,14 @@ export function isVolunteerManager(member: Member): boolean {
   return isServerAdmin(member);
 }
 
+export function isCredentialsManager(member: Member): boolean {
+  if (member.impersonationSession) {
+    return hasScope(member.authz, 'credentials.manage') || isServerAdmin(member);
+  }
+  if (member.authz) return hasScope(member.authz, 'credentials.manage') || isServerAdmin(member);
+  return isServerAdmin(member);
+}
+
 export function isServerAdmin(member: Member): boolean {
   if (member.impersonationSession) {
     return member.authz?.isServerAdmin === true;

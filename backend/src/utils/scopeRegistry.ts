@@ -47,6 +47,11 @@ export const SCOPE_REGISTRY: ScopeRegistryEntry[] = [
 
   { scope: 'admin.manage', category: 'Administration', description: 'Full application administration (server admin UI, sensitive settings).' },
   { scope: 'members.manage', category: 'Administration', description: 'Create, update, and manage member records.' },
+  {
+    scope: 'credentials.manage',
+    category: 'Administration',
+    description: 'Create and manage member credentials, grants, and credential managers.',
+  },
   { scope: 'governance.manage', category: 'Administration', description: 'Manage governance content and related settings.' },
   { scope: 'feedback.manage', category: 'Administration', description: 'View and manage submitted feedback.' },
 
@@ -68,7 +73,7 @@ export const SCOPE_REGISTRY: ScopeRegistryEntry[] = [
   {
     scope: 'volunteering.manage',
     category: 'Volunteering',
-    description: 'Create and manage volunteer programs, roles, shifts, credentials, and related signups.',
+    description: 'Create and manage volunteer programs, roles, shifts, and related signups.',
   },
 
   { scope: 'waitlists.manage', category: 'Registration', description: 'Add, remove, reorder waitlist entries and run waitlist staff actions.' },

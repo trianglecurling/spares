@@ -9,7 +9,6 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import axios from 'axios';
-import { AppPage, AppPageHeader } from '../../components/AppPage';
 import { del, get, post } from '../../api/client';
 import AppPageControlsRow from '../../components/AppPageControlsRow';
 import AppStateCard from '../../components/AppStateCard';
@@ -626,16 +625,6 @@ export default function AdminMembers() {
 
   return (
     <>
-      <AppPage>
-        <AppPageHeader
-          title="Manage members"
-          actions={
-            <Button type="button" onClick={() => handleOpenModal()}>
-              Add member
-            </Button>
-          }
-        />
-
         <AppPageControlsRow
           left={
             <div className="flex w-full flex-col gap-3 lg:flex-row lg:items-end lg:gap-4">
@@ -657,6 +646,9 @@ export default function AdminMembers() {
           }
           right={
             <>
+              <Button type="button" onClick={() => handleOpenModal()}>
+                Add member
+              </Button>
               <Button type="button" onClick={handleOpenExportTsv} variant="secondary">
                 Export TSV
               </Button>
@@ -690,7 +682,6 @@ export default function AdminMembers() {
             emptyState={tableEmptyState}
           />
         )}
-      </AppPage>
 
       <AdminMemberEditorModal
         isOpen={isModalOpen}

@@ -103,7 +103,7 @@ import {
   validateHalfYearExperienceValue,
 } from '../registration/curlingExperienceYears.js';
 import { getMemberTotalExperienceYears } from '../services/memberExperienceSummary.js';
-import { listMemberVolunteerCredentials } from '../services/volunteeringService.js';
+import { listMemberCredentials } from '../services/credentialService.js';
 import {
   createMemberSeasonMembership,
   deleteMemberSeasonMembership,
@@ -1296,7 +1296,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
     },
   );
 
-  // Volunteer credentials held by a member (visible to all authenticated members)
+  // Credentials held by a member (visible to all authenticated members)
   fastify.get<{ Params: { memberId: string }; Reply: MemberVolunteerCredentialsResponse | ApiErrorResponse }>(
     '/members/:memberId/volunteer-credentials',
     {
@@ -1336,7 +1336,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
         return reply.code(404).send({ error: 'Member not found' });
       }
 
-      return { credentials: await listMemberVolunteerCredentials(targetMemberId) };
+      return { credentials: await listMemberCredentials(targetMemberId) };
     },
   );
 

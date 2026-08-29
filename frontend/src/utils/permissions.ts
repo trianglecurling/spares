@@ -31,6 +31,7 @@ function legacyFallbackAllows(member: AuthenticatedMember, scope: string): boole
   switch (scope) {
     case 'admin.manage':
     case 'members.manage':
+    case 'credentials.manage':
     case 'governance.manage':
     case 'feedback.manage':
       return member.isAdmin || member.isServerAdmin;

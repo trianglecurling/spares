@@ -295,6 +295,8 @@ export interface paths {
                                 isSponsorAdmin: boolean;
                                 leagueManagerLeagueIds: number[];
                                 ownedEventIds: number[];
+                                managedCredentialIds: number[];
+                                managedVolunteerProgramIds: number[];
                                 isLeagueAdministrator: boolean;
                                 isLeagueAdministratorGlobal: boolean;
                                 roleCodes: string[];
@@ -390,6 +392,8 @@ export interface paths {
                                 isSponsorAdmin: boolean;
                                 leagueManagerLeagueIds: number[];
                                 ownedEventIds: number[];
+                                managedCredentialIds: number[];
+                                managedVolunteerProgramIds: number[];
                                 isLeagueAdministrator: boolean;
                                 isLeagueAdministratorGlobal: boolean;
                                 roleCodes: string[];
@@ -474,6 +478,8 @@ export interface paths {
                                 isSponsorAdmin: boolean;
                                 leagueManagerLeagueIds: number[];
                                 ownedEventIds: number[];
+                                managedCredentialIds: number[];
+                                managedVolunteerProgramIds: number[];
                                 isLeagueAdministrator: boolean;
                                 isLeagueAdministratorGlobal: boolean;
                                 roleCodes: string[];
@@ -549,6 +555,8 @@ export interface paths {
                                 isSponsorAdmin: boolean;
                                 leagueManagerLeagueIds: number[];
                                 ownedEventIds: number[];
+                                managedCredentialIds: number[];
+                                managedVolunteerProgramIds: number[];
                                 isLeagueAdministrator: boolean;
                                 isLeagueAdministratorGlobal: boolean;
                                 roleCodes: string[];
@@ -671,6 +679,8 @@ export interface paths {
                                 isSponsorAdmin: boolean;
                                 leagueManagerLeagueIds: number[];
                                 ownedEventIds: number[];
+                                managedCredentialIds: number[];
+                                managedVolunteerProgramIds: number[];
                                 isLeagueAdministrator: boolean;
                                 isLeagueAdministratorGlobal: boolean;
                                 roleCodes: string[];
@@ -3920,6 +3930,8 @@ export interface paths {
                                 isSponsorAdmin: boolean;
                                 leagueManagerLeagueIds: number[];
                                 ownedEventIds: number[];
+                                managedCredentialIds: number[];
+                                managedVolunteerProgramIds: number[];
                                 isLeagueAdministrator: boolean;
                                 isLeagueAdministratorGlobal: boolean;
                                 roleCodes: string[];
@@ -4003,6 +4015,8 @@ export interface paths {
                                 isSponsorAdmin: boolean;
                                 leagueManagerLeagueIds: number[];
                                 ownedEventIds: number[];
+                                managedCredentialIds: number[];
+                                managedVolunteerProgramIds: number[];
                                 isLeagueAdministrator: boolean;
                                 isLeagueAdministratorGlobal: boolean;
                                 roleCodes: string[];
@@ -4084,6 +4098,8 @@ export interface paths {
                                 isSponsorAdmin: boolean;
                                 leagueManagerLeagueIds: number[];
                                 ownedEventIds: number[];
+                                managedCredentialIds: number[];
+                                managedVolunteerProgramIds: number[];
                                 isLeagueAdministrator: boolean;
                                 isLeagueAdministratorGlobal: boolean;
                                 roleCodes: string[];
@@ -4159,6 +4175,8 @@ export interface paths {
                                 isSponsorAdmin: boolean;
                                 leagueManagerLeagueIds: number[];
                                 ownedEventIds: number[];
+                                managedCredentialIds: number[];
+                                managedVolunteerProgramIds: number[];
                                 isLeagueAdministrator: boolean;
                                 isLeagueAdministratorGlobal: boolean;
                                 roleCodes: string[];
@@ -5661,6 +5679,201 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/members/admin/credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/members/admin/credentials/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/members/admin/credentials/{id}/grants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/members/admin/credentials/{id}/grants/{memberId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    memberId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    memberId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
         trace?: never;
     };
     "/leagues": {
@@ -21948,7 +22161,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/volunteering/admin/credentials": {
+    "/volunteering/admin/credential-options": {
         parameters: {
             query?: never;
             header?: never;
@@ -21974,173 +22187,11 @@ export interface paths {
             };
         };
         put?: never;
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
-        trace?: never;
-    };
-    "/volunteering/admin/credentials/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
-        options?: never;
-        head?: never;
-        patch: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
-        trace?: never;
-    };
-    "/volunteering/admin/credentials/{id}/grants": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/volunteering/admin/credentials/{id}/grants/{memberId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        delete: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                    memberId: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
-        options?: never;
-        head?: never;
-        patch: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    id: string;
-                    memberId: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
         trace?: never;
     };
     "/expenses": {

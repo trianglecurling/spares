@@ -487,6 +487,18 @@
                                 "type": "number"
                               }
                             },
+                            "managedCredentialIds": {
+                              "type": "array",
+                              "items": {
+                                "type": "number"
+                              }
+                            },
+                            "managedVolunteerProgramIds": {
+                              "type": "array",
+                              "items": {
+                                "type": "number"
+                              }
+                            },
                             "isLeagueAdministrator": {
                               "type": "boolean"
                             },
@@ -570,6 +582,8 @@
                             "isSponsorAdmin",
                             "leagueManagerLeagueIds",
                             "ownedEventIds",
+                            "managedCredentialIds",
+                            "managedVolunteerProgramIds",
                             "isLeagueAdministrator",
                             "isLeagueAdministratorGlobal",
                             "roleCodes",
@@ -758,6 +772,18 @@
                                 "type": "number"
                               }
                             },
+                            "managedCredentialIds": {
+                              "type": "array",
+                              "items": {
+                                "type": "number"
+                              }
+                            },
+                            "managedVolunteerProgramIds": {
+                              "type": "array",
+                              "items": {
+                                "type": "number"
+                              }
+                            },
                             "isLeagueAdministrator": {
                               "type": "boolean"
                             },
@@ -841,6 +867,8 @@
                             "isSponsorAdmin",
                             "leagueManagerLeagueIds",
                             "ownedEventIds",
+                            "managedCredentialIds",
+                            "managedVolunteerProgramIds",
                             "isLeagueAdministrator",
                             "isLeagueAdministratorGlobal",
                             "roleCodes",
@@ -1007,6 +1035,18 @@
                                 "type": "number"
                               }
                             },
+                            "managedCredentialIds": {
+                              "type": "array",
+                              "items": {
+                                "type": "number"
+                              }
+                            },
+                            "managedVolunteerProgramIds": {
+                              "type": "array",
+                              "items": {
+                                "type": "number"
+                              }
+                            },
                             "isLeagueAdministrator": {
                               "type": "boolean"
                             },
@@ -1090,6 +1130,8 @@
                             "isSponsorAdmin",
                             "leagueManagerLeagueIds",
                             "ownedEventIds",
+                            "managedCredentialIds",
+                            "managedVolunteerProgramIds",
                             "isLeagueAdministrator",
                             "isLeagueAdministratorGlobal",
                             "roleCodes",
@@ -1213,6 +1255,18 @@
                             "type": "number"
                           }
                         },
+                        "managedCredentialIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          }
+                        },
+                        "managedVolunteerProgramIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          }
+                        },
                         "isLeagueAdministrator": {
                           "type": "boolean"
                         },
@@ -1296,6 +1350,8 @@
                         "isSponsorAdmin",
                         "leagueManagerLeagueIds",
                         "ownedEventIds",
+                        "managedCredentialIds",
+                        "managedVolunteerProgramIds",
                         "isLeagueAdministrator",
                         "isLeagueAdministratorGlobal",
                         "roleCodes",
@@ -1466,6 +1522,18 @@
                             "type": "number"
                           }
                         },
+                        "managedCredentialIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          }
+                        },
+                        "managedVolunteerProgramIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          }
+                        },
                         "isLeagueAdministrator": {
                           "type": "boolean"
                         },
@@ -1549,6 +1617,8 @@
                         "isSponsorAdmin",
                         "leagueManagerLeagueIds",
                         "ownedEventIds",
+                        "managedCredentialIds",
+                        "managedVolunteerProgramIds",
                         "isLeagueAdministrator",
                         "isLeagueAdministratorGlobal",
                         "roleCodes",
@@ -5252,6 +5322,18 @@
                             "type": "number"
                           }
                         },
+                        "managedCredentialIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          }
+                        },
+                        "managedVolunteerProgramIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          }
+                        },
                         "isLeagueAdministrator": {
                           "type": "boolean"
                         },
@@ -5335,6 +5417,8 @@
                         "isSponsorAdmin",
                         "leagueManagerLeagueIds",
                         "ownedEventIds",
+                        "managedCredentialIds",
+                        "managedVolunteerProgramIds",
                         "isLeagueAdministrator",
                         "isLeagueAdministratorGlobal",
                         "roleCodes",
@@ -5480,6 +5564,18 @@
                             "type": "number"
                           }
                         },
+                        "managedCredentialIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          }
+                        },
+                        "managedVolunteerProgramIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          }
+                        },
                         "isLeagueAdministrator": {
                           "type": "boolean"
                         },
@@ -5563,6 +5659,8 @@
                         "isSponsorAdmin",
                         "leagueManagerLeagueIds",
                         "ownedEventIds",
+                        "managedCredentialIds",
+                        "managedVolunteerProgramIds",
                         "isLeagueAdministrator",
                         "isLeagueAdministratorGlobal",
                         "roleCodes",
@@ -5710,6 +5808,18 @@
                             "type": "number"
                           }
                         },
+                        "managedCredentialIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          }
+                        },
+                        "managedVolunteerProgramIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          }
+                        },
                         "isLeagueAdministrator": {
                           "type": "boolean"
                         },
@@ -5793,6 +5903,8 @@
                         "isSponsorAdmin",
                         "leagueManagerLeagueIds",
                         "ownedEventIds",
+                        "managedCredentialIds",
+                        "managedVolunteerProgramIds",
                         "isLeagueAdministrator",
                         "isLeagueAdministratorGlobal",
                         "roleCodes",
@@ -5921,6 +6033,18 @@
                             "type": "number"
                           }
                         },
+                        "managedCredentialIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          }
+                        },
+                        "managedVolunteerProgramIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          }
+                        },
                         "isLeagueAdministrator": {
                           "type": "boolean"
                         },
@@ -6004,6 +6128,8 @@
                         "isSponsorAdmin",
                         "leagueManagerLeagueIds",
                         "ownedEventIds",
+                        "managedCredentialIds",
+                        "managedVolunteerProgramIds",
                         "isLeagueAdministrator",
                         "isLeagueAdministratorGlobal",
                         "roleCodes",
@@ -8966,6 +9092,150 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/members/admin/credentials": {
+      "get": {
+        "tags": [
+          "members"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "members"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/members/admin/credentials/{id}": {
+      "patch": {
+        "tags": [
+          "members"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "members"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/members/admin/credentials/{id}/grants": {
+      "post": {
+        "tags": [
+          "members"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/members/admin/credentials/{id}/grants/{memberId}": {
+      "patch": {
+        "tags": [
+          "members"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "memberId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "members"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "memberId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
           }
         }
       }
@@ -30939,142 +31209,10 @@
         }
       }
     },
-    "/volunteering/admin/credentials": {
+    "/volunteering/admin/credential-options": {
       "get": {
         "tags": [
           "volunteering"
-        ],
-        "responses": {
-          "200": {
-            "description": "Default Response"
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "volunteering"
-        ],
-        "responses": {
-          "200": {
-            "description": "Default Response"
-          }
-        }
-      }
-    },
-    "/volunteering/admin/credentials/{id}": {
-      "patch": {
-        "tags": [
-          "volunteering"
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "in": "path",
-            "name": "id",
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Default Response"
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "volunteering"
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "in": "path",
-            "name": "id",
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Default Response"
-          }
-        }
-      }
-    },
-    "/volunteering/admin/credentials/{id}/grants": {
-      "post": {
-        "tags": [
-          "volunteering"
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "in": "path",
-            "name": "id",
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Default Response"
-          }
-        }
-      }
-    },
-    "/volunteering/admin/credentials/{id}/grants/{memberId}": {
-      "patch": {
-        "tags": [
-          "volunteering"
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "in": "path",
-            "name": "id",
-            "required": true
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "in": "path",
-            "name": "memberId",
-            "required": true
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Default Response"
-          }
-        }
-      },
-      "delete": {
-        "tags": [
-          "volunteering"
-        ],
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "in": "path",
-            "name": "id",
-            "required": true
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "in": "path",
-            "name": "memberId",
-            "required": true
-          }
         ],
         "responses": {
           "200": {

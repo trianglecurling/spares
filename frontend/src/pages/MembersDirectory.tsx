@@ -15,11 +15,7 @@ import FormField from '../components/FormField';
 import useTableQueryState from '../hooks/useTableQueryState';
 import { useLeagueOptions } from '../contexts/LeagueOptionsContext';
 import { isLeagueEligibleForSpares } from '../utils/leagueSpareEligibility';
-import {
-  formatVolunteerDateOnly,
-  localDateOnly,
-  volunteerCredentialIsValidOn,
-} from '../utils/volunteering';
+import MemberCredentialsList, { type MemberCredentialItem } from '../components/MemberCredentialsList';
 
 const MEMBERS_PAGE_SIZE = 50;
 
@@ -63,13 +59,6 @@ interface MemberExperienceSummary {
   totalExperienceYears: number;
 }
 
-interface MemberVolunteerCredential {
-  id: number;
-  name: string;
-  description: string | null;
-  expiresAt: string | null;
-}
-
 type MemberProfileModalTab = 'profile' | 'emergency-contact' | 'sparing' | 'leagues' | 'credentials';
 
 type MembersPageTab = 'directory' | 'spare-lists';
@@ -80,62 +69,6 @@ function formatExperienceYears(years: number): string {
 }
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-
-function MemberVolunteerCredentialsList({
-  credentials,
-}: {
-  credentials: MemberVolunteerCredential[];
-}) {
-  const today = localDateOnly();
-  const sorted = [...credentials].sort((a, b) => {
-    const aExpired = !volunteerCredentialIsValidOn(a.expiresAt, today);
-    const bExpired = !volunteerCredentialIsValidOn(b.expiresAt, today);
-    if (aExpired !== bExpired) return aExpired ? 1 : -1;
-    return a.name.localeCompare(b.name);
-  });
-
-  return (
-    <ul className="space-y-3">
-      {sorted.map((credential) => {
-        const expired = !volunteerCredentialIsValidOn(credential.expiresAt, today);
-        return (
-          <li key={credential.id} className="app-card space-y-2 p-4">
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div className="font-medium text-gray-900 dark:text-gray-100">{credential.name}</div>
-              <span
-                className={
-                  expired
-                    ? 'inline-flex rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/40 dark:text-amber-200'
-                    : 'inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200'
-                }
-              >
-                {expired ? 'Expired' : 'Current'}
-              </span>
-            </div>
-            {credential.description ? (
-              <p className="whitespace-pre-wrap text-sm text-gray-600 dark:text-gray-400">
-                {credential.description}
-              </p>
-            ) : null}
-            {credential.expiresAt ? (
-              <p
-                className={
-                  expired
-                    ? 'text-sm text-amber-700 dark:text-amber-300'
-                    : 'text-sm text-gray-600 dark:text-gray-400'
-                }
-              >
-                {expired ? 'Expired' : 'Expires'} {formatVolunteerDateOnly(credential.expiresAt)}
-              </p>
-            ) : (
-              <p className="text-sm text-gray-600 dark:text-gray-400">No expiration</p>
-            )}
-          </li>
-        );
-      })}
-    </ul>
-  );
-}
 
 const roleLabels: Record<string, string> = {
   lead: 'Lead',
@@ -164,7 +97,7 @@ export default function MembersDirectory() {
     null
   );
   const [memberExperience, setMemberExperience] = useState<MemberExperienceSummary | null>(null);
-  const [memberCredentials, setMemberCredentials] = useState<MemberVolunteerCredential[] | null>(null);
+  const [memberCredentials, setMemberCredentials] = useState<MemberCredentialItem[] | null>(null);
   const [profileModalTab, setProfileModalTab] = useState<MemberProfileModalTab>('profile');
   const [loadingAvailability, setLoadingAvailability] = useState(false);
   const [loadingLeagues, setLoadingLeagues] = useState(false);
@@ -800,13 +733,13 @@ export default function MembersDirectory() {
 
                 {profileModalTab === 'credentials' && (
                   <div>
-                    <h3 className="app-section-title mb-3">Volunteering credentials</h3>
+                    <h3 className="app-section-title mb-3">Credentials</h3>
                     {loadingCredentials ? (
                       <InlineStateMessage title="Loading credentials..." />
                     ) : memberCredentials && memberCredentials.length > 0 ? (
-                      <MemberVolunteerCredentialsList credentials={memberCredentials} />
+                      <MemberCredentialsList credentials={memberCredentials} />
                     ) : memberCredentials ? (
-                      <InlineStateMessage title="No volunteering credentials." />
+                      <InlineStateMessage title="No credentials." />
                     ) : (
                       <InlineStateMessage title="Unable to load credentials." />
                     )}

@@ -300,7 +300,7 @@ function CredentialsTab({ credentials }: { credentials: VolunteerHubCredential[]
     return (
       <AppStateCard
         title="No credentials configured"
-        description="The club has not set up any volunteering credentials yet."
+        description="The club has not set up any credentials yet."
       />
     );
   }

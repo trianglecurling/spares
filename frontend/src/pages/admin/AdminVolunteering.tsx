@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { Link, Outlet, useNavigate } from 'react-router-dom';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
 import AppPageControlsRow from '../../components/AppPageControlsRow';
 import AppStateCard from '../../components/AppStateCard';
 import Button from '../../components/Button';
-import PageTabs from '../../components/PageTabs';
 import IncludeArchivedToggle from '../../components/softDelete/IncludeArchivedToggle';
 import SoftDeleteRowActions from '../../components/softDelete/SoftDeleteRowActions';
 import DataTable from '../../components/table/DataTable';
@@ -24,55 +23,25 @@ import {
 } from '../../utils/volunteering';
 import AdminVolunteerProgramDuplicateModal from './AdminVolunteerProgramDuplicateModal';
 
-type VolunteeringTab = 'programs' | 'credentials';
-
 export default function AdminVolunteering() {
-  const location = useLocation();
   const navigate = useNavigate();
   const { member } = useAuth();
   const canCreate =
     memberHasScope(member, 'volunteering.manage') || Boolean(member?.isServerAdmin);
 
-  const activeTab: VolunteeringTab = location.pathname.endsWith('/credentials')
-    ? 'credentials'
-    : 'programs';
-
-  const tabs = useMemo(
-    () => [
-      {
-        key: 'programs',
-        label: 'Programs',
-        to: '/admin/volunteering',
-        isActive: activeTab === 'programs',
-      },
-      {
-        key: 'credentials',
-        label: 'Credentials',
-        to: '/admin/volunteering/credentials',
-        isActive: activeTab === 'credentials',
-      },
-    ],
-    [activeTab]
-  );
-
   return (
     <AppPage>
       <AppPageHeader
         title="Manage volunteering"
-        description={
-          activeTab === 'credentials'
-            ? 'Credentials required for some volunteer roles, and who holds them.'
-            : 'Volunteer programs, descriptions, roles, shifts, and credentials.'
-        }
+        description="Volunteer programs, descriptions, roles, and shifts."
         actions={
-          activeTab === 'programs' && canCreate ? (
+          canCreate ? (
             <Button type="button" onClick={() => navigate('/admin/volunteering/new')}>
               Create program
             </Button>
           ) : undefined
         }
       />
-      <PageTabs items={tabs} />
       <Outlet />
     </AppPage>
   );

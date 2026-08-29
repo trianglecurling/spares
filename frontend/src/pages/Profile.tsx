@@ -15,6 +15,7 @@ import PageTabs, { type PageTabItem } from '../components/PageTabs';
 import InlineStateMessage from '../components/InlineStateMessage';
 import ProfilePaymentHistoryTab from '../components/profile/ProfilePaymentHistoryTab';
 import ProfileSecurityTab from '../components/profile/ProfileSecurityTab';
+import ProfileCredentialsTab from '../components/profile/ProfileCredentialsTab';
 import {
   emptyMemberDemographicsForm,
   memberDemographicsFormFromProfile,
@@ -45,6 +46,7 @@ const PROFILE_TAB_SLUGS = [
   'emergency-contact',
   'parent-information',
   'delegated-access',
+  'credentials',
   'payment-history',
 ] as const;
 
@@ -398,6 +400,12 @@ export default function Profile() {
       isActive: activeTab === 'delegated-access',
     },
     {
+      key: 'credentials',
+      label: 'Credentials',
+      to: `${PROFILE_BASE_PATH}/credentials`,
+      isActive: activeTab === 'credentials',
+    },
+    {
       key: 'payment-history',
       label: 'Payment history',
       to: `${PROFILE_BASE_PATH}/payment-history`,
@@ -407,13 +415,14 @@ export default function Profile() {
 
   return (
     <>
-      <AppPage narrow>
+      <AppPage>
         <AppPageHeader title="My profile" />
 
         {message &&
           activeTab !== 'delegated-access' &&
           activeTab !== 'payment-history' &&
-          activeTab !== 'security' && (
+          activeTab !== 'security' &&
+          activeTab !== 'credentials' && (
           <div className={message.type === 'success' ? 'app-alert-success' : 'app-alert-error'}>
             {message.text}
           </div>
@@ -426,6 +435,8 @@ export default function Profile() {
             <ProfilePaymentHistoryTab />
           ) : activeTab === 'security' ? (
             <ProfileSecurityTab />
+          ) : activeTab === 'credentials' ? (
+            <ProfileCredentialsTab />
           ) : activeTab === 'delegated-access' ? (
             <>
               {accessMessage && (

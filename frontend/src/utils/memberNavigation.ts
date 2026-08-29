@@ -1,5 +1,8 @@
 import type { AuthenticatedMember } from '../../../backend/src/types.ts';
+import { memberCanAccessMembersArea, memberCanManageMembersAdmin } from './credentialAccess';
+import { memberCanAccessEventsAdmin } from './eventManagementAccess';
 import { memberHasScope } from './permissions';
+import { memberCanAccessVolunteeringAdmin } from './volunteerManagementAccess';
 
 export type MemberNavLink = { to: string; label: string };
 
@@ -7,13 +10,13 @@ export function getAdminLinks(member: AuthenticatedMember | null): MemberNavLink
   if (!member) return [];
 
   const canManageLeagues = memberHasScope(member, 'leagues.manage');
-  const canManageMembers = memberHasScope(member, 'members.manage');
+  const canManageMembers = memberCanManageMembersAdmin(member);
+  const canAccessMembersArea = memberCanAccessMembersArea(member);
   const canManageContent = memberHasScope(member, 'content.manage');
   const canManageGovernance = memberHasScope(member, 'governance.manage');
   const canManageSponsorship = memberHasScope(member, 'sponsorship.manage');
-  const canManageEvents = memberHasScope(member, 'events.manage');
-  const canAccessEventsAdmin = canManageEvents || (member.ownedEventIds?.length ?? 0) > 0;
-  const canManageVolunteering = memberHasScope(member, 'volunteering.manage');
+  const canAccessEventsAdmin = memberCanAccessEventsAdmin(member);
+  const canAccessVolunteeringAdmin = memberCanAccessVolunteeringAdmin(member);
   const canManageRegistration = memberHasScope(member, 'admin.manage');
   const canManageRegistrations =
     memberHasScope(member, 'registrations.manage') || memberHasScope(member, 'admin.manage');
@@ -25,13 +28,20 @@ export function getAdminLinks(member: AuthenticatedMember | null): MemberNavLink
     memberHasScope(member, 'members.manage') || memberHasScope(member, 'events.manage');
 
   return [
-    ...(canManageMembers ? [{ to: '/admin/members', label: 'Manage members' }] : []),
+    ...(canAccessMembersArea
+      ? [
+          {
+            to: canManageMembers ? '/admin/members' : '/admin/members/credentials',
+            label: canManageMembers ? 'Manage members' : 'Manage credentials',
+          },
+        ]
+      : []),
     ...(canManageWaivers ? [{ to: '/admin/waivers', label: 'Manage waivers' }] : []),
     ...(canManageLeagues ? [{ to: '/admin/facility', label: 'Manage facility info' }] : []),
     ...(canManageContent ? [{ to: '/admin/content', label: 'Manage content' }] : []),
     ...(canManageGovernance ? [{ to: '/admin/governance', label: 'Manage governance' }] : []),
     ...(canAccessEventsAdmin ? [{ to: '/admin/events', label: 'Manage events' }] : []),
-    ...(canManageVolunteering ? [{ to: '/admin/volunteering', label: 'Manage volunteering' }] : []),
+    ...(canAccessVolunteeringAdmin ? [{ to: '/admin/volunteering', label: 'Manage volunteering' }] : []),
     ...(canManageRegistrations || canManageRegistration
       ? [{ to: '/admin/registrations', label: 'Manage registration' }]
       : []),

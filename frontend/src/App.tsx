@@ -26,7 +26,9 @@ const MembersDirectory = lazyRoute(() => import('./pages/MembersDirectory'));
 const Profile = lazyRoute(() => import('./pages/Profile'));
 const ProfilePaymentDetailPage = lazyRoute(() => import('./pages/ProfilePaymentDetailPage'));
 const PublicPaymentDetailPage = lazyRoute(() => import('./pages/PublicPaymentDetailPage'));
+const AdminMembersLayout = lazyRoute(() => import('./pages/admin/AdminMembersLayout'));
 const AdminMembers = lazyRoute(() => import('./pages/admin/AdminMembers'));
+const AdminMemberCredentials = lazyRoute(() => import('./pages/admin/AdminMemberCredentials'));
 const AdminWaivers = lazyRoute(() => import('./pages/admin/AdminWaivers'));
 const AdminFacilityInfo = lazyRoute(() => import('./pages/admin/AdminFacilityInfo'));
 const AdminSheets = lazyRoute(() => import('./pages/admin/AdminSheets'));
@@ -88,7 +90,6 @@ const AdminVolunteeringPrograms = lazyRoute(() =>
   import('./pages/admin/AdminVolunteering').then((m) => ({ default: m.AdminVolunteeringPrograms }))
 );
 const AdminVolunteerProgramEditor = lazyRoute(() => import('./pages/admin/AdminVolunteerProgramEditor'));
-const AdminVolunteerCredentials = lazyRoute(() => import('./pages/admin/AdminVolunteerCredentials'));
 const VolunteeringHub = lazyRoute(() => import('./pages/VolunteeringHub'));
 const VolunteerProgramPage = lazyRoute(() => import('./pages/VolunteerProgramPage'));
 const PublicVolunteerProgramPage = lazyRoute(() => import('./pages/PublicVolunteerProgramPage'));
@@ -563,11 +564,14 @@ function App() {
                       <Route
                         path="/admin/members"
                         element={
-                          <ProtectedRoute adminOnly>
-                            <AdminMembers />
+                          <ProtectedRoute>
+                            <AdminMembersLayout />
                           </ProtectedRoute>
                         }
-                      />
+                      >
+                        <Route index element={<AdminMembers />} />
+                        <Route path="credentials" element={<AdminMemberCredentials />} />
+                      </Route>
                       <Route
                         path="/admin/waivers"
                         element={
@@ -743,7 +747,7 @@ function App() {
                         }
                       >
                         <Route index element={<AdminVolunteeringPrograms />} />
-                        <Route path="credentials" element={<AdminVolunteerCredentials />} />
+                        <Route path="credentials" element={<Navigate to="/admin/members/credentials" replace />} />
                       </Route>
                       <Route
                         path="/admin/volunteering/:id/:tab?"

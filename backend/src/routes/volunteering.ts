@@ -2,43 +2,34 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import type { Member } from '../types.js';
 import { sendApiError, sendValidationError } from '../api/errors.js';
-import { isVolunteerManager } from '../utils/auth.js';
+import { isCredentialsManager, isVolunteerManager } from '../utils/auth.js';
 import {
   archiveProgram,
-  canManageCredential,
   canManageProgram,
   cancelOwnSignup,
-  createCredential,
   createProgram,
   createRole,
   createShiftsBulk,
-  deleteCredential,
   deleteProgram,
   deleteRole,
   deleteShift,
   duplicateProgram,
   getAdminProgram,
-  grantCredential,
   listAdminPrograms,
-  listCredentialsAdmin,
   listDashboardOpportunities,
   getHubProgram,
-  listHubCredentials,
   listHubPrograms,
-  listManagedCredentialIds,
   listManagedProgramIds,
   listMySignups,
   listVolunteerStats,
   removeSignupAsManager,
-  revokeCredential,
   signUpForShiftRole,
-  updateCredential,
-  updateCredentialGrant,
   updateOwnSignupComments,
   updateProgram,
   updateRole,
   updateShift,
 } from '../services/volunteeringService.js';
+import { listCredentialOptions, listHubCredentials } from '../services/credentialService.js';
 import { VolunteeringServiceError } from '../services/volunteeringServiceError.js';
 
 interface AuthenticatedRequest extends FastifyRequest {
@@ -126,29 +117,6 @@ const shiftPatchSchema = z.object({
   roles: z.array(shiftRoleSchema).min(1).optional(),
   scope: z.enum(['this', 'all']).optional(),
   recurrence: recurrenceSchema.optional(),
-});
-
-const credentialBodySchema = z.object({
-  name: z.string().min(1),
-  description: z.string().nullable().optional(),
-  pointOfContactEmail: z.string().email(),
-  managerIds: z.array(z.number().int().positive()).optional(),
-});
-
-const credentialPatchSchema = credentialBodySchema.partial();
-
-const grantExpiresAtSchema = z
-  .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Expiration date must be YYYY-MM-DD')
-  .nullable();
-
-const grantBodySchema = z.object({
-  memberId: z.number().int().positive(),
-  expiresAt: grantExpiresAtSchema.optional(),
-});
-
-const grantPatchSchema = z.object({
-  expiresAt: grantExpiresAtSchema,
 });
 
 const signupBodySchema = z.object({
@@ -656,136 +624,24 @@ export async function volunteeringRoutes(fastify: FastifyInstance): Promise<void
     }
   );
 
-  // ---- Credentials ----
-  fastify.get('/volunteering/admin/credentials', { schema: { tags: ['volunteering'] } }, async (request, reply) => {
-    const member = getMember(request as AuthenticatedRequest);
-    if (!member) return sendApiError(reply, 401, 'Unauthorized');
-    const managed = await listManagedCredentialIds(member);
-    if (managed !== 'all' && managed.length === 0 && !isVolunteerManager(member)) {
-      return sendApiError(reply, 403, 'Forbidden');
-    }
-    try {
-      return { credentials: await listCredentialsAdmin(member) };
-    } catch (err) {
-      return handleServiceError(reply, err);
-    }
-  });
-
-  fastify.post('/volunteering/admin/credentials', { schema: { tags: ['volunteering'] } }, async (request, reply) => {
-    const member = getMember(request as AuthenticatedRequest);
-    if (!member) return sendApiError(reply, 401, 'Unauthorized');
-    if (!isVolunteerManager(member)) return sendApiError(reply, 403, 'Forbidden');
-    const parsed = credentialBodySchema.safeParse(request.body);
-    if (!parsed.success) return sendValidationError(reply, 'Invalid credential data', parsed.error.flatten());
-    try {
-      const result = await createCredential(parsed.data);
-      return reply.code(201).send(result);
-    } catch (err) {
-      return handleServiceError(reply, err);
-    }
-  });
-
-  fastify.patch<{ Params: { id: string } }>(
-    '/volunteering/admin/credentials/:id',
+  // ---- Credential options for role assignment ----
+  fastify.get(
+    '/volunteering/admin/credential-options',
     { schema: { tags: ['volunteering'] } },
     async (request, reply) => {
       const member = getMember(request as AuthenticatedRequest);
       if (!member) return sendApiError(reply, 401, 'Unauthorized');
-      const credentialId = Number.parseInt(request.params.id, 10);
-      if (!Number.isFinite(credentialId)) return sendApiError(reply, 400, 'Invalid credential id');
-      if (!(await canManageCredential(member, credentialId))) return sendApiError(reply, 403, 'Forbidden');
-      const parsed = credentialPatchSchema.safeParse(request.body);
-      if (!parsed.success) return sendValidationError(reply, 'Invalid credential data', parsed.error.flatten());
+      const managedPrograms = await listManagedProgramIds(member);
+      if (
+        !isVolunteerManager(member) &&
+        !isCredentialsManager(member) &&
+        managedPrograms !== 'all' &&
+        managedPrograms.length === 0
+      ) {
+        return sendApiError(reply, 403, 'Forbidden');
+      }
       try {
-        await updateCredential(credentialId, parsed.data);
-        return { ok: true };
-      } catch (err) {
-        return handleServiceError(reply, err);
-      }
-    }
-  );
-
-  fastify.delete<{ Params: { id: string } }>(
-    '/volunteering/admin/credentials/:id',
-    { schema: { tags: ['volunteering'] } },
-    async (request, reply) => {
-      const member = getMember(request as AuthenticatedRequest);
-      if (!member) return sendApiError(reply, 401, 'Unauthorized');
-      if (!isVolunteerManager(member)) return sendApiError(reply, 403, 'Forbidden');
-      const credentialId = Number.parseInt(request.params.id, 10);
-      if (!Number.isFinite(credentialId)) return sendApiError(reply, 400, 'Invalid credential id');
-      try {
-        await deleteCredential(credentialId);
-        return reply.code(204).send();
-      } catch (err) {
-        return handleServiceError(reply, err);
-      }
-    }
-  );
-
-  fastify.post<{ Params: { id: string } }>(
-    '/volunteering/admin/credentials/:id/grants',
-    { schema: { tags: ['volunteering'] } },
-    async (request, reply) => {
-      const member = getMember(request as AuthenticatedRequest);
-      if (!member) return sendApiError(reply, 401, 'Unauthorized');
-      const credentialId = Number.parseInt(request.params.id, 10);
-      if (!Number.isFinite(credentialId)) return sendApiError(reply, 400, 'Invalid credential id');
-      if (!(await canManageCredential(member, credentialId))) return sendApiError(reply, 403, 'Forbidden');
-      const parsed = grantBodySchema.safeParse(request.body);
-      if (!parsed.success) return sendValidationError(reply, 'Invalid grant data', parsed.error.flatten());
-      try {
-        const result = await grantCredential({
-          credentialId,
-          memberId: parsed.data.memberId,
-          grantedByMemberId: member.id,
-          expiresAt: parsed.data.expiresAt,
-        });
-        return reply.code(201).send(result);
-      } catch (err) {
-        return handleServiceError(reply, err);
-      }
-    }
-  );
-
-  fastify.patch<{ Params: { id: string; memberId: string } }>(
-    '/volunteering/admin/credentials/:id/grants/:memberId',
-    { schema: { tags: ['volunteering'] } },
-    async (request, reply) => {
-      const member = getMember(request as AuthenticatedRequest);
-      if (!member) return sendApiError(reply, 401, 'Unauthorized');
-      const credentialId = Number.parseInt(request.params.id, 10);
-      const memberId = Number.parseInt(request.params.memberId, 10);
-      if (!Number.isFinite(credentialId) || !Number.isFinite(memberId)) {
-        return sendApiError(reply, 400, 'Invalid id');
-      }
-      if (!(await canManageCredential(member, credentialId))) return sendApiError(reply, 403, 'Forbidden');
-      const parsed = grantPatchSchema.safeParse(request.body);
-      if (!parsed.success) return sendValidationError(reply, 'Invalid grant data', parsed.error.flatten());
-      try {
-        await updateCredentialGrant(credentialId, memberId, parsed.data.expiresAt);
-        return { ok: true };
-      } catch (err) {
-        return handleServiceError(reply, err);
-      }
-    }
-  );
-
-  fastify.delete<{ Params: { id: string; memberId: string } }>(
-    '/volunteering/admin/credentials/:id/grants/:memberId',
-    { schema: { tags: ['volunteering'] } },
-    async (request, reply) => {
-      const member = getMember(request as AuthenticatedRequest);
-      if (!member) return sendApiError(reply, 401, 'Unauthorized');
-      const credentialId = Number.parseInt(request.params.id, 10);
-      const memberId = Number.parseInt(request.params.memberId, 10);
-      if (!Number.isFinite(credentialId) || !Number.isFinite(memberId)) {
-        return sendApiError(reply, 400, 'Invalid id');
-      }
-      if (!(await canManageCredential(member, credentialId))) return sendApiError(reply, 403, 'Forbidden');
-      try {
-        await revokeCredential(credentialId, memberId);
-        return reply.code(204).send();
+        return { credentials: await listCredentialOptions() };
       } catch (err) {
         return handleServiceError(reply, err);
       }
