@@ -59,6 +59,7 @@ These conventions exist to keep the frontend, backend, and generated API types a
 - Use ISO timestamps for backend-to-frontend transport.
 - If a value is date-only, make that clear and handle local formatting in the frontend.
 - Do not introduce alternate timestamp formats for new routes.
+- **Club time zone:** Every wall-clock time is club-local (`TIME_ZONE`, default `America/New_York`). Never use the viewer's device zone to parse, store, or display a time. Recurring times keep the same local hour across DST (the UTC instant shifts). The frontend reads the zone from `GET /api/public-config` (`timeZone`) and converts through `frontend/src/utils/clubTime.ts`. The backend uses `backend/src/utils/timeZone.ts`.
 - **Drizzle writes:** Postgres `timestamp` columns expect a `Date` (e.g. `updated_at: new Date()` or `sql\`CURRENT_TIMESTAMP\``). Do **not** write `new Date().toISOString()` into those columns — Drizzle calls `.toISOString()` on the value and strings 500 with `value.toISOString is not a function`. SQLite often stores the same fields as `text`, so ISO strings can appear to work locally and only fail on Postgres. Prefer `new Date()` (or `sql\`CURRENT_TIMESTAMP\``) for any column typed as `timestamp` in the Pg schema. ISO strings remain correct for `text` datetime columns and for query comparisons against those text columns.
 
 ## Route author checklist

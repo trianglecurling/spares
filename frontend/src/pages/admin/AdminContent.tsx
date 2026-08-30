@@ -32,6 +32,7 @@ import {
   parseMembersAreaArticlePath,
 } from '../../utils/memberNavMenuItems';
 import { notifyPublicBootstrapChanged } from '../../utils/publicBootstrapClient';
+import { dateTimeLocalToIsoOrNull, isoToDateTimeLocal } from '../../utils/clubTime';
 
 type Tab =
   | 'site'
@@ -253,19 +254,13 @@ const VALID_TABS: Tab[] = [
   'dashboard',
 ];
 
-/** ISO timestamp -> value for a `datetime-local` input in the admin's local time zone. */
+/** ISO timestamp -> value for a `datetime-local` input in the club time zone. */
 function isoToLocalDateTimeInput(value: string | null): string {
-  if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  return isoToDateTimeLocal(value);
 }
 
 function localDateTimeInputToIso(value: string): string | null {
-  if (!value) return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+  return dateTimeLocalToIsoOrNull(value);
 }
 
 export default function AdminContent() {

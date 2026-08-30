@@ -18,6 +18,7 @@ import Modal from '../../components/Modal';
 import { storeArticleDraftPreview } from '../../utils/articleDraftPreviewSession';
 import { articleSnippetForSave } from '../../utils/articleSnippet';
 import { notifyPublicBootstrapChanged } from '../../utils/publicBootstrapClient';
+import { dateTimeLocalToIsoOrNull, isoToDateTimeLocal } from '../../utils/clubTime';
 import {
   buildArticleHtmlContentFromMarkdown,
   isArticleHtmlContentEmpty,
@@ -88,11 +89,9 @@ function nextArticleImageFilename(articleSlug: string, markdown: string, mimeTyp
   return `${safeSlug}-image-${next}.${extensionFromMimeType(mimeType)}`;
 }
 
-/** Convert UTC ISO string to local YYYY-MM-DDTHH:mm for datetime-local input. */
+/** Convert UTC ISO string to club-local YYYY-MM-DDTHH:mm for datetime-local input. */
 function isoToDatetimeLocal(iso: string): string {
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return isoToDateTimeLocal(iso);
 }
 
 export default function AdminArticleEditor() {
@@ -387,7 +386,7 @@ export default function AdminArticleEditor() {
         ? {
             slug: form.slug.trim(),
             snippet: snippetToSave,
-            publishedAt: form.publishedAt ? new Date(form.publishedAt).toISOString() : null,
+            publishedAt: dateTimeLocalToIsoOrNull(form.publishedAt),
           }
         : {
             title: form.title.trim(),
@@ -397,7 +396,7 @@ export default function AdminArticleEditor() {
             revisionNote: saveSmallEdit ? null : saveRevisionNote.trim() || null,
             smallEdit: !isNew && saveSmallEdit,
             snippet: snippetToSave,
-            publishedAt: form.publishedAt ? new Date(form.publishedAt).toISOString() : null,
+            publishedAt: dateTimeLocalToIsoOrNull(form.publishedAt),
           };
       if (isNew) {
         const res = await api.post('/content/articles', payload);

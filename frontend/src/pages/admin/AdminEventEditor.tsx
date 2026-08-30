@@ -11,6 +11,7 @@ import SortableRow from '../../components/dragDrop/SortableRow';
 import FormCheckbox from '../../components/FormCheckbox';
 import FormField from '../../components/FormField';
 import FormSection from '../../components/FormSection';
+import ClubTimeHint from '../../components/ClubTimeHint';
 import InlineStateMessage from '../../components/InlineStateMessage';
 import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
 import MemberAutocomplete from '../../components/MemberAutocomplete';
@@ -36,6 +37,13 @@ import { useAlert } from '../../contexts/AlertContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { useMemberOptions } from '../../contexts/MemberOptionsContext';
 import { LOCATION_OPTIONS } from '../calendarEventFormShared';
+import {
+  dateTimeLocalToIso,
+  dateTimeLocalToIsoOrNull,
+  formatDateInTimeZone,
+  formatTimeInTimeZone,
+  isoToDateTimeLocal,
+} from '../../utils/clubTime';
 import {
   CUSTOM_FIELD_TYPES,
   customFieldTypeLabel,
@@ -603,9 +611,9 @@ export default function AdminEventEditor() {
       capacity: capacity ? parseInt(capacity, 10) : null,
       feeMinor: toMinor(feeDollars),
       memberFeeMinor: memberFeeDollars.trim() === '' ? null : toMinor(memberFeeDollars),
-      registrationStart: registrationStart ? new Date(registrationStart).toISOString() : null,
-      registrationCutoff: registrationCutoff ? new Date(registrationCutoff).toISOString() : null,
-      cancellationCutoff: cancellationCutoff ? new Date(cancellationCutoff).toISOString() : null,
+      registrationStart: dateTimeLocalToIsoOrNull(registrationStart),
+      registrationCutoff: dateTimeLocalToIsoOrNull(registrationCutoff),
+      cancellationCutoff: dateTimeLocalToIsoOrNull(cancellationCutoff),
       allowGroupRegistration,
       maxGroupSize: maxGroupSize ? parseInt(maxGroupSize, 10) : null,
       enableWaitlist,
@@ -616,8 +624,8 @@ export default function AdminEventEditor() {
       timespans: timespans
         .filter((ts) => ts.startDt && ts.endDt)
         .map((ts) => ({
-          startDt: new Date(ts.startDt).toISOString(),
-          endDt: new Date(ts.endDt).toISOString(),
+          startDt: dateTimeLocalToIso(ts.startDt),
+          endDt: dateTimeLocalToIso(ts.endDt),
         })),
       locations,
       categoryIds,
@@ -1643,6 +1651,7 @@ export default function AdminEventEditor() {
                 description="Timespans are required. Use multiple rows when the event runs across separate sessions."
                 surface="panel"
               >
+                <ClubTimeHint />
                 <div className="flex items-center justify-between">
                   <div className="text-sm text-gray-500 dark:text-gray-400">
                     Enter at least one start and end time.
@@ -3049,12 +3058,11 @@ function statusColor(status: string): string {
 function formatDateTime24(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  const month = date.getMonth() + 1;
-  const day = date.getDate();
-  const year = date.getFullYear();
-  const hours = String(date.getHours()).padStart(2, '0');
-  const minutes = String(date.getMinutes()).padStart(2, '0');
-  return `${month}/${day}/${year} ${hours}:${minutes}`;
+  const ymd = formatDateInTimeZone(date);
+  const time = formatTimeInTimeZone(date);
+  if (!ymd || !time) return value;
+  const [year, month, day] = ymd.split('-');
+  return `${Number(month)}/${Number(day)}/${year} ${time.slice(0, 5)}`;
 }
 
 function getRegistrationFieldRawValues(registration: Registration, field: RegistrationField): string[] {
@@ -3158,13 +3166,5 @@ function toTsvCell(value: unknown): string {
 }
 
 function toDateTimeLocal(isoStr: string): string {
-  try {
-    const d = new Date(isoStr);
-    if (isNaN(d.getTime())) return '';
-    const offset = d.getTimezoneOffset();
-    const local = new Date(d.getTime() - offset * 60000);
-    return local.toISOString().slice(0, 16);
-  } catch {
-    return '';
-  }
+  return isoToDateTimeLocal(isoStr);
 }

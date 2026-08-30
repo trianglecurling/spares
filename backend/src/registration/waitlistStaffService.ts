@@ -1208,6 +1208,7 @@ export async function sendWaitlistOffers(input: {
       day: 'numeric',
       hour: 'numeric',
       minute: '2-digit',
+      timeZone: config.timeZone,
       timeZoneName: 'short',
     });
     await safeSendWaitlistCommunication({

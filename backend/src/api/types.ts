@@ -358,6 +358,7 @@ export type PublicConfigResponse = {
   dashboardAlertExpiresAt: string | null;
   dashboardAlertVariant: string | null;
   dashboardAlertIcon: string | null;
+  timeZone: string;
 };
 
 export type InstallStatusResponse = {

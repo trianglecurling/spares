@@ -9,6 +9,7 @@ import Button from '../../components/Button';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatPhone } from '../../utils/phone';
 import { setFrontendLogCaptureEnabled } from '../../otel';
+import { dateTimeLocalToIso, isoToDateTimeLocal } from '../../utils/clubTime';
 interface ServerConfig {
   twilioApiKeySid: string | null;
   twilioApiKeySecret: string | null;
@@ -539,14 +540,14 @@ export default function AdminConfig() {
                     id="testCurrentTime"
                     value={
                       formData.testCurrentTime
-                        ? new Date(formData.testCurrentTime).toISOString().slice(0, 16)
+                        ? isoToDateTimeLocal(formData.testCurrentTime)
                         : ''
                     }
                     onChange={(e) => {
                       const value = e.target.value;
                       setFormData({
                         ...formData,
-                        testCurrentTime: value ? new Date(value).toISOString() : '',
+                        testCurrentTime: value ? dateTimeLocalToIso(value) : '',
                       });
                     }}
                     className="app-input"

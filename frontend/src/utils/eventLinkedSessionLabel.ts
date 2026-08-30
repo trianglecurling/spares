@@ -1,3 +1,5 @@
+import { formatClubDateTime } from './clubTime';
+
 type EventTimespanLike = {
   start_dt?: string;
   end_dt?: string;
@@ -30,13 +32,15 @@ export function formatLinkedSessionWhen(timespans: EventTimespanLike[] | null | 
   if (!startRaw) return 'Schedule TBD';
   const start = new Date(startRaw);
   if (Number.isNaN(start.getTime())) return startRaw;
-  return start.toLocaleString(undefined, {
+  return formatClubDateTime(start, {
     weekday: 'short',
     month: 'short',
     day: 'numeric',
     year: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
+    dateStyle: undefined,
+    timeStyle: undefined,
   });
 }
 

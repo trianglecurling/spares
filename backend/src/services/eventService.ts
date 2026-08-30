@@ -24,7 +24,7 @@ import { EventServiceError } from './eventServiceError.js';
 import { formatMemberDisplayName } from '../utils/memberName.js';
 import { generateEventRegistrationAccessToken } from '../utils/eventRegistrationAccessToken.js';
 import { getSeasonStartYearForUtcDate, parseFiscalYearStartMmdd, seasonStartYearsTouchingRangeUtc } from '../utils/fiscalSeason.js';
-import { getCurrentTimeAsync } from '../utils/time.js';
+import { getCurrentDateString, getCurrentTimeAsync } from '../utils/time.js';
 import { isArchivedAt, notArchivedCondition } from '../utils/softDelete.js';
 import { markSearchIndexDirty } from '../search/searchIndexInvalidation.js';
 import { slugify } from '../utils/slugify.js';
@@ -2123,7 +2123,7 @@ function defaultEventRegistrationItemName(title: string): string {
 }
 
 export async function listUpcomingEventsForPaymentItemNames() {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getCurrentDateString();
   const events = await listEvents({ fromDate: today });
   return events.map((event: any) => ({
     id: event.id,

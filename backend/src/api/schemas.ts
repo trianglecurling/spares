@@ -998,6 +998,7 @@ export const publicConfigResponseSchema = {
     dashboardAlertExpiresAt: { type: ['string', 'null'] },
     dashboardAlertVariant: { type: ['string', 'null'] },
     dashboardAlertIcon: { type: ['string', 'null'] },
+    timeZone: { type: 'string' },
   },
   required: [
     'disableSms',
@@ -1007,6 +1008,7 @@ export const publicConfigResponseSchema = {
     'dashboardAlertExpiresAt',
     'dashboardAlertVariant',
     'dashboardAlertIcon',
+    'timeZone',
   ],
 } as const;
 

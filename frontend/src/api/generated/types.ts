@@ -10556,6 +10556,7 @@ export interface paths {
                             dashboardAlertExpiresAt: null | string;
                             dashboardAlertVariant: null | string;
                             dashboardAlertIcon: null | string;
+                            timeZone: string;
                         };
                     };
                 };

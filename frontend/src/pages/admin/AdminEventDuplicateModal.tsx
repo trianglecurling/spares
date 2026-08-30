@@ -8,6 +8,7 @@ import InlineStateMessage from '../../components/InlineStateMessage';
 import MemberMultiSelect from '../../components/MemberMultiSelect';
 import Modal from '../../components/Modal';
 import api, { formatApiError } from '../../utils/api';
+import { dateTimeLocalToIso, dateTimeLocalToIsoOrNull } from '../../utils/clubTime';
 
 type DuplicateSourceEvent = {
   id: number;
@@ -48,7 +49,7 @@ function slugFromTitle(value: string): string {
 }
 
 function toIsoOrNull(value: string): string | null {
-  return value ? new Date(value).toISOString() : null;
+  return dateTimeLocalToIsoOrNull(value);
 }
 
 export default function AdminEventDuplicateModal({ sourceEvent, onClose, onDuplicated }: Props) {
@@ -168,8 +169,8 @@ export default function AdminEventDuplicateModal({ sourceEvent, onClose, onDupli
       linkForTransfers,
       timespans: [
         {
-          startDt: new Date(startDt).toISOString(),
-          endDt: new Date(endDt).toISOString(),
+          startDt: dateTimeLocalToIso(startDt),
+          endDt: dateTimeLocalToIso(endDt),
         },
       ],
     };

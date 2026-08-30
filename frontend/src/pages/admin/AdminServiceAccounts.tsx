@@ -10,6 +10,7 @@ import FormSection from '../../components/FormSection';
 import FormCheckbox from '../../components/FormCheckbox';
 import Modal from '../../components/Modal';
 import { useAlert } from '../../contexts/AlertContext';
+import { dateTimeLocalToIsoOrNull, formatClubDateTime } from '../../utils/clubTime';
 import { useConfirm } from '../../contexts/ConfirmContext';
 
 type AssignableRole = {
@@ -51,9 +52,7 @@ function isTruthyFlag(value: number | boolean | undefined): boolean {
 
 function formatTimestamp(value: string | Date | null | undefined): string {
   if (!value) return '—';
-  const parsed = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(parsed.getTime())) return '—';
-  return parsed.toLocaleString();
+  return formatClubDateTime(value) || '—';
 }
 
 function RoleChecklist({
@@ -273,7 +272,7 @@ export default function AdminServiceAccounts() {
     try {
       const response = await api.post(`/service-accounts/${selected.id}/tokens`, {
         name: mintName.trim(),
-        expiresAt: mintExpiry ? new Date(mintExpiry).toISOString() : null,
+        expiresAt: dateTimeLocalToIsoOrNull(mintExpiry),
       });
       setCreatedToken(response.data.token as string);
       await loadAccounts();

@@ -81,8 +81,11 @@ export function localDateTimeToUtcDate(dateStr: string, timeStr: string, timeZon
   const second = Number(timeMatch[3] ?? '0');
 
   const utcGuess = Date.UTC(year, month - 1, day, hour, minute, second);
-  const offsetMinutes = getTimeZoneOffsetMinutes(new Date(utcGuess), timeZone);
-  return new Date(utcGuess - offsetMinutes * 60000);
+  let offsetMinutes = getTimeZoneOffsetMinutes(new Date(utcGuess), timeZone);
+  let instant = utcGuess - offsetMinutes * 60000;
+  offsetMinutes = getTimeZoneOffsetMinutes(new Date(instant), timeZone);
+  instant = utcGuess - offsetMinutes * 60000;
+  return new Date(instant);
 }
 
 export function localDateTimeToIso(dateStr: string, timeStr: string, timeZone: string): string {

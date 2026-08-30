@@ -18311,6 +18311,9 @@
                         "null",
                         "string"
                       ]
+                    },
+                    "timeZone": {
+                      "type": "string"
                     }
                   },
                   "required": [
@@ -18320,7 +18323,8 @@
                     "dashboardAlertBody",
                     "dashboardAlertExpiresAt",
                     "dashboardAlertVariant",
-                    "dashboardAlertIcon"
+                    "dashboardAlertIcon",
+                    "timeZone"
                   ]
                 }
               }

@@ -6,7 +6,7 @@ import {
   useParams,
   useSearchParams,
 } from 'react-router-dom';
-import { format, parseISO } from 'date-fns';
+import { format } from 'date-fns';
 import api from '../utils/api';
 import { AppPage, AppPageHeader } from '../components/AppPage';
 import BackButton from '../components/BackButton';
@@ -18,12 +18,15 @@ import {
   isReadOnlyCalendarEvent,
 } from './Calendar';
 import { useAuth } from '../contexts/AuthContext';
+import { useClubTimeZone } from '../contexts/ClubTimeZoneContext';
 import { invalidateCalendarEventsCache } from '../utils/calendarEventsCache';
+import { parseClubDateParam } from '../utils/clubTime';
 
 type LocationState = { calendarEvent?: CalendarEvent; copyFromEvent?: CalendarEvent } | null;
 
 export default function CalendarEventFormPage() {
   const { member } = useAuth();
+  const timeZone = useClubTimeZone();
   const canEditCalendar =
     member?.isCalendarAdmin ?? member?.isAdmin ?? member?.isServerAdmin ?? false;
   const navigate = useNavigate();
@@ -36,17 +39,10 @@ export default function CalendarEventFormPage() {
   const sourceId = eventId ?? copyId;
   const isCopy = Boolean(copyId) && !eventId;
 
-  const initialDate = useMemo(() => {
-    const d = searchParams.get('date');
-    if (d) {
-      try {
-        return parseISO(d);
-      } catch {
-        /* fall through */
-      }
-    }
-    return new Date();
-  }, [searchParams]);
+  const initialDate = useMemo(
+    () => parseClubDateParam(searchParams.get('date'), timeZone),
+    [searchParams, timeZone]
+  );
 
   const [sheets, setSheets] = useState<Array<{ id: number; name: string }>>([]);
   const [event, setEvent] = useState<CalendarEvent | null | undefined>(undefined);
@@ -84,7 +80,7 @@ export default function CalendarEventFormPage() {
           `/calendar/events/${encodeURIComponent(sourceId)}`
         );
         if (canceled) return;
-        setEvent(apiEventToCalendar(data));
+        setEvent(apiEventToCalendar(data, timeZone));
       } catch {
         if (canceled) return;
         if (stateEvent && stateEvent.id === sourceId) {
@@ -103,7 +99,7 @@ export default function CalendarEventFormPage() {
     return () => {
       canceled = true;
     };
-  }, [sourceId, eventId, isCopy, location.state]);
+  }, [sourceId, eventId, isCopy, location.state, timeZone]);
 
   const goBackToCalendar = (focusDate?: Date) => {
     const date = focusDate ?? initialDate;

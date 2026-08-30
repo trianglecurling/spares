@@ -22,6 +22,13 @@ import { waitlistEntryCountLabel } from '../components/registration/registration
 import { teamIdsAssignedOnDraw, type TournamentDrawState } from '../utils/tournamentDrawModel';
 import { drawHasScoreActivity } from '../utils/tournamentDrawResultsRows';
 import { isBonspielCalendarType } from '../utils/eventCalendarTypes';
+import {
+  clubCalendarDate,
+  formatClubDate,
+  formatClubTime,
+  formatDateInTimeZone,
+  getClubTimeZone,
+} from '../utils/clubTime';
 import type { TournamentTeamApi } from '../types/tournamentTeam';
 import {
   formatPositionCell,
@@ -112,25 +119,22 @@ type TimespanDisplay =
 
 function formatTimespanDisplay(startDt: string, endDt: string): TimespanDisplay {
   try {
-    const start = new Date(startDt);
-    const end = new Date(endDt);
-    const sameCalendarDay =
-      start.getFullYear() === end.getFullYear() &&
-      start.getMonth() === end.getMonth() &&
-      start.getDate() === end.getDate();
+    const startDay = formatDateInTimeZone(new Date(startDt));
+    const endDay = formatDateInTimeZone(new Date(endDt));
+    const sameCalendarDay = Boolean(startDay && startDay === endDay);
 
     if (sameCalendarDay) {
       return {
         kind: 'single-day',
-        date: start.toLocaleDateString('en-US', LONG_DATE_FORMAT),
-        timeRange: `${start.toLocaleTimeString('en-US', TIME_FORMAT)} to ${end.toLocaleTimeString('en-US', TIME_FORMAT)}`,
+        date: formatClubDate(startDt, LONG_DATE_FORMAT),
+        timeRange: `${formatClubTime(startDt, TIME_FORMAT)} to ${formatClubTime(endDt, TIME_FORMAT)}`,
       };
     }
 
     return {
       kind: 'multi-day',
-      startDate: start.toLocaleDateString('en-US', LONG_DATE_FORMAT),
-      endDate: end.toLocaleDateString('en-US', LONG_DATE_FORMAT),
+      startDate: `${formatClubDate(startDt, LONG_DATE_FORMAT)}, ${formatClubTime(startDt, TIME_FORMAT)}`,
+      endDate: `${formatClubDate(endDt, LONG_DATE_FORMAT)}, ${formatClubTime(endDt, TIME_FORMAT)}`,
     };
   } catch {
     return { kind: 'single-day', date: startDt, timeRange: '' };
@@ -157,21 +161,16 @@ function effectiveRegistrationCutoff(event: EventDetail): string | null {
   return event.registrationCutoff || event.timespans?.[0]?.start_dt || null;
 }
 
-/** Next local calendar date (midnight) on or after `fromTimeMs` whose weekday matches `targetDow` (0–6). */
+/** Next club calendar date (midnight) on or after `fromTimeMs` whose weekday matches `targetDow` (0–6). */
 function nextLocalDateWithWeekday(fromTimeMs: number, targetDow: number): Date {
-  const d = new Date(fromTimeMs);
-  d.setHours(0, 0, 0, 0);
+  const d = clubCalendarDate(new Date(fromTimeMs));
   const add = (targetDow - d.getDay() + 7) % 7;
   d.setDate(d.getDate() + add);
   return d;
 }
 
 function sameLocalCalendarDate(a: Date, b: Date): boolean {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
+  return formatDateInTimeZone(a) === formatDateInTimeZone(b);
 }
 
 /**
@@ -192,8 +191,11 @@ function getRegistrationOpensCopy(
   }
   if (msUntilOpen > MS_DAY) {
     const reg = new Date(registrationStartIso);
-    const weekday = reg.toLocaleDateString('en-US', { weekday: 'long' });
-    const timeStr = reg.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    const weekday = new Intl.DateTimeFormat('en-US', {
+      weekday: 'long',
+      timeZone: getClubTimeZone(),
+    }).format(reg);
+    const timeStr = formatClubTime(reg, { hour: 'numeric', minute: '2-digit' });
 
     if (msUntilOpen < MS_WEEK) {
       return {
@@ -202,11 +204,11 @@ function getRegistrationOpensCopy(
       };
     }
 
-    const nextSlot = nextLocalDateWithWeekday(serverNowMs, reg.getDay());
+    const nextSlot = nextLocalDateWithWeekday(serverNowMs, clubCalendarDate(reg).getDay());
     if (sameLocalCalendarDate(nextSlot, reg)) {
       return { kind: 'datePhrase', phrase: `Registration opens here this ${weekday}` };
     }
-    const dateOnly = reg.toLocaleDateString('en-US', {
+    const dateOnly = formatClubDate(reg, {
       month: 'long',
       day: 'numeric',
       year: 'numeric',
@@ -229,15 +231,14 @@ function getRegistrationOpensCopy(
 }
 
 function formatRegistrationClosedAt(iso: string): { date: string; time: string } {
-  const d = new Date(iso);
   return {
-    date: d.toLocaleDateString('en-US', {
+    date: formatClubDate(iso, {
       weekday: 'long',
       month: 'long',
       day: 'numeric',
       year: 'numeric',
     }),
-    time: d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
+    time: formatClubTime(iso, { hour: 'numeric', minute: '2-digit' }),
   };
 }
 

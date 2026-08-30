@@ -1,4 +1,5 @@
 import type { StructuredPostalAddress } from './structuredPostalAddress';
+import { formatClubDateTime } from './clubTime';
 
 export const CHARITABLE_MILEAGE_RATE_CENTS_PER_MILE = 14;
 export const DURABLE_GOOD_THRESHOLD_MINOR = 20_000;
@@ -151,5 +152,5 @@ export function formatSubmittedAt(value: string): string {
   if (!value) return '';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value.slice(0, 10);
-  return date.toLocaleString();
+  return formatClubDateTime(date) || value.slice(0, 10);
 }

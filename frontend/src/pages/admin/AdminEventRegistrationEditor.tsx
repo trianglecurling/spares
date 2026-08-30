@@ -5,6 +5,7 @@ import BackButton from '../../components/BackButton';
 import Button from '../../components/Button';
 import Modal from '../../components/Modal';
 import api, { formatApiError } from '../../utils/api';
+import { formatDateInTimeZone, formatTimeInTimeZone } from '../../utils/clubTime';
 import { useAlert } from '../../contexts/AlertContext';
 import DietaryRestrictionsField from '../../components/eventRegistration/DietaryRestrictionsField';
 import { personLabel } from '../../components/eventRegistration/PublicRegistrationFieldInput';
@@ -116,12 +117,11 @@ type TransferSessionOption = {
 function formatDateTime24(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  const month = date.getMonth() + 1;
-  const day = date.getDate();
-  const year = date.getFullYear();
-  const hours = String(date.getHours()).padStart(2, '0');
-  const minutes = String(date.getMinutes()).padStart(2, '0');
-  return `${month}/${day}/${year} ${hours}:${minutes}`;
+  const ymd = formatDateInTimeZone(date);
+  const time = formatTimeInTimeZone(date);
+  if (!ymd || !time) return value;
+  const [year, month, day] = ymd.split('-');
+  return `${Number(month)}/${Number(day)}/${year} ${time.slice(0, 5)}`;
 }
 
 function formatMinorCurrency(minor: number, currency: string): string {

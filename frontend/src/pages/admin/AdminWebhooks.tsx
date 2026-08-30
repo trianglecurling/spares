@@ -12,6 +12,7 @@ import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
 import InlineStateMessage from '../../components/InlineStateMessage';
 import Modal from '../../components/Modal';
 import { useAlert } from '../../contexts/AlertContext';
+import { formatClubDateTime } from '../../utils/clubTime';
 import { useConfirm } from '../../contexts/ConfirmContext';
 
 type WebhookEventRegistryEntry = {
@@ -77,7 +78,7 @@ function formatDate(value: unknown): string {
   if (!value || typeof value !== 'string') return '-';
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleString();
+  return formatClubDateTime(parsed) || value;
 }
 
 function formatPayload(payload: unknown): string {

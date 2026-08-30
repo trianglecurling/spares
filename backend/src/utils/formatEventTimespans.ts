@@ -1,3 +1,6 @@
+import { config } from '../config.js';
+import { formatDateInTimeZone } from './timeZone.js';
+
 export type FormattedEventWhen = {
   text: string;
   html: string;
@@ -24,33 +27,40 @@ const TIME_FORMAT: Intl.DateTimeFormatOptions = {
   minute: '2-digit',
 };
 
-function sameCalendarDay(start: Date, end: Date): boolean {
-  return (
-    start.getFullYear() === end.getFullYear() &&
-    start.getMonth() === end.getMonth() &&
-    start.getDate() === end.getDate()
-  );
+function sameClubCalendarDay(start: Date, end: Date, timeZone: string): boolean {
+  const startDay = formatDateInTimeZone(start, timeZone);
+  const endDay = formatDateInTimeZone(end, timeZone);
+  return Boolean(startDay && startDay === endDay);
 }
 
-function formatOneTimespan(startDt: string, endDt: string): { text: string; html: string } {
+function formatInClubZone(date: Date, options: Intl.DateTimeFormatOptions, timeZone: string): string {
+  return new Intl.DateTimeFormat('en-US', { ...options, timeZone }).format(date);
+}
+
+function formatOneTimespan(startDt: string, endDt: string, timeZone: string): { text: string; html: string } {
   try {
     const start = new Date(startDt);
     const end = new Date(endDt);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      return { text: startDt, html: startDt };
+    }
 
-    if (sameCalendarDay(start, end)) {
-      const date = start.toLocaleDateString('en-US', LONG_DATE_FORMAT);
-      const timeRange = `${start.toLocaleTimeString('en-US', TIME_FORMAT)} to ${end.toLocaleTimeString('en-US', TIME_FORMAT)}`;
+    const startTime = formatInClubZone(start, TIME_FORMAT, timeZone);
+    const endTime = formatInClubZone(end, TIME_FORMAT, timeZone);
+    if (sameClubCalendarDay(start, end, timeZone)) {
+      const date = formatInClubZone(start, LONG_DATE_FORMAT, timeZone);
+      const timeRange = `${startTime} to ${endTime}`;
       return {
         text: `${date}\n${timeRange}`,
         html: `${date}<br>${timeRange}`,
       };
     }
 
-    const startDate = start.toLocaleDateString('en-US', LONG_DATE_FORMAT);
-    const endDate = end.toLocaleDateString('en-US', LONG_DATE_FORMAT);
+    const startDate = formatInClubZone(start, LONG_DATE_FORMAT, timeZone);
+    const endDate = formatInClubZone(end, LONG_DATE_FORMAT, timeZone);
     return {
-      text: `Start: ${startDate}\nEnd: ${endDate}`,
-      html: `Start: ${startDate}<br>End: ${endDate}`,
+      text: `Start: ${startDate}, ${startTime}\nEnd: ${endDate}, ${endTime}`,
+      html: `Start: ${startDate}, ${startTime}<br>End: ${endDate}, ${endTime}`,
     };
   } catch {
     return { text: startDt, html: startDt };
@@ -60,6 +70,7 @@ function formatOneTimespan(startDt: string, endDt: string): { text: string; html
 /** Matches public event detail page timespan display (all spans, single- vs multi-day). */
 export function formatEventTimespansForDisplay(
   timespans: EventTimespanLike[] | null | undefined,
+  timeZone: string = config.timeZone,
 ): FormattedEventWhen {
   if (!timespans?.length) {
     return { text: 'TBD', html: 'TBD' };
@@ -78,7 +89,7 @@ export function formatEventTimespansForDisplay(
     return { text: 'TBD', html: 'TBD' };
   }
 
-  const formatted = normalized.map((ts) => formatOneTimespan(ts.start, ts.end));
+  const formatted = normalized.map((ts) => formatOneTimespan(ts.start, ts.end, timeZone));
   return {
     text: formatted.map((part) => part.text).join('\n\n'),
     html: formatted.map((part) => part.html).join('<br><br>'),

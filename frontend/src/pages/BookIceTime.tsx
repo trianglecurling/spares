@@ -13,6 +13,15 @@ import { useAuth } from '../contexts/AuthContext';
 import { useAlert } from '../contexts/AlertContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import api, { formatApiError } from '../utils/api';
+import {
+  clubCalendarDate,
+  formatDateInTimeZone,
+  formatClubDate,
+  formatClubTime,
+  floatingDateToIso,
+  instantToFloatingDate,
+} from '../utils/clubTime';
+import { useClubTimeZone } from '../contexts/ClubTimeZoneContext';
 
 /** Members may book today through this many days ahead; mirrors the server window. */
 const MAX_ADVANCE_DAYS = 7;
@@ -102,7 +111,7 @@ function bookingPurposeLabel(booking: MyIceBooking): string {
 }
 
 function formatWhen(start: Date, end: Date): string {
-  return `${format(start, 'EEEE, MMMM d')} · ${format(start, 'h:mm a')} – ${format(end, 'h:mm a')}`;
+  return `${formatClubDate(start, { weekday: 'long', month: 'long', day: 'numeric', year: undefined })} · ${formatClubTime(start)} – ${formatClubTime(end)}`;
 }
 
 /** Minutes from local midnight. */
@@ -137,6 +146,7 @@ export default function BookIceTime() {
   const { member } = useAuth();
   const { showAlert } = useAlert();
   const { confirm } = useConfirm();
+  const timeZone = useClubTimeZone();
 
   const bookingKindFieldId = useId();
   const dateFieldId = useId();
@@ -147,7 +157,7 @@ export default function BookIceTime() {
   const purposeOtherId = useId();
 
   const [bookingKind, setBookingKind] = useState<BookingKind | null>(null);
-  const [dateParam, setDateParam] = useState(() => toDateParam(new Date()));
+  const [dateParam, setDateParam] = useState(() => formatDateInTimeZone(new Date()) ?? toDateParam(new Date()));
   const [durationHours, setDurationHours] = useState<DurationHours>(1);
   const [selectedStartIso, setSelectedStartIso] = useState<string | null>(null);
   const [sheetId, setSheetId] = useState<number | null>(null);
@@ -176,13 +186,13 @@ export default function BookIceTime() {
   const selectedDate = useMemo(() => parseISO(dateParam), [dateParam]);
 
   const dateOptions = useMemo<ChoiceOption<string>[]>(() => {
-    const today = startOfDay(new Date());
+    const today = startOfDay(clubCalendarDate(new Date(), timeZone));
     return Array.from({ length: MAX_ADVANCE_DAYS + 1 }, (_, offset) => {
       const day = addDays(today, offset);
       const label = offset === 0 ? 'Today' : offset === 1 ? 'Tomorrow' : format(day, 'EEE MMM d');
       return { value: toDateParam(day), label };
     });
-  }, []);
+  }, [timeZone]);
 
   const loadBookings = useCallback(async () => {
     setBookingsLoading(true);
@@ -242,27 +252,27 @@ export default function BookIceTime() {
   const slots = useMemo<BookingDaySlot[]>(
     () =>
       (availability?.slots ?? []).map((slot) => ({
-        start: new Date(slot.start),
-        end: new Date(slot.end),
+        start: instantToFloatingDate(slot.start, timeZone),
+        end: instantToFloatingDate(slot.end, timeZone),
         availableSheetIds: slot.availableSheetIds,
         unavailableReason: slot.unavailableReason,
       })),
-    [availability]
+    [availability, timeZone]
   );
 
   const events = useMemo(
     () =>
       (availability?.events ?? []).map((event) => ({
         ...event,
-        start: new Date(event.start),
-        end: new Date(event.end),
+        start: instantToFloatingDate(event.start, timeZone),
+        end: instantToFloatingDate(event.end, timeZone),
       })),
-    [availability]
+    [availability, timeZone]
   );
 
   const selectedSlot = useMemo(
-    () => slots.find((slot) => slot.start.toISOString() === selectedStartIso) ?? null,
-    [slots, selectedStartIso]
+    () => slots.find((slot) => floatingDateToIso(slot.start, timeZone) === selectedStartIso) ?? null,
+    [slots, selectedStartIso, timeZone]
   );
   // While availability is refetching, the slot in hand may not match the new duration yet.
   const confirmedSlot = availabilityLoading || availabilityError ? null : selectedSlot;
@@ -282,7 +292,7 @@ export default function BookIceTime() {
   }, [sheets, selectedSlot]);
 
   const handleSelectSlot = (slot: BookingDaySlot) => {
-    setSelectedStartIso(slot.start.toISOString());
+    setSelectedStartIso(floatingDateToIso(slot.start, timeZone));
     setSheetId((current) => (current != null && slot.availableSheetIds.includes(current) ? current : null));
   };
 
@@ -331,7 +341,7 @@ export default function BookIceTime() {
         purposeOther?: string;
       }>('/ice-bookings', {
         sheetId,
-        start: selectedSlot.start.toISOString(),
+        start: floatingDateToIso(selectedSlot.start, timeZone),
         durationHours,
         purpose,
         purposeOther: purpose === 'other' ? purposeOther.trim() : undefined,
@@ -714,8 +724,8 @@ export default function BookIceTime() {
         ) : (
           <div className="space-y-3">
             {upcomingBookings.map((b) => {
-              const start = new Date(b.start);
-              const end = new Date(b.end);
+              const start = instantToFloatingDate(b.start, timeZone);
+              const end = instantToFloatingDate(b.end, timeZone);
               return (
                 <div
                   key={b.id}
@@ -723,7 +733,9 @@ export default function BookIceTime() {
                 >
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-gray-900 dark:text-gray-100">
                     <span className="font-medium">
-                      {isSameDay(start, new Date()) ? 'Today' : format(start, 'EEE, MMM d')}
+                      {isSameDay(start, clubCalendarDate(new Date(), timeZone))
+                        ? 'Today'
+                        : format(start, 'EEE, MMM d')}
                     </span>
                     <span className="text-gray-600 dark:text-gray-400">
                       {format(start, 'h:mm a')} – {format(end, 'h:mm a')}

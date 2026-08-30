@@ -24,7 +24,6 @@ import {
   format,
   isSameDay,
   isSameMonth,
-  parseISO,
   startOfDay,
   startOfMonth,
   startOfWeek,
@@ -60,6 +59,7 @@ import { ArticleMarkdown } from '../components/ArticleMarkdown';
 import SeoMeta from '../components/SeoMeta';
 import { useAlert } from '../contexts/AlertContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useClubTimeZone } from '../contexts/ClubTimeZoneContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import {
@@ -80,6 +80,12 @@ import {
   DEFAULT_EVENT_TYPES,
   type CalendarEventType,
 } from '../utils/calendarEventTypeRegistry';
+import {
+  clubCalendarDate,
+  floatingDateToIso,
+  instantToFloatingDate,
+  parseClubDateParam,
+} from '../utils/clubTime';
 
 export type CalendarView = 'day' | 'week' | 'month';
 
@@ -472,21 +478,24 @@ function getWeekAllDayColumnTintClass(typeId: string): string {
   return WEEK_ALL_DAY_COLUMN_TINT[typeId] ?? 'bg-gray-50/45 dark:bg-gray-900/35';
 }
 
-export function apiEventToCalendar(ev: {
-  id: string;
-  typeId: string;
-  title: string;
-  start: string;
-  end: string;
-  allDay: boolean;
-  description?: string;
-  locations?: Array<{ type: string; sheetId?: number; sheetName?: string }>;
-  recurrenceRrule?: string;
-  createdBy?: string;
-  article?: ArticleOption;
-  source?: string;
-  slug?: string;
-}): CalendarEvent {
+export function apiEventToCalendar(
+  ev: {
+    id: string;
+    typeId: string;
+    title: string;
+    start: string;
+    end: string;
+    allDay: boolean;
+    description?: string;
+    locations?: Array<{ type: string; sheetId?: number; sheetName?: string }>;
+    recurrenceRrule?: string;
+    createdBy?: string;
+    article?: ArticleOption;
+    source?: string;
+    slug?: string;
+  },
+  timeZone?: string
+): CalendarEvent {
   const locs: EventLocation[] = (ev.locations ?? []).map((l) => {
     if (l.type === 'sheet' && l.sheetId != null) {
       return { type: 'sheet', sheetId: l.sheetId, sheetName: l.sheetName };
@@ -497,8 +506,8 @@ export function apiEventToCalendar(ev: {
     id: ev.id,
     typeId: ev.typeId,
     title: ev.title,
-    start: new Date(ev.start),
-    end: new Date(ev.end),
+    start: instantToFloatingDate(ev.start, timeZone),
+    end: instantToFloatingDate(ev.end, timeZone),
     allDay: ev.allDay,
     description: ev.description,
     locations: locs.length > 0 ? locs : undefined,
@@ -548,14 +557,8 @@ function formatCompactTimeRange(start: Date, end: Date): string {
   return `${formatCompactTime(start)}–${formatCompactTime(end)}`;
 }
 
-function parseDateParam(value: string | null): Date {
-  if (!value) return new Date();
-  try {
-    const d = parseISO(value);
-    return isNaN(d.getTime()) ? new Date() : d;
-  } catch {
-    return new Date();
-  }
+function parseDateParam(value: string | null, timeZone?: string): Date {
+  return parseClubDateParam(value, timeZone);
 }
 
 function parseViewParam(value: string | null): CalendarView {
@@ -567,6 +570,7 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
   const { member } = useAuth();
   const { showAlert } = useAlert();
   const { confirm } = useConfirm();
+  const timeZone = useClubTimeZone();
   const navigate = useNavigate();
   const canEditCalendar =
     !publicMode && (member?.isCalendarAdmin ?? member?.isAdmin ?? member?.isServerAdmin ?? false);
@@ -575,7 +579,7 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
   const dateParam = searchParams.get('date');
   const viewParam = searchParams.get('view');
 
-  const currentDate = useMemo(() => parseDateParam(dateParam), [dateParam]);
+  const currentDate = useMemo(() => parseDateParam(dateParam, timeZone), [dateParam, timeZone]);
   const view = parseViewParam(viewParam);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const eventsRef = useRef<CalendarEvent[]>([]);
@@ -704,6 +708,8 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
 
     const rangeStartDate = new Date(rangeStartMs);
     const rangeEndDate = new Date(rangeEndMs);
+    const rangeStartIso = floatingDateToIso(rangeStartDate, timeZone);
+    const rangeEndIso = floatingDateToIso(rangeEndDate, timeZone);
     const cacheKey = calendarRangeCacheKey(publicMode, rangeStartDate, rangeEndDate);
     const cached = getCachedCalendarRange<CalendarEvent>(cacheKey);
     if (cached) {
@@ -723,7 +729,7 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
 
     const abortController = new AbortController();
     const { signal } = abortController;
-    const rangeQuery = `start=${rangeStartDate.toISOString()}&end=${rangeEndDate.toISOString()}`;
+    const rangeQuery = `start=${rangeStartIso}&end=${rangeEndIso}`;
 
     const applyLoaded = (nextEvents: CalendarEvent[], nextSheets?: Array<{ id: number; name: string }>) => {
       if (signal.aborted) return;
@@ -743,8 +749,8 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
             return;
           }
           const nextSheets = bundle.sheets.map((s) => ({ id: s.id, name: s.name }));
-          const calendarEvents = bundle.events.map(apiEventToCalendar);
-          const leagueEvents = (bundle.leagueEvents ?? []).map(apiEventToCalendar);
+          const calendarEvents = bundle.events.map((ev) => apiEventToCalendar(ev, timeZone));
+          const leagueEvents = (bundle.leagueEvents ?? []).map((ev) => apiEventToCalendar(ev, timeZone));
           applyLoaded([...calendarEvents, ...leagueEvents], nextSheets);
         })
         .catch((err) => {
@@ -764,9 +770,13 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
       .then(([eventsRes, leagueRes]) => {
         if (signal.aborted) return;
         const calendarEvents =
-          eventsRes.status === 'fulfilled' ? (eventsRes.value.data ?? []).map(apiEventToCalendar) : [];
+          eventsRes.status === 'fulfilled'
+            ? (eventsRes.value.data ?? []).map((ev) => apiEventToCalendar(ev, timeZone))
+            : [];
         const leagueEvents =
-          leagueRes.status === 'fulfilled' ? (leagueRes.value.data ?? []).map(apiEventToCalendar) : [];
+          leagueRes.status === 'fulfilled'
+            ? (leagueRes.value.data ?? []).map((ev) => apiEventToCalendar(ev, timeZone))
+            : [];
         applyLoaded([...calendarEvents, ...leagueEvents]);
       })
       .catch((err) => {
@@ -778,11 +788,11 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
       });
 
     return () => abortController.abort();
-  }, [rangeStartMs, rangeEndMs, publicMode]);
+  }, [rangeStartMs, rangeEndMs, publicMode, timeZone]);
 
   const refreshEvents = () => {
     invalidateCalendarEventsCache();
-    const rangeQuery = `start=${rangeStart.toISOString()}&end=${rangeEnd.toISOString()}`;
+    const rangeQuery = `start=${floatingDateToIso(rangeStart, timeZone)}&end=${floatingDateToIso(rangeEnd, timeZone)}`;
     const cacheKey = calendarRangeCacheKey(publicMode, rangeStart, rangeEnd);
     type EventPayload = Parameters<typeof apiEventToCalendar>[0];
     type PublicCalendarBundle = {
@@ -798,8 +808,8 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
           const bundle = res.data;
           if (!bundle) return;
           const nextSheets = bundle.sheets.map((s) => ({ id: s.id, name: s.name }));
-          const calendarEvents = bundle.events.map(apiEventToCalendar);
-          const leagueEvents = (bundle.leagueEvents ?? []).map(apiEventToCalendar);
+          const calendarEvents = bundle.events.map((ev) => apiEventToCalendar(ev, timeZone));
+          const leagueEvents = (bundle.leagueEvents ?? []).map((ev) => apiEventToCalendar(ev, timeZone));
           const nextEvents = [...calendarEvents, ...leagueEvents];
           setCachedCalendarRange(cacheKey, { events: nextEvents, sheets: nextSheets });
           setSheets(nextSheets);
@@ -815,9 +825,13 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
     ])
       .then(([eventsRes, leagueRes]) => {
         const calendarEvents =
-          eventsRes.status === 'fulfilled' ? (eventsRes.value.data ?? []).map(apiEventToCalendar) : [];
+          eventsRes.status === 'fulfilled'
+            ? (eventsRes.value.data ?? []).map((ev) => apiEventToCalendar(ev, timeZone))
+            : [];
         const leagueEvents =
-          leagueRes.status === 'fulfilled' ? (leagueRes.value.data ?? []).map(apiEventToCalendar) : [];
+          leagueRes.status === 'fulfilled'
+            ? (leagueRes.value.data ?? []).map((ev) => apiEventToCalendar(ev, timeZone))
+            : [];
         const nextEvents = [...calendarEvents, ...leagueEvents];
         setCachedCalendarRange(cacheKey, { events: nextEvents });
         setEvents(nextEvents);
@@ -893,13 +907,13 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
           : addMonths(currentDate, 1);
     updateUrl(next, view);
   };
-  const goToday = () => updateUrl(new Date(), view);
+  const goToday = () => updateUrl(clubCalendarDate(new Date(), timeZone), view);
 
   // Jump-to-date inputs
   const jumpTarget = format(currentDate, 'yyyy-MM-dd');
   const onJumpDate = (e: React.ChangeEvent<HTMLInputElement>) => {
     const v = e.target.value;
-    if (v) updateUrl(parseISO(v), view);
+    if (v) updateUrl(parseClubDateParam(v, timeZone), view);
   };
 
   const onViewChange = (v: CalendarView) => updateUrl(currentDate, v);
@@ -2071,7 +2085,7 @@ function MonthView({
             const allDayEvents = getEventsForDay(day);
             const dayEvents = allDayEvents.filter((e) => !isMultiDay(e));
             const isCurrentMonth = isSameMonth(day, currentDate);
-            const isToday = isSameDay(day, new Date());
+            const isToday = isSameDay(day, clubCalendarDate());
             const sortedEvents = [...dayEvents].sort(
               (a, b) => a.start.getTime() - b.start.getTime()
             );
@@ -2388,7 +2402,7 @@ function CompactWeekView({
       >
         {days.map((day) => {
           const isSelected = isSameDay(day, focusedDay);
-          const isToday = isSameDay(day, new Date());
+          const isToday = isSameDay(day, clubCalendarDate());
           const dayEventCount = getEventsForDay(day).length;
           return (
             <button
@@ -2605,7 +2619,7 @@ function DesktopWeekView({
             type="button"
             onClick={() => onDayClick?.(day)}
             className={`sticky top-0 z-10 w-full min-w-0 px-2 py-2 text-center text-sm font-medium border-b border-gray-300 dark:border-gray-600 cursor-pointer hover:opacity-80 ${
-              isSameDay(day, new Date())
+              isSameDay(day, clubCalendarDate())
                 ? 'bg-primary-teal/10 text-primary-teal dark:bg-primary-teal/20'
                 : 'bg-gray-50 dark:bg-gray-800/95 text-gray-900 dark:text-gray-100'
             }`}

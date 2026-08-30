@@ -1197,6 +1197,7 @@ type IceBookingEmailDetails = {
 function formatIceBookingWhen(startIso: string, endIso: string): string {
   const start = new Date(startIso);
   const end = new Date(endIso);
+  const timeZone = config.timeZone;
   return `${start.toLocaleString('en-US', {
     weekday: 'long',
     month: 'long',
@@ -1204,7 +1205,8 @@ function formatIceBookingWhen(startIso: string, endIso: string): string {
     year: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
-  })} – ${end.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`;
+    timeZone,
+  })} – ${end.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone })}`;
 }
 
 function iceBookingDetailLinesHtml(details: IceBookingEmailDetails): string {
@@ -1689,6 +1691,7 @@ export async function sendEventWaitlistPromotionOfferEmail(
     year: 'numeric',
     month: 'long',
     day: 'numeric',
+    timeZone: config.timeZone,
   });
   const declineUrl = `${offerUrl}${offerUrl.includes('?') ? '&' : '?'}action=decline`;
   const paymentLine = needsPayment

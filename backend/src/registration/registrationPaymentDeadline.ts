@@ -1,5 +1,6 @@
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
+import { config } from '../config.js';
 
 export type RegistrationPaymentDeadlineRow = {
   id: number;
@@ -25,7 +26,7 @@ export function formatRegistrationPaymentDeadline(deadline: Date | string): stri
     year: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
-    timeZone: 'America/New_York',
+    timeZone: config.timeZone,
     timeZoneName: 'short',
   }).format(date);
 }

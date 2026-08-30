@@ -23,6 +23,7 @@ import {
 } from '../../components/registration/leaguePriorityShared';
 import RegistrationCollectedDetails from '../../components/registration/RegistrationCollectedDetails';
 import type { RegistrationCollectedDetailsFields } from '../../components/registration/registrationCollectedDetailsShared';
+import { formatClubDateTime } from '../../utils/clubTime';
 import { playInEntryTeamMembersText } from '../../components/registration/RegistrationPlayInEntryPanel';
 import { useAlert } from '../../contexts/AlertContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
@@ -155,9 +156,7 @@ function money(minor: number | null, currency = 'usd') {
 
 function formatDateTime(value: string | null) {
   if (!value) return 'Date not available';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString();
+  return formatClubDateTime(value) || value;
 }
 
 const SETTLED_PAYMENT_STATUSES = new Set(['succeeded', 'partially_refunded', 'refunded']);

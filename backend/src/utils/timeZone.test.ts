@@ -30,6 +30,13 @@ describe('localDateTimeToUtcDate', () => {
     expect(Number.isNaN(localDateTimeToUtcDate('not-a-date', '18:15', EASTERN).getTime())).toBe(true);
     expect(Number.isNaN(localDateTimeToUtcDate('2026-07-09', 'bad', EASTERN).getTime())).toBe(true);
   });
+
+  test('keeps 3pm wall-clock across DST so the UTC hour changes', () => {
+    expect(localDateTimeToIso('2026-10-31', '15:00', EASTERN)).toBe('2026-10-31T19:00:00.000Z');
+    expect(localDateTimeToIso('2026-11-01', '15:00', EASTERN)).toBe('2026-11-01T20:00:00.000Z');
+    expect(localDateTimeToIso('2026-03-07', '15:00', EASTERN)).toBe('2026-03-07T20:00:00.000Z');
+    expect(localDateTimeToIso('2026-03-08', '15:00', EASTERN)).toBe('2026-03-08T19:00:00.000Z');
+  });
 });
 
 describe('shiftInstantByCalendarDays', () => {

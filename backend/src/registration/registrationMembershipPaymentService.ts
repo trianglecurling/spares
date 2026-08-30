@@ -480,7 +480,7 @@ function formatPaidAt(value: string | Date | null | undefined): string | null {
   return new Intl.DateTimeFormat('en-US', {
     dateStyle: 'medium',
     timeStyle: 'short',
-    timeZone: 'America/New_York',
+    timeZone: config.timeZone,
   }).format(date);
 }
 

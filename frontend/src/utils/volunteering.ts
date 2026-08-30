@@ -1,3 +1,14 @@
+import {
+  addMinutesToDateTimeLocal as addMinutesToClubDateTimeLocal,
+  dateTimeLocalToIso,
+  formatClubDate,
+  formatClubDateTime,
+  formatClubTime,
+  formatDateInTimeZone,
+  instantToFloatingDate,
+  isoToDateTimeLocal,
+} from './clubTime';
+
 export type VolunteerCredentialSummary = {
   id: number;
   name: string;
@@ -229,8 +240,6 @@ export function volunteerLocationStoredFromChoice(
 
 export function formatVolunteerRange(startDt: string, endDt: string): string {
   try {
-    const start = new Date(startDt);
-    const end = new Date(endDt);
     const dateOpts: Intl.DateTimeFormatOptions = {
       weekday: 'short',
       month: 'short',
@@ -241,11 +250,12 @@ export function formatVolunteerRange(startDt: string, endDt: string): string {
       hour: 'numeric',
       minute: '2-digit',
     };
-    const sameDay = start.toDateString() === end.toDateString();
-    if (sameDay) {
-      return `${start.toLocaleDateString('en-US', dateOpts)}, ${start.toLocaleTimeString('en-US', timeOpts)} – ${end.toLocaleTimeString('en-US', timeOpts)}`;
+    const startDay = formatDateInTimeZone(new Date(startDt));
+    const endDay = formatDateInTimeZone(new Date(endDt));
+    if (startDay && startDay === endDay) {
+      return `${formatClubDate(startDt, dateOpts)}, ${formatClubTime(startDt, timeOpts)} – ${formatClubTime(endDt, timeOpts)}`;
     }
-    return `${start.toLocaleString('en-US', { ...dateOpts, ...timeOpts })} – ${end.toLocaleString('en-US', { ...dateOpts, ...timeOpts })}`;
+    return `${formatClubDateTime(startDt, { ...dateOpts, ...timeOpts, dateStyle: undefined, timeStyle: undefined })} – ${formatClubDateTime(endDt, { ...dateOpts, ...timeOpts, dateStyle: undefined, timeStyle: undefined })}`;
   } catch {
     return `${startDt} – ${endDt}`;
   }
@@ -503,12 +513,11 @@ export function formatProgramShiftDateSpan(shifts: Array<{ startDt: string; endD
   return `${formatDay(first)} – ${formatDay(last)}`;
 }
 
-/** Local calendar day key (YYYY-MM-DD) for grouping shifts. */
+/** Club-local calendar day key (YYYY-MM-DD) for grouping shifts. */
 export function volunteerShiftDayKey(startDt: string): string {
   const d = new Date(startDt);
   if (Number.isNaN(d.getTime())) return startDt.slice(0, 10);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return formatDateInTimeZone(d) ?? startDt.slice(0, 10);
 }
 
 export function formatVolunteerDayHeading(dayKey: string): string {
@@ -524,10 +533,8 @@ export function formatVolunteerDayHeading(dayKey: string): string {
 
 export function formatVolunteerTimeRange(startDt: string, endDt: string): string {
   try {
-    const start = new Date(startDt);
-    const end = new Date(endDt);
     const timeOpts: Intl.DateTimeFormatOptions = { hour: 'numeric', minute: '2-digit' };
-    return `${start.toLocaleTimeString('en-US', timeOpts)} – ${end.toLocaleTimeString('en-US', timeOpts)}`;
+    return `${formatClubTime(startDt, timeOpts)} – ${formatClubTime(endDt, timeOpts)}`;
   } catch {
     return `${startDt} – ${endDt}`;
   }
@@ -546,8 +553,8 @@ function formatCompactClock(date: Date): CompactTimeParts {
 
 /** Compact range like "8–10am" or "11:30am–3pm". */
 export function formatCompactVolunteerTimeRange(startDt: string, endDt: string): string {
-  const start = new Date(startDt);
-  const end = new Date(endDt);
+  const start = instantToFloatingDate(startDt);
+  const end = instantToFloatingDate(endDt);
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
     return `${startDt} – ${endDt}`;
   }
@@ -613,18 +620,13 @@ export function formatVolunteerRoleShiftPreview(
   return `${summary} and ${extra} more`;
 }
 
-/** Convert an ISO string to a value suitable for datetime-local inputs. */
+/** Convert an ISO string to a value suitable for datetime-local inputs (club wall clock). */
 export function toDateTimeLocal(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return isoToDateTimeLocal(iso);
 }
 
 export function fromDateTimeLocal(value: string): string {
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return d.toISOString();
+  return dateTimeLocalToIso(value) || value;
 }
 
 export function minutesToHoursInput(minutes: number): string {
@@ -666,9 +668,7 @@ export function volunteerCredentialIsValidOn(
 
 /** Add minutes to a datetime-local string; returns another datetime-local value. */
 export function addMinutesToDateTimeLocal(startLocal: string, minutes: number): string {
-  const start = new Date(startLocal);
-  if (Number.isNaN(start.getTime())) return '';
-  return toDateTimeLocal(new Date(start.getTime() + minutes * 60 * 1000).toISOString());
+  return addMinutesToClubDateTimeLocal(startLocal, minutes);
 }
 
 export function formatDurationMinutes(minutes: number): string {

@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { publicConfigResponseSchema } from '../api/schemas.js';
 import type { PublicConfigResponse } from '../api/types.js';
+import { config } from '../config.js';
 
 export async function publicConfigRoutes(fastify: FastifyInstance) {
   function normalizeTimestamp(value: string | Date | null | undefined): string | null {
@@ -52,6 +53,7 @@ export async function publicConfigRoutes(fastify: FastifyInstance) {
       dashboardAlertExpiresAt: normalizeTimestamp(cfg?.dashboard_alert_expires_at ?? null),
       dashboardAlertVariant: cfg?.dashboard_alert_variant || null,
       dashboardAlertIcon: cfg?.dashboard_alert_icon || null,
+      timeZone: config.timeZone,
     };
     }
   );

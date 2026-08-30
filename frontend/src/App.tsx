@@ -1,6 +1,7 @@
 import { Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useParams, useLocation, Outlet } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { ClubTimeZoneProvider } from './contexts/ClubTimeZoneContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { AlertProvider } from './contexts/AlertContext';
 import { ConfirmProvider } from './contexts/ConfirmContext';
@@ -224,6 +225,7 @@ function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <ClubTimeZoneProvider>
         <ThemeProvider>
           <AlertProvider>
             <ConfirmProvider>
@@ -850,6 +852,7 @@ function App() {
             </ConfirmProvider>
           </AlertProvider>
         </ThemeProvider>
+        </ClubTimeZoneProvider>
       </AuthProvider>
     </BrowserRouter>
   );

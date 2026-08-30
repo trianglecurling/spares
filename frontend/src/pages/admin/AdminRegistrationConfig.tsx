@@ -14,6 +14,7 @@ import { useConfirm } from '../../contexts/ConfirmContext';
 import { del, get, patch, post } from '../../api/client';
 import api, { formatApiError } from '../../utils/api';
 import { memberHasScope } from '../../utils/permissions';
+import { dateTimeLocalToIso, isoToDateTimeLocal } from '../../utils/clubTime';
 import AdminRegistrationsList from './AdminRegistrationsList';
 import AdminRegistrationQa from './AdminRegistrationQa';
 import type { paths } from '../../api/generated/types';
@@ -172,17 +173,11 @@ function formatDiscountSummary(slot: DiscountSlotForm): string {
 }
 
 function formatDateTimeLocal(value: string | null): string {
-  if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  const offsetMs = date.getTimezoneOffset() * 60 * 1000;
-  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+  return isoToDateTimeLocal(value);
 }
 
 function parseDateTimeLocal(value: string): string {
-  if (!value) return '';
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '' : date.toISOString();
+  return dateTimeLocalToIso(value);
 }
 
 function describeSeason(seasons: Season[], seasonId: number): string {

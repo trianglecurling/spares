@@ -13,6 +13,7 @@ import FormSection from '../../components/FormSection';
 import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
 import InlineStateMessage from '../../components/InlineStateMessage';
 import Modal from '../../components/Modal';
+import { dateTimeLocalToIso, isoToDateTimeLocal } from '../../utils/clubTime';
 
 export type DashboardSectionConfig = {
   lookAheadDays?: number;
@@ -58,96 +59,6 @@ const DASHBOARD_ALERT_ICON_OPTIONS: ChoiceOption<string>[] = [
   { value: 'error', label: 'Error' },
   { value: 'none', label: 'No icon' },
 ];
-
-const EASTERN_TIME_ZONE = 'America/New_York';
-
-type DateTimeParts = {
-  year: string;
-  month: string;
-  day: string;
-  hour: string;
-  minute: string;
-  second?: string;
-};
-
-const extractDateTimeParts = (
-  date: Date,
-  timeZone: string,
-  includeSeconds = false,
-): DateTimeParts | null => {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: includeSeconds ? '2-digit' : undefined,
-    hour12: false,
-  })
-    .formatToParts(date)
-    .reduce<Record<string, string>>((acc, part) => {
-      if (part.type !== 'literal') {
-        acc[part.type] = part.value;
-      }
-      return acc;
-    }, {});
-
-  if (!parts.year || !parts.month || !parts.day || !parts.hour || !parts.minute) {
-    return null;
-  }
-  if (includeSeconds && !parts.second) {
-    return null;
-  }
-
-  return {
-    year: parts.year,
-    month: parts.month,
-    day: parts.day,
-    hour: parts.hour,
-    minute: parts.minute,
-    second: parts.second,
-  };
-};
-
-const formatEasternDateTime = (value?: string | null): string => {
-  if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  const parts = extractDateTimeParts(date, EASTERN_TIME_ZONE);
-  if (!parts) return '';
-  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
-};
-
-const getTimeZoneOffsetMinutes = (date: Date, timeZone: string) => {
-  const parts = extractDateTimeParts(date, timeZone, true);
-  if (!parts || !parts.second) return 0;
-  const utcTime = Date.UTC(
-    Number(parts.year),
-    Number(parts.month) - 1,
-    Number(parts.day),
-    Number(parts.hour),
-    Number(parts.minute),
-    Number(parts.second),
-  );
-  return (utcTime - date.getTime()) / 60000;
-};
-
-const parseEasternDateTimeToIso = (value: string): string => {
-  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
-  if (!match) return '';
-  const [, year, month, day, hour, minute] = match;
-  const utcGuess = Date.UTC(
-    Number(year),
-    Number(month) - 1,
-    Number(day),
-    Number(hour),
-    Number(minute),
-    0,
-  );
-  const offsetMinutes = getTimeZoneOffsetMinutes(new Date(utcGuess), EASTERN_TIME_ZONE);
-  return new Date(utcGuess - offsetMinutes * 60000).toISOString();
-};
 
 type SectionFormState = {
   isEnabled: boolean;
@@ -474,18 +385,18 @@ export default function AdminContentDashboardPanel({
                 />
               </FormField>
               <FormField
-                label="Optional expiration (Eastern Time)"
+                label="Optional expiration (club time)"
                 htmlFor={`${formFieldId}-alert-expires`}
               >
                 <input
                   id={`${formFieldId}-alert-expires`}
                   type="datetime-local"
-                  value={formatEasternDateTime(form.alertExpiresAt)}
+                  value={isoToDateTimeLocal(form.alertExpiresAt)}
                   onChange={(event) => {
                     const value = event.target.value;
                     setForm((current) => ({
                       ...current,
-                      alertExpiresAt: value ? parseEasternDateTimeToIso(value) : '',
+                      alertExpiresAt: value ? dateTimeLocalToIso(value) : '',
                     }));
                   }}
                   className="app-input"

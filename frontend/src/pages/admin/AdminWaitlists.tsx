@@ -17,6 +17,7 @@ import {
 import SortableList from '../../components/dragDrop/SortableList';
 import api, { getApiErrorMessage } from '../../utils/api';
 import { useAlert } from '../../contexts/AlertContext';
+import { dateTimeLocalToIso } from '../../utils/clubTime';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useMemberOptions } from '../../contexts/MemberOptionsContext';
@@ -189,8 +190,10 @@ function ReasonDialog({ state, onClose }: { state: ReasonDialogState; onClose: (
 
   if (!state) return null;
 
-  const expiresAtIso = expiresAtLocal ? new Date(expiresAtLocal).toISOString() : '';
-  const expiresAtValid = !state.requireExpiresAt || (expiresAtLocal !== '' && !Number.isNaN(new Date(expiresAtLocal).getTime()) && new Date(expiresAtLocal).getTime() > Date.now());
+  const expiresAtIso = expiresAtLocal ? dateTimeLocalToIso(expiresAtLocal) : '';
+  const expiresAtValid =
+    !state.requireExpiresAt ||
+    (expiresAtIso !== '' && !Number.isNaN(new Date(expiresAtIso).getTime()) && new Date(expiresAtIso).getTime() > Date.now());
   const canSubmit = reason.trim().length > 0 && expiresAtValid && !submitting;
 
   const submit = async () => {

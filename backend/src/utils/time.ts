@@ -2,6 +2,8 @@ import { getDatabaseConfig } from '../db/config.js';
 import { SQLiteAdapter } from '../db/sqlite-adapter.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { eq } from 'drizzle-orm';
+import { config } from '../config.js';
+import { formatDateInTimeZone } from './timeZone.js';
 
 // Cache for test time to avoid repeated DB queries
 let cachedTestTime: string | null | undefined = undefined;
@@ -174,10 +176,11 @@ export function getCurrentTime(): Date {
 }
 
 /**
- * Gets the current date as a YYYY-MM-DD string (for SQL DATE comparisons)
+ * Gets the current club-local date as a YYYY-MM-DD string (for SQL DATE comparisons)
  */
 export function getCurrentDateString(): string {
-  return getCurrentTime().toISOString().split('T')[0];
+  const time = getCurrentTime();
+  return formatDateInTimeZone(time, config.timeZone) ?? time.toISOString().split('T')[0];
 }
 
 /**
@@ -185,7 +188,7 @@ export function getCurrentDateString(): string {
  */
 export async function getCurrentDateStringAsync(): Promise<string> {
   const time = await getCurrentTimeAsync();
-  return time.toISOString().split('T')[0];
+  return formatDateInTimeZone(time, config.timeZone) ?? time.toISOString().split('T')[0];
 }
 
 /**

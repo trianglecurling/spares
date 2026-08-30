@@ -13,8 +13,11 @@ import FormSection from './FormSection';
 import ChoiceInput, { type ChoiceOption } from './ChoiceInput';
 import MarkdownDescriptionEditor, { type MarkdownDescriptionEditorRef } from './MarkdownDescriptionEditor';
 import RecurrenceFields, { useRecurrenceState } from './RecurrenceFields';
+import ClubTimeHint from './ClubTimeHint';
 import { useAlert } from '../contexts/AlertContext';
+import { useClubTimeZone } from '../contexts/ClubTimeZoneContext';
 import { useTheme } from '../contexts/ThemeContext';
+import { localDateTimeToIso } from '../utils/clubTime';
 import type { CalendarEvent, CalendarEventType } from '../pages/Calendar';
 import {
   calendarEventDescriptionForSave,
@@ -42,6 +45,7 @@ export default function CalendarEventForm({
   onCancel,
 }: CalendarEventFormProps) {
   const { showAlert } = useAlert();
+  const timeZone = useClubTimeZone();
   const template = event ?? copyFrom;
   const base = template
     ? { start: template.start, end: template.end }
@@ -150,8 +154,8 @@ export default function CalendarEventForm({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
-    const start = new Date(`${startDate}T${allDay ? '00:00' : startTime}:00`);
-    const end = new Date(`${endDate}T${allDay ? '23:59' : endTime}:00`);
+    const startIso = localDateTimeToIso(startDate, allDay ? '00:00' : startTime, timeZone);
+    const endIso = localDateTimeToIso(endDate, allDay ? '23:59' : endTime, timeZone);
     const locations: Array<
       | { type: 'sheet'; sheetId: number; sheetName?: string }
       | { type: 'warm-room' | 'exterior' | 'offsite' | 'virtual' }
@@ -171,8 +175,8 @@ export default function CalendarEventForm({
     const payload = {
       typeId,
       title,
-      start: start.toISOString(),
-      end: end.toISOString(),
+      start: startIso,
+      end: endIso,
       allDay,
       description,
       articleId: linkedArticle?.id ?? null,
@@ -261,6 +265,7 @@ export default function CalendarEventForm({
               title="Schedule"
               description="Choose when the event starts and ends. Entered values stay in place if saving fails."
             >
+              <ClubTimeHint />
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <FormField label="Start" required helperText="Choose the first occurrence start time.">
                   <div className="flex gap-2">

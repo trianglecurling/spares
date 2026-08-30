@@ -8,6 +8,7 @@ import type { DataTableColumn } from '../../components/table/tableTypes';
 import { useAlert } from '../../contexts/AlertContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { memberHasScope } from '../../utils/permissions';
+import { formatClubDateTime } from '../../utils/clubTime';
 import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
 import PageTabs from '../../components/PageTabs';
 import AdminPaymentItemNames from './AdminPaymentItemNames';
@@ -113,7 +114,7 @@ function formatDate(value: unknown): string {
   if (!value || typeof value !== 'string') return '-';
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleString();
+  return formatClubDateTime(parsed) || value;
 }
 
 function valueOfRecord(record: Record<string, unknown>, key: string): unknown {

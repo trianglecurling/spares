@@ -8,11 +8,13 @@ import axios from 'axios';
 import Button from './Button';
 import ChoiceInput, { type ChoiceOption } from './ChoiceInput';
 import FormField from './FormField';
+import ClubTimeHint from './ClubTimeHint';
 import Modal from './Modal';
 import type { CalendarEvent } from '../pages/Calendar';
 import { useAlert } from '../contexts/AlertContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import api, { formatApiError } from '../utils/api';
+import { dateTimeLocalToIso } from '../utils/clubTime';
 
 type DurationHours = 1 | 2;
 
@@ -109,7 +111,7 @@ export default function AdminIceBookingEditor({
     try {
       await api.patch(`/ice-bookings/${bookingId}`, {
         sheetId,
-        start: new Date(startLocal).toISOString(),
+        start: dateTimeLocalToIso(startLocal),
         durationHours,
       });
       showAlert('Ice booking updated. The member was emailed.', 'success');
@@ -154,6 +156,7 @@ export default function AdminIceBookingEditor({
           Booked by <span className="font-medium text-gray-900 dark:text-gray-100">{event.title}</span>
           . Changes are emailed to the member.
         </p>
+        <ClubTimeHint />
 
         <FormField label="Start date and time" htmlFor={startFieldId} required>
           <input
