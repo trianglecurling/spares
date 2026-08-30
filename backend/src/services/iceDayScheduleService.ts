@@ -112,7 +112,10 @@ function formatTimeValue(value: unknown): string {
   return String(value ?? '');
 }
 
-function sheetIdsOf(item: FeedItem): number[] {
+/** Sheets this feed item is specified to occupy. Empty means it is not on the ice. */
+export function iceDayOccupancySheetIds(item: {
+  locations?: Array<{ type: string; sheetId?: number }>;
+}): number[] {
   const ids: number[] = [];
   for (const loc of item.locations ?? []) {
     if (loc.type === 'sheet' && loc.sheetId != null && Number.isFinite(loc.sheetId)) {
@@ -122,8 +125,9 @@ function sheetIdsOf(item: FeedItem): number[] {
   return [...new Set(ids)];
 }
 
-function activityKind(item: FeedItem): IceDayScheduleActivity['kind'] {
-  if (item.source === 'leagues' || item.typeId === 'leagues') return 'league';
+/** League draws only — calendar type "leagues" is a color category, not ice occupancy. */
+export function activityKind(item: { source: string; typeId: string }): IceDayScheduleActivity['kind'] {
+  if (item.source === 'leagues') return 'league';
   if (
     item.typeId === 'bonspiel' ||
     item.typeId === 'bonspiel-fours' ||
@@ -503,12 +507,11 @@ export async function getIceDaySchedule(input: {
     const startIso = toIsoTimestamp(item.start);
     const endIso = toIsoTimestamp(item.end);
     const kind = activityKind(item);
-    const locationSheetIds = sheetIdsOf(item);
+    const locationSheetIds = iceDayOccupancySheetIds(item);
 
     if (kind === 'league') {
       const parsed = parseLeagueCalendarEventId(item.id);
-      const sheets = locationSheetIds.length > 0 ? locationSheetIds : sheetRows.map((row) => row.id);
-      for (const sheetId of sheets) {
+      for (const sheetId of locationSheetIds) {
         const game =
           parsed != null
             ? leagueLookup.gamesByDrawSheet.get(gameKey(parsed.leagueId, parsed.date, parsed.time, sheetId))
