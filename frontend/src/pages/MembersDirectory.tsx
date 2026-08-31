@@ -16,6 +16,7 @@ import useTableQueryState from '../hooks/useTableQueryState';
 import { useLeagueOptions } from '../contexts/LeagueOptionsContext';
 import { isLeagueEligibleForSpares } from '../utils/leagueSpareEligibility';
 import MemberCredentialsList, { type MemberCredentialItem } from '../components/MemberCredentialsList';
+import DashboardMembershipCard from '../components/DashboardMembershipCard';
 
 const MEMBERS_PAGE_SIZE = 50;
 
@@ -90,6 +91,7 @@ export default function MembersDirectory() {
   const [spareLeagueId, setSpareLeagueId] = useState<number | null>(null);
   const [spareMembers, setSpareMembers] = useState<Member[]>([]);
   const [spareLoading, setSpareLoading] = useState(false);
+  const [cardMember, setCardMember] = useState<Member | null>(null);
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const [memberAvailability, setMemberAvailability] = useState<MemberAvailability | null>(null);
   const [memberLeagues, setMemberLeagues] = useState<MemberLeague[] | null>(null);
@@ -240,6 +242,10 @@ export default function MembersDirectory() {
     );
   }, [spareLeagueId]);
 
+  const handleMemberNameClick = useCallback((member: Member) => {
+    setCardMember(member);
+  }, []);
+
   const handleMemberClick = useCallback(async (member: Member) => {
     setSelectedMember(member);
     setProfileModalTab('profile');
@@ -284,6 +290,17 @@ export default function MembersDirectory() {
     }
   }, []);
 
+  const handleViewProfileFromCard = useCallback(() => {
+    if (!cardMember) return;
+    const member = cardMember;
+    setCardMember(null);
+    void handleMemberClick(member);
+  }, [cardMember, handleMemberClick]);
+
+  const handleCloseCardModal = () => {
+    setCardMember(null);
+  };
+
   const handleCloseModal = () => {
     setSelectedMember(null);
     setMemberAvailability(null);
@@ -315,7 +332,8 @@ export default function MembersDirectory() {
         renderCell: (member) => (
           <button
             type="button"
-            onClick={() => handleMemberClick(member)}
+            onClick={() => handleMemberNameClick(member)}
+            aria-haspopup="dialog"
             className="cursor-pointer text-left font-medium text-gray-900 hover:text-primary-teal-link dark:text-gray-100"
           >
             {member.name}
@@ -369,7 +387,7 @@ export default function MembersDirectory() {
           ),
       },
     ],
-    [handleMemberClick]
+    [handleMemberNameClick]
   );
 
   return (
@@ -465,9 +483,30 @@ export default function MembersDirectory() {
         )}
 
         <Modal
+          isOpen={!!cardMember}
+          onClose={handleCloseCardModal}
+          title={cardMember ? `${cardMember.name}'s membership card` : 'Membership card'}
+          size="lg"
+        >
+          {cardMember && (
+            <div className="flex flex-col gap-4">
+              <DashboardMembershipCard memberId={cardMember.id} />
+              <div className="flex flex-shrink-0 justify-end gap-2 border-t border-gray-200 pt-4 dark:border-gray-700">
+                <Button variant="secondary" onClick={handleViewProfileFromCard}>
+                  View profile
+                </Button>
+                <Button variant="secondary" onClick={handleCloseCardModal}>
+                  Close
+                </Button>
+              </div>
+            </div>
+          )}
+        </Modal>
+
+        <Modal
           isOpen={!!selectedMember}
           onClose={handleCloseModal}
-          title={selectedMember ? `${selectedMember.name}'s Profile` : ''}
+          title={selectedMember ? `${selectedMember.name}'s profile` : ''}
           size="lg"
         >
           {selectedMember && (

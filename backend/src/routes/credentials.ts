@@ -4,9 +4,11 @@ import type { Member } from '../types.js';
 import { sendApiError, sendValidationError } from '../api/errors.js';
 import { isCredentialsManager } from '../utils/auth.js';
 import {
+  archiveCredential,
   canManageCredential,
   createCredential,
   deleteCredential,
+  getCredentialAdmin,
   grantCredential,
   listCredentialsAdmin,
   listManagedCredentialIds,
@@ -62,12 +64,30 @@ export async function credentialRoutes(fastify: FastifyInstance): Promise<void> 
     if (managed !== 'all' && managed.length === 0) {
       return sendApiError(reply, 403, 'Forbidden');
     }
+    const includeArchived =
+      (request.query as { includeArchived?: string } | undefined)?.includeArchived === '1';
     try {
-      return { credentials: await listCredentialsAdmin(member) };
+      return { credentials: await listCredentialsAdmin(member, { includeArchived }) };
     } catch (err) {
       return handleServiceError(reply, err);
     }
   });
+
+  fastify.get<{ Params: { id: string } }>(
+    '/members/admin/credentials/:id',
+    { schema: { tags: ['members'] } },
+    async (request, reply) => {
+      const member = getMember(request as AuthenticatedRequest);
+      if (!member) return sendApiError(reply, 401, 'Unauthorized');
+      const credentialId = Number.parseInt(request.params.id, 10);
+      if (!Number.isFinite(credentialId)) return sendApiError(reply, 400, 'Invalid credential id');
+      try {
+        return { credential: await getCredentialAdmin(member, credentialId) };
+      } catch (err) {
+        return handleServiceError(reply, err);
+      }
+    }
+  );
 
   fastify.post('/members/admin/credentials', { schema: { tags: ['members'] } }, async (request, reply) => {
     const member = getMember(request as AuthenticatedRequest);
@@ -96,6 +116,42 @@ export async function credentialRoutes(fastify: FastifyInstance): Promise<void> 
       if (!parsed.success) return sendValidationError(reply, 'Invalid credential data', parsed.error.flatten());
       try {
         await updateCredential(credentialId, parsed.data);
+        return { ok: true };
+      } catch (err) {
+        return handleServiceError(reply, err);
+      }
+    }
+  );
+
+  fastify.post<{ Params: { id: string } }>(
+    '/members/admin/credentials/:id/archive',
+    { schema: { tags: ['members'] } },
+    async (request, reply) => {
+      const member = getMember(request as AuthenticatedRequest);
+      if (!member) return sendApiError(reply, 401, 'Unauthorized');
+      const credentialId = Number.parseInt(request.params.id, 10);
+      if (!Number.isFinite(credentialId)) return sendApiError(reply, 400, 'Invalid credential id');
+      if (!isCredentialsManager(member)) return sendApiError(reply, 403, 'Forbidden');
+      try {
+        await archiveCredential(credentialId, true);
+        return { ok: true };
+      } catch (err) {
+        return handleServiceError(reply, err);
+      }
+    }
+  );
+
+  fastify.post<{ Params: { id: string } }>(
+    '/members/admin/credentials/:id/restore',
+    { schema: { tags: ['members'] } },
+    async (request, reply) => {
+      const member = getMember(request as AuthenticatedRequest);
+      if (!member) return sendApiError(reply, 401, 'Unauthorized');
+      const credentialId = Number.parseInt(request.params.id, 10);
+      if (!Number.isFinite(credentialId)) return sendApiError(reply, 400, 'Invalid credential id');
+      if (!isCredentialsManager(member)) return sendApiError(reply, 403, 'Forbidden');
+      try {
+        await archiveCredential(credentialId, false);
         return { ok: true };
       } catch (err) {
         return handleServiceError(reply, err);

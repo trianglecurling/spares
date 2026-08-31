@@ -30,6 +30,9 @@ const PublicPaymentDetailPage = lazyRoute(() => import('./pages/PublicPaymentDet
 const AdminMembersLayout = lazyRoute(() => import('./pages/admin/AdminMembersLayout'));
 const AdminMembers = lazyRoute(() => import('./pages/admin/AdminMembers'));
 const AdminMemberCredentials = lazyRoute(() => import('./pages/admin/AdminMemberCredentials'));
+const AdminMemberCredentialDetail = lazyRoute(
+  () => import('./pages/admin/AdminMemberCredentialDetail')
+);
 const AdminWaivers = lazyRoute(() => import('./pages/admin/AdminWaivers'));
 const AdminFacilityInfo = lazyRoute(() => import('./pages/admin/AdminFacilityInfo'));
 const AdminSheets = lazyRoute(() => import('./pages/admin/AdminSheets'));
@@ -90,6 +93,7 @@ const AdminVolunteering = lazyRoute(() => import('./pages/admin/AdminVolunteerin
 const AdminVolunteeringPrograms = lazyRoute(() =>
   import('./pages/admin/AdminVolunteering').then((m) => ({ default: m.AdminVolunteeringPrograms }))
 );
+const AdminVolunteerHourLogs = lazyRoute(() => import('./pages/admin/AdminVolunteerHourLogs'));
 const AdminVolunteerProgramEditor = lazyRoute(() => import('./pages/admin/AdminVolunteerProgramEditor'));
 const VolunteeringHub = lazyRoute(() => import('./pages/VolunteeringHub'));
 const VolunteerProgramPage = lazyRoute(() => import('./pages/VolunteerProgramPage'));
@@ -564,6 +568,14 @@ function App() {
                       />
 
                       <Route
+                        path="/admin/members/credentials/:credentialId"
+                        element={
+                          <ProtectedRoute>
+                            <AdminMemberCredentialDetail />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
                         path="/admin/members"
                         element={
                           <ProtectedRoute>
@@ -749,6 +761,7 @@ function App() {
                         }
                       >
                         <Route index element={<AdminVolunteeringPrograms />} />
+                        <Route path="hour-logs" element={<AdminVolunteerHourLogs />} />
                         <Route path="credentials" element={<Navigate to="/admin/members/credentials" replace />} />
                       </Route>
                       <Route

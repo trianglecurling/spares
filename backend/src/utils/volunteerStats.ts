@@ -20,7 +20,38 @@ export type VolunteerStatsCompletedSignup = {
   startDt: string;
   endDt: string;
   startDateOnly: string;
+  programTitle?: string | null;
+  roleName?: string | null;
 };
+
+export type VolunteerStatsHourLog = {
+  id?: number;
+  memberId: number;
+  memberName: string | null;
+  volunteerDate: string;
+  hours: number;
+  description?: string | null;
+};
+
+export type VolunteerSeasonActivity = {
+  id: string;
+  kind: 'shift' | 'self_report';
+  date: string;
+  hours: number;
+  summary: string;
+  detail: string | null;
+};
+
+export type VolunteerSeasonLedger = {
+  memberId: number;
+  memberName: string;
+  season: { id: number; name: string; startDate: string; endDate: string };
+  totalHours: number;
+  activities: VolunteerSeasonActivity[];
+};
+
+export const VOLUNTEER_SEASON_LEDGER_UNAVAILABLE =
+  'Volunteer activity is only available for the current season top 10.';
 
 export type VolunteerStatsLeaderboardEntry = {
   rank: number;
@@ -72,13 +103,21 @@ function inMonth(startDateOnly: string, monthPrefix: string): boolean {
   return startDateOnly.startsWith(monthPrefix);
 }
 
-function inSeason(
+export function inVolunteerStatsSeason(
   startDateOnly: string,
   seasonCountStart: string | null,
   seasonEnd: string | null
 ): boolean {
   if (!seasonCountStart || !seasonEnd) return false;
   return startDateOnly >= seasonCountStart && startDateOnly <= seasonEnd;
+}
+
+function inSeason(
+  startDateOnly: string,
+  seasonCountStart: string | null,
+  seasonEnd: string | null
+): boolean {
+  return inVolunteerStatsSeason(startDateOnly, seasonCountStart, seasonEnd);
 }
 
 function sinceTrackingStart(startDateOnly: string): boolean {
@@ -120,14 +159,17 @@ export function aggregateVolunteerStats(
     viewerMemberId: number;
     nowIso: string;
     monthPrefix: string;
+    todayDateOnly?: string;
     season: { id: number; name: string; startDate: string; endDate: string } | null;
     membershipCount: number;
+    hourLogs?: VolunteerStatsHourLog[];
   }
 ): VolunteerStatsResult {
   const seasonCountStart = options.season
     ? volunteerStatsSeasonCountStart(options.season.startDate)
     : null;
   const seasonEnd = options.season?.endDate ?? null;
+  const todayDateOnly = options.todayDateOnly ?? options.nowIso.slice(0, 10);
 
   const completed = rows.filter(
     (row) => row.startDt <= options.nowIso && sinceTrackingStart(row.startDateOnly)
@@ -180,6 +222,26 @@ export function aggregateVolunteerStats(
 
     if (season && row.memberId != null) {
       uniqueVolunteersSeason.add(row.memberId);
+    }
+  }
+
+  for (const log of options.hourLogs ?? []) {
+    const hours = Number(log.hours);
+    if (!Number.isFinite(hours) || hours <= 0) continue;
+    if (log.volunteerDate > todayDateOnly) continue;
+    if (!sinceTrackingStart(log.volunteerDate)) continue;
+    const month = inMonth(log.volunteerDate, options.monthPrefix);
+    const season = inSeason(log.volunteerDate, seasonCountStart, seasonEnd);
+    addPeriod(clubHours, hours, month, season);
+    if (log.memberId === options.viewerMemberId) {
+      addPeriod(meHours, hours, month, season);
+    }
+    if (season) {
+      uniqueVolunteersSeason.add(log.memberId);
+      const existing = seasonHoursByMember.get(log.memberId);
+      const name = normalizePersonName(log.memberName) || 'Volunteer';
+      if (existing) existing.hours += hours;
+      else seasonHoursByMember.set(log.memberId, { name, hours });
     }
   }
 
@@ -239,5 +301,84 @@ export function aggregateVolunteerStats(
       seasonRank: viewerIndex >= 0 ? viewerIndex + 1 : null,
     },
     leaderboard,
+  };
+}
+
+export function buildSeasonVolunteerLedger(
+  memberId: number,
+  options: {
+    nowIso: string;
+    todayDateOnly: string;
+    season: { id: number; name: string; startDate: string; endDate: string };
+    signups: VolunteerStatsCompletedSignup[];
+    hourLogs: VolunteerStatsHourLog[];
+  }
+): VolunteerSeasonLedger {
+  const seasonCountStart = volunteerStatsSeasonCountStart(options.season.startDate);
+  const seasonEnd = options.season.endDate;
+  const shifts = new Map<number, VolunteerSeasonActivity & { roles: string[] }>();
+  const activities: VolunteerSeasonActivity[] = [];
+  let memberName = 'Volunteer';
+
+  for (const row of options.signups) {
+    if (row.memberId !== memberId) continue;
+    if (row.startDt > options.nowIso || !sinceTrackingStart(row.startDateOnly)) continue;
+    if (!inSeason(row.startDateOnly, seasonCountStart, seasonEnd)) continue;
+    if (row.memberName) memberName = normalizePersonName(row.memberName) || row.memberName;
+    const existing = shifts.get(row.shiftId);
+    const roleName = row.roleName?.trim();
+    if (existing) {
+      if (roleName && !existing.roles.includes(roleName)) existing.roles.push(roleName);
+      continue;
+    }
+    shifts.set(row.shiftId, {
+      id: `shift:${row.shiftId}`,
+      kind: 'shift',
+      date: row.startDateOnly,
+      hours: roundVolunteerHours(volunteerShiftDurationHours(row.startDt, row.endDt)),
+      summary: row.programTitle?.trim() || 'Volunteer shift',
+      detail: null,
+      roles: roleName ? [roleName] : [],
+    });
+  }
+
+  for (const shift of shifts.values()) {
+    activities.push({
+      id: shift.id,
+      kind: shift.kind,
+      date: shift.date,
+      hours: shift.hours,
+      summary: shift.summary,
+      detail: shift.roles.length > 0 ? shift.roles.join(', ') : null,
+    });
+  }
+
+  for (const log of options.hourLogs) {
+    if (log.memberId !== memberId) continue;
+    if (log.volunteerDate > options.todayDateOnly || !sinceTrackingStart(log.volunteerDate)) continue;
+    if (!inSeason(log.volunteerDate, seasonCountStart, seasonEnd)) continue;
+    if (log.memberName) memberName = normalizePersonName(log.memberName) || log.memberName;
+    activities.push({
+      id: `self_report:${log.id ?? `${log.volunteerDate}:${log.hours}`}`,
+      kind: 'self_report',
+      date: log.volunteerDate,
+      hours: roundVolunteerHours(Number(log.hours)),
+      summary: log.description?.trim() || 'Self-reported hours',
+      detail: null,
+    });
+  }
+
+  activities.sort((a, b) => {
+    if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+    if (a.kind !== b.kind) return a.kind.localeCompare(b.kind);
+    return a.id.localeCompare(b.id);
+  });
+
+  return {
+    memberId,
+    memberName,
+    season: options.season,
+    totalHours: roundVolunteerHours(activities.reduce((sum, activity) => sum + activity.hours, 0)),
+    activities,
   };
 }

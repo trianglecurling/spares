@@ -2361,9 +2361,16 @@ export const volunteerCredentialsSqlite = sqliteTable('volunteer_credentials', {
   name: text('name').notNull(),
   description: text('description'),
   point_of_contact_email: text('point_of_contact_email').notNull(),
+  /** Built-in key for automatically granted credentials; null for manually managed ones. */
+  system_key: text('system_key'),
+  /** When set, the credential is archived and hidden from normal listings. */
+  archived_at: text('archived_at'),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
-});
+}, (table) => ({
+  systemKeyUnique: uniqueIndex('volunteer_credentials_system_key_unique').on(table.system_key),
+  archivedAtIdx: index('idx_volunteer_credentials_archived_at').on(table.archived_at),
+}));
 
 export const volunteerCredentialManagersSqlite = sqliteTable('volunteer_credential_managers', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -2486,6 +2493,22 @@ export const volunteerSignupsSqlite = sqliteTable('volunteer_signups', {
     table.shift_role_id,
     table.member_id
   ),
+}));
+
+export const volunteerHourLogsSqlite = sqliteTable('volunteer_hour_logs', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  member_id: integer('member_id').notNull().references(() => membersSqlite.id, { onDelete: 'cascade' }),
+  volunteer_date: text('volunteer_date').notNull(), // YYYY-MM-DD
+  hours: real('hours').notNull(),
+  description: text('description').notNull(),
+  created_by_member_id: integer('created_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
+  updated_by_member_id: integer('updated_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  memberIdx: index('idx_volunteer_hour_logs_member_id').on(table.member_id),
+  dateIdx: index('idx_volunteer_hour_logs_volunteer_date').on(table.volunteer_date),
+  createdAtIdx: index('idx_volunteer_hour_logs_created_at').on(table.created_at),
 }));
 
 export const expenseReportsSqlite = sqliteTable('expense_reports', {
@@ -4642,9 +4665,16 @@ export const volunteerCredentialsPg = pgTable('volunteer_credentials', {
   name: textPg('name').notNull(),
   description: textPg('description'),
   point_of_contact_email: textPg('point_of_contact_email').notNull(),
+  /** Built-in key for automatically granted credentials; null for manually managed ones. */
+  system_key: textPg('system_key'),
+  /** When set, the credential is archived and hidden from normal listings. */
+  archived_at: timestamp('archived_at', { withTimezone: false }),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
-});
+}, (table) => ({
+  systemKeyUnique: uniqueIndexPg('volunteer_credentials_system_key_unique_pg').on(table.system_key),
+  archivedAtIdx: indexPg('idx_volunteer_credentials_archived_at').on(table.archived_at),
+}));
 
 export const volunteerCredentialManagersPg = pgTable('volunteer_credential_managers', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
@@ -4777,6 +4807,22 @@ export const volunteerSignupsPg = pgTable('volunteer_signups', {
     table.shift_role_id,
     table.member_id
   ),
+}));
+
+export const volunteerHourLogsPg = pgTable('volunteer_hour_logs', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  member_id: integerPg('member_id').notNull().references(() => membersPg.id, { onDelete: 'cascade' }),
+  volunteer_date: date('volunteer_date').notNull(),
+  hours: doublePrecision('hours').notNull(),
+  description: textPg('description').notNull(),
+  created_by_member_id: integerPg('created_by_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
+  updated_by_member_id: integerPg('updated_by_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  memberIdx: indexPg('idx_volunteer_hour_logs_member_id').on(table.member_id),
+  dateIdx: indexPg('idx_volunteer_hour_logs_volunteer_date').on(table.volunteer_date),
+  createdAtIdx: indexPg('idx_volunteer_hour_logs_created_at').on(table.created_at),
 }));
 
 export const expenseReportsPg = pgTable('expense_reports', {
@@ -4989,6 +5035,7 @@ export const sqliteSchema = {
   volunteerShiftExceptions: volunteerShiftExceptionsSqlite,
   volunteerShiftRoles: volunteerShiftRolesSqlite,
   volunteerSignups: volunteerSignupsSqlite,
+  volunteerHourLogs: volunteerHourLogsSqlite,
   expenseReports: expenseReportsSqlite,
   expenseReceipts: expenseReceiptsSqlite,
   expenseReportNotes: expenseReportNotesSqlite,
@@ -5115,6 +5162,7 @@ export const pgSchema = {
   volunteerShiftExceptions: volunteerShiftExceptionsPg,
   volunteerShiftRoles: volunteerShiftRolesPg,
   volunteerSignups: volunteerSignupsPg,
+  volunteerHourLogs: volunteerHourLogsPg,
   expenseReports: expenseReportsPg,
   expenseReceipts: expenseReceiptsPg,
   expenseReportNotes: expenseReportNotesPg,

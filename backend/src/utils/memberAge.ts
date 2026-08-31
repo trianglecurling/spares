@@ -29,6 +29,19 @@ export function dateOfBirthValidationMessage(
   return null;
 }
 
+/** Whole years completed on `asOfDate` (YYYY-MM-DD). Null when either date is missing or invalid. */
+export function ageInYearsOnDate(
+  dateOfBirth: string | null | undefined,
+  asOfDate: string,
+): number | null {
+  if (!dateOfBirth || !isValidDateOnly(dateOfBirth) || !isValidDateOnly(asOfDate)) return null;
+  let age = Number(asOfDate.slice(0, 4)) - Number(dateOfBirth.slice(0, 4));
+  if (asOfDate.slice(5) < dateOfBirth.slice(5)) {
+    age -= 1;
+  }
+  return age;
+}
+
 /** True when date of birth indicates the member is under 18 today (UTC calendar). */
 export function isMemberMinor(dateOfBirth: string | null | undefined): boolean {
   if (!dateOfBirth) return false;

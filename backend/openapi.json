@@ -7985,6 +7985,163 @@
         }
       }
     },
+    "/members/{memberId}/membership-card": {
+      "get": {
+        "tags": [
+          "members"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "memberId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "membershipStatus": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "regular",
+                            "social",
+                            "former",
+                            "non_member",
+                            "lifetime"
+                          ]
+                        },
+                        "validThrough": {
+                          "type": [
+                            "null",
+                            "string"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "validThrough"
+                      ]
+                    },
+                    "icePrivilegesValidThrough": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "pendingRegistrationPayment": {
+                      "type": "boolean"
+                    },
+                    "clubTenure": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "new",
+                            "years"
+                          ]
+                        },
+                        "years": {
+                          "type": [
+                            "null",
+                            "number"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "years"
+                      ]
+                    },
+                    "session": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "number"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "isUpcoming": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "name",
+                        "isUpcoming"
+                      ]
+                    },
+                    "leagues": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "leagueId": {
+                            "type": "number"
+                          },
+                          "leagueName": {
+                            "type": "string"
+                          },
+                          "participation": {
+                            "type": "string",
+                            "enum": [
+                              "roster",
+                              "sabbatical",
+                              "waitlist",
+                              "pending"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "leagueId",
+                          "leagueName",
+                          "participation"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "membershipStatus",
+                    "icePrivilegesValidThrough",
+                    "pendingRegistrationPayment",
+                    "clubTenure",
+                    "session",
+                    "leagues"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/members/{memberId}/volunteer-credentials": {
       "get": {
         "tags": [
@@ -8032,13 +8189,20 @@
                               "null",
                               "string"
                             ]
+                          },
+                          "systemKey": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
                           }
                         },
                         "required": [
                           "id",
                           "name",
                           "description",
-                          "expiresAt"
+                          "expiresAt",
+                          "systemKey"
                         ]
                       }
                     }
@@ -30773,6 +30937,28 @@
         }
       }
     },
+    "/volunteering/stats/leaderboard/{memberId}": {
+      "get": {
+        "tags": [
+          "volunteering"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "memberId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/volunteering/dashboard-opportunities": {
       "get": {
         "tags": [
@@ -30829,6 +31015,70 @@
         }
       },
       "patch": {
+        "tags": [
+          "volunteering"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/volunteering/hour-logs": {
+      "get": {
+        "tags": [
+          "volunteering"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "volunteering"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/volunteering/hour-logs/{id}": {
+      "patch": {
+        "tags": [
+          "volunteering"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "delete": {
         "tags": [
           "volunteering"
         ],
@@ -31192,6 +31442,70 @@
       }
     },
     "/volunteering/admin/signups/{id}": {
+      "delete": {
+        "tags": [
+          "volunteering"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/volunteering/admin/hour-logs": {
+      "get": {
+        "tags": [
+          "volunteering"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "volunteering"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/volunteering/admin/hour-logs/{id}": {
+      "patch": {
+        "tags": [
+          "volunteering"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
       "delete": {
         "tags": [
           "volunteering"

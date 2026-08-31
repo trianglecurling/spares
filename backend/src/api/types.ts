@@ -250,6 +250,7 @@ export type MemberVolunteerCredentialResponse = {
   name: string;
   description: string | null;
   expiresAt: string | null;
+  systemKey: string | null;
 };
 
 export type MemberVolunteerCredentialsResponse = {

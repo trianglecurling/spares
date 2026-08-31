@@ -13,6 +13,14 @@ import {
   volunteerSpotsStatusLabel,
   volunteerSpotsTotals,
   formatVolunteerDateOnly,
+  formatVolunteerHoursLabel,
+  formatVolunteerShiftCount,
+  buildPastVolunteeringItems,
+  summarizePastVolunteering,
+  volunteerHourLogFieldErrorsFromUnknown,
+  commitVolunteerHourLogHours,
+  roundVolunteerHoursUp,
+  VOLUNTEER_HOUR_LOG_MAX_MESSAGE,
   volunteerCredentialIsValidOn,
   volunteerShiftDayKey,
   volunteerShiftHasEnded,
@@ -515,5 +523,105 @@ describe('volunteerSpotsTotals', () => {
 describe('formatVolunteerDateOnly', () => {
   test('formats a calendar date without shifting timezones', () => {
     expect(formatVolunteerDateOnly('2026-09-01')).toBe('Sep 1, 2026');
+  });
+});
+
+describe('roundVolunteerHoursUp', () => {
+  test('rounds up to the next half hour', () => {
+    expect(roundVolunteerHoursUp(1.1)).toBe(1.5);
+    expect(roundVolunteerHoursUp(1.5)).toBe(1.5);
+  });
+});
+
+describe('commitVolunteerHourLogHours', () => {
+  test('rounds partial increments up and rejects more than 8 hours', () => {
+    expect(commitVolunteerHourLogHours(1.1)).toEqual({ hours: 1.5 });
+    expect(commitVolunteerHourLogHours(8.1)).toEqual({
+      hours: 8.1,
+      error: VOLUNTEER_HOUR_LOG_MAX_MESSAGE,
+    });
+  });
+});
+
+describe('volunteerHourLogFieldErrorsFromUnknown', () => {
+  test('reads field details from an API error', () => {
+    expect(
+      volunteerHourLogFieldErrorsFromUnknown({
+        response: { data: { details: { hours: VOLUNTEER_HOUR_LOG_MAX_MESSAGE } } },
+      })
+    ).toEqual({ hours: VOLUNTEER_HOUR_LOG_MAX_MESSAGE });
+  });
+});
+
+describe('buildPastVolunteeringItems', () => {
+  const signup = (overrides: { signupId: number; startDt: string; endDt: string }) => ({
+    signupId: overrides.signupId,
+    shiftRoleId: overrides.signupId,
+    programId: 1,
+    programTitle: 'Ice crew',
+    location: null,
+    roleId: 1,
+    roleName: 'Timer',
+    startDt: overrides.startDt,
+    endDt: overrides.endDt,
+    status: 'confirmed' as const,
+    comments: null,
+    canCancel: false,
+  });
+
+  const log = (overrides: { id: number; volunteerDate: string; hours: number }) => ({
+    id: overrides.id,
+    memberId: 1,
+    memberName: 'Alex',
+    volunteerDate: overrides.volunteerDate,
+    hours: overrides.hours,
+    description: 'Set up tables',
+    createdByMemberId: 1,
+    createdByMemberName: 'Alex',
+    createdAt: '2026-10-12T12:00:00.000Z',
+    updatedAt: '2026-10-12T12:00:00.000Z',
+  });
+
+  test('intersperses shifts and self-reported hours by date, newest first', () => {
+    const items = buildPastVolunteeringItems(
+      [
+        signup({
+          signupId: 1,
+          startDt: '2026-10-10T18:00:00.000Z',
+          endDt: '2026-10-10T20:00:00.000Z',
+        }),
+        signup({
+          signupId: 2,
+          startDt: '2026-10-14T18:00:00.000Z',
+          endDt: '2026-10-14T21:00:00.000Z',
+        }),
+      ],
+      [
+        log({ id: 21, volunteerDate: '2026-10-12', hours: 1.5 }),
+        log({ id: 22, volunteerDate: '2026-10-14', hours: 2 }),
+      ]
+    );
+    expect(items.map((item) => item.kind === 'shift' ? `shift:${item.signup.signupId}` : `log:${item.log.id}`)).toEqual([
+      'shift:2',
+      'log:22',
+      'log:21',
+      'shift:1',
+    ]);
+  });
+
+  test('summarizes shift count and combined hours', () => {
+    const items = buildPastVolunteeringItems(
+      [
+        signup({
+          signupId: 1,
+          startDt: '2026-10-10T18:00:00.000Z',
+          endDt: '2026-10-10T20:00:00.000Z',
+        }),
+      ],
+      [log({ id: 21, volunteerDate: '2026-10-12', hours: 1.5 })]
+    );
+    expect(summarizePastVolunteering(items)).toEqual({ shifts: 1, hours: 3.5 });
+    expect(formatVolunteerShiftCount(1)).toBe('1 shift');
+    expect(formatVolunteerHoursLabel(3.5)).toBe('3.5 hours');
   });
 });

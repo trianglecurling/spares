@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, Outlet, useNavigate } from 'react-router-dom';
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
 import AppPageControlsRow from '../../components/AppPageControlsRow';
 import AppStateCard from '../../components/AppStateCard';
 import Button from '../../components/Button';
+import PageTabs from '../../components/PageTabs';
 import IncludeArchivedToggle from '../../components/softDelete/IncludeArchivedToggle';
 import SoftDeleteRowActions from '../../components/softDelete/SoftDeleteRowActions';
 import DataTable from '../../components/table/DataTable';
@@ -24,24 +25,41 @@ import {
 import AdminVolunteerProgramDuplicateModal from './AdminVolunteerProgramDuplicateModal';
 
 export default function AdminVolunteering() {
+  const location = useLocation();
   const navigate = useNavigate();
   const { member } = useAuth();
-  const canCreate =
+  const canManageHourLogs =
     memberHasScope(member, 'volunteering.manage') || Boolean(member?.isServerAdmin);
+  const hourLogsTab = location.pathname.endsWith('/hour-logs');
 
   return (
     <AppPage>
       <AppPageHeader
         title="Manage volunteering"
-        description="Volunteer programs, descriptions, roles, and shifts."
-        actions={
-          canCreate ? (
-            <Button type="button" onClick={() => navigate('/admin/volunteering/new')}>
-              Create program
-            </Button>
-          ) : undefined
+        description={
+          hourLogsTab
+            ? 'Review and manage hours logged for time outside scheduled programs.'
+            : 'Volunteer programs, descriptions, roles, and shifts.'
         }
       />
+      {canManageHourLogs ? (
+        <PageTabs
+          items={[
+            {
+              key: 'programs',
+              label: 'Programs',
+              isActive: !hourLogsTab,
+              onClick: () => navigate('/admin/volunteering'),
+            },
+            {
+              key: 'hour-logs',
+              label: 'Self-reported hours',
+              isActive: hourLogsTab,
+              onClick: () => navigate('/admin/volunteering/hour-logs'),
+            },
+          ]}
+        />
+      ) : null}
       <Outlet />
     </AppPage>
   );
@@ -194,9 +212,16 @@ export function AdminVolunteeringPrograms() {
     <>
       {!loading ? (
         <AppPageControlsRow
-          right={
+          left={
             canCreate ? (
               <IncludeArchivedToggle checked={includeArchived} onChange={setIncludeArchived} />
+            ) : null
+          }
+          right={
+            canCreate ? (
+              <Button type="button" onClick={() => navigate('/admin/volunteering/new')}>
+                Create program
+              </Button>
             ) : null
           }
         />

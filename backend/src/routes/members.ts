@@ -1296,6 +1296,54 @@ export async function memberRoutes(fastify: FastifyInstance) {
     },
   );
 
+  // Membership card for a member (visible to all authenticated members; same payload as /me)
+  fastify.get<{ Params: { memberId: string }; Reply: MemberMembershipCardResponse | ApiErrorResponse }>(
+    '/members/:memberId/membership-card',
+    {
+      schema: {
+        tags: ['members'],
+        params: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            memberId: { type: 'string' },
+          },
+          required: ['memberId'],
+        },
+        response: {
+          200: memberMembershipCardResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const member = (request as AuthenticatedRequest).member;
+      if (!member) {
+        return reply.code(401).send({ error: 'Unauthorized' });
+      }
+
+      const targetMemberId = parseInt(request.params.memberId, 10);
+      if (Number.isNaN(targetMemberId)) {
+        return reply.code(400).send({ error: 'Invalid member ID' });
+      }
+
+      const { db, schema } = getDrizzleDb();
+      const rows = await db
+        .select({
+          id: schema.members.id,
+          name: schema.members.name,
+        })
+        .from(schema.members)
+        .where(eq(schema.members.id, targetMemberId))
+        .limit(1);
+      const target = rows[0];
+      if (!target) {
+        return reply.code(404).send({ error: 'Member not found' });
+      }
+
+      return getMemberMembershipCard(target);
+    },
+  );
+
   // Credentials held by a member (visible to all authenticated members)
   fastify.get<{ Params: { memberId: string }; Reply: MemberVolunteerCredentialsResponse | ApiErrorResponse }>(
     '/members/:memberId/volunteer-credentials',

@@ -21,6 +21,7 @@ import {
   listHubPrograms,
   listManagedProgramIds,
   listMySignups,
+  getSeasonVolunteerLedger,
   listVolunteerStats,
   removeSignupAsManager,
   signUpForShiftRole,
@@ -31,12 +32,26 @@ import {
 } from '../services/volunteeringService.js';
 import { listCredentialOptions, listHubCredentials } from '../services/credentialService.js';
 import { VolunteeringServiceError } from '../services/volunteeringServiceError.js';
+import {
+  createAdminHourLog,
+  createMyHourLog,
+  deleteAdminHourLog,
+  deleteMyHourLog,
+  listAdminHourLogs,
+  listMyHourLogs,
+  updateAdminHourLog,
+  updateMyHourLog,
+} from '../services/volunteerHourLogService.js';
+import { VolunteerHourLogValidationError } from '../utils/volunteerHourLogs.js';
 
 interface AuthenticatedRequest extends FastifyRequest {
   member: Member;
 }
 
 async function handleServiceError(reply: any, err: unknown) {
+  if (err instanceof VolunteerHourLogValidationError) {
+    return sendValidationError(reply, err.message, err.details);
+  }
   if (err instanceof VolunteeringServiceError) {
     return sendApiError(reply, err.statusCode, err.message);
   }
@@ -129,6 +144,24 @@ const signupCommentsBodySchema = z.object({
   comments: z.string().max(2000).nullable().optional(),
 });
 
+const hourLogBodySchema = z.object({
+  volunteerDate: z.string().min(1),
+  hours: z.number(),
+  description: z.string(),
+});
+
+const adminHourLogBodySchema = hourLogBodySchema.extend({
+  memberId: z.number().int().positive(),
+});
+
+const adminHourLogListQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).optional(),
+  pageSize: z.coerce.number().int().min(1).max(100).optional(),
+  search: z.string().optional(),
+  sort: z.string().optional(),
+  order: z.enum(['asc', 'desc']).optional(),
+});
+
 export async function volunteeringRoutes(fastify: FastifyInstance): Promise<void> {
   // ---- Member hub ----
   fastify.get('/volunteering/programs', { schema: { tags: ['volunteering'] } }, async (request, reply) => {
@@ -186,6 +219,22 @@ export async function volunteeringRoutes(fastify: FastifyInstance): Promise<void
       return handleServiceError(reply, err);
     }
   });
+
+  fastify.get<{ Params: { memberId: string } }>(
+    '/volunteering/stats/leaderboard/:memberId',
+    { schema: { tags: ['volunteering'] } },
+    async (request, reply) => {
+      const member = getMember(request as AuthenticatedRequest);
+      if (!member) return sendApiError(reply, 401, 'Unauthorized');
+      const memberId = Number.parseInt(request.params.memberId, 10);
+      if (!Number.isFinite(memberId)) return sendApiError(reply, 400, 'Invalid member id');
+      try {
+        return await getSeasonVolunteerLedger(member.id, memberId);
+      } catch (err) {
+        return handleServiceError(reply, err);
+      }
+    }
+  );
 
   fastify.get(
     '/volunteering/dashboard-opportunities',
@@ -253,6 +302,68 @@ export async function volunteeringRoutes(fastify: FastifyInstance): Promise<void
       }
       try {
         return await updateOwnSignupComments(member, shiftRoleId, parsed.data.comments);
+      } catch (err) {
+        return handleServiceError(reply, err);
+      }
+    }
+  );
+
+  fastify.get('/volunteering/hour-logs', { schema: { tags: ['volunteering'] } }, async (request, reply) => {
+    const member = getMember(request as AuthenticatedRequest);
+    if (!member) return sendApiError(reply, 401, 'Unauthorized');
+    try {
+      return await listMyHourLogs(member.id);
+    } catch (err) {
+      return handleServiceError(reply, err);
+    }
+  });
+
+  fastify.post('/volunteering/hour-logs', { schema: { tags: ['volunteering'] } }, async (request, reply) => {
+    const member = getMember(request as AuthenticatedRequest);
+    if (!member) return sendApiError(reply, 401, 'Unauthorized');
+    const parsed = hourLogBodySchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      return sendValidationError(reply, 'Invalid volunteer hours', parsed.error.flatten());
+    }
+    try {
+      const result = await createMyHourLog(member, parsed.data);
+      return reply.code(201).send(result);
+    } catch (err) {
+      return handleServiceError(reply, err);
+    }
+  });
+
+  fastify.patch<{ Params: { id: string } }>(
+    '/volunteering/hour-logs/:id',
+    { schema: { tags: ['volunteering'] } },
+    async (request, reply) => {
+      const member = getMember(request as AuthenticatedRequest);
+      if (!member) return sendApiError(reply, 401, 'Unauthorized');
+      const id = Number.parseInt(request.params.id, 10);
+      if (!Number.isFinite(id)) return sendApiError(reply, 400, 'Invalid volunteer hours id');
+      const parsed = hourLogBodySchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
+        return sendValidationError(reply, 'Invalid volunteer hours', parsed.error.flatten());
+      }
+      try {
+        return await updateMyHourLog(member, id, parsed.data);
+      } catch (err) {
+        return handleServiceError(reply, err);
+      }
+    }
+  );
+
+  fastify.delete<{ Params: { id: string } }>(
+    '/volunteering/hour-logs/:id',
+    { schema: { tags: ['volunteering'] } },
+    async (request, reply) => {
+      const member = getMember(request as AuthenticatedRequest);
+      if (!member) return sendApiError(reply, 401, 'Unauthorized');
+      const id = Number.parseInt(request.params.id, 10);
+      if (!Number.isFinite(id)) return sendApiError(reply, 400, 'Invalid volunteer hours id');
+      try {
+        await deleteMyHourLog(member, id);
+        return reply.code(204).send();
       } catch (err) {
         return handleServiceError(reply, err);
       }
@@ -617,6 +728,76 @@ export async function volunteeringRoutes(fastify: FastifyInstance): Promise<void
       if (!Number.isFinite(signupId)) return sendApiError(reply, 400, 'Invalid signup id');
       try {
         await removeSignupAsManager(signupId, member);
+        return reply.code(204).send();
+      } catch (err) {
+        return handleServiceError(reply, err);
+      }
+    }
+  );
+
+  fastify.get(
+    '/volunteering/admin/hour-logs',
+    { schema: { tags: ['volunteering'] } },
+    async (request, reply) => {
+      const member = getMember(request as AuthenticatedRequest);
+      if (!member) return sendApiError(reply, 401, 'Unauthorized');
+      const parsed = adminHourLogListQuerySchema.safeParse(request.query ?? {});
+      if (!parsed.success) {
+        return sendValidationError(reply, 'Invalid volunteer hours query', parsed.error.flatten());
+      }
+      try {
+        return await listAdminHourLogs(member, parsed.data);
+      } catch (err) {
+        return handleServiceError(reply, err);
+      }
+    }
+  );
+
+  fastify.post('/volunteering/admin/hour-logs', { schema: { tags: ['volunteering'] } }, async (request, reply) => {
+    const member = getMember(request as AuthenticatedRequest);
+    if (!member) return sendApiError(reply, 401, 'Unauthorized');
+    const parsed = adminHourLogBodySchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      return sendValidationError(reply, 'Invalid volunteer hours', parsed.error.flatten());
+    }
+    try {
+      const result = await createAdminHourLog(member, parsed.data);
+      return reply.code(201).send(result);
+    } catch (err) {
+      return handleServiceError(reply, err);
+    }
+  });
+
+  fastify.patch<{ Params: { id: string } }>(
+    '/volunteering/admin/hour-logs/:id',
+    { schema: { tags: ['volunteering'] } },
+    async (request, reply) => {
+      const member = getMember(request as AuthenticatedRequest);
+      if (!member) return sendApiError(reply, 401, 'Unauthorized');
+      const id = Number.parseInt(request.params.id, 10);
+      if (!Number.isFinite(id)) return sendApiError(reply, 400, 'Invalid volunteer hours id');
+      const parsed = adminHourLogBodySchema.safeParse(request.body ?? {});
+      if (!parsed.success) {
+        return sendValidationError(reply, 'Invalid volunteer hours', parsed.error.flatten());
+      }
+      try {
+        return await updateAdminHourLog(member, id, parsed.data);
+      } catch (err) {
+        return handleServiceError(reply, err);
+      }
+    }
+  );
+
+  fastify.delete<{ Params: { id: string } }>(
+    '/volunteering/admin/hour-logs/:id',
+    { schema: { tags: ['volunteering'] } },
+    async (request, reply) => {
+      const member = getMember(request as AuthenticatedRequest);
+      if (!member) return sendApiError(reply, 401, 'Unauthorized');
+      const id = Number.parseInt(request.params.id, 10);
+      if (!Number.isFinite(id)) return sendApiError(reply, 400, 'Invalid volunteer hours id');
+      try {
+        await deleteAdminHourLog(member, id);
         return reply.code(204).send();
       } catch (err) {
         return handleServiceError(reply, err);

@@ -14,6 +14,7 @@ export type VolunteerCredentialSummary = {
   name: string;
   description: string | null;
   pointOfContactEmail: string;
+  systemKey?: string | null;
 };
 
 export type VolunteerHubCredential = VolunteerCredentialSummary & {
@@ -207,6 +208,28 @@ export type VolunteerStatsView = {
   }>;
 };
 
+export type VolunteerSeasonActivityView = {
+  id: string;
+  kind: 'shift' | 'self_report';
+  date: string;
+  hours: number;
+  summary: string;
+  detail: string | null;
+};
+
+export type VolunteerSeasonLedgerView = {
+  memberId: number;
+  memberName: string;
+  season: {
+    id: number;
+    name: string;
+    startDate: string;
+    endDate: string;
+  };
+  totalHours: number;
+  activities: VolunteerSeasonActivityView[];
+};
+
 /** Sentinel for the club (default) location radio in program editors. */
 export const VOLUNTEER_LOCATION_CLUB = '__club__';
 
@@ -261,15 +284,20 @@ export function formatVolunteerRange(startDt: string, endDt: string): string {
   }
 }
 
-export function formatVolunteerDuration(startDt: string, endDt: string): string {
+export function volunteerHoursFromRange(startDt: string, endDt: string): number {
   try {
     const ms = new Date(endDt).getTime() - new Date(startDt).getTime();
-    if (!Number.isFinite(ms) || ms <= 0) return '';
-    const hours = Math.round((ms / (1000 * 60 * 60)) * 10) / 10;
-    return formatVolunteerHoursLabel(hours);
+    if (!Number.isFinite(ms) || ms <= 0) return 0;
+    return Math.round((ms / (1000 * 60 * 60)) * 10) / 10;
   } catch {
-    return '';
+    return 0;
   }
+}
+
+export function formatVolunteerDuration(startDt: string, endDt: string): string {
+  const hours = volunteerHoursFromRange(startDt, endDt);
+  if (hours <= 0) return '';
+  return formatVolunteerHoursLabel(hours);
 }
 
 export function formatVolunteerHoursLabel(hours: number): string {
@@ -277,6 +305,57 @@ export function formatVolunteerHoursLabel(hours: number): string {
   if (rounded === 1) return '1 hour';
   if (Number.isInteger(rounded)) return `${rounded} hours`;
   return `${rounded} hours`;
+}
+
+export function formatVolunteerShiftCount(count: number): string {
+  return count === 1 ? '1 shift' : `${count} shifts`;
+}
+
+export type PastVolunteeringItem =
+  | { kind: 'shift'; sortDate: string; signup: MyVolunteerSignup }
+  | { kind: 'self_report'; sortDate: string; log: VolunteerHourLogView };
+
+export function buildPastVolunteeringItems(
+  signups: MyVolunteerSignup[],
+  hourLogs: VolunteerHourLogView[]
+): PastVolunteeringItem[] {
+  const items: PastVolunteeringItem[] = [
+    ...signups.map((signup) => ({
+      kind: 'shift' as const,
+      sortDate: volunteerShiftDayKey(signup.startDt),
+      signup,
+    })),
+    ...hourLogs.map((log) => ({
+      kind: 'self_report' as const,
+      sortDate: log.volunteerDate,
+      log,
+    })),
+  ];
+  items.sort((a, b) => {
+    if (a.sortDate !== b.sortDate) return a.sortDate < b.sortDate ? 1 : -1;
+    if (a.kind !== b.kind) return a.kind === 'shift' ? -1 : 1;
+    const aId = a.kind === 'shift' ? a.signup.signupId : a.log.id;
+    const bId = b.kind === 'shift' ? b.signup.signupId : b.log.id;
+    return bId - aId;
+  });
+  return items;
+}
+
+export function summarizePastVolunteering(items: PastVolunteeringItem[]): {
+  shifts: number;
+  hours: number;
+} {
+  let shifts = 0;
+  let hours = 0;
+  for (const item of items) {
+    if (item.kind === 'shift') {
+      shifts += 1;
+      hours += volunteerHoursFromRange(item.signup.startDt, item.signup.endDt);
+    } else {
+      hours += item.log.hours;
+    }
+  }
+  return { shifts, hours: Math.round(hours * 10) / 10 };
 }
 
 export function volunteerProgramHasOpenShifts(program: {
@@ -680,4 +759,112 @@ export function formatDurationMinutes(minutes: number): string {
   const mins = minutes % 60;
   if (hours === 0) return `${mins} min`;
   return `${hours}h ${mins}m`;
+}
+
+export const VOLUNTEER_HOUR_LOG_MIN = 0.5;
+export const VOLUNTEER_HOUR_LOG_MAX = 8;
+export const VOLUNTEER_HOUR_LOG_STEP = 0.5;
+export const VOLUNTEER_HOUR_LOG_DESCRIPTION_MAX = 2000;
+export const VOLUNTEER_HOUR_LOG_MAX_MESSAGE =
+  'The maximum number of hours per report is 8. If you need to log more time, create an additional report.';
+
+export type VolunteerHourLogView = {
+  id: number;
+  memberId: number;
+  memberName: string;
+  volunteerDate: string;
+  hours: number;
+  description: string;
+  createdByMemberId: number | null;
+  createdByMemberName: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type VolunteerHourLogListResponse = {
+  items: VolunteerHourLogView[];
+  page: number;
+  pageSize: number;
+  total: number;
+  totalHours: number;
+};
+
+export type VolunteerHourLogFormValues = {
+  volunteerDate: string;
+  hours: number | '';
+  description: string;
+};
+
+export type VolunteerHourLogFieldErrors = {
+  volunteerDate?: string;
+  hours?: string;
+  description?: string;
+  memberId?: string;
+};
+
+/** Round up to the next 0.5-hour increment (1.1 → 1.5, 1.5 → 1.5). */
+export function roundVolunteerHoursUp(hours: number): number {
+  return Math.ceil(hours * 2 - 1e-9) / 2;
+}
+
+export function commitVolunteerHourLogHours(value: unknown): { hours: number | ''; error?: string } {
+  if (value === '' || value == null) {
+    return { hours: '', error: 'Enter the number of hours.' };
+  }
+  const hours = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(hours) || hours <= 0) {
+    return { hours: Number.isFinite(hours) ? hours : '', error: 'Enter the number of hours.' };
+  }
+  if (hours > VOLUNTEER_HOUR_LOG_MAX) {
+    return { hours, error: VOLUNTEER_HOUR_LOG_MAX_MESSAGE };
+  }
+  const rounded = Math.round(roundVolunteerHoursUp(hours) * 10) / 10;
+  if (rounded < VOLUNTEER_HOUR_LOG_MIN || rounded > VOLUNTEER_HOUR_LOG_MAX) {
+    return { hours, error: VOLUNTEER_HOUR_LOG_MAX_MESSAGE };
+  }
+  return { hours: rounded };
+}
+
+export function volunteerHourLogHoursForSubmit(
+  hours: VolunteerHourLogFormValues['hours']
+): { hours: number } | { error: string } {
+  const next = commitVolunteerHourLogHours(hours);
+  if (next.error || next.hours === '') {
+    return { error: next.error || 'Enter the number of hours.' };
+  }
+  return { hours: next.hours };
+}
+
+export function emptyVolunteerHourLogFormValues(todayDateOnly: string): VolunteerHourLogFormValues {
+  return {
+    volunteerDate: todayDateOnly,
+    hours: 1,
+    description: '',
+  };
+}
+
+export function volunteerHourLogFieldErrorsFromUnknown(err: unknown): VolunteerHourLogFieldErrors {
+  const details =
+    typeof err === 'object' && err != null && 'response' in err
+      ? (err as { response?: { data?: { details?: unknown } } }).response?.data?.details
+      : undefined;
+  if (!details || typeof details !== 'object') return {};
+
+  const out: VolunteerHourLogFieldErrors = {};
+  const source = details as Record<string, unknown>;
+  const keys = ['volunteerDate', 'hours', 'description', 'memberId'] as const;
+  for (const key of keys) {
+    const value = source[key];
+    if (typeof value === 'string' && value) out[key] = value;
+  }
+  if (Object.keys(out).length > 0) return out;
+
+  const fieldErrors = source.fieldErrors;
+  if (fieldErrors && typeof fieldErrors === 'object') {
+    for (const key of keys) {
+      const value = (fieldErrors as Record<string, unknown>)[key];
+      if (Array.isArray(value) && typeof value[0] === 'string') out[key] = value[0];
+    }
+  }
+  return out;
 }

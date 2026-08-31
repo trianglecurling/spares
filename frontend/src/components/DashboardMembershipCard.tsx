@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { useEffect, useMemo, useState } from 'react';
 import HelpCallout from './HelpCallout';
 import InlineStateMessage from './InlineStateMessage';
+import { get } from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import api, { getApiErrorMessage } from '../utils/api';
 
@@ -112,7 +113,12 @@ function ClubTenureMark({ tenure }: { tenure: NonNullable<MembershipCardPayload[
   );
 }
 
-export default function DashboardMembershipCard() {
+type DashboardMembershipCardProps = {
+  /** When set, load that member's card. Otherwise load the signed-in member's card. */
+  memberId?: number;
+};
+
+export default function DashboardMembershipCard({ memberId }: DashboardMembershipCardProps) {
   const { member } = useAuth();
   const [data, setData] = useState<MembershipCardPayload | null>(null);
   const [clubLogoUrl, setClubLogoUrl] = useState<string | null>(null);
@@ -127,15 +133,19 @@ export default function DashboardMembershipCard() {
 
     async function load() {
       try {
+        const cardPromise =
+          memberId != null
+            ? get('/members/{memberId}/membership-card', undefined, { memberId: String(memberId) })
+            : get('/members/me/membership-card');
         const [cardResult, siteConfigResult] = await Promise.allSettled([
-          api.get<MembershipCardPayload>('/members/me/membership-card'),
+          cardPromise,
           api.get<PublicSiteConfigPayload>('/public/site-config'),
         ]);
 
         if (canceled) return;
 
         if (cardResult.status === 'fulfilled') {
-          setData(cardResult.value.data);
+          setData(cardResult.value);
         } else {
           setData(null);
           setError(getApiErrorMessage(cardResult.reason, 'Unable to load membership card.'));
@@ -156,7 +166,7 @@ export default function DashboardMembershipCard() {
     return () => {
       canceled = true;
     };
-  }, [member?.id]);
+  }, [member?.id, memberId]);
 
   const initials = useMemo(() => memberInitials(data?.name ?? ''), [data?.name]);
 

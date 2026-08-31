@@ -286,6 +286,25 @@ async function seedClubCreditCardHolderCredential(): Promise<void> {
   `));
 }
 
+async function seedSystemCredentials(): Promise<void> {
+  const { SYSTEM_CREDENTIAL_DEFINITIONS } = await import('../utils/systemCredentials.js');
+  const { db, schema } = getDrizzleDb();
+  const existing = await db
+    .select({ systemKey: schema.volunteerCredentials.system_key })
+    .from(schema.volunteerCredentials);
+  const existingKeys = new Set(existing.map((row) => row.systemKey).filter((key): key is string => Boolean(key)));
+  const toInsert = SYSTEM_CREDENTIAL_DEFINITIONS.filter((definition) => !existingKeys.has(definition.key));
+  if (toInsert.length === 0) return;
+  await db.insert(schema.volunteerCredentials).values(
+    toInsert.map((definition) => ({
+      name: definition.name,
+      description: definition.description,
+      point_of_contact_email: definition.pointOfContactEmail,
+      system_key: definition.key,
+    })),
+  );
+}
+
 async function seedCoreRows(isPostgres: boolean): Promise<void> {
   const { db } = getDrizzleDb();
 
@@ -356,6 +375,7 @@ export async function runDatabaseBootstrap(config: DatabaseConfig): Promise<void
   await seedMailingLists();
   await seedMemberMenu();
   await seedClubCreditCardHolderCredential();
+  await seedSystemCredentials();
   await ensureRegistrationPriceDiscountSettingsTablesExist();
   const { ensureVolunteerProgramSlugsFromTitlesIfNeeded } = await import(
     '../services/volunteerProgramSlugs.js'

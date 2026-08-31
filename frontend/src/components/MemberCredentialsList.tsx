@@ -9,6 +9,7 @@ export type MemberCredentialItem = {
   name: string;
   description: string | null;
   expiresAt: string | null;
+  systemKey?: string | null;
 };
 
 export default function MemberCredentialsList({
@@ -47,7 +48,11 @@ export default function MemberCredentialsList({
                 {credential.description}
               </p>
             ) : null}
-            {credential.expiresAt ? (
+            {credential.systemKey ? (
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                Granted automatically when you meet this requirement.
+              </p>
+            ) : credential.expiresAt ? (
               <p
                 className={
                   expired

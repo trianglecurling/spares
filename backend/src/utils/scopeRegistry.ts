@@ -73,7 +73,8 @@ export const SCOPE_REGISTRY: ScopeRegistryEntry[] = [
   {
     scope: 'volunteering.manage',
     category: 'Volunteering',
-    description: 'Create and manage volunteer programs, roles, shifts, and related signups.',
+    description:
+      'Create and manage volunteer programs, roles, shifts, signups, and self-reported volunteer hours.',
   },
 
   { scope: 'waitlists.manage', category: 'Registration', description: 'Add, remove, reorder waitlist entries and run waitlist staff actions.' },

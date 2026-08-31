@@ -29,13 +29,23 @@ import {
 } from './email.js';
 import { ensureUniqueVolunteerProgramSlug } from './volunteerProgramSlugs.js';
 import { compareVolunteerProgramsForDiscovery } from '../utils/volunteerProgramSort.js';
-import { aggregateVolunteerStats, type VolunteerStatsResult } from '../utils/volunteerStats.js';
+import {
+  aggregateVolunteerStats,
+  buildSeasonVolunteerLedger,
+  VOLUNTEER_SEASON_LEDGER_UNAVAILABLE,
+  type VolunteerSeasonLedger,
+  type VolunteerStatsCompletedSignup,
+  type VolunteerStatsHourLog,
+  type VolunteerStatsResult,
+} from '../utils/volunteerStats.js';
+import { listHourLogsForStats } from './volunteerHourLogService.js';
 import { resolveSeasonAttachedToDate } from './curlingSessionService.js';
 import {
   heldVolunteerCredentialIdsOn,
   memberHasAllVolunteerCredentials,
   volunteerProgramVisibleGivenCredentials,
 } from '../utils/volunteerCredentials.js';
+import { parseSystemCredentialKey } from '../utils/systemCredentials.js';
 import { getMemberCredentialGrants, listHubCredentials, listMyCredentials } from './credentialService.js';
 import type { CredentialSummary, HubCredential } from './credentialService.js';
 
@@ -589,6 +599,7 @@ async function getRoleRequiredCredentialMap(
       name: schema.volunteerCredentials.name,
       description: schema.volunteerCredentials.description,
       pointOfContactEmail: schema.volunteerCredentials.point_of_contact_email,
+      systemKey: schema.volunteerCredentials.system_key,
     })
     .from(schema.volunteerRoleCredentials)
     .innerJoin(
@@ -604,6 +615,7 @@ async function getRoleRequiredCredentialMap(
       name: row.name,
       description: row.description,
       pointOfContactEmail: row.pointOfContactEmail,
+      systemKey: parseSystemCredentialKey(row.systemKey),
     });
     map.set(row.roleId, list);
   }
@@ -2806,14 +2818,29 @@ export async function processVolunteerReminders(): Promise<number> {
 
 const SEASON_MEMBERSHIP_STATUSES_FOR_COUNT = ['active', 'pending'] as const;
 
-export async function listVolunteerStats(memberId: number): Promise<VolunteerStatsResult> {
+type VolunteerStatsSeason = {
+  id: number;
+  name: string;
+  startDate: string;
+  endDate: string;
+};
+
+type VolunteerStatsContext = {
+  nowIso: string;
+  today: string;
+  monthPrefix: string;
+  season: VolunteerStatsSeason | null;
+  signups: VolunteerStatsCompletedSignup[];
+  hourLogs: VolunteerStatsHourLog[];
+};
+
+async function loadVolunteerStatsContext(): Promise<VolunteerStatsContext> {
   const { db, schema } = getDrizzleDb();
   const now = await getCurrentTimeAsync();
   const nowIso = now.toISOString();
   const today = clubDateOnly(now);
-  const monthPrefix = today.slice(0, 7);
 
-  const [sessionSeason, signupRows] = await Promise.all([
+  const [sessionSeason, signupRows, hourLogs] = await Promise.all([
     resolveSeasonAttachedToDate(addCalendarDays(today, 30)),
     db
       .select({
@@ -2823,6 +2850,8 @@ export async function listVolunteerStats(memberId: number): Promise<VolunteerSta
         shiftId: schema.volunteerShifts.id,
         startDt: schema.volunteerShifts.start_dt,
         endDt: schema.volunteerShifts.end_dt,
+        programTitle: schema.volunteerPrograms.title,
+        roleName: schema.volunteerRoles.name,
       })
       .from(schema.volunteerSignups)
       .innerJoin(
@@ -2830,27 +2859,14 @@ export async function listVolunteerStats(memberId: number): Promise<VolunteerSta
         eq(schema.volunteerShiftRoles.id, schema.volunteerSignups.shift_role_id)
       )
       .innerJoin(schema.volunteerShifts, eq(schema.volunteerShifts.id, schema.volunteerShiftRoles.shift_id))
+      .innerJoin(schema.volunteerPrograms, eq(schema.volunteerPrograms.id, schema.volunteerShifts.program_id))
+      .innerJoin(schema.volunteerRoles, eq(schema.volunteerRoles.id, schema.volunteerShiftRoles.role_id))
       .leftJoin(schema.members, eq(schema.members.id, schema.volunteerSignups.member_id))
       .where(eq(schema.volunteerSignups.status, 'confirmed')),
+    listHourLogsForStats(),
   ]);
 
-  let membershipCount = 0;
-  if (sessionSeason) {
-    const [countRow] = await db
-      .select({
-        n: sql<number>`count(distinct ${schema.seasonMemberships.member_id})`,
-      })
-      .from(schema.seasonMemberships)
-      .where(
-        and(
-          eq(schema.seasonMemberships.season_id, sessionSeason.seasonId),
-          inArray(schema.seasonMemberships.status, [...SEASON_MEMBERSHIP_STATUSES_FOR_COUNT])
-        )
-      );
-    membershipCount = Number(countRow?.n ?? 0);
-  }
-
-  const completed = signupRows.map((row) => {
+  const signups = signupRows.map((row) => {
     const startDt = requireIso(row.startDt as any, 'startDt');
     return {
       signupId: row.signupId,
@@ -2860,13 +2876,15 @@ export async function listVolunteerStats(memberId: number): Promise<VolunteerSta
       startDt,
       endDt: requireIso(row.endDt as any, 'endDt'),
       startDateOnly: shiftDateOnly(startDt),
+      programTitle: row.programTitle?.trim() || null,
+      roleName: row.roleName?.trim() || null,
     };
   });
 
-  return aggregateVolunteerStats(completed, {
-    viewerMemberId: memberId,
+  return {
     nowIso,
-    monthPrefix,
+    today,
+    monthPrefix: today.slice(0, 7),
     season: sessionSeason
       ? {
           id: sessionSeason.seasonId,
@@ -2875,6 +2893,69 @@ export async function listVolunteerStats(memberId: number): Promise<VolunteerSta
           endDate: sessionSeason.seasonEndDate,
         }
       : null,
+    signups,
+    hourLogs,
+  };
+}
+
+export async function listVolunteerStats(memberId: number): Promise<VolunteerStatsResult> {
+  const { db, schema } = getDrizzleDb();
+  const ctx = await loadVolunteerStatsContext();
+
+  let membershipCount = 0;
+  if (ctx.season) {
+    const [countRow] = await db
+      .select({
+        n: sql<number>`count(distinct ${schema.seasonMemberships.member_id})`,
+      })
+      .from(schema.seasonMemberships)
+      .where(
+        and(
+          eq(schema.seasonMemberships.season_id, ctx.season.id),
+          inArray(schema.seasonMemberships.status, [...SEASON_MEMBERSHIP_STATUSES_FOR_COUNT])
+        )
+      );
+    membershipCount = Number(countRow?.n ?? 0);
+  }
+
+  return aggregateVolunteerStats(ctx.signups, {
+    viewerMemberId: memberId,
+    nowIso: ctx.nowIso,
+    monthPrefix: ctx.monthPrefix,
+    todayDateOnly: ctx.today,
+    season: ctx.season,
     membershipCount,
+    hourLogs: ctx.hourLogs,
+  });
+}
+
+export async function getSeasonVolunteerLedger(
+  viewerMemberId: number,
+  targetMemberId: number
+): Promise<VolunteerSeasonLedger> {
+  const ctx = await loadVolunteerStatsContext();
+  if (!ctx.season) {
+    throw new VolunteeringServiceError(VOLUNTEER_SEASON_LEDGER_UNAVAILABLE, 404);
+  }
+
+  const stats = aggregateVolunteerStats(ctx.signups, {
+    viewerMemberId,
+    nowIso: ctx.nowIso,
+    monthPrefix: ctx.monthPrefix,
+    todayDateOnly: ctx.today,
+    season: ctx.season,
+    membershipCount: 0,
+    hourLogs: ctx.hourLogs,
+  });
+  if (!stats.leaderboard.some((entry) => entry.memberId === targetMemberId)) {
+    throw new VolunteeringServiceError(VOLUNTEER_SEASON_LEDGER_UNAVAILABLE, 404);
+  }
+
+  return buildSeasonVolunteerLedger(targetMemberId, {
+    nowIso: ctx.nowIso,
+    todayDateOnly: ctx.today,
+    season: ctx.season,
+    signups: ctx.signups,
+    hourLogs: ctx.hourLogs,
   });
 }

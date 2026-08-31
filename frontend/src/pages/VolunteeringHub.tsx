@@ -28,12 +28,14 @@ import {
 } from '../utils/volunteering';
 import { MyVolunteerShiftsPanel } from './MyVolunteerShifts';
 import VolunteerStatsPanel from '../components/volunteering/VolunteerStatsPanel';
+import VolunteerHourLogsPanel from '../components/volunteering/VolunteerHourLogsPanel';
 
-type HubTab = 'programs' | 'shifts' | 'stats' | 'credentials';
+type HubTab = 'programs' | 'shifts' | 'hours' | 'stats' | 'credentials';
 
 function resolveHubTab(tabParam: string | null): HubTab {
   if (tabParam === 'credentials') return 'credentials';
   if (tabParam === 'shifts' || tabParam === 'my-shifts') return 'shifts';
+  if (tabParam === 'hours') return 'hours';
   if (tabParam === 'stats') return 'stats';
   return 'programs';
 }
@@ -82,7 +84,7 @@ export default function VolunteeringHub() {
 
   useEffect(() => {
     // Always load hub data so credential-tab visibility is known on every tab,
-    // including a direct land on My shifts.
+    // including a direct land on My volunteering.
     void load();
   }, [load]);
 
@@ -141,9 +143,15 @@ export default function VolunteeringHub() {
           },
           {
             key: 'shifts',
-            label: 'My shifts',
+            label: 'My volunteering',
             isActive: activeTab === 'shifts',
             onClick: () => setTab('shifts'),
+          },
+          {
+            key: 'hours',
+            label: 'Log volunteering',
+            isActive: activeTab === 'hours',
+            onClick: () => setTab('hours'),
           },
           ...(hasClubCredentials
             ? [
@@ -166,6 +174,8 @@ export default function VolunteeringHub() {
 
       {activeTab === 'shifts' ? (
         <MyVolunteerShiftsPanel />
+      ) : activeTab === 'hours' ? (
+        <VolunteerHourLogsPanel />
       ) : activeTab === 'stats' ? (
         <VolunteerStatsPanel />
       ) : loading ? (
@@ -310,7 +320,7 @@ function CredentialsTab({ credentials }: { credentials: VolunteerHubCredential[]
   return (
     <div className="space-y-4">
       <p className="text-sm text-gray-600 dark:text-gray-400">
-        Need a credential? Reach out to the point of contact listed.
+        Need a credential that is not granted automatically? Reach out to the point of contact listed.
       </p>
       <ul className="space-y-3">
         {credentials.map((cred) => {
@@ -335,6 +345,11 @@ function CredentialsTab({ credentials }: { credentials: VolunteerHubCredential[]
               {cred.description ? (
                 <p className="text-sm text-gray-600 dark:text-gray-400 whitespace-pre-wrap">{cred.description}</p>
               ) : null}
+              {cred.systemKey ? (
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  Granted automatically when you meet this requirement.
+                </p>
+              ) : null}
               {cred.held && cred.expiresAt ? (
                 <p className="text-sm text-gray-600 dark:text-gray-400">
                   Expires {formatVolunteerDateOnly(cred.expiresAt)}
@@ -345,12 +360,14 @@ function CredentialsTab({ credentials }: { credentials: VolunteerHubCredential[]
                   Expired {formatVolunteerDateOnly(cred.expiresAt)}
                 </p>
               ) : null}
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                Point of contact:{' '}
-                <a className="text-primary-teal-link hover:underline" href={`mailto:${cred.pointOfContactEmail}`}>
-                  {cred.pointOfContactEmail}
-                </a>
-              </p>
+              {cred.systemKey ? null : (
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  Point of contact:{' '}
+                  <a className="text-primary-teal-link hover:underline" href={`mailto:${cred.pointOfContactEmail}`}>
+                    {cred.pointOfContactEmail}
+                  </a>
+                </p>
+              )}
             </li>
           );
         })}

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   aggregateVolunteerStats,
+  buildSeasonVolunteerLedger,
   volunteerShiftDurationHours,
   volunteerStatsSeasonCountStart,
 } from './volunteerStats';
@@ -266,6 +267,42 @@ describe('aggregateVolunteerStats', () => {
     expect(result.me.seasonRank).toBe(2);
   });
 
+  test('adds self-reported hours without counting them as shifts', () => {
+    const result = aggregateVolunteerStats(
+      [
+        row({
+          signupId: 1,
+          shiftId: 1,
+          startDt: '2026-10-10T18:00:00.000Z',
+          endDt: '2026-10-10T20:00:00.000Z',
+          startDateOnly: '2026-10-10',
+        }),
+      ],
+      {
+        viewerMemberId: 10,
+        nowIso,
+        monthPrefix,
+        todayDateOnly: '2026-10-20',
+        season,
+        membershipCount: 50,
+        hourLogs: [
+          { memberId: 10, memberName: 'Alex', volunteerDate: '2026-10-12', hours: 1.5 },
+          { memberId: 11, memberName: 'Blair', volunteerDate: '2026-10-13', hours: 2 },
+          { memberId: 10, memberName: 'Alex', volunteerDate: '2026-10-21', hours: 3 },
+        ],
+      }
+    );
+    expect(result.club.hours.month).toBe(5.5);
+    expect(result.club.shifts.month).toBe(1);
+    expect(result.me.hours.month).toBe(3.5);
+    expect(result.me.shifts.month).toBe(1);
+    expect(result.club.uniqueVolunteersSeason).toBe(2);
+    expect(result.leaderboard.map((entry) => ({ memberId: entry.memberId, hours: entry.hours }))).toEqual([
+      { memberId: 10, hours: 3.5 },
+      { memberId: 11, hours: 2 },
+    ]);
+  });
+
   test('repairs mojibake in leaderboard names', () => {
     const result = aggregateVolunteerStats(
       [
@@ -288,5 +325,149 @@ describe('aggregateVolunteerStats', () => {
       }
     );
     expect(result.leaderboard[0]?.name).toBe("Tony D'Agostino");
+  });
+
+  test('excludes out-of-season hours from the leaderboard', () => {
+    const result = aggregateVolunteerStats(
+      [
+        row({
+          signupId: 1,
+          memberId: 10,
+          memberName: 'Alex',
+          shiftId: 1,
+          startDt: '2026-10-10T18:00:00.000Z',
+          endDt: '2026-10-10T20:00:00.000Z',
+          startDateOnly: '2026-10-10',
+        }),
+        row({
+          signupId: 2,
+          memberId: 11,
+          memberName: 'Blair',
+          shiftId: 2,
+          startDt: '2027-05-15T18:00:00.000Z',
+          endDt: '2027-05-15T22:00:00.000Z',
+          startDateOnly: '2027-05-15',
+        }),
+      ],
+      {
+        viewerMemberId: 11,
+        nowIso: '2027-06-01T12:00:00.000Z',
+        monthPrefix: '2027-06',
+        todayDateOnly: '2027-06-01',
+        season,
+        membershipCount: 10,
+        hourLogs: [{ memberId: 12, memberName: 'Casey', volunteerDate: '2027-05-20', hours: 8 }],
+      }
+    );
+    expect(result.leaderboard.map((entry) => entry.memberId)).toEqual([10]);
+  });
+});
+
+describe('buildSeasonVolunteerLedger', () => {
+  const nowIso = '2026-10-20T12:00:00.000Z';
+  const todayDateOnly = '2026-10-20';
+
+  test('lists current-season shifts and self-reports, newest first', () => {
+    const ledger = buildSeasonVolunteerLedger(10, {
+      nowIso,
+      todayDateOnly,
+      season,
+      signups: [
+        row({
+          signupId: 1,
+          shiftId: 5,
+          startDt: '2026-10-10T18:00:00.000Z',
+          endDt: '2026-10-10T20:00:00.000Z',
+          startDateOnly: '2026-10-10',
+          programTitle: 'Ice crew',
+          roleName: 'Timer',
+        }),
+        row({
+          signupId: 2,
+          shiftId: 5,
+          startDt: '2026-10-10T18:00:00.000Z',
+          endDt: '2026-10-10T20:00:00.000Z',
+          startDateOnly: '2026-10-10',
+          programTitle: 'Ice crew',
+          roleName: 'Scorer',
+        }),
+        row({
+          signupId: 3,
+          memberId: 11,
+          memberName: 'Blair',
+          shiftId: 6,
+          startDt: '2026-10-11T18:00:00.000Z',
+          endDt: '2026-10-11T21:00:00.000Z',
+          startDateOnly: '2026-10-11',
+          programTitle: 'Bonspiel',
+          roleName: 'Host',
+        }),
+        row({
+          signupId: 4,
+          shiftId: 7,
+          startDt: '2026-11-01T18:00:00.000Z',
+          endDt: '2026-11-01T20:00:00.000Z',
+          startDateOnly: '2026-11-01',
+          programTitle: 'Future shift',
+          roleName: 'Helper',
+        }),
+        row({
+          signupId: 5,
+          shiftId: 8,
+          startDt: '2025-10-10T18:00:00.000Z',
+          endDt: '2025-10-10T20:00:00.000Z',
+          startDateOnly: '2025-10-10',
+          programTitle: 'Last season',
+          roleName: 'Helper',
+        }),
+      ],
+      hourLogs: [
+        {
+          id: 21,
+          memberId: 10,
+          memberName: 'Alex',
+          volunteerDate: '2026-10-12',
+          hours: 1.5,
+          description: 'Set up tables',
+        },
+        {
+          id: 22,
+          memberId: 10,
+          memberName: 'Alex',
+          volunteerDate: '2026-10-21',
+          hours: 3,
+          description: 'Future log',
+        },
+        {
+          id: 23,
+          memberId: 11,
+          memberName: 'Blair',
+          volunteerDate: '2026-10-12',
+          hours: 2,
+          description: 'Other member',
+        },
+      ],
+    });
+
+    expect(ledger.memberName).toBe('Alex');
+    expect(ledger.totalHours).toBe(3.5);
+    expect(ledger.activities).toEqual([
+      {
+        id: 'self_report:21',
+        kind: 'self_report',
+        date: '2026-10-12',
+        hours: 1.5,
+        summary: 'Set up tables',
+        detail: null,
+      },
+      {
+        id: 'shift:5',
+        kind: 'shift',
+        date: '2026-10-10',
+        hours: 2,
+        summary: 'Ice crew',
+        detail: 'Timer, Scorer',
+      },
+    ]);
   });
 });

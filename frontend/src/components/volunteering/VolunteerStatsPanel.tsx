@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import AppStateCard from '../AppStateCard';
 import InlineStateMessage from '../InlineStateMessage';
 import api, { formatApiError } from '../../utils/api';
@@ -7,6 +8,7 @@ import {
   formatVolunteerHoursLabel,
   type VolunteerStatsView,
 } from '../../utils/volunteering';
+import VolunteerSeasonLedgerDialog from './VolunteerSeasonLedgerDialog';
 
 const APPRECIATION_COPY =
   "Volunteers are the backbone of Triangle Curling. Each individual that contributes to our Mission is appreciated and cherished. Many members volunteer their time in ways that aren't tracked by this system, but their contributions are no less valuable. Even though they don't show up here, their efforts are greatly appreciated.";
@@ -15,6 +17,9 @@ export default function VolunteerStatsPanel() {
   const { showAlert } = useAlert();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<VolunteerStatsView | null>(null);
+  const [ledgerMember, setLedgerMember] = useState<{ memberId: number; name: string } | null>(
+    null
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -56,10 +61,6 @@ export default function VolunteerStatsPanel() {
 
   return (
     <div className="space-y-6">
-      <div className="app-card p-5">
-        <p className="text-sm leading-relaxed text-gray-600 dark:text-gray-400">{APPRECIATION_COPY}</p>
-      </div>
-
       <p className="text-sm text-gray-600 dark:text-gray-400">{seasonLabel}</p>
 
       <div className="grid gap-4 lg:grid-cols-2">
@@ -112,21 +113,34 @@ export default function VolunteerStatsPanel() {
             </p>
           ) : (
             <p className="text-sm text-gray-600 dark:text-gray-400">
-              Complete a volunteer shift to appear on this season’s leaderboard.
+              Log volunteering or complete a shift to appear on this season’s leaderboard.
             </p>
           )}
         </section>
       </div>
 
+      <div className="app-card space-y-3 p-5">
+        <p className="text-sm leading-relaxed text-gray-600 dark:text-gray-400">{APPRECIATION_COPY}</p>
+        <p className="text-sm leading-relaxed text-gray-600 dark:text-gray-400">
+          If you{' '}
+          <Link to="/volunteering?tab=hours" className="text-primary-teal-link hover:underline">
+            log volunteering
+          </Link>{' '}
+          outside of a sign-up, those hours will count on this page too.
+        </p>
+      </div>
+
       <section className="app-card space-y-3 p-5" aria-labelledby="volunteer-stats-leaderboard">
         <div>
           <h2 id="volunteer-stats-leaderboard" className="app-section-title">
-            Volunteer leaderboard
+            {stats.season
+              ? `${stats.season.name} volunteer leaderboard`
+              : 'Volunteer leaderboard'}
           </h2>
           <p className="app-section-subtitle mt-1">Top 10 by completed hours this season</p>
         </div>
         {stats.leaderboard.length === 0 ? (
-          <InlineStateMessage title="No completed volunteer shifts this season yet." />
+          <InlineStateMessage title="No completed volunteer hours this season yet." />
         ) : (
           <div className="app-table-shell">
             <table className="app-table">
@@ -156,7 +170,14 @@ export default function VolunteerStatsPanel() {
                       {entry.rank}
                     </td>
                     <td className="app-table-td">
-                      {entry.name}
+                      <button
+                        type="button"
+                        className="text-primary-teal-link hover:underline"
+                        onClick={() => setLedgerMember({ memberId: entry.memberId, name: entry.name })}
+                        aria-label={`View ${entry.name}’s volunteer activities`}
+                      >
+                        {entry.name}
+                      </button>
                       {entry.isViewer ? (
                         <span className="ml-2 text-xs font-medium text-primary-teal">You</span>
                       ) : null}
@@ -171,6 +192,14 @@ export default function VolunteerStatsPanel() {
           </div>
         )}
       </section>
+
+      {ledgerMember ? (
+        <VolunteerSeasonLedgerDialog
+          memberId={ledgerMember.memberId}
+          memberName={ledgerMember.name}
+          onClose={() => setLedgerMember(null)}
+        />
+      ) : null}
     </div>
   );
 }

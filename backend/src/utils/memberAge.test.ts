@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   DATE_OF_BIRTH_FUTURE_MESSAGE,
   DATE_OF_BIRTH_INVALID_MESSAGE,
+  ageInYearsOnDate,
   dateOfBirthValidationMessage,
   isValidDateOnly,
   utcDateOnly,
@@ -35,5 +36,19 @@ describe('date of birth validation', () => {
     expect(dateOfBirthValidationMessage('', asOf)).toBeNull();
     expect(dateOfBirthValidationMessage(null, asOf)).toBeNull();
     expect(dateOfBirthValidationMessage(undefined, asOf)).toBeNull();
+  });
+});
+
+describe('ageInYearsOnDate', () => {
+  test('returns null when date of birth is missing or invalid', () => {
+    expect(ageInYearsOnDate(null, '2026-08-30')).toBeNull();
+    expect(ageInYearsOnDate('2026-02-31', '2026-08-30')).toBeNull();
+    expect(ageInYearsOnDate('1990-06-15', 'not-a-date')).toBeNull();
+  });
+
+  test('uses the birthday as the inclusive threshold', () => {
+    expect(ageInYearsOnDate('2008-08-30', '2026-08-29')).toBe(17);
+    expect(ageInYearsOnDate('2008-08-30', '2026-08-30')).toBe(18);
+    expect(ageInYearsOnDate('2005-08-30', '2026-08-30')).toBe(21);
   });
 });

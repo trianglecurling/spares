@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { HiChevronDown } from 'react-icons/hi2';
 import { Navigate } from 'react-router-dom';
 import AppStateCard from '../components/AppStateCard';
@@ -10,9 +10,16 @@ import api, { formatApiError } from '../utils/api';
 import { useAlert } from '../contexts/AlertContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import {
+  buildPastVolunteeringItems,
+  formatVolunteerDateOnly,
   formatVolunteerDuration,
+  formatVolunteerHoursLabel,
   formatVolunteerRange,
+  formatVolunteerShiftCount,
+  summarizePastVolunteering,
   type MyVolunteerSignup,
+  type VolunteerHourLogListResponse,
+  type VolunteerHourLogView,
 } from '../utils/volunteering';
 
 /** Standalone route kept for old links; redirects into the hub tab. */
@@ -26,6 +33,7 @@ export function MyVolunteerShiftsPanel() {
   const [loading, setLoading] = useState(true);
   const [upcoming, setUpcoming] = useState<MyVolunteerSignup[]>([]);
   const [past, setPast] = useState<MyVolunteerSignup[]>([]);
+  const [hourLogs, setHourLogs] = useState<VolunteerHourLogView[]>([]);
   const [pastExpanded, setPastExpanded] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [editingSignup, setEditingSignup] = useState<MyVolunteerSignup | null>(null);
@@ -33,14 +41,18 @@ export function MyVolunteerShiftsPanel() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const data = (await get('/volunteering/my-signups')) as {
-        upcoming: MyVolunteerSignup[];
-        past: MyVolunteerSignup[];
-      };
+      const [data, hourLogsResponse] = await Promise.all([
+        get('/volunteering/my-signups') as Promise<{
+          upcoming: MyVolunteerSignup[];
+          past: MyVolunteerSignup[];
+        }>,
+        api.get<VolunteerHourLogListResponse>('/volunteering/hour-logs'),
+      ]);
       setUpcoming(data.upcoming || []);
       setPast(data.past || []);
+      setHourLogs(hourLogsResponse.data.items || []);
     } catch (err) {
-      showAlert(formatApiError(err, 'Failed to load your volunteer shifts'), 'error');
+      showAlert(formatApiError(err, 'Failed to load your volunteering'), 'error');
     } finally {
       setLoading(false);
     }
@@ -49,6 +61,9 @@ export function MyVolunteerShiftsPanel() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const pastItems = useMemo(() => buildPastVolunteeringItems(past, hourLogs), [past, hourLogs]);
+  const pastTotals = useMemo(() => summarizePastVolunteering(pastItems), [pastItems]);
 
   const handleCancel = async (signup: MyVolunteerSignup) => {
     const ok = await confirm({
@@ -72,7 +87,12 @@ export function MyVolunteerShiftsPanel() {
   };
 
   if (loading) {
-    return <AppStateCard title="Loading your shifts" description="Fetching your volunteer signups." />;
+    return (
+      <AppStateCard
+        title="Loading your volunteering"
+        description="Fetching your volunteer signups and self-reported hours."
+      />
+    );
   }
 
   return (
@@ -99,7 +119,7 @@ export function MyVolunteerShiftsPanel() {
         )}
       </section>
 
-      {past.length > 0 ? (
+      {pastItems.length > 0 ? (
         <section className="app-card overflow-hidden p-0">
           <h2>
             <button
@@ -108,17 +128,27 @@ export function MyVolunteerShiftsPanel() {
               className="flex w-full items-center justify-between gap-4 px-5 py-4 text-left"
               aria-expanded={pastExpanded}
             >
-              <span className="app-section-title">Past shifts</span>
+              <span>
+                <span className="app-section-title">Past volunteering</span>
+                <span className="mt-1 block text-sm font-normal text-gray-600 dark:text-gray-400">
+                  {formatVolunteerShiftCount(pastTotals.shifts)} ·{' '}
+                  {formatVolunteerHoursLabel(pastTotals.hours)}
+                </span>
+              </span>
               <HiChevronDown
-                className={`h-5 w-5 text-gray-500 transition-transform ${pastExpanded ? 'rotate-180' : ''}`}
+                className={`h-5 w-5 shrink-0 text-gray-500 transition-transform ${pastExpanded ? 'rotate-180' : ''}`}
               />
             </button>
           </h2>
           {pastExpanded ? (
             <div className="space-y-3 border-t border-gray-200 dark:border-gray-700 p-5">
-              {past.map((signup) => (
-                <SignupCard key={signup.signupId} signup={signup} />
-              ))}
+              {pastItems.map((item) =>
+                item.kind === 'shift' ? (
+                  <SignupCard key={`shift:${item.signup.signupId}`} signup={item.signup} />
+                ) : (
+                  <HourLogCard key={`log:${item.log.id}`} log={item.log} />
+                )
+              )}
             </div>
           ) : null}
         </section>
@@ -135,6 +165,23 @@ export function MyVolunteerShiftsPanel() {
           }}
         />
       ) : null}
+    </div>
+  );
+}
+
+function HourLogCard({ log }: { log: VolunteerHourLogView }) {
+  return (
+    <div className="app-card p-4 flex flex-wrap items-start gap-x-4 gap-y-2">
+      <div className="min-w-0 flex-1 space-y-1">
+        <div className="font-medium text-gray-900 dark:text-gray-100">{log.description}</div>
+        <div className="text-sm text-gray-600 dark:text-gray-400">
+          {formatVolunteerDateOnly(log.volunteerDate)}
+        </div>
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600 dark:text-gray-400">
+          <span>Self-reported</span>
+          <span>{formatVolunteerHoursLabel(log.hours)}</span>
+        </div>
+      </div>
     </div>
   );
 }
