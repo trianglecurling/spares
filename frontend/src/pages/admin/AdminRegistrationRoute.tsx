@@ -5,6 +5,7 @@ import AdminRegistrationCreate from './AdminRegistrationCreate';
 import AdminRegistrationDetail from './AdminRegistrationDetail';
 
 const SETTINGS_TABS = new Set(['seasons', 'sessions', 'periods', 'prices', 'discounts']);
+const QA_TABS = new Set(['returning-members', 'league-return']);
 
 function ConfigPage() {
   return (
@@ -56,8 +57,8 @@ export default function AdminRegistrationRoute() {
   }
 
   if (segment === 'qa') {
-    if (subsegment) {
-      return <Navigate to={`/admin/registrations/qa${location.search}`} replace />;
+    if (!subsegment || !QA_TABS.has(subsegment)) {
+      return <Navigate to={`/admin/registrations/qa/returning-members${location.search}`} replace />;
     }
     return <ConfigPage />;
   }

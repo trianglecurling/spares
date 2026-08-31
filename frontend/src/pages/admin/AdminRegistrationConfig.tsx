@@ -17,6 +17,7 @@ import { memberHasScope } from '../../utils/permissions';
 import { dateTimeLocalToIso, isoToDateTimeLocal } from '../../utils/clubTime';
 import AdminRegistrationsList from './AdminRegistrationsList';
 import AdminRegistrationQa from './AdminRegistrationQa';
+import AdminRegistrationQaReturningMembers from './AdminRegistrationQaReturningMembers';
 import type { paths } from '../../api/generated/types';
 
 type RegistrationState = 'closed' | 'priority' | 'open';
@@ -95,8 +96,10 @@ interface PaymentDeadline {
 
 type PrimaryTab = 'summary' | 'list' | 'qa' | 'settings';
 type TabKey = 'seasons' | 'sessions' | 'periods' | 'prices' | 'discounts';
+type QaTabKey = 'returning-members' | 'league-return';
 
 const CONFIG_TAB_KEYS = ['seasons', 'sessions', 'periods', 'prices', 'discounts'] as const;
+const QA_TAB_KEYS = ['returning-members', 'league-return'] as const;
 
 const SETTINGS_TAB_LABELS: Record<TabKey, string> = {
   seasons: 'Seasons',
@@ -104,6 +107,11 @@ const SETTINGS_TAB_LABELS: Record<TabKey, string> = {
   periods: 'Registration schedule',
   prices: 'Prices',
   discounts: 'Discounts',
+};
+
+const QA_TAB_LABELS: Record<QaTabKey, string> = {
+  'returning-members': 'Returning members',
+  'league-return': 'League return',
 };
 
 const REGISTRATION_STATE_OPTIONS: ChoiceOption<RegistrationState>[] = [
@@ -222,23 +230,40 @@ export default function AdminRegistrationConfig() {
   });
   const earlyAccessPasswordId = useId();
 
-  const { primaryTab, activeTab } = useMemo(() => {
+  const { primaryTab, activeTab, qaTab } = useMemo(() => {
     const segments = location.pathname.split('/').filter(Boolean);
     const after = segments.slice(2);
     if (after[0] === 'list') {
-      return { primaryTab: 'list' as PrimaryTab, activeTab: 'seasons' as TabKey };
+      return {
+        primaryTab: 'list' as PrimaryTab,
+        activeTab: 'seasons' as TabKey,
+        qaTab: 'returning-members' as QaTabKey,
+      };
     }
     if (after[0] === 'qa') {
-      return { primaryTab: 'qa' as PrimaryTab, activeTab: 'seasons' as TabKey };
+      const next = after[1];
+      return {
+        primaryTab: 'qa' as PrimaryTab,
+        activeTab: 'seasons' as TabKey,
+        qaTab: next === 'league-return' ? ('league-return' as QaTabKey) : ('returning-members' as QaTabKey),
+      };
     }
     if (after[0] === 'settings') {
       const next = after[1];
       if (next === 'seasons' || next === 'sessions' || next === 'periods' || next === 'prices' || next === 'discounts') {
-        return { primaryTab: 'settings' as PrimaryTab, activeTab: next };
+        return { primaryTab: 'settings' as PrimaryTab, activeTab: next, qaTab: 'returning-members' as QaTabKey };
       }
-      return { primaryTab: 'settings' as PrimaryTab, activeTab: 'seasons' as TabKey };
+      return {
+        primaryTab: 'settings' as PrimaryTab,
+        activeTab: 'seasons' as TabKey,
+        qaTab: 'returning-members' as QaTabKey,
+      };
     }
-    return { primaryTab: 'summary' as PrimaryTab, activeTab: 'seasons' as TabKey };
+    return {
+      primaryTab: 'summary' as PrimaryTab,
+      activeTab: 'seasons' as TabKey,
+      qaTab: 'returning-members' as QaTabKey,
+    };
   }, [location.pathname]);
 
   const isConfigTab = primaryTab === 'settings';
@@ -621,7 +646,10 @@ export default function AdminRegistrationConfig() {
     {
       key: 'qa',
       label: 'QA checks',
-      to: primaryTab === 'qa' ? `${location.pathname}${location.search}` : `/admin/registrations/qa${sessionQuery}`,
+      to:
+        primaryTab === 'qa'
+          ? `${location.pathname}${location.search}`
+          : `/admin/registrations/qa/returning-members${sessionQuery}`,
       isActive: primaryTab === 'qa',
     },
     ...(canManageConfig
@@ -639,6 +667,13 @@ export default function AdminRegistrationConfig() {
       : []),
   ];
 
+  const qaTabs = QA_TAB_KEYS.map((key) => ({
+    key,
+    label: QA_TAB_LABELS[key],
+    to: `/admin/registrations/qa/${key}${location.search}`,
+    isActive: qaTab === key,
+  }));
+
   const settingsTabs = CONFIG_TAB_KEYS.map((key) => ({
     key,
     label: SETTINGS_TAB_LABELS[key],
@@ -652,7 +687,9 @@ export default function AdminRegistrationConfig() {
       : primaryTab === 'list'
         ? 'Search and filter registrations for the selected session.'
         : primaryTab === 'qa'
-          ? 'Sanity checks to confirm expected returning players have registered, and registered the way we expect.'
+          ? qaTab === 'returning-members'
+            ? 'Members who played last session and have not yet registered for this session.'
+            : 'Sanity checks to confirm expected returning players have registered, and registered the way we expect.'
           : 'Configure seasons, sessions, registration schedule, and pricing.';
 
   return (
@@ -664,7 +701,9 @@ export default function AdminRegistrationConfig() {
 
         {primaryTab === 'summary' ? <AdminRegistrationsList mode="summary" /> : null}
         {primaryTab === 'list' ? <AdminRegistrationsList mode="list" /> : null}
-        {primaryTab === 'qa' ? <AdminRegistrationQa /> : null}
+        {primaryTab === 'qa' ? <PageTabs items={qaTabs} ariaLabel="QA sections" /> : null}
+        {primaryTab === 'qa' && qaTab === 'returning-members' ? <AdminRegistrationQaReturningMembers /> : null}
+        {primaryTab === 'qa' && qaTab === 'league-return' ? <AdminRegistrationQa /> : null}
 
         {isConfigTab ? <PageTabs items={settingsTabs} ariaLabel="Registration settings" /> : null}
 

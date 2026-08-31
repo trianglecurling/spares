@@ -12,8 +12,8 @@ import {
 } from '../registration/registrationMembershipPaymentService.js';
 import { resolveFrontendBaseUrl } from '../utils/frontendUrl.js';
 import { getStaffRegistrationStats } from '../registration/registrationStaffStats.js';
-import { staffReturningPlayersQaResponseSchema } from '../api/schemas.js';
-import { getStaffReturningPlayersQa } from '../registration/registrationStaffQa.js';
+import { staffReturningMembersQaResponseSchema, staffReturningPlayersQaResponseSchema } from '../api/schemas.js';
+import { getStaffReturningMembersQa, getStaffReturningPlayersQa } from '../registration/registrationStaffQa.js';
 import {
   getStaffRegistrationDetail,
   listStaffRegistrations,
@@ -95,6 +95,9 @@ const statsQuerySchema = z.object({
 const returningPlayersQaQuerySchema = z.object({
   sessionId: z.coerce.number().int().positive(),
   leagueId: z.coerce.number().int().positive().optional(),
+});
+const returningMembersQaQuerySchema = z.object({
+  sessionId: z.coerce.number().int().positive(),
 });
 const staffSubmitSchema = z.object({
   changedSummary: z.string().min(1).optional(),
@@ -222,6 +225,37 @@ export async function protectedRegistrationStaffRoutes(fastify: FastifyInstance)
       throw error;
     }
   });
+
+  fastify.get(
+    '/registration/staff/qa/returning-members',
+    {
+      schema: {
+        tags: ['registration-staff'],
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['sessionId'],
+          properties: {
+            sessionId: { type: 'number' },
+          },
+        },
+        response: { 200: staffReturningMembersQaResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      if (!requireRegistrationManage(request, reply)) return;
+      try {
+        const query = returningMembersQaQuerySchema.parse(request.query);
+        return await getStaffReturningMembersQa({
+          actor: (request as AuthenticatedRequest).member,
+          sessionId: query.sessionId,
+        });
+      } catch (error) {
+        if (handleStaffRegistrationError(reply, error)) return;
+        throw error;
+      }
+    },
+  );
 
   fastify.get(
     '/registration/staff/qa/returning-players',

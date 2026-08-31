@@ -1,7 +1,8 @@
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
+import { resolveAdjacentSessionsForLeagues } from '../services/curlingSessionService.js';
 import type { Member } from '../types.js';
-import { sortLeaguesByDayOfWeekThenFirstDrawTime } from '../utils/leagueOrdering.js';
+import { compareLeaguesByDayThenFirstDraw, sortLeaguesByDayOfWeekThenFirstDrawTime } from '../utils/leagueOrdering.js';
 import { memberCanManageRegistrations } from '../utils/registrationStaffAccess.js';
 import {
   DRAFT_REGISTRATION_STATUSES,
@@ -34,6 +35,8 @@ export type ReturningPlayerQaStatus = (typeof RETURNING_PLAYER_QA_STATUSES)[numb
 const ROSTERED_STATUSES = ['active', 'completed'] as const;
 const ACTIVE_SABBATICAL_STATUSES = ['active', 'staff_overridden', 'returning'] as const;
 
+type DrizzleBundle = ReturnType<typeof getDrizzleDb>;
+
 type RegistrationPickRow = {
   id: number;
   status: string;
@@ -41,6 +44,23 @@ type RegistrationPickRow = {
   updatedAt: string;
   desiredLeagueCount: number | null;
   returningMemberAnswer: number | null;
+};
+
+type PickedRegistrationRow = RegistrationPickRow & { curlerMemberId: number };
+
+export type ReturningMemberQaLeague = {
+  id: number;
+  name: string;
+  dayOfWeek: number;
+};
+
+export type ReturningMemberQaRow = {
+  memberId: number;
+  memberName: string;
+  memberEmail: string | null;
+  previousLeagues: ReturningMemberQaLeague[];
+  registrationId: number | null;
+  registrationStatus: string | null;
 };
 
 export type ReturningPlayerQaClassification = {
@@ -101,6 +121,118 @@ export function pickStaffRegistrationForQa<T extends RegistrationPickRow>(rows: 
     }
   }
   return submitted ?? draft;
+}
+
+/** True when the member has no submitted registration for the QA session (drafts still count as not yet registered). */
+export function isNotYetRegisteredForQa(registration: { status: string } | null | undefined): boolean {
+  return registration == null || !isSubmittedStatus(registration.status);
+}
+
+function sortPreviousLeagues(leagues: ReturningMemberQaLeague[]): ReturningMemberQaLeague[] {
+  const firstDrawByLeagueId = new Map<number, string>();
+  return [...leagues].sort((a, b) =>
+    compareLeaguesByDayThenFirstDraw(
+      { id: a.id, name: a.name, dayOfWeek: a.dayOfWeek },
+      { id: b.id, name: b.name, dayOfWeek: b.dayOfWeek },
+      firstDrawByLeagueId,
+    ),
+  );
+}
+
+export function buildReturningMembersQaRows(input: {
+  roster: Array<{
+    memberId: number;
+    memberName: string;
+    memberEmail: string | null;
+    league: ReturningMemberQaLeague;
+  }>;
+  registrationsByMemberId: ReadonlyMap<number, RegistrationPickRow>;
+}): ReturningMemberQaRow[] {
+  const byMemberId = new Map<
+    number,
+    {
+      memberName: string;
+      memberEmail: string | null;
+      leaguesById: Map<number, ReturningMemberQaLeague>;
+    }
+  >();
+  for (const row of input.roster) {
+    const existing = byMemberId.get(row.memberId);
+    if (!existing) {
+      byMemberId.set(row.memberId, {
+        memberName: row.memberName,
+        memberEmail: row.memberEmail,
+        leaguesById: new Map([[row.league.id, row.league]]),
+      });
+      continue;
+    }
+    existing.leaguesById.set(row.league.id, row.league);
+  }
+
+  const members: ReturningMemberQaRow[] = [];
+  for (const [memberId, row] of byMemberId) {
+    const registration = input.registrationsByMemberId.get(memberId) ?? null;
+    if (!isNotYetRegisteredForQa(registration)) continue;
+    members.push({
+      memberId,
+      memberName: row.memberName,
+      memberEmail: row.memberEmail,
+      previousLeagues: sortPreviousLeagues([...row.leaguesById.values()]),
+      registrationId: registration?.id ?? null,
+      registrationStatus: registration?.status ?? null,
+    });
+  }
+  return members.sort((a, b) => a.memberName.localeCompare(b.memberName) || a.memberId - b.memberId);
+}
+
+async function loadPickedRegistrationsByMemberId(
+  db: DrizzleBundle['db'],
+  schema: DrizzleBundle['schema'],
+  sessionId: number,
+  memberIds: number[],
+): Promise<Map<number, PickedRegistrationRow>> {
+  const registrationsByMemberId = new Map<number, PickedRegistrationRow>();
+  if (memberIds.length === 0) return registrationsByMemberId;
+
+  const registrationRows = await db
+    .select({
+      id: schema.curlingRegistrations.id,
+      curlerMemberId: schema.curlingRegistrations.curler_member_id,
+      status: schema.curlingRegistrations.status,
+      submittedAt: schema.curlingRegistrations.submitted_at,
+      updatedAt: schema.curlingRegistrations.updated_at,
+      desiredLeagueCount: schema.curlingRegistrations.desired_league_count,
+      returningMemberAnswer: schema.curlingRegistrations.returning_member_answer,
+    })
+    .from(schema.curlingRegistrations)
+    .where(
+      and(
+        eq(schema.curlingRegistrations.session_id, sessionId),
+        inArray(schema.curlingRegistrations.curler_member_id, memberIds),
+      ),
+    )
+    .orderBy(desc(schema.curlingRegistrations.updated_at));
+
+  const grouped = new Map<number, PickedRegistrationRow[]>();
+  for (const row of registrationRows) {
+    if (row.curlerMemberId == null) continue;
+    const list = grouped.get(row.curlerMemberId) ?? [];
+    list.push({
+      id: row.id,
+      curlerMemberId: row.curlerMemberId,
+      status: row.status,
+      submittedAt: timestampToStringOrNull(row.submittedAt),
+      updatedAt: timestampToString(row.updatedAt),
+      desiredLeagueCount: row.desiredLeagueCount,
+      returningMemberAnswer: row.returningMemberAnswer,
+    });
+    grouped.set(row.curlerMemberId, list);
+  }
+  for (const [memberId, rows] of grouped) {
+    const picked = pickStaffRegistrationForQa(rows);
+    if (picked) registrationsByMemberId.set(memberId, picked);
+  }
+  return registrationsByMemberId;
 }
 
 export function emptyReturningPlayerQaCounts(): Record<ReturningPlayerQaStatus, number> {
@@ -384,45 +516,7 @@ export async function getStaffReturningPlayersQa(input: {
     return empty;
   }
 
-  const registrationRows = await db
-    .select({
-      id: schema.curlingRegistrations.id,
-      curlerMemberId: schema.curlingRegistrations.curler_member_id,
-      status: schema.curlingRegistrations.status,
-      submittedAt: schema.curlingRegistrations.submitted_at,
-      updatedAt: schema.curlingRegistrations.updated_at,
-      desiredLeagueCount: schema.curlingRegistrations.desired_league_count,
-      returningMemberAnswer: schema.curlingRegistrations.returning_member_answer,
-    })
-    .from(schema.curlingRegistrations)
-    .where(
-      and(
-        eq(schema.curlingRegistrations.session_id, session.id),
-        inArray(schema.curlingRegistrations.curler_member_id, memberIds),
-      ),
-    )
-    .orderBy(desc(schema.curlingRegistrations.updated_at));
-
-  const registrationsByMemberId = new Map<number, RegistrationPickRow & { curlerMemberId: number }>();
-  const grouped = new Map<number, Array<RegistrationPickRow & { curlerMemberId: number }>>();
-  for (const row of registrationRows) {
-    if (row.curlerMemberId == null) continue;
-    const list = grouped.get(row.curlerMemberId) ?? [];
-    list.push({
-      id: row.id,
-      curlerMemberId: row.curlerMemberId,
-      status: row.status,
-      submittedAt: timestampToStringOrNull(row.submittedAt),
-      updatedAt: timestampToString(row.updatedAt),
-      desiredLeagueCount: row.desiredLeagueCount,
-      returningMemberAnswer: row.returningMemberAnswer,
-    });
-    grouped.set(row.curlerMemberId, list);
-  }
-  for (const [memberId, rows] of grouped) {
-    const picked = pickStaffRegistrationForQa(rows);
-    if (picked) registrationsByMemberId.set(memberId, picked);
-  }
+  const registrationsByMemberId = await loadPickedRegistrationsByMemberId(db, schema, session.id, memberIds);
 
   const registrationIds = [...registrationsByMemberId.values()].map((row) => row.id);
   const prioritiesByRegistrationId = new Map<number, LeaguePriorityInput[]>();
@@ -614,5 +708,128 @@ export async function getStaffReturningPlayersQa(input: {
     ...empty,
     players,
     counts,
+  };
+}
+
+export async function getStaffReturningMembersQa(input: { actor: Member; sessionId: number }) {
+  assertStaffAccess(input.actor);
+  const { db, schema } = getDrizzleDb();
+
+  const [session] = await db
+    .select({
+      id: schema.curlingSessions.id,
+      name: schema.curlingSessions.name,
+      seasonName: schema.curlingSeasons.name,
+    })
+    .from(schema.curlingSessions)
+    .innerJoin(schema.curlingSeasons, eq(schema.curlingSessions.season_id, schema.curlingSeasons.id))
+    .where(eq(schema.curlingSessions.id, input.sessionId))
+    .limit(1);
+  if (!session) {
+    throw new RegistrationStaffValidationError({ sessionId: 'Session was not found.' });
+  }
+
+  const adjacent = await resolveAdjacentSessionsForLeagues(session.id);
+  const empty = {
+    sessionId: session.id,
+    sessionName: session.name,
+    predecessorSession: null as {
+      id: number;
+      name: string;
+      seasonName: string | null;
+    } | null,
+    previousRosterCount: 0,
+    members: [] as ReturningMemberQaRow[],
+  };
+
+  if (adjacent.previous == null) {
+    return empty;
+  }
+
+  const [predecessorSession] = await db
+    .select({
+      id: schema.curlingSessions.id,
+      name: schema.curlingSessions.name,
+      seasonName: schema.curlingSeasons.name,
+    })
+    .from(schema.curlingSessions)
+    .innerJoin(schema.curlingSeasons, eq(schema.curlingSessions.season_id, schema.curlingSeasons.id))
+    .where(eq(schema.curlingSessions.id, adjacent.previous.id))
+    .limit(1);
+
+  empty.predecessorSession = {
+    id: adjacent.previous.id,
+    name: predecessorSession?.name ?? adjacent.previous.name,
+    seasonName: predecessorSession?.seasonName ?? null,
+  };
+
+  const previousLeaguesUnsorted = await db
+    .select({
+      id: schema.leagues.id,
+      name: schema.leagues.name,
+      day_of_week: schema.leagues.day_of_week,
+    })
+    .from(schema.leagues)
+    .where(eq(schema.leagues.session_id, adjacent.previous.id));
+  const previousLeagues = await sortLeaguesByDayOfWeekThenFirstDrawTime(db, schema, previousLeaguesUnsorted);
+  if (previousLeagues.length === 0) {
+    return empty;
+  }
+
+  const previousLeaguesById = new Map(
+    previousLeagues.map((league) => [
+      league.id,
+      { id: league.id, name: league.name, dayOfWeek: league.day_of_week },
+    ]),
+  );
+
+  const rosterRows = await db
+    .select({
+      memberId: schema.leagueRoster.member_id,
+      leagueId: schema.leagueRoster.league_id,
+      memberName: schema.members.name,
+      firstName: schema.members.first_name,
+      lastName: schema.members.last_name,
+      email: schema.members.email,
+    })
+    .from(schema.leagueRoster)
+    .innerJoin(schema.members, eq(schema.leagueRoster.member_id, schema.members.id))
+    .where(
+      and(
+        inArray(
+          schema.leagueRoster.league_id,
+          previousLeagues.map((league) => league.id),
+        ),
+        inArray(schema.leagueRoster.status, [...ROSTERED_STATUSES]),
+      ),
+    );
+
+  const memberIds = [...new Set(rosterRows.map((row) => row.memberId))];
+  const registrationsByMemberId = await loadPickedRegistrationsByMemberId(db, schema, session.id, memberIds);
+  const members = buildReturningMembersQaRows({
+    roster: rosterRows.flatMap((row) => {
+      const league = previousLeaguesById.get(row.leagueId);
+      if (!league) return [];
+      return [
+        {
+          memberId: row.memberId,
+          memberName: memberName({
+            name: row.memberName,
+            first_name: row.firstName,
+            last_name: row.lastName,
+            email: row.email,
+          }),
+          memberEmail: row.email,
+          league,
+        },
+      ];
+    }),
+    registrationsByMemberId,
+  });
+
+  return {
+    ...empty,
+    previousRosterCount: memberIds.length,
+    members,
   };
 }

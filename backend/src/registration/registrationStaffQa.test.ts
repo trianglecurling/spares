@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  buildReturningMembersQaRows,
   classifyReturningPlayerQa,
+  isNotYetRegisteredForQa,
   pickStaffRegistrationForQa,
 } from './registrationStaffQa.js';
 
@@ -142,5 +144,82 @@ describe('classifyReturningPlayerQa', () => {
     });
     expect(result.status).toBe('third_or_higher');
     expect(result.priorityRank).toBe(3);
+  });
+});
+
+describe('isNotYetRegisteredForQa', () => {
+  test('treats missing, draft, and canceled rows as not yet registered', () => {
+    expect(isNotYetRegisteredForQa(null)).toBe(true);
+    expect(isNotYetRegisteredForQa({ status: 'shell_complete' })).toBe(true);
+    expect(isNotYetRegisteredForQa({ status: 'cancelled' })).toBe(true);
+    expect(isNotYetRegisteredForQa({ status: 'submitted' })).toBe(false);
+    expect(isNotYetRegisteredForQa({ status: 'paid' })).toBe(false);
+  });
+});
+
+describe('buildReturningMembersQaRows', () => {
+  const tuesday = { id: 1, name: 'Tuesday Evening', dayOfWeek: 2 };
+  const thursday = { id: 2, name: 'Thursday Doubles', dayOfWeek: 4 };
+
+  test('keeps unregistered members once and lists each previous-session league', () => {
+    const rows = buildReturningMembersQaRows({
+      roster: [
+        { memberId: 10, memberName: 'Ada Lovelace', memberEmail: 'ada@example.com', league: thursday },
+        { memberId: 10, memberName: 'Ada Lovelace', memberEmail: 'ada@example.com', league: tuesday },
+        { memberId: 11, memberName: 'Grace Hopper', memberEmail: 'grace@example.com', league: tuesday },
+      ],
+      registrationsByMemberId: new Map([
+        [
+          11,
+          {
+            id: 50,
+            status: 'submitted',
+            submittedAt: '2026-08-20T12:00:00.000Z',
+            updatedAt: '2026-08-20T12:00:00.000Z',
+            desiredLeagueCount: 1,
+            returningMemberAnswer: 1,
+          },
+        ],
+      ]),
+    });
+    expect(rows).toEqual([
+      {
+        memberId: 10,
+        memberName: 'Ada Lovelace',
+        memberEmail: 'ada@example.com',
+        previousLeagues: [tuesday, thursday],
+        registrationId: null,
+        registrationStatus: null,
+      },
+    ]);
+  });
+
+  test('includes members with only a draft registration', () => {
+    const rows = buildReturningMembersQaRows({
+      roster: [{ memberId: 12, memberName: 'Alan Turing', memberEmail: null, league: tuesday }],
+      registrationsByMemberId: new Map([
+        [
+          12,
+          {
+            id: 77,
+            status: 'demographics_incomplete',
+            submittedAt: null,
+            updatedAt: '2026-08-25T12:00:00.000Z',
+            desiredLeagueCount: null,
+            returningMemberAnswer: 1,
+          },
+        ],
+      ]),
+    });
+    expect(rows).toEqual([
+      {
+        memberId: 12,
+        memberName: 'Alan Turing',
+        memberEmail: null,
+        previousLeagues: [tuesday],
+        registrationId: 77,
+        registrationStatus: 'demographics_incomplete',
+      },
+    ]);
   });
 });

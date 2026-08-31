@@ -2046,3 +2046,57 @@ export const staffReturningPlayersQaResponseSchema = {
     },
   },
 } as const;
+
+export const staffReturningMembersQaResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['sessionId', 'sessionName', 'predecessorSession', 'previousRosterCount', 'members'],
+  properties: {
+    sessionId: { type: 'number' },
+    sessionName: { type: 'string' },
+    predecessorSession: {
+      anyOf: [
+        { type: 'null' },
+        {
+          type: 'object',
+          additionalProperties: false,
+          required: ['id', 'name', 'seasonName'],
+          properties: {
+            id: { type: 'number' },
+            name: { type: 'string' },
+            seasonName: { type: ['string', 'null'] },
+          },
+        },
+      ],
+    },
+    previousRosterCount: { type: 'number' },
+    members: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['memberId', 'memberName', 'memberEmail', 'previousLeagues', 'registrationId', 'registrationStatus'],
+        properties: {
+          memberId: { type: 'number' },
+          memberName: { type: 'string' },
+          memberEmail: { type: ['string', 'null'] },
+          previousLeagues: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['id', 'name', 'dayOfWeek'],
+              properties: {
+                id: { type: 'number' },
+                name: { type: 'string' },
+                dayOfWeek: { type: 'number' },
+              },
+            },
+          },
+          registrationId: { type: ['number', 'null'] },
+          registrationStatus: { type: ['string', 'null'] },
+        },
+      },
+    },
+  },
+} as const;
