@@ -2,7 +2,6 @@ import { useEffect, useId, useState, type ReactNode } from 'react';
 import FormField from '../FormField';
 import {
   VOLUNTEER_HOUR_LOG_DESCRIPTION_MAX,
-  VOLUNTEER_HOUR_LOG_MAX,
   VOLUNTEER_HOUR_LOG_MIN,
   VOLUNTEER_HOUR_LOG_STEP,
   commitVolunteerHourLogHours,
