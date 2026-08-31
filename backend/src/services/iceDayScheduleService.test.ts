@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { parseEventCalendarEventId, parseLeagueCalendarEventId } from './iceDayScheduleService.js';
+import {
+  activityKind,
+  iceDayOccupancySheetIds,
+  parseEventCalendarEventId,
+  parseLeagueCalendarEventId,
+} from './iceDayScheduleService.js';
 
 describe('parseLeagueCalendarEventId', () => {
   test('parses league feed ids', () => {
@@ -19,5 +24,42 @@ describe('parseLeagueCalendarEventId', () => {
 describe('parseEventCalendarEventId', () => {
   test('parses event timespan feed ids', () => {
     expect(parseEventCalendarEventId('event:12:34')).toEqual({ eventId: 12, timespanId: 34 });
+  });
+});
+
+describe('activityKind', () => {
+  test('treats league feed items as league occupancy', () => {
+    expect(activityKind({ source: 'leagues', typeId: 'leagues' })).toBe('league');
+  });
+
+  test('does not treat calendar or event items as league just because they use the leagues type', () => {
+    expect(activityKind({ source: 'direct', typeId: 'leagues' })).toBe('other');
+    expect(activityKind({ source: 'events', typeId: 'leagues' })).toBe('other');
+    expect(activityKind({ source: 'events', typeId: 'other' })).toBe('other');
+  });
+
+  test('treats bonspiel types as bonspiel', () => {
+    expect(activityKind({ source: 'events', typeId: 'bonspiel' })).toBe('bonspiel');
+    expect(activityKind({ source: 'events', typeId: 'bonspiel-fours' })).toBe('bonspiel');
+  });
+});
+
+describe('iceDayOccupancySheetIds', () => {
+  test('returns only explicit sheet locations', () => {
+    expect(
+      iceDayOccupancySheetIds({
+        locations: [
+          { type: 'sheet', sheetId: 2 },
+          { type: 'sheet', sheetId: 4 },
+          { type: 'warm-room' },
+        ],
+      })
+    ).toEqual([2, 4]);
+  });
+
+  test('returns no sheets when the event has no location', () => {
+    expect(iceDayOccupancySheetIds({})).toEqual([]);
+    expect(iceDayOccupancySheetIds({ locations: [] })).toEqual([]);
+    expect(iceDayOccupancySheetIds({ locations: [{ type: 'offsite' }] })).toEqual([]);
   });
 });
