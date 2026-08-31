@@ -42,7 +42,10 @@ import {
   updateAdminHourLog,
   updateMyHourLog,
 } from '../services/volunteerHourLogService.js';
-import { VolunteerHourLogValidationError } from '../utils/volunteerHourLogs.js';
+import {
+  VOLUNTEER_HOUR_LOG_ADDITIONAL_MEMBERS_MAX,
+  VolunteerHourLogValidationError,
+} from '../utils/volunteerHourLogs.js';
 
 interface AuthenticatedRequest extends FastifyRequest {
   member: Member;
@@ -148,6 +151,10 @@ const hourLogBodySchema = z.object({
   volunteerDate: z.string().min(1),
   hours: z.number(),
   description: z.string(),
+});
+
+const hourLogCreateBodySchema = hourLogBodySchema.extend({
+  additionalMemberIds: z.array(z.number().int().positive()).max(VOLUNTEER_HOUR_LOG_ADDITIONAL_MEMBERS_MAX).optional(),
 });
 
 const adminHourLogBodySchema = hourLogBodySchema.extend({
@@ -321,7 +328,7 @@ export async function volunteeringRoutes(fastify: FastifyInstance): Promise<void
   fastify.post('/volunteering/hour-logs', { schema: { tags: ['volunteering'] } }, async (request, reply) => {
     const member = getMember(request as AuthenticatedRequest);
     if (!member) return sendApiError(reply, 401, 'Unauthorized');
-    const parsed = hourLogBodySchema.safeParse(request.body ?? {});
+    const parsed = hourLogCreateBodySchema.safeParse(request.body ?? {});
     if (!parsed.success) {
       return sendValidationError(reply, 'Invalid volunteer hours', parsed.error.flatten());
     }

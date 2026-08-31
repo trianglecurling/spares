@@ -1,8 +1,11 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useId, useMemo, useState, type FormEvent } from 'react';
 import AppStateCard from '../AppStateCard';
 import Button from '../Button';
+import FormField from '../FormField';
+import MemberMultiSelect from '../MemberMultiSelect';
 import Modal from '../Modal';
 import { useAlert } from '../../contexts/AlertContext';
+import { useAuth } from '../../contexts/AuthContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import api, { formatApiError } from '../../utils/api';
 import { formatDateInTimeZone } from '../../utils/clubTime';
@@ -10,6 +13,7 @@ import {
   emptyVolunteerHourLogFormValues,
   formatVolunteerDateOnly,
   formatVolunteerHoursLabel,
+  VOLUNTEER_HOUR_LOG_ADDITIONAL_MEMBERS_MAX,
   volunteerHourLogFieldErrorsFromUnknown,
   volunteerHourLogHoursForSubmit,
   type VolunteerHourLogFieldErrors,
@@ -24,9 +28,17 @@ function clubToday(): string {
   return formatDateInTimeZone(new Date()) ?? new Date().toISOString().slice(0, 10);
 }
 
+function creditSuccessMessage(additionalCount: number): string {
+  if (additionalCount === 0) return 'Volunteer hours logged.';
+  if (additionalCount === 1) return 'Volunteer hours logged for you and 1 other member.';
+  return `Volunteer hours logged for you and ${additionalCount} other members.`;
+}
+
 export default function VolunteerHourLogsPanel() {
   const { showAlert } = useAlert();
   const { confirm } = useConfirm();
+  const { member } = useAuth();
+  const additionalMembersId = useId();
   const today = useMemo(() => clubToday(), []);
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<VolunteerHourLogView[]>([]);
@@ -34,6 +46,7 @@ export default function VolunteerHourLogsPanel() {
   const [formValues, setFormValues] = useState<VolunteerHourLogFormValues>(() =>
     emptyVolunteerHourLogFormValues(today)
   );
+  const [additionalMemberIds, setAdditionalMemberIds] = useState<number[]>([]);
   const [formErrors, setFormErrors] = useState<VolunteerHourLogFieldErrors>({});
   const [submitting, setSubmitting] = useState(false);
   const [editing, setEditing] = useState<VolunteerHourLogView | null>(null);
@@ -71,9 +84,14 @@ export default function VolunteerHourLogsPanel() {
     setSubmitting(true);
     setFormErrors({});
     try {
-      await api.post('/volunteering/hour-logs', { ...formValues, hours: hoursResult.hours });
-      showAlert('Volunteer hours logged.', 'success');
+      await api.post('/volunteering/hour-logs', {
+        ...formValues,
+        hours: hoursResult.hours,
+        additionalMemberIds,
+      });
+      showAlert(creditSuccessMessage(additionalMemberIds.length), 'success');
       setFormValues(emptyVolunteerHourLogFormValues(today));
+      setAdditionalMemberIds([]);
       await load();
     } catch (err) {
       setFormErrors(volunteerHourLogFieldErrorsFromUnknown(err));
@@ -166,6 +184,25 @@ export default function VolunteerHourLogsPanel() {
               errors={formErrors}
               disabled={submitting}
               maxDate={today}
+              additionalMembersField={
+                <FormField
+                  label="Who else volunteered with you?"
+                  htmlFor={additionalMembersId}
+                  optional
+                  helperText="Selected members receive credit for the same activity. They can edit or delete their own record."
+                  error={formErrors.additionalMemberIds}
+                >
+                  <MemberMultiSelect
+                    inputId={additionalMembersId}
+                    selectedIds={additionalMemberIds}
+                    onChange={setAdditionalMemberIds}
+                    maxSelections={VOLUNTEER_HOUR_LOG_ADDITIONAL_MEMBERS_MAX}
+                    placeholder="Search members…"
+                    disabled={submitting}
+                    filterOption={(option) => option.id !== member?.id}
+                  />
+                </FormField>
+              }
             />
             <Button type="submit" disabled={submitting}>
               {submitting ? 'Saving…' : 'Log volunteering'}

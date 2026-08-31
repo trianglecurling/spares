@@ -8,6 +8,7 @@ import { normalizePersonName } from '../utils/memberName.js';
 import type { Member } from '../types.js';
 import { VolunteeringServiceError } from './volunteeringServiceError.js';
 import {
+  parseAdditionalMemberIds,
   parseVolunteerHourLogInput,
   VolunteerHourLogValidationError,
 } from '../utils/volunteerHourLogs.js';
@@ -29,6 +30,7 @@ export type VolunteerHourLogWriteInput = {
   volunteerDate: unknown;
   hours: unknown;
   description: unknown;
+  additionalMemberIds?: unknown;
 };
 
 export type VolunteerHourLogAdminWriteInput = VolunteerHourLogWriteInput & {
@@ -138,16 +140,26 @@ async function todayClubDate(): Promise<string> {
 }
 
 async function assertMemberExists(memberId: number): Promise<void> {
+  await assertMembersExist([memberId], 'memberId');
+}
+
+async function assertMembersExist(
+  memberIds: number[],
+  field: 'memberId' | 'additionalMemberIds' = 'memberId'
+): Promise<void> {
+  if (memberIds.length === 0) return;
   const { db, schema } = getDrizzleDb();
-  const [row] = await db
+  const rows = await db
     .select({ id: schema.members.id })
     .from(schema.members)
-    .where(eq(schema.members.id, memberId))
-    .limit(1);
-  if (!row) {
-    throw new VolunteerHourLogValidationError('Member not found.', {
-      memberId: 'Select a member.',
-    });
+    .where(inArray(schema.members.id, memberIds));
+  if (rows.length !== memberIds.length) {
+    throw new VolunteerHourLogValidationError(
+      field === 'additionalMemberIds' ? 'One or more members could not be found.' : 'Member not found.',
+      {
+        [field]: field === 'additionalMemberIds' ? 'Select valid members.' : 'Select a member.',
+      }
+    );
   }
 }
 
@@ -228,13 +240,45 @@ export async function createMyHourLog(
   input: VolunteerHourLogWriteInput
 ): Promise<VolunteerHourLogView> {
   const parsed = parseVolunteerHourLogInput(input, await todayClubDate());
-  return insertHourLog({
-    memberId: member.id,
-    volunteerDate: parsed.volunteerDate,
-    hours: parsed.hours,
-    description: parsed.description,
-    actorMemberId: member.id,
+  const additionalMemberIds = parseAdditionalMemberIds(input.additionalMemberIds, member.id);
+  await assertMembersExist(additionalMemberIds, 'additionalMemberIds');
+
+  if (additionalMemberIds.length === 0) {
+    return insertHourLog({
+      memberId: member.id,
+      volunteerDate: parsed.volunteerDate,
+      hours: parsed.hours,
+      description: parsed.description,
+      actorMemberId: member.id,
+    });
+  }
+
+  const { db, schema } = getDrizzleDb();
+  const memberIds = [member.id, ...additionalMemberIds];
+  const inserted = await db.transaction(async (tx) => {
+    return tx
+      .insert(schema.volunteerHourLogs)
+      .values(
+        memberIds.map((memberId) => ({
+          member_id: memberId,
+          volunteer_date: parsed.volunteerDate,
+          hours: parsed.hours,
+          description: parsed.description,
+          created_by_member_id: member.id,
+          updated_by_member_id: member.id,
+        })) as any
+      )
+      .returning({
+        id: schema.volunteerHourLogs.id,
+        memberId: schema.volunteerHourLogs.member_id,
+      });
   });
+
+  const actorRow = inserted.find((row) => row.memberId === member.id) ?? inserted[0];
+  if (!actorRow) throw new VolunteeringServiceError('Failed to save volunteer hours', 500);
+  const created = await loadHourLogById(actorRow.id);
+  if (!created) throw new VolunteeringServiceError('Failed to save volunteer hours', 500);
+  return created;
 }
 
 export async function updateMyHourLog(

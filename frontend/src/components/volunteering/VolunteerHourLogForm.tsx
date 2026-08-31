@@ -16,6 +16,7 @@ type VolunteerHourLogFormProps = {
   disabled?: boolean;
   maxDate: string;
   memberField?: ReactNode;
+  additionalMembersField?: ReactNode;
 };
 
 export default function VolunteerHourLogForm({
@@ -25,6 +26,7 @@ export default function VolunteerHourLogForm({
   disabled = false,
   maxDate,
   memberField,
+  additionalMembersField,
 }: VolunteerHourLogFormProps) {
   const dateId = useId();
   const hoursId = useId();
@@ -127,6 +129,7 @@ export default function VolunteerHourLogForm({
           />
         )}
       </FormField>
+      {additionalMembersField}
     </div>
   );
 }

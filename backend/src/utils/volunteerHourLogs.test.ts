@@ -1,12 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import {
   isValidVolunteerHourIncrement,
+  parseAdditionalMemberIds,
   parseVolunteerHourLogDate,
   parseVolunteerHourLogDescription,
   parseVolunteerHourLogHours,
   parseVolunteerHourLogInput,
   roundVolunteerHoursUp,
   VolunteerHourLogValidationError,
+  VOLUNTEER_HOUR_LOG_ADDITIONAL_MEMBERS_MAX,
   VOLUNTEER_HOUR_LOG_MAX_MESSAGE,
 } from './volunteerHourLogs';
 
@@ -79,6 +81,34 @@ describe('parseVolunteerHourLogDescription', () => {
 
   test('rejects empty descriptions', () => {
     expect(() => parseVolunteerHourLogDescription('   ')).toThrow(VolunteerHourLogValidationError);
+  });
+});
+
+describe('parseAdditionalMemberIds', () => {
+  test('treats missing values as no additional members', () => {
+    expect(parseAdditionalMemberIds(undefined, 10)).toEqual([]);
+    expect(parseAdditionalMemberIds(null, 10)).toEqual([]);
+  });
+
+  test('deduplicates ids and drops the actor', () => {
+    expect(parseAdditionalMemberIds([12, 10, 12, 15], 10)).toEqual([12, 15]);
+  });
+
+  test('rejects non-arrays and invalid ids', () => {
+    expect(() => parseAdditionalMemberIds('12', 10)).toThrow(VolunteerHourLogValidationError);
+    expect(() => parseAdditionalMemberIds([0], 10)).toThrow(VolunteerHourLogValidationError);
+    expect(() => parseAdditionalMemberIds([1.5], 10)).toThrow(VolunteerHourLogValidationError);
+  });
+
+  test('rejects more than the additional-member limit', () => {
+    const tooMany = Array.from({ length: VOLUNTEER_HOUR_LOG_ADDITIONAL_MEMBERS_MAX + 1 }, (_, i) => i + 1);
+    try {
+      parseAdditionalMemberIds(tooMany, 999);
+      throw new Error('expected validation to fail');
+    } catch (err) {
+      expect(err).toBeInstanceOf(VolunteerHourLogValidationError);
+      expect((err as VolunteerHourLogValidationError).details.additionalMemberIds).toBeTruthy();
+    }
   });
 });
 

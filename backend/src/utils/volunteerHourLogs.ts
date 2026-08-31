@@ -2,6 +2,7 @@ export const VOLUNTEER_HOUR_LOG_MIN = 0.5;
 export const VOLUNTEER_HOUR_LOG_MAX = 8;
 export const VOLUNTEER_HOUR_LOG_STEP = 0.5;
 export const VOLUNTEER_HOUR_LOG_DESCRIPTION_MAX = 2000;
+export const VOLUNTEER_HOUR_LOG_ADDITIONAL_MEMBERS_MAX = 25;
 export const VOLUNTEER_HOUR_LOG_MAX_MESSAGE =
   'The maximum number of hours per report is 8. If you need to log more time, create an additional report.';
 
@@ -10,6 +11,7 @@ export type VolunteerHourLogFieldErrors = {
   hours?: string;
   description?: string;
   memberId?: string;
+  additionalMemberIds?: string;
 };
 
 export class VolunteerHourLogValidationError extends Error {
@@ -144,4 +146,38 @@ export function parseVolunteerHourLogInput(
   }
 
   return { volunteerDate, hours, description };
+}
+
+export function parseAdditionalMemberIds(value: unknown, actorMemberId: number): number[] {
+  if (value == null) return [];
+  if (!Array.isArray(value)) {
+    throw new VolunteerHourLogValidationError('Select valid members.', {
+      additionalMemberIds: 'Select valid members.',
+    });
+  }
+
+  const ids: number[] = [];
+  const seen = new Set<number>();
+  for (const item of value) {
+    const id = typeof item === 'number' ? item : Number(item);
+    if (!Number.isInteger(id) || id <= 0) {
+      throw new VolunteerHourLogValidationError('Select valid members.', {
+        additionalMemberIds: 'Select valid members.',
+      });
+    }
+    if (id === actorMemberId || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+
+  if (ids.length > VOLUNTEER_HOUR_LOG_ADDITIONAL_MEMBERS_MAX) {
+    throw new VolunteerHourLogValidationError(
+      `You can credit at most ${VOLUNTEER_HOUR_LOG_ADDITIONAL_MEMBERS_MAX} other members.`,
+      {
+        additionalMemberIds: `Select ${VOLUNTEER_HOUR_LOG_ADDITIONAL_MEMBERS_MAX} or fewer other members.`,
+      }
+    );
+  }
+
+  return ids;
 }

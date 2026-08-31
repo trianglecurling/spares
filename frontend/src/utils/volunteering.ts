@@ -765,6 +765,7 @@ export const VOLUNTEER_HOUR_LOG_MIN = 0.5;
 export const VOLUNTEER_HOUR_LOG_MAX = 8;
 export const VOLUNTEER_HOUR_LOG_STEP = 0.5;
 export const VOLUNTEER_HOUR_LOG_DESCRIPTION_MAX = 2000;
+export const VOLUNTEER_HOUR_LOG_ADDITIONAL_MEMBERS_MAX = 25;
 export const VOLUNTEER_HOUR_LOG_MAX_MESSAGE =
   'The maximum number of hours per report is 8. If you need to log more time, create an additional report.';
 
@@ -800,6 +801,7 @@ export type VolunteerHourLogFieldErrors = {
   hours?: string;
   description?: string;
   memberId?: string;
+  additionalMemberIds?: string;
 };
 
 /** Round up to the next 0.5-hour increment (1.1 → 1.5, 1.5 → 1.5). */
@@ -852,7 +854,7 @@ export function volunteerHourLogFieldErrorsFromUnknown(err: unknown): VolunteerH
 
   const out: VolunteerHourLogFieldErrors = {};
   const source = details as Record<string, unknown>;
-  const keys = ['volunteerDate', 'hours', 'description', 'memberId'] as const;
+  const keys = ['volunteerDate', 'hours', 'description', 'memberId', 'additionalMemberIds'] as const;
   for (const key of keys) {
     const value = source[key];
     if (typeof value === 'string' && value) out[key] = value;

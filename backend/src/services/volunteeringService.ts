@@ -30,6 +30,10 @@ import {
 import { ensureUniqueVolunteerProgramSlug } from './volunteerProgramSlugs.js';
 import { compareVolunteerProgramsForDiscovery } from '../utils/volunteerProgramSort.js';
 import {
+  VOLUNTEER_REMINDER_WINDOW_MS,
+  volunteerSignupQualifiesForReminder,
+} from '../utils/volunteerReminders.js';
+import {
   aggregateVolunteerStats,
   buildSeasonVolunteerLedger,
   VOLUNTEER_SEASON_LEDGER_UNAVAILABLE,
@@ -2744,7 +2748,7 @@ export async function processVolunteerReminders(): Promise<number> {
   const { db, schema } = getDrizzleDb();
   const now = await getCurrentTimeAsync();
   const nowIso = now.toISOString();
-  const horizon = new Date(now.getTime() + 48 * 60 * 60 * 1000).toISOString();
+  const horizon = new Date(now.getTime() + VOLUNTEER_REMINDER_WINDOW_MS).toISOString();
   const { volunteerSignupManageUrl } = await import('../utils/volunteerSignupManageUrl.js');
 
   const rows = await db
@@ -2760,6 +2764,7 @@ export async function processVolunteerReminders(): Promise<number> {
       location: schema.volunteerPrograms.location,
       startDt: schema.volunteerShifts.start_dt,
       endDt: schema.volunteerShifts.end_dt,
+      signedUpAt: schema.volunteerSignups.created_at,
       reminderSentAt: schema.volunteerSignups.reminder_sent_at,
     })
     .from(schema.volunteerSignups)
@@ -2787,6 +2792,14 @@ export async function processVolunteerReminders(): Promise<number> {
   const clubName = await getConfiguredClubName();
   const { sendVolunteerReminderEmail } = await import('./email.js');
   for (const row of rows) {
+    if (
+      !volunteerSignupQualifiesForReminder({
+        signedUpAt: row.signedUpAt,
+        shiftStartDt: row.startDt,
+      })
+    ) {
+      continue;
+    }
     const to = row.memberEmail || row.guestEmail;
     const recipientName = row.memberName || row.guestName;
     if (!to || !recipientName) continue;

@@ -551,6 +551,14 @@ describe('volunteerHourLogFieldErrorsFromUnknown', () => {
       })
     ).toEqual({ hours: VOLUNTEER_HOUR_LOG_MAX_MESSAGE });
   });
+
+  test('reads additional-member details from an API error', () => {
+    expect(
+      volunteerHourLogFieldErrorsFromUnknown({
+        response: { data: { details: { additionalMemberIds: 'Select valid members.' } } },
+      })
+    ).toEqual({ additionalMemberIds: 'Select valid members.' });
+  });
 });
 
 describe('buildPastVolunteeringItems', () => {
