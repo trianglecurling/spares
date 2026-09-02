@@ -6,8 +6,28 @@ import { isCalendarAdmin } from '../utils/auth.js';
 import { composeRecurrenceRule } from '../utils/calendarRecurrence.js';
 import { getCalendarFeed, getLeagueCalendarFeed } from '../domains/calendar/queries/calendarReadFacade.js';
 import { fetchDirectCalendarEventByFeedId } from '../services/calendarExpansion.js';
+import {
+  deleteVolunteerShiftsSyncedToCalendarEvent,
+  syncVolunteerShiftsForCalendarEvent,
+} from '../services/volunteeringService.js';
 import type { Member } from '../types.js';
 import { isCalendarRangeWithinLimit } from '../utils/abuseProtection.js';
+
+async function syncVolunteerShiftsAfterCalendarChange(eventId: number): Promise<void> {
+  try {
+    await syncVolunteerShiftsForCalendarEvent(eventId);
+  } catch (err) {
+    console.error('[Volunteering] Failed to sync shifts for calendar event', eventId, err);
+  }
+}
+
+async function deleteVolunteerShiftsBeforeCalendarDelete(eventId: number): Promise<void> {
+  try {
+    await deleteVolunteerShiftsSyncedToCalendarEvent(eventId);
+  } catch (err) {
+    console.error('[Volunteering] Failed to delete synced shifts for calendar event', eventId, err);
+  }
+}
 
 type LocationType = 'sheet' | 'warm-room' | 'exterior' | 'offsite' | 'virtual';
 
@@ -258,6 +278,7 @@ export async function calendarRoutes(fastify: FastifyInstance) {
               article_id: body.articleId !== undefined ? body.articleId : undefined,
               updated_at: sql`CURRENT_TIMESTAMP`,
             }).where(eq(schema.calendarEvents.parent_event_id, ov.parent_event_id));
+            await syncVolunteerShiftsAfterCalendarChange(ov.parent_event_id);
             return { success: true };
           }
         }
@@ -285,6 +306,7 @@ export async function calendarRoutes(fastify: FastifyInstance) {
               await db.insert(schema.calendarEventLocations).values(locValues);
             }
           }
+          await syncVolunteerShiftsAfterCalendarChange(parent.id);
           return { success: true };
         }
       }
@@ -314,6 +336,7 @@ export async function calendarRoutes(fastify: FastifyInstance) {
               await db.insert(schema.calendarEventLocations).values(locValues);
             }
           }
+          await syncVolunteerShiftsAfterCalendarChange(parent.parent_event_id);
           return { success: true };
         }
 
@@ -345,6 +368,7 @@ export async function calendarRoutes(fastify: FastifyInstance) {
         if (locValues.length > 0 && created) {
           await db.insert(schema.calendarEventLocations).values(locValues);
         }
+        await syncVolunteerShiftsAfterCalendarChange(dbId);
         return { success: true };
       }
 
@@ -383,6 +407,7 @@ export async function calendarRoutes(fastify: FastifyInstance) {
         }
       }
 
+      await syncVolunteerShiftsAfterCalendarChange(ev.parent_event_id ?? dbId);
       return { success: true };
     }
   );
@@ -425,6 +450,7 @@ export async function calendarRoutes(fastify: FastifyInstance) {
 
         if (parent?.parent_event_id) {
           await db.delete(schema.calendarEvents).where(eq(schema.calendarEvents.id, dbId));
+          await syncVolunteerShiftsAfterCalendarChange(parent.parent_event_id);
           return { success: true };
         }
 
@@ -432,6 +458,7 @@ export async function calendarRoutes(fastify: FastifyInstance) {
           parent_event_id: dbId,
           exception_date: recurrenceDate,
         });
+        await syncVolunteerShiftsAfterCalendarChange(dbId);
         return { success: true };
       }
 
@@ -443,6 +470,7 @@ export async function calendarRoutes(fastify: FastifyInstance) {
           .limit(1);
 
         const deleteId = parent?.parent_event_id ?? dbId;
+        await deleteVolunteerShiftsBeforeCalendarDelete(deleteId);
         await db.delete(schema.calendarEvents).where(eq(schema.calendarEvents.id, deleteId));
         await db.delete(schema.calendarEventLocations).where(
           sql`${schema.calendarEventLocations.event_id} IN (SELECT id FROM calendar_events WHERE parent_event_id = ${deleteId})`
@@ -463,6 +491,7 @@ export async function calendarRoutes(fastify: FastifyInstance) {
         return reply.code(404).send({ error: 'Event not found' });
       }
 
+      await deleteVolunteerShiftsBeforeCalendarDelete(dbId);
       await db.delete(schema.calendarEventLocations).where(eq(schema.calendarEventLocations.event_id, dbId));
       await db.delete(schema.calendarEvents).where(eq(schema.calendarEvents.id, dbId));
 

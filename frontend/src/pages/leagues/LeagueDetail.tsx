@@ -34,6 +34,7 @@ import {
   rosterMembersNotOnDeclaredTeams,
   type LeagueDeclaredTeam,
 } from './leagueRosterDeclaredTeams';
+import { RosterGuaranteeChip } from './RosterGuaranteeChip';
 
 const WEEKDAY_SELECT_OPTIONS: ChoiceOption<number>[] = [
   'Sunday',
@@ -221,6 +222,17 @@ interface LeagueRosterMember {
   email: string | null;
   assignedTeamId: number | null;
   assignedTeamName: string | null;
+  guaranteeLabel?:
+    | 'guaranteed_return'
+    | 'awaiting_roster_entry'
+    | 'guaranteed_fallback'
+    | 'available'
+    | 'temporary_spot_available'
+    | 'waitlisted'
+    | 'subject_to_availability'
+    | 'superfluous'
+    | null;
+  priorityRank?: number | null;
 }
 
 const roleLabels: Record<RosterMember['role'], string> = {
@@ -3394,6 +3406,12 @@ export default function LeagueDetail() {
                                       <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-900 dark:bg-amber-900/40 dark:text-amber-200">
                                         Not yet registered
                                       </span>
+                                    ) : canManageSetup ? (
+                                      <RosterGuaranteeChip
+                                        guaranteeLabel={rosterEntry?.guaranteeLabel}
+                                        priorityRank={rosterEntry?.priorityRank}
+                                        league={league}
+                                      />
                                     ) : null}
                                   </p>
                                 </div>
@@ -3438,8 +3456,15 @@ export default function LeagueDetail() {
                       className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 border border-gray-200 dark:border-gray-700 rounded-md p-3"
                     >
                       <div>
-                        <div className="text-sm font-medium text-gray-800 dark:text-gray-200">
-                          {entry.name}
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-gray-800 dark:text-gray-200">
+                          <span>{entry.name}</span>
+                          {canManageSetup ? (
+                            <RosterGuaranteeChip
+                              guaranteeLabel={entry.guaranteeLabel}
+                              priorityRank={entry.priorityRank}
+                              league={league}
+                            />
+                          ) : null}
                         </div>
                         {entry.email && (
                           <div className="text-xs text-gray-500 dark:text-gray-400">

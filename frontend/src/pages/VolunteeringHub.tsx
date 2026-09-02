@@ -19,9 +19,11 @@ import {
   formatVolunteerDateOnly,
   localDateOnly,
   volunteerCredentialIsValidOn,
+  parseVolunteerSignupKind,
   volunteerProgramAppearsInDiscovery,
   volunteerProgramHasIneligibleCredentialRoles,
   volunteerProgramShiftsForCaller,
+  volunteerProgramUiTerms,
   volunteerProgramVisibleGivenCredentials,
   type VolunteerHubCredential,
   type VolunteerProgramView,
@@ -30,13 +32,14 @@ import { MyVolunteerShiftsPanel } from './MyVolunteerShifts';
 import VolunteerStatsPanel from '../components/volunteering/VolunteerStatsPanel';
 import VolunteerHourLogsPanel from '../components/volunteering/VolunteerHourLogsPanel';
 
-type HubTab = 'programs' | 'shifts' | 'hours' | 'stats' | 'credentials';
+type HubTab = 'programs' | 'other' | 'shifts' | 'hours' | 'stats' | 'credentials';
 
 function resolveHubTab(tabParam: string | null): HubTab {
   if (tabParam === 'credentials') return 'credentials';
   if (tabParam === 'shifts' || tabParam === 'my-shifts') return 'shifts';
   if (tabParam === 'hours') return 'hours';
   if (tabParam === 'stats') return 'stats';
+  if (tabParam === 'other' || tabParam === 'signups' || tabParam === 'sign-ups') return 'other';
   return 'programs';
 }
 
@@ -76,7 +79,7 @@ export default function VolunteeringHub() {
         return new Set([firstWithShifts.id]);
       });
     } catch (err) {
-      showAlert(formatApiError(err, 'Failed to load volunteering opportunities'), 'error');
+      showAlert(formatApiError(err, 'Failed to load sign-up opportunities'), 'error');
     } finally {
       setLoading(false);
     }
@@ -96,15 +99,18 @@ export default function VolunteeringHub() {
     () =>
       programs.filter(
         (program) =>
+          parseVolunteerSignupKind(program.signupKind) ===
+            (activeTab === 'other' ? 'general' : 'volunteering') &&
           volunteerProgramAppearsInDiscovery(program) &&
           volunteerProgramVisibleGivenCredentials(program, heldCredentialIds)
       ),
-    [programs, heldCredentialIds]
+    [programs, heldCredentialIds, activeTab]
   );
   const hasAnyOpenShifts = useMemo(
     () => visiblePrograms.some((program) => volunteerProgramShiftsForCaller(program).length > 0),
     [visiblePrograms]
   );
+  const terms = volunteerProgramUiTerms(activeTab === 'other' ? 'general' : 'volunteering');
 
   const hasClubCredentials = credentials.length > 0;
 
@@ -129,17 +135,23 @@ export default function VolunteeringHub() {
   return (
     <AppPage>
       <AppPageHeader
-        title="Volunteering hub"
-        description="Discover and sign up for volunteer opportunities at the club."
+        title="Volunteering & sign-ups"
+        description="Discover volunteer opportunities and other club sign-ups."
       />
 
       <PageTabs
         items={[
           {
             key: 'programs',
-            label: 'Discover opportunities',
+            label: 'Volunteering',
             isActive: activeTab === 'programs',
             onClick: () => setTab('programs'),
+          },
+          {
+            key: 'other',
+            label: 'Other sign-ups',
+            isActive: activeTab === 'other',
+            onClick: () => setTab('other'),
           },
           {
             key: 'shifts',
@@ -179,19 +191,28 @@ export default function VolunteeringHub() {
       ) : activeTab === 'stats' ? (
         <VolunteerStatsPanel />
       ) : loading ? (
-        <AppStateCard title="Loading opportunities" description="Fetching volunteer programs and shifts." />
+        <AppStateCard
+          title={activeTab === 'other' ? 'Loading sign-ups' : 'Loading opportunities'}
+          description={
+            activeTab === 'other' ? 'Fetching programs and times.' : 'Fetching programs and shifts.'
+          }
+        />
       ) : activeTab === 'credentials' && hasClubCredentials ? (
         <CredentialsTab credentials={credentials} />
       ) : (
         <div className="space-y-4">
           {visiblePrograms.length === 0 ? (
             <AppStateCard
-              title="No upcoming opportunities"
-              description="There are no volunteer opportunities right now. Check back soon."
+              title={activeTab === 'other' ? 'No upcoming sign-ups' : 'No upcoming opportunities'}
+              description={
+                activeTab === 'other'
+                  ? 'There are no other sign-ups right now. Check back soon.'
+                  : 'There are no volunteer opportunities right now. Check back soon.'
+              }
             />
           ) : (
             <>
-              {hasAnyOpenShifts ? (
+              {hasAnyOpenShifts && activeTab !== 'other' ? (
                 <AppPageControlsRow
                   left={
                     <FormField label="Group by" htmlFor="volunteer-group-by" className="mb-0">
@@ -251,8 +272,8 @@ export default function VolunteeringHub() {
                           aria-expanded={expanded}
                           aria-label={
                             expanded
-                              ? `Hide shifts for ${program.title}`
-                              : `Show shifts for ${program.title}`
+                              ? `Hide ${terms.shiftPlural} for ${program.title}`
+                              : `Show ${terms.shiftPlural} for ${program.title}`
                           }
                         />
                         <div className="relative flex items-start justify-between gap-3 pointer-events-none">
@@ -287,7 +308,7 @@ export default function VolunteeringHub() {
                           ) : null}
                           <VolunteerProgramShiftsBody
                             program={program}
-                            groupBy={groupBy}
+                            groupBy={activeTab === 'other' ? 'shift' : groupBy}
                             onChanged={load}
                             heldCredentialIds={heldCredentialIds}
                           />

@@ -23,6 +23,8 @@
     "dev:backend:preview": "bun run --filter backend dev:preview",
     "db:migrate": "bun run --filter backend db:migrate",
     "db:migrate:preview": "DB_CONFIG_PROFILE=preview bun run db:migrate",
+    "db:copy": "bun run --filter backend db:copy",
+    "db:copy-to-preview": "bun run --filter backend db:copy-to-preview",
     "build": "bun run --filter frontend build && bun run --filter backend build",
     "build:frontend": "bun run --filter frontend build",
     "build:backend": "bun run --filter backend build",

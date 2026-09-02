@@ -66,13 +66,13 @@ describe('memberCanManageVolunteerProgramFromClaims', () => {
 });
 
 describe('getAdminLinks volunteering', () => {
-  test('includes Manage volunteering for a single-program manager', () => {
+  test('includes Manage sign-ups for a single-program manager', () => {
     expect(getAdminLinks(member({ managedVolunteerProgramIds: [12] }))).toEqual([
-      { to: '/admin/volunteering', label: 'Manage volunteering' },
+      { to: '/admin/volunteering', label: 'Manage sign-ups' },
     ]);
   });
 
-  test('omits Manage volunteering without scope or managed programs', () => {
+  test('omits Manage sign-ups without scope or managed programs', () => {
     expect(getAdminLinks(member()).some((link) => link.to === '/admin/volunteering')).toBe(false);
   });
 });

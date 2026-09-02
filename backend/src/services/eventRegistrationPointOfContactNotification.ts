@@ -1,3 +1,4 @@
+import { formatEventStartForDisplay } from '../utils/formatEventTimespans.js';
 import { splitMemberDisplayName } from '../utils/memberName.js';
 import {
   formatDietaryRestrictionsFieldDisplay,
@@ -26,6 +27,14 @@ type EventWithRegistrationFields = {
   title: string;
   point_of_contact: string;
   registrationFields?: EventRegistrationField[] | unknown[];
+  timespans?: Array<{
+    start_dt?: string;
+    end_dt?: string;
+    startDt?: string;
+    endDt?: string;
+    sort_order?: number;
+    sortOrder?: number;
+  }>;
 };
 
 type DbRegistration = {
@@ -285,6 +294,7 @@ export async function notifyPointOfContactOfNewRegistration(input: {
     registration.contact_email ?? '',
     formatRegistrationStatus(input.status),
     snapshot.rows,
+    formatEventStartForDisplay(input.event.timespans),
   );
 }
 

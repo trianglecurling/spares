@@ -1873,6 +1873,24 @@ function eventRegistrationFormChangesText(changes: EventRegistrationFormFieldCha
     .join('\n\n');
 }
 
+function newRegistrationSubmittedSentence(
+  eventTitle: string,
+  eventStartLabel?: string | null,
+): { html: string; text: string } {
+  const titleHtml = `<strong>${escapeHtmlEmail(eventTitle)}</strong>`;
+  const when = eventStartLabel?.trim();
+  if (when) {
+    return {
+      html: `A new registration was submitted for ${titleHtml} on ${escapeHtmlEmail(when)}.`,
+      text: `A new registration was submitted for ${eventTitle} on ${when}.`,
+    };
+  }
+  return {
+    html: `A new registration was submitted for ${titleHtml}.`,
+    text: `A new registration was submitted for ${eventTitle}.`,
+  };
+}
+
 export async function sendEventPointOfContactNewRegistrationEmail(
   to: string,
   eventTitle: string,
@@ -1880,13 +1898,15 @@ export async function sendEventPointOfContactNewRegistrationEmail(
   registrantEmail: string,
   status: string,
   formRows: EventRegistrationFormEmailRow[],
+  eventStartLabel?: string | null,
 ): Promise<void> {
   const formHtml = eventRegistrationFormRowsHtml(formRows);
   const formText = eventRegistrationFormRowsText(formRows);
+  const intro = newRegistrationSubmittedSentence(eventTitle, eventStartLabel);
 
   const htmlContent = `
     <h2>New event registration</h2>
-    <p>A new registration was submitted for <strong>${escapeHtmlEmail(eventTitle)}</strong>.</p>
+    <p>${intro.html}</p>
     <p><strong>Registrant:</strong> ${escapeHtmlEmail(registrantName)} (${escapeHtmlEmail(registrantEmail)})</p>
     <p><strong>Status:</strong> ${escapeHtmlEmail(status)}</p>
     ${formHtml ? `<h3>Submitted information</h3>${formHtml}` : ''}
@@ -1895,7 +1915,7 @@ export async function sendEventPointOfContactNewRegistrationEmail(
   const textBody = [
     'New event registration',
     '',
-    `A new registration was submitted for ${eventTitle}.`,
+    intro.text,
     '',
     `Registrant: ${registrantName} (${registrantEmail})`,
     `Status: ${status}`,
@@ -2179,7 +2199,7 @@ export async function sendVolunteerCancellationEmails(input: {
         <p><strong>Role:</strong> ${escapeHtmlEmail(input.roleName)}</p>
         <p><strong>When:</strong> ${escapeHtmlEmail(when)}</p>
         ${locationLine}
-        <p><a href="${config.frontendUrl}/admin/volunteering">Manage volunteering</a></p>
+        <p><a href="${config.frontendUrl}/admin/volunteering">Manage sign-ups</a></p>
       `,
       recipientName: manager.name,
     });

@@ -28,6 +28,23 @@ After verifying on preview:
 bun run db:migrate
 ```
 
+## Copy production onto preview
+
+To replace the preview/test database with a full copy of production (schema + data):
+
+```bash
+bun run db:copy-to-preview -- --dry-run
+bun run db:copy-to-preview -- --yes
+```
+
+This reads `backend/data/db-config.json` (source) and `backend/data/db-config.preview.json` (destination). Before overwrite, the destination is dumped to `backend/data/db-dumps/<profile>-<timestamp>.dump` (gitignored). After copy, destination `server_config` enables test mode and bypass login verification (the `/admin/config` flags), then the preview application tier is restarted (`sudo systemctl restart tccnc-web-preview` by default, or `DB_COPY_APP_RESTART_CMD` / `--restart-cmd`) so in-memory caches reload. Use `--no-restart` to skip. It will not write to the default/production profile. Requires `pg_dump` and `pg_restore` 18+ for a Postgres 18 server (`sudo apt install postgresql-client-18` from the PGDG repo).
+
+Other profiles:
+
+```bash
+bun run db:copy -- --from default --to preview --yes
+```
+
 ## Generate a new migration
 
 After editing `src/db/drizzle-schema.ts`:

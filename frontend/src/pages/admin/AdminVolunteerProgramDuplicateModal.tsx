@@ -12,8 +12,10 @@ import { useSiteBranding } from '../../hooks/useSiteBranding';
 import { formatApiError } from '../../utils/api';
 import {
   VOLUNTEER_LOCATION_CLUB,
+  parseVolunteerSignupKind,
   volunteerLocationChoiceFromStored,
   volunteerLocationStoredFromChoice,
+  volunteerProgramUiTerms,
   type VolunteerLocationChoice,
   type VolunteerProgramView,
 } from '../../utils/volunteering';
@@ -72,6 +74,7 @@ export default function AdminVolunteerProgramDuplicateModal({
   const [managerIds, setManagerIds] = useState<number[]>([]);
 
   const hasShifts = (sourceProgram?.shifts.length ?? 0) > 0;
+  const terms = volunteerProgramUiTerms(parseVolunteerSignupKind(sourceProgram?.signupKind));
 
   useEffect(() => {
     if (!sourceProgram) return;
@@ -93,7 +96,7 @@ export default function AdminVolunteerProgramDuplicateModal({
 
     setSubmitError('');
     if (hasShifts && !startDate.trim()) {
-      setSubmitError('Start date is required so shift times can be adjusted.');
+      setSubmitError(`Start date is required so ${terms.shiftPlural} can be adjusted.`);
       return;
     }
     if (locationChoice === null) {
@@ -133,8 +136,8 @@ export default function AdminVolunteerProgramDuplicateModal({
       {sourceProgram ? (
         <form onSubmit={handleSubmit} className="space-y-6">
           <p className="text-sm text-gray-600 dark:text-gray-400">
-            Review the new program details. Roles and shifts are copied; sign-ups are not. Shift times keep
-            the same time of day and move with the new start date.
+            Review the new program details. {terms.roleTab} and {terms.shiftPlural} are copied; sign-ups are not.{' '}
+            {terms.shiftTab} keep the same time of day and move with the new start date.
           </p>
 
           <FormSection title="New program" surface="panel">
@@ -156,8 +159,8 @@ export default function AdminVolunteerProgramDuplicateModal({
               optional={!hasShifts}
               helperText={
                 hasShifts
-                  ? `Source starts on ${formatSourceStartLabel(sourceProgram)}. Shifts move by the same number of days.`
-                  : 'Optional. Copied programs without shifts do not need a start date.'
+                  ? `Source starts on ${formatSourceStartLabel(sourceProgram)}. ${terms.shiftTab} move by the same number of days.`
+                  : `Optional. Copied programs without ${terms.shiftPlural} do not need a start date.`
               }
             >
               <input
@@ -190,7 +193,7 @@ export default function AdminVolunteerProgramDuplicateModal({
             <FormField
               label="Managers"
               htmlFor={managersInputId}
-              helperText="Managers can edit this program’s roles, shifts, and sign-ups."
+              helperText={`Managers can edit this program’s ${terms.rolePlural}, ${terms.shiftPlural}, and sign-ups.`}
             >
               <MemberMultiSelect
                 inputId={managersInputId}

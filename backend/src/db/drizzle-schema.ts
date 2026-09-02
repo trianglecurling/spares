@@ -2332,8 +2332,12 @@ export const volunteerProgramsSqlite = sqliteTable('volunteer_programs', {
   published: integer('published').default(0).notNull(),
   feature_on_dashboard: integer('feature_on_dashboard').default(1).notNull(),
   public_signups: integer('public_signups').default(0).notNull(),
+  /** volunteering = club volunteer work; general = other sign-ups that reuse this system. */
+  signup_kind: text('signup_kind').default('volunteering').notNull(),
   priority: integer('priority'),
   archived_at: text('archived_at'),
+  /** Free-form (`direct`) calendar event this sign-up is linked from. */
+  calendar_event_id: integer('calendar_event_id').references(() => calendarEventsSqlite.id, { onDelete: 'set null' }),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
 }, (table) => ({
@@ -2342,7 +2346,9 @@ export const volunteerProgramsSqlite = sqliteTable('volunteer_programs', {
   publishedIdx: index('idx_volunteer_programs_published').on(table.published),
   featureOnDashboardIdx: index('idx_volunteer_programs_feature_on_dashboard').on(table.feature_on_dashboard),
   publicSignupsIdx: index('idx_volunteer_programs_public_signups').on(table.public_signups),
+  signupKindIdx: index('idx_volunteer_programs_signup_kind').on(table.signup_kind),
   archivedAtIdx: index('idx_volunteer_programs_archived_at').on(table.archived_at),
+  calendarEventUnique: uniqueIndex('volunteer_programs_calendar_event_id_unique').on(table.calendar_event_id),
 }));
 
 export const volunteerProgramManagersSqlite = sqliteTable('volunteer_program_managers', {
@@ -2434,15 +2440,22 @@ export const volunteerShiftsSqlite = sqliteTable('volunteer_shifts', {
   program_id: integer('program_id').notNull().references(() => volunteerProgramsSqlite.id, { onDelete: 'cascade' }),
   start_dt: text('start_dt').notNull(),
   end_dt: text('end_dt').notNull(),
+  /** Hours of volunteer credit granted for completing this shift. */
+  credit_hours: real('credit_hours').default(0).notNull(),
   recurrence_series_id: integer('recurrence_series_id'),
   recurrence_rule: text('recurrence_rule'),
   recurrence_date: text('recurrence_date'),
+  /** When set, this shift is kept in sync with the attached free-form calendar event. */
+  source_calendar_event_id: integer('source_calendar_event_id').references(() => calendarEventsSqlite.id, {
+    onDelete: 'set null',
+  }),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
 }, (table) => ({
   programIdx: index('idx_volunteer_shifts_program_id').on(table.program_id),
   startDtIdx: index('idx_volunteer_shifts_start_dt').on(table.start_dt),
   recurrenceSeriesIdx: index('idx_volunteer_shifts_recurrence_series_id').on(table.recurrence_series_id),
+  sourceCalendarEventIdx: index('idx_volunteer_shifts_source_calendar_event_id').on(table.source_calendar_event_id),
 }));
 
 export const volunteerShiftExceptionsSqlite = sqliteTable('volunteer_shift_exceptions', {
@@ -4633,8 +4646,12 @@ export const volunteerProgramsPg = pgTable('volunteer_programs', {
   published: integerPg('published').default(0).notNull(),
   feature_on_dashboard: integerPg('feature_on_dashboard').default(1).notNull(),
   public_signups: integerPg('public_signups').default(0).notNull(),
+  /** volunteering = club volunteer work; general = other sign-ups that reuse this system. */
+  signup_kind: textPg('signup_kind').default('volunteering').notNull(),
   priority: integerPg('priority'),
   archived_at: timestamp('archived_at', { withTimezone: false }),
+  /** Free-form (`direct`) calendar event this sign-up is linked from. */
+  calendar_event_id: integerPg('calendar_event_id').references(() => calendarEventsPg.id, { onDelete: 'set null' }),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
 }, (table) => ({
@@ -4643,7 +4660,9 @@ export const volunteerProgramsPg = pgTable('volunteer_programs', {
   publishedIdx: indexPg('idx_volunteer_programs_published').on(table.published),
   featureOnDashboardIdx: indexPg('idx_volunteer_programs_feature_on_dashboard').on(table.feature_on_dashboard),
   publicSignupsIdx: indexPg('idx_volunteer_programs_public_signups').on(table.public_signups),
+  signupKindIdx: indexPg('idx_volunteer_programs_signup_kind').on(table.signup_kind),
   archivedAtIdx: indexPg('idx_volunteer_programs_archived_at').on(table.archived_at),
+  calendarEventUnique: uniqueIndexPg('volunteer_programs_calendar_event_id_unique').on(table.calendar_event_id),
 }));
 
 export const volunteerProgramManagersPg = pgTable('volunteer_program_managers', {
@@ -4744,15 +4763,22 @@ export const volunteerShiftsPg = pgTable('volunteer_shifts', {
   program_id: integerPg('program_id').notNull().references(() => volunteerProgramsPg.id, { onDelete: 'cascade' }),
   start_dt: textPg('start_dt').notNull(),
   end_dt: textPg('end_dt').notNull(),
+  /** Hours of volunteer credit granted for completing this shift. */
+  credit_hours: doublePrecision('credit_hours').default(0).notNull(),
   recurrence_series_id: integerPg('recurrence_series_id'),
   recurrence_rule: textPg('recurrence_rule'),
   recurrence_date: textPg('recurrence_date'),
+  /** When set, this shift is kept in sync with the attached free-form calendar event. */
+  source_calendar_event_id: integerPg('source_calendar_event_id').references(() => calendarEventsPg.id, {
+    onDelete: 'set null',
+  }),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
 }, (table) => ({
   programIdx: indexPg('idx_volunteer_shifts_program_id').on(table.program_id),
   startDtIdx: indexPg('idx_volunteer_shifts_start_dt').on(table.start_dt),
   recurrenceSeriesIdx: indexPg('idx_volunteer_shifts_recurrence_series_id').on(table.recurrence_series_id),
+  sourceCalendarEventIdx: indexPg('idx_volunteer_shifts_source_calendar_event_id').on(table.source_calendar_event_id),
 }));
 
 export const volunteerShiftExceptionsPg = pgTable('volunteer_shift_exceptions', {

@@ -16,10 +16,13 @@ import {
   formatVolunteerRange,
   formatVolunteerRoleShiftPreview,
   formatVolunteerTimeRange,
+  parseVolunteerSignupKind,
   volunteerProgramHasIneligibleCredentialRoles,
   volunteerProgramMissingCredentialNames,
   volunteerProgramShiftsForCaller,
+  volunteerProgramUiTerms,
   volunteerShiftDayKey,
+  type VolunteerProgramUiTerms,
   type VolunteerProgramView,
   type VolunteerShiftRoleView,
   type VolunteerShiftView,
@@ -43,6 +46,7 @@ export default function VolunteerProgramShiftsBody({
 }: VolunteerProgramShiftsBodyProps) {
   const { showAlert } = useAlert();
   const { confirm } = useConfirm();
+  const terms = volunteerProgramUiTerms(parseVolunteerSignupKind(program.signupKind));
   const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
   const [expandedRoles, setExpandedRoles] = useState<Set<string>>(new Set());
   const [busyShiftRoleId, setBusyShiftRoleId] = useState<number | null>(null);
@@ -69,6 +73,7 @@ export default function VolunteerProgramShiftsBody({
       remainingSpots: remaining,
       requiresCredentials: role.requiredCredentials.length > 0,
       callerIsSignedUp: role.callerIsSignedUp,
+      signupKind: parseVolunteerSignupKind(program.signupKind),
       manageForOthers,
       signedUpMemberIds: role.signups
         .map((signup) => signup.memberId)
@@ -115,6 +120,7 @@ export default function VolunteerProgramShiftsBody({
           groupBy === 'shift' ? (
             <ProgramByShiftView
               program={displayProgram}
+              terms={terms}
               expandedDays={expandedDays}
               onToggleDay={(key) => setExpandedDays((prev) => toggleInSet(prev, key))}
               busyShiftRoleId={busyShiftRoleId}
@@ -124,6 +130,7 @@ export default function VolunteerProgramShiftsBody({
           ) : (
             <ProgramByRoleView
               program={displayProgram}
+              terms={terms}
               expandedRoles={expandedRoles}
               onToggleRole={(key) => setExpandedRoles((prev) => toggleInSet(prev, key))}
               busyShiftRoleId={busyShiftRoleId}
@@ -135,6 +142,7 @@ export default function VolunteerProgramShiftsBody({
 
         {hasHiddenCredentialRoles ? (
           <MissingCredentialsNote
+            shiftPlural={terms.shiftPlural}
             credentialNames={volunteerProgramMissingCredentialNames(program, heldCredentialIds)}
             onShowAnyway={showIneligibleRoles ? undefined : () => setShowIneligibleRoles(true)}
           />
@@ -150,11 +158,11 @@ export default function VolunteerProgramShiftsBody({
             showAlert(
               signupTarget.manageForOthers
                 ? count === 1
-                  ? 'Volunteer signed up. A confirmation email is on the way.'
-                  : `${count} volunteers signed up. Confirmation emails are on the way.`
+                  ? `1 ${terms.peopleSingular} signed up. A confirmation email is on the way.`
+                  : `${count} ${terms.peoplePlural} signed up. Confirmation emails are on the way.`
                 : count === 1
                   ? 'Signed up. Confirmation emails are on the way for selected members.'
-                  : `${count} volunteers signed up. Confirmation emails are on the way for selected members.`,
+                  : `${count} ${terms.peoplePlural} signed up. Confirmation emails are on the way for selected members.`,
               'success'
             );
             await onChanged();
@@ -169,15 +177,17 @@ const credentialNoteLinkClass =
   'text-primary-teal-link hover:underline rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/50';
 
 function MissingCredentialsNote({
+  shiftPlural,
   credentialNames,
   onShowAnyway,
 }: {
+  shiftPlural: string;
   credentialNames: string[];
   onShowAnyway?: () => void;
 }) {
   return (
     <p className="text-sm text-gray-500 dark:text-gray-400">
-      There are additional shifts on this program that you are missing{' '}
+      There are additional {shiftPlural} on this program that you are missing{' '}
       <Link to="/volunteering?tab=credentials" className={credentialNoteLinkClass}>
         credentials
       </Link>
@@ -196,6 +206,7 @@ function MissingCredentialsNote({
 
 function ProgramByShiftView({
   program,
+  terms,
   expandedDays,
   onToggleDay,
   busyShiftRoleId,
@@ -203,6 +214,7 @@ function ProgramByShiftView({
   onCancel,
 }: {
   program: VolunteerProgramView;
+  terms: VolunteerProgramUiTerms;
   expandedDays: Set<string>;
   onToggleDay: (key: string) => void;
   busyShiftRoleId: number | null;
@@ -233,6 +245,7 @@ function ProgramByShiftView({
           <ShiftRolesBlock
             key={shift.id}
             shift={shift}
+            terms={terms}
             headingMode="full"
             canManage={program.canManage}
             busyShiftRoleId={busyShiftRoleId}
@@ -278,6 +291,7 @@ function ProgramByShiftView({
                   <ShiftRolesBlock
                     key={shift.id}
                     shift={shift}
+                    terms={terms}
                     headingMode="time"
                     canManage={program.canManage}
                     busyShiftRoleId={busyShiftRoleId}
@@ -296,6 +310,7 @@ function ProgramByShiftView({
 
 function ProgramByRoleView({
   program,
+  terms,
   expandedRoles,
   onToggleRole,
   busyShiftRoleId,
@@ -303,6 +318,7 @@ function ProgramByRoleView({
   onCancel,
 }: {
   program: VolunteerProgramView;
+  terms: VolunteerProgramUiTerms;
   expandedRoles: Set<string>;
   onToggleRole: (key: string) => void;
   busyShiftRoleId: number | null;
@@ -340,7 +356,7 @@ function ProgramByRoleView({
   }, [program.shifts]);
 
   if (roleGroups.length === 0) {
-    return <p className="text-sm text-gray-500 dark:text-gray-400">No roles available.</p>;
+    return <p className="text-sm text-gray-500 dark:text-gray-400">No {terms.rolePlural} available.</p>;
   }
 
   return (
@@ -395,6 +411,7 @@ function ProgramByRoleView({
                   <RoleSignupRow
                     key={role.id}
                     role={role}
+                    terms={terms}
                     heading={formatVolunteerRange(shift.startDt, shift.endDt)}
                     subheading={formatVolunteerDuration(shift.startDt, shift.endDt)}
                     canManage={program.canManage}
@@ -429,6 +446,7 @@ function AccordionPreview({ items }: { items: string[] }) {
 
 function ShiftRolesBlock({
   shift,
+  terms,
   headingMode,
   canManage,
   busyShiftRoleId,
@@ -436,6 +454,7 @@ function ShiftRolesBlock({
   onCancel,
 }: {
   shift: VolunteerShiftView;
+  terms: VolunteerProgramUiTerms;
   headingMode: 'full' | 'time';
   canManage: boolean;
   busyShiftRoleId: number | null;
@@ -459,6 +478,7 @@ function ShiftRolesBlock({
           <RoleSignupRow
             key={role.id}
             role={role}
+            terms={terms}
             heading={role.roleName}
             subheading={role.roleDescription}
             showCredentials
@@ -475,6 +495,7 @@ function ShiftRolesBlock({
 
 function RoleSignupRow({
   role,
+  terms,
   heading,
   subheading,
   showCredentials = false,
@@ -484,6 +505,7 @@ function RoleSignupRow({
   onCancel,
 }: {
   role: VolunteerShiftRoleView;
+  terms: VolunteerProgramUiTerms;
   heading: string;
   subheading?: string | null;
   showCredentials?: boolean;
@@ -520,7 +542,7 @@ function RoleSignupRow({
             disabled={busy}
             onClick={() => onSignUp(true)}
           >
-            Add volunteers
+            {terms.addPeople}
           </Button>
         ) : null}
       </div>
@@ -536,7 +558,7 @@ function RoleSignupRow({
             <p className="text-sm text-gray-600 dark:text-gray-400 whitespace-pre-wrap">{subheading}</p>
           ) : null}
           <p className="text-sm text-gray-600 dark:text-gray-400">
-            Volunteers: {role.volunteersRegistered}/{role.volunteersNeeded}
+            {terms.signedUpCountLabel}: {role.volunteersRegistered}/{role.volunteersNeeded}
           </p>
           {showCredentials && role.requiredCredentials.length > 0 ? (
             <div className="flex flex-wrap gap-2 pt-1">
@@ -554,14 +576,20 @@ function RoleSignupRow({
         </div>
         <div className="shrink-0">{action}</div>
       </div>
-      <RoleSignupsList signups={role.signups} />
+      <RoleSignupsList signups={role.signups} noneSignedUp={terms.noneSignedUp} />
     </div>
   );
 }
 
-function RoleSignupsList({ signups }: { signups: VolunteerSignupView[] }) {
+function RoleSignupsList({
+  signups,
+  noneSignedUp,
+}: {
+  signups: VolunteerSignupView[];
+  noneSignedUp: string;
+}) {
   if (signups.length === 0) {
-    return <p className="text-sm text-gray-500 dark:text-gray-400">No volunteers signed up yet.</p>;
+    return <p className="text-sm text-gray-500 dark:text-gray-400">{noneSignedUp}</p>;
   }
 
   return (

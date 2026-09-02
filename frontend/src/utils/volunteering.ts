@@ -57,15 +57,99 @@ export type VolunteerShiftRoleView = {
   signups: VolunteerSignupView[];
 };
 
+export type VolunteerSignupKind = 'volunteering' | 'general';
+
+export function parseVolunteerSignupKind(value: unknown): VolunteerSignupKind {
+  return value === 'general' ? 'general' : 'volunteering';
+}
+
+/** Product-facing labels for program roles/shifts. General sign-ups use lists/times. */
+export type VolunteerProgramUiTerms = {
+  roleSingular: string;
+  rolePlural: string;
+  roleTitle: string;
+  roleTab: string;
+  shiftSingular: string;
+  shiftPlural: string;
+  shiftTitle: string;
+  shiftTab: string;
+  peopleSingular: string;
+  peoplePlural: string;
+  addPeople: string;
+  peopleFieldLabel: string;
+  commentsPlaceholder: string;
+  noneSignedUp: string;
+  signedUpCountLabel: string;
+  selectAtLeastOne: string;
+  addingAsOwnerHelp: string;
+};
+
+export function volunteerProgramUiTerms(kind: VolunteerSignupKind): VolunteerProgramUiTerms {
+  if (kind === 'general') {
+    return {
+      roleSingular: 'list',
+      rolePlural: 'lists',
+      roleTitle: 'List',
+      roleTab: 'Lists',
+      shiftSingular: 'time',
+      shiftPlural: 'times',
+      shiftTitle: 'Time',
+      shiftTab: 'Times',
+      peopleSingular: 'person',
+      peoplePlural: 'people',
+      addPeople: 'Add sign-ups',
+      peopleFieldLabel: 'People',
+      commentsPlaceholder: 'Anything others or program owners should know',
+      noneSignedUp: 'No one signed up yet.',
+      signedUpCountLabel: 'Signed up',
+      selectAtLeastOne: 'Select at least one person.',
+      addingAsOwnerHelp:
+        "You're adding people as a program owner. Confirmation emails are sent to selected members.",
+    };
+  }
+  return {
+    roleSingular: 'role',
+    rolePlural: 'roles',
+    roleTitle: 'Role',
+    roleTab: 'Roles',
+    shiftSingular: 'shift',
+    shiftPlural: 'shifts',
+    shiftTitle: 'Shift',
+    shiftTab: 'Shifts',
+    peopleSingular: 'volunteer',
+    peoplePlural: 'volunteers',
+    addPeople: 'Add volunteers',
+    peopleFieldLabel: 'Volunteers',
+    commentsPlaceholder: 'Anything other volunteers or program owners should know',
+    noneSignedUp: 'No volunteers signed up yet.',
+    signedUpCountLabel: 'Volunteers',
+    selectAtLeastOne: 'Select at least one volunteer.',
+    addingAsOwnerHelp:
+      "You're adding volunteers as a program owner. Confirmation emails are sent to selected members.",
+  };
+}
+
 export type VolunteerShiftView = {
   id: number;
   programId: number;
   startDt: string;
   endDt: string;
+  creditHours: number;
   recurrenceSeriesId: number | null;
   recurrenceRule: string | null;
   recurrenceDate: string | null;
+  sourceCalendarEventId: number | null;
   roles: VolunteerShiftRoleView[];
+};
+
+export type VolunteerAttachedCalendarEvent = {
+  id: number;
+  title: string;
+  start: string;
+  end: string;
+  allDay: boolean;
+  isRecurring: boolean;
+  occurrenceCount?: number;
 };
 
 export type VolunteerRoleView = {
@@ -88,6 +172,7 @@ export type VolunteerProgramView = {
   published: boolean;
   featureOnDashboard: boolean;
   publicSignups: boolean;
+  signupKind: VolunteerSignupKind;
   priority: number | null;
   archivedAt: string | null;
   createdAt: string;
@@ -96,6 +181,7 @@ export type VolunteerProgramView = {
   roles: VolunteerRoleView[];
   shifts: VolunteerShiftView[];
   canManage: boolean;
+  calendarEvent: VolunteerAttachedCalendarEvent | null;
 };
 
 export type PublicVolunteerProgramView = {
@@ -174,6 +260,7 @@ export type MyVolunteerSignup = {
   roleName: string;
   startDt: string;
   endDt: string;
+  creditHours?: number;
   status: 'confirmed' | 'cancelled';
   comments: string | null;
   canCancel: boolean;
@@ -284,6 +371,18 @@ export function formatVolunteerRange(startDt: string, endDt: string): string {
   }
 }
 
+export function formatAttachedCalendarEventWhen(event: {
+  start: string;
+  end: string;
+  allDay: boolean;
+  isRecurring?: boolean;
+}): string {
+  const when = event.allDay
+    ? `${formatClubDate(event.start)} · All day`
+    : formatVolunteerRange(event.start, event.end);
+  return event.isRecurring ? `${when} · Recurring` : when;
+}
+
 export function volunteerHoursFromRange(startDt: string, endDt: string): number {
   try {
     const ms = new Date(endDt).getTime() - new Date(startDt).getTime();
@@ -292,6 +391,45 @@ export function volunteerHoursFromRange(startDt: string, endDt: string): number 
   } catch {
     return 0;
   }
+}
+
+export const VOLUNTEER_CREDIT_HOURS_STEP = 0.5;
+
+/** Largest 0.5-hour increment that does not exceed the shift duration. */
+export function maxVolunteerCreditHoursOnStep(durationHours: number): number {
+  if (!Number.isFinite(durationHours) || durationHours <= 0) return 0;
+  return Math.floor((durationHours + 1e-9) / VOLUNTEER_CREDIT_HOURS_STEP) * VOLUNTEER_CREDIT_HOURS_STEP;
+}
+
+/** Snap to 0.5-hour increments and clamp to [0, durationHours]. */
+export function snapVolunteerCreditHours(hours: number, durationHours: number): number {
+  if (!Number.isFinite(hours) || hours <= 0) return 0;
+  const snapped =
+    Math.round(hours / VOLUNTEER_CREDIT_HOURS_STEP) * VOLUNTEER_CREDIT_HOURS_STEP;
+  const rounded = Math.round(snapped * 10) / 10;
+  const cap = maxVolunteerCreditHoursOnStep(durationHours);
+  if (cap <= 0) return Math.max(0, rounded);
+  return Math.min(Math.max(0, rounded), cap);
+}
+
+export function defaultVolunteerCreditHours(
+  signupKind: VolunteerSignupKind,
+  startDt: string,
+  endDt: string
+): number {
+  if (signupKind === 'general') return 0;
+  return volunteerHoursFromRange(startDt, endDt);
+}
+
+export function volunteerCreditHoursFromShift(shift: {
+  creditHours?: number | null;
+  startDt: string;
+  endDt: string;
+}): number {
+  if (shift.creditHours != null && Number.isFinite(shift.creditHours) && shift.creditHours >= 0) {
+    return shift.creditHours;
+  }
+  return volunteerHoursFromRange(shift.startDt, shift.endDt);
 }
 
 export function formatVolunteerDuration(startDt: string, endDt: string): string {
@@ -350,7 +488,7 @@ export function summarizePastVolunteering(items: PastVolunteeringItem[]): {
   for (const item of items) {
     if (item.kind === 'shift') {
       shifts += 1;
-      hours += volunteerHoursFromRange(item.signup.startDt, item.signup.endDt);
+      hours += volunteerCreditHoursFromShift(item.signup);
     } else {
       hours += item.log.hours;
     }
@@ -539,6 +677,27 @@ export function volunteerProgramFirstShiftDate(program: {
     if (shift.startDt < earliest) earliest = shift.startDt;
   }
   return volunteerShiftDayKey(earliest);
+}
+
+/** Admin and hub list order: lower priority first, then earliest shift, then title. */
+export function compareVolunteerProgramsForList(
+  a: { priority: number | null; title: string; shifts: Array<{ startDt: string }> },
+  b: { priority: number | null; title: string; shifts: Array<{ startDt: string }> }
+): number {
+  const aPriority = a.priority ?? Number.POSITIVE_INFINITY;
+  const bPriority = b.priority ?? Number.POSITIVE_INFINITY;
+  if (aPriority !== bPriority) return aPriority - bPriority;
+  const aFirst = volunteerProgramFirstShiftDate(a);
+  const bFirst = volunteerProgramFirstShiftDate(b);
+  if (aFirst && bFirst) {
+    const byShift = aFirst.localeCompare(bFirst);
+    if (byShift !== 0) return byShift;
+  } else if (aFirst) {
+    return -1;
+  } else if (bFirst) {
+    return 1;
+  }
+  return a.title.localeCompare(b.title);
 }
 
 /**

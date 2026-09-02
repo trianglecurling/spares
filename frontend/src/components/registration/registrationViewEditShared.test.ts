@@ -24,12 +24,14 @@ import {
   normalizePriorityOrder,
   omittedWaitlistLeagues,
   formatConjunctionList,
+  formatPriorityOrdinal,
   paidPriorLeaguesOffList,
   priorityMoveButtonTitle,
   byotGuaranteedReturnFootnote,
   byotGuaranteedReturnFootnotes,
   removePriority,
   reorderPriorities,
+  rosterGuaranteeChipLabel,
   seedPriorityList,
   sabbaticalEligiblePriorLeagues,
   defaultSabbaticalOnlyDecisions,
@@ -875,6 +877,21 @@ describe('guarantee labels shown while reordering', () => {
     expect(shouldShowGuaranteeChip('superfluous')).toBe(true);
     expect(shouldShowGuaranteeChip('waitlisted')).toBe(true);
     expect(shouldShowGuaranteeChip('available')).toBe(true);
+    expect(formatPriorityOrdinal(1)).toBe('1st');
+    expect(formatPriorityOrdinal(2)).toBe('2nd');
+    expect(formatPriorityOrdinal(3)).toBe('3rd');
+    expect(formatPriorityOrdinal(4)).toBe('4th');
+    expect(formatPriorityOrdinal(11)).toBe('11th');
+    expect(formatPriorityOrdinal(21)).toBe('21st');
+    expect(rosterGuaranteeChipLabel('guaranteed_return', 1)).toBe('Guaranteed return');
+    expect(rosterGuaranteeChipLabel('guaranteed_fallback', 2)).toBe('Guaranteed fallback');
+    expect(rosterGuaranteeChipLabel('subject_to_availability', 3)).toBe(
+      'Subject to availability (3rd priority)',
+    );
+    expect(rosterGuaranteeChipLabel('subject_to_availability', 1, playInLeague)).toBe(
+      'Subject to availability (1st priority)',
+    );
+    expect(rosterGuaranteeChipLabel('guaranteed_return', 1, playInLeague)).toBe('Guaranteed entry');
   });
 
   test('a non-play-in BYOT guaranteed return adds an asterisk and teammate-priority footnote', () => {

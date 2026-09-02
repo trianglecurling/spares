@@ -23,6 +23,7 @@ export type ExpandedDirectCalendarEvent = {
   recurrenceRrule?: string;
   createdBy?: string;
   article?: { id: number; title: string; slug: string };
+  signup?: { slug: string; title: string; publicSignups: boolean };
 };
 
 export type ExpandedLeagueCalendarEvent = {

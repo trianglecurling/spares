@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
 import AppPageControlsRow from '../../components/AppPageControlsRow';
 import AppStateCard from '../../components/AppStateCard';
@@ -22,6 +22,7 @@ import VolunteerProgramLocationField from '../../components/VolunteerProgramLoca
 import VolunteerSignupDialog, {
   type VolunteerSignupTarget,
 } from '../../components/volunteering/VolunteerSignupDialog';
+import AttachCalendarEventField from '../../components/volunteering/AttachCalendarEventField';
 import { resolveSiteName } from '../../components/SeoMeta';
 import { useAlert } from '../../contexts/AlertContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -36,6 +37,7 @@ import { formatPhone } from '../../utils/phone';
 import {
   addMinutesToDateTimeLocal,
   formatDurationMinutes,
+  formatAttachedCalendarEventWhen,
   formatVolunteerRange,
   fromDateTimeLocal,
   hoursInputToMinutes,
@@ -45,15 +47,48 @@ import {
   volunteerLocationChoiceFromStored,
   volunteerLocationStoredFromChoice,
   volunteerShiftHasEnded,
+  defaultVolunteerCreditHours,
+  parseVolunteerSignupKind,
+  volunteerHoursFromRange,
+  volunteerProgramUiTerms,
+  VOLUNTEER_CREDIT_HOURS_STEP,
+  maxVolunteerCreditHoursOnStep,
+  snapVolunteerCreditHours,
+  type VolunteerAttachedCalendarEvent,
   type VolunteerLocationChoice,
+  type VolunteerProgramUiTerms,
   type VolunteerProgramView,
   type VolunteerRoleView,
   type VolunteerShiftView,
+  type VolunteerSignupKind,
   type VolunteerSignupView,
 } from '../../utils/volunteering';
 
 type TabKey = 'settings' | 'description' | 'roles' | 'shifts' | 'signups';
 const secondaryTabs = ['description', 'roles', 'shifts', 'signups'] as const;
+const createTabs = ['description', 'roles', 'shifts'] as const;
+
+type DraftRecurringShift = {
+  key: string;
+  startDt: string;
+  endDt: string;
+  creditHours: number;
+  roleId: number;
+  volunteersNeeded: number;
+  recurrence: { rrule: string; endDate?: string; count?: number };
+  previewCount: number;
+};
+
+type DraftCalendarSyncedShift = {
+  key: string;
+  roleId: number;
+  volunteersNeeded: number;
+  creditHours: number;
+  previewCount: number;
+};
+
+type ShiftAddSource = 'calendar' | 'manual';
+type NewShiftCreditMode = 'shift-length' | 'custom';
 
 type DraftShiftRole = { roleId: number; volunteersNeeded: number };
 
@@ -128,26 +163,52 @@ function nextVolunteerProgramImageFilename(programSlug: string, markdown: string
   return `${safeSlug}-image-${next}.${extensionFromMimeType(mimeType)}`;
 }
 
-function createEmptyTimeRow(
-  programStartDate?: string | null,
-  defaultDurationMinutes?: number | null
-): NewShiftTimeRow {
-  const startLocal = programStartDate ? `${programStartDate}T09:00` : '';
-  const endLocal =
-    startLocal && defaultDurationMinutes
-      ? addMinutesToDateTimeLocal(startLocal, defaultDurationMinutes)
-      : '';
+function createEmptyTimeRow(): NewShiftTimeRow {
   return {
     key: `shift-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    startLocal,
-    endLocal,
+    startLocal: '',
+    endLocal: '',
     endManuallyEdited: false,
   };
 }
 
+function nextDraftId(counter: { current: number }): number {
+  const id = counter.current;
+  counter.current -= 1;
+  return id;
+}
+
+function buildDraftShiftRoles(
+  shiftId: number,
+  assignments: DraftShiftRole[],
+  roles: VolunteerRoleView[]
+): VolunteerShiftView['roles'] {
+  return assignments.map((assignment, index) => {
+    const role = roles.find((item) => item.id === assignment.roleId);
+    return {
+      id: shiftId * 100 - index,
+      shiftId,
+      roleId: assignment.roleId,
+      roleName: role?.name || `Role ${assignment.roleId}`,
+      roleDescription: role?.description ?? null,
+      volunteersNeeded: assignment.volunteersNeeded,
+      volunteersRegistered: 0,
+      isFull: false,
+      requiredCredentials: role?.requiredCredentials ?? [],
+      callerHasCredentials: true,
+      callerIsSignedUp: false,
+      signups: [],
+    };
+  });
+}
+
 export default function AdminVolunteerProgramEditor() {
   const { id, tab } = useParams<{ id: string; tab?: string }>();
-  const isNew = id === 'new';
+  const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const isNew =
+    location.pathname === '/admin/signups/new' ||
+    location.pathname.startsWith('/admin/signups/new/');
   const navigate = useNavigate();
   const { member } = useAuth();
   const { showAlert } = useAlert();
@@ -162,8 +223,10 @@ export default function AdminVolunteerProgramEditor() {
     memberHasScope(member, 'volunteering.manage') || Boolean(member?.isServerAdmin);
   const canManageCredentials = memberCanManageCredentials(member);
 
+  const allowedTabs = isNew ? createTabs : secondaryTabs;
   const activeTab: TabKey =
-    !isNew && tab && (secondaryTabs as readonly string[]).includes(tab) ? (tab as TabKey) : 'settings';
+    tab && (allowedTabs as readonly string[]).includes(tab) ? (tab as TabKey) : 'settings';
+  const draftIdCounter = useRef(-1);
 
   const [saving, setSaving] = useState(false);
   const [program, setProgram] = useState<VolunteerProgramView | null>(null);
@@ -176,12 +239,24 @@ export default function AdminVolunteerProgramEditor() {
   const [savedSlug, setSavedSlug] = useState('');
   const [pointOfContact, setPointOfContact] = useState('');
   const [locationChoice, setLocationChoice] = useState<VolunteerLocationChoice>(VOLUNTEER_LOCATION_CLUB);
-  const [startDate, setStartDate] = useState('');
   const [published, setPublished] = useState(false);
   const [featureOnDashboard, setFeatureOnDashboard] = useState(true);
   const [publicSignups, setPublicSignups] = useState(false);
-  const [priority, setPriority] = useState('');
+  const [signupKind, setSignupKind] = useState<VolunteerSignupKind>(() =>
+    parseVolunteerSignupKind(searchParams.get('kind'))
+  );
+  const [kindChosen, setKindChosen] = useState(() => !isNew);
   const [managerIds, setManagerIds] = useState<number[]>([]);
+  const [draftDescription, setDraftDescription] = useState('');
+  const [draftRoles, setDraftRoles] = useState<VolunteerRoleView[]>([]);
+  const [draftShifts, setDraftShifts] = useState<VolunteerShiftView[]>([]);
+  const [draftRecurringShifts, setDraftRecurringShifts] = useState<DraftRecurringShift[]>([]);
+  const [draftCalendarSyncedShifts, setDraftCalendarSyncedShifts] = useState<DraftCalendarSyncedShift[]>(
+    []
+  );
+  const [attachedCalendarEvent, setAttachedCalendarEvent] =
+    useState<VolunteerAttachedCalendarEvent | null>(null);
+  const [shiftAddSource, setShiftAddSource] = useState<ShiftAddSource>('manual');
 
   const [roleName, setRoleName] = useState('');
   const [roleDescription, setRoleDescription] = useState('');
@@ -192,6 +267,9 @@ export default function AdminVolunteerProgramEditor() {
   const [newShiftRoleId, setNewShiftRoleId] = useState<number | null>(null);
   const [newShiftTimes, setNewShiftTimes] = useState<NewShiftTimeRow[]>([createEmptyTimeRow()]);
   const [newShiftNeeded, setNewShiftNeeded] = useState(1);
+  const [newShiftCreditHours, setNewShiftCreditHours] = useState('');
+  const [newShiftCreditMode, setNewShiftCreditMode] = useState<NewShiftCreditMode>('shift-length');
+  const [newShiftAssignCredit, setNewShiftAssignCredit] = useState(false);
   const [savingShift, setSavingShift] = useState(false);
   const [recurringMode, setRecurringMode] = useState(false);
   const [deleteShiftTarget, setDeleteShiftTarget] = useState<VolunteerShiftView | null>(null);
@@ -213,25 +291,14 @@ export default function AdminVolunteerProgramEditor() {
       setPointOfContact(data.pointOfContact);
       // API already nulls club-default locations; clubName only matters for legacy raw values.
       setLocationChoice(volunteerLocationChoiceFromStored(data.location, clubName));
-      setStartDate(data.startDate || '');
       setPublished(Boolean(data.published));
       setFeatureOnDashboard(data.featureOnDashboard !== false);
       setPublicSignups(Boolean(data.publicSignups));
-      setPriority(data.priority == null ? '' : String(data.priority));
+      setSignupKind(parseVolunteerSignupKind(data.signupKind));
+      setKindChosen(true);
       setManagerIds(data.managers.map((m) => m.id));
-      setNewShiftTimes((prev) => {
-        const onlyEmpty =
-          prev.length === 1 && !prev[0].startLocal && !prev[0].endLocal;
-        if (onlyEmpty && data.startDate) {
-          return [
-            createEmptyTimeRow(
-              data.startDate,
-              data.roles[0]?.defaultDurationMinutes || 180
-            ),
-          ];
-        }
-        return prev;
-      });
+      setAttachedCalendarEvent(data.calendarEvent ?? null);
+      setShiftAddSource(data.calendarEvent ? 'calendar' : 'manual');
       setNewShiftRoleId((prev) => {
         if (prev && data.roles.some((r) => r.id === prev)) return prev;
         return data.roles[0]?.id ?? null;
@@ -246,6 +313,8 @@ export default function AdminVolunteerProgramEditor() {
   useEffect(() => {
     if (isNew) {
       setProgram(null);
+      setAttachedCalendarEvent(null);
+      setShiftAddSource('manual');
       return;
     }
     // Drop stale program when switching to a different program id (same mounted route).
@@ -272,9 +341,12 @@ export default function AdminVolunteerProgramEditor() {
       });
   }, []);
 
+  const workingRoles = isNew ? draftRoles : program?.roles || [];
+  const workingShifts = isNew ? draftShifts : program?.shifts || [];
+
   const selectedRoleForShift = useMemo(
-    () => program?.roles.find((r) => r.id === newShiftRoleId) ?? null,
-    [program, newShiftRoleId]
+    () => workingRoles.find((r) => r.id === newShiftRoleId) ?? null,
+    [workingRoles, newShiftRoleId]
   );
   const visibleSignupShifts = useMemo(() => {
     if (!program) return [];
@@ -284,15 +356,53 @@ export default function AdminVolunteerProgramEditor() {
   }, [program, includeArchivedSignups]);
   const copyEmailRoleOptions = useMemo(
     (): ChoiceOption<number>[] =>
-      (program?.roles ?? []).map((role) => ({ value: role.id, label: role.name })),
-    [program]
+      workingRoles.map((role) => ({ value: role.id, label: role.name })),
+    [workingRoles]
   );
   const newShiftStartLocal = newShiftTimes[0]?.startLocal ?? '';
+  const newShiftDurationHours = useMemo(() => {
+    if (shiftAddSource === 'calendar' && attachedCalendarEvent) {
+      return volunteerHoursFromRange(attachedCalendarEvent.start, attachedCalendarEvent.end);
+    }
+    const complete = newShiftTimes.filter((row) => row.startLocal && row.endLocal);
+    if (complete.length === 0) return 0;
+    return Math.min(
+      ...complete.map((row) =>
+        volunteerHoursFromRange(fromDateTimeLocal(row.startLocal), fromDateTimeLocal(row.endLocal))
+      )
+    );
+  }, [attachedCalendarEvent, newShiftTimes, shiftAddSource]);
+  const newShiftCreditMax = maxVolunteerCreditHoursOnStep(newShiftDurationHours);
   const newShiftRecurrence = useRecurrenceState(
     '',
     newShiftStartLocal.slice(0, 10),
     { fallbackPreset: 'weekly' }
   );
+
+  useEffect(() => {
+    if (!attachedCalendarEvent) {
+      setShiftAddSource('manual');
+      return;
+    }
+    if (attachedCalendarEvent.occurrenceCount != null) return;
+    let canceled = false;
+    api
+      .get<VolunteerAttachedCalendarEvent>(
+        `/volunteering/admin/direct-calendar-events/${attachedCalendarEvent.id}`
+      )
+      .then((res) => {
+        if (canceled || !res.data) return;
+        setAttachedCalendarEvent((current) =>
+          current && current.id === res.data.id ? { ...current, ...res.data } : current
+        );
+      })
+      .catch(() => {
+        // Preview count is optional; create still expands on the server.
+      });
+    return () => {
+      canceled = true;
+    };
+  }, [attachedCalendarEvent?.id, attachedCalendarEvent?.occurrenceCount]);
 
   const updateTimeRowEndFromRole = useCallback(
     (rowKey: string, startLocal: string, role: VolunteerRoleView | null | undefined) => {
@@ -329,25 +439,147 @@ export default function AdminVolunteerProgramEditor() {
   );
 
   const roleOptions: ChoiceOption<number>[] = useMemo(
-    () => (program?.roles || []).map((r) => ({ value: r.id, label: r.name })),
-    [program]
+    () => workingRoles.map((r) => ({ value: r.id, label: r.name })),
+    [workingRoles]
   );
+
+  const programsListTo =
+    signupKind === 'general' ? '/admin/volunteering/general' : '/admin/volunteering';
+  const terms = volunteerProgramUiTerms(signupKind);
+
+  const newProgramTabTo = (tabKey: TabKey) => {
+    const params = new URLSearchParams(searchParams);
+    params.set('kind', signupKind);
+    const path = tabKey === 'settings' ? '/admin/signups/new' : `/admin/signups/new/${tabKey}`;
+    const query = params.toString();
+    return query ? `${path}?${query}` : path;
+  };
+
+  const flushDraftDescription = () => {
+    const markdown = descriptionEditorRef.current?.getMarkdown?.();
+    if (markdown != null) setDraftDescription(markdown);
+    return markdown ?? draftDescription;
+  };
+
+  const handleCreateProgram = async () => {
+    if (locationChoice === null) {
+      showAlert('Enter a custom location, or choose the club', 'error');
+      navigate(newProgramTabTo('settings'));
+      return;
+    }
+    if (!title.trim() || !pointOfContact.trim()) {
+      showAlert('Title and point of contact are required.', 'warning');
+      navigate(newProgramTabTo('settings'));
+      return;
+    }
+    const description = flushDraftDescription();
+    setSaving(true);
+    try {
+      const created = await api.post('/volunteering/admin/programs', {
+        title: title.trim(),
+        slug: slug.trim() || undefined,
+        description: description.trim() || null,
+        pointOfContact: pointOfContact.trim(),
+        location: volunteerLocationStoredFromChoice(locationChoice, clubName),
+        published,
+        featureOnDashboard: signupKind === 'volunteering' ? featureOnDashboard : false,
+        publicSignups,
+        signupKind,
+        managerIds,
+        calendarEventId: attachedCalendarEvent?.id ?? null,
+      });
+      const programId = created.data.id as number;
+      const roleIdMap = new Map<number, number>();
+      try {
+        for (const role of draftRoles) {
+          const savedRole = await api.post(`/volunteering/admin/programs/${programId}/roles`, {
+            name: role.name,
+            description: role.description,
+            defaultDurationMinutes: role.defaultDurationMinutes,
+            requiredCredentialIds: role.requiredCredentials.map((credential) => credential.id),
+          });
+          roleIdMap.set(role.id, savedRole.data.id as number);
+        }
+        const mapShiftRoles = (roles: DraftShiftRole[]) =>
+          roles.map((role) => {
+            const roleId = roleIdMap.get(role.roleId);
+            if (roleId == null) {
+              throw new Error(`A ${terms.shiftSingular} is missing its ${terms.roleSingular}`);
+            }
+            return { roleId, volunteersNeeded: role.volunteersNeeded };
+          });
+        if (draftShifts.length > 0) {
+          await api.post(`/volunteering/admin/programs/${programId}/shifts/bulk`, {
+            shifts: draftShifts.map((shift) => ({
+              startDt: shift.startDt,
+              endDt: shift.endDt,
+              creditHours: shift.creditHours,
+              roles: mapShiftRoles(
+                shift.roles.map((role) => ({
+                  roleId: role.roleId,
+                  volunteersNeeded: role.volunteersNeeded,
+                }))
+              ),
+            })),
+          });
+        }
+        for (const batch of draftRecurringShifts) {
+          const roleId = roleIdMap.get(batch.roleId);
+          if (roleId == null) {
+            throw new Error(`A recurring ${terms.shiftSingular} is missing its ${terms.roleSingular}`);
+          }
+          await api.post(`/volunteering/admin/programs/${programId}/shifts/bulk`, {
+            shifts: [
+              {
+                startDt: batch.startDt,
+                endDt: batch.endDt,
+                creditHours: batch.creditHours,
+                roles: [{ roleId, volunteersNeeded: batch.volunteersNeeded }],
+              },
+            ],
+            recurrence: batch.recurrence,
+          });
+        }
+        for (const batch of draftCalendarSyncedShifts) {
+          const roleId = roleIdMap.get(batch.roleId);
+          if (roleId == null) {
+            throw new Error(`A calendar ${terms.shiftSingular} is missing its ${terms.roleSingular}`);
+          }
+          await api.post(`/volunteering/admin/programs/${programId}/shifts/from-calendar-event`, {
+            roleId,
+            volunteersNeeded: batch.volunteersNeeded,
+            creditHours: batch.creditHours,
+          });
+        }
+      } catch (err) {
+        showAlert(
+          formatApiError(
+            err,
+            `Program created, but some ${terms.rolePlural} or ${terms.shiftPlural} could not be saved. Finish them on the program page.`
+          ),
+          'warning'
+        );
+        navigate(`/admin/volunteering/${programId}`);
+        return;
+      }
+      showAlert('Program created', 'success');
+      navigate(`/admin/volunteering/${programId}`);
+    } catch (err) {
+      showAlert(formatApiError(err, 'Failed to create program'), 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isNew) {
+      await handleCreateProgram();
+      return;
+    }
     if (locationChoice === null) {
       showAlert('Enter a custom location, or choose the club', 'error');
       return;
-    }
-    let priorityValue: number | null = null;
-    const priorityTrimmed = priority.trim();
-    if (priorityTrimmed) {
-      const parsed = Number.parseInt(priorityTrimmed, 10);
-      if (!Number.isInteger(parsed) || String(parsed) !== priorityTrimmed) {
-        showAlert('Priority must be a whole number, or left blank.', 'warning');
-        return;
-      }
-      priorityValue = parsed;
     }
     setSaving(true);
     try {
@@ -356,25 +588,19 @@ export default function AdminVolunteerProgramEditor() {
         slug: slug.trim() || undefined,
         pointOfContact: pointOfContact.trim(),
         location: volunteerLocationStoredFromChoice(locationChoice, clubName),
-        startDate: startDate.trim() || null,
         published,
-        featureOnDashboard,
+        featureOnDashboard: signupKind === 'volunteering' ? featureOnDashboard : false,
         publicSignups,
-        priority: priorityValue,
+        signupKind,
         managerIds,
+        calendarEventId: attachedCalendarEvent?.id ?? null,
       };
-      if (isNew) {
-        const res = await api.post('/volunteering/admin/programs', payload);
-        showAlert('Program created', 'success');
-        navigate(`/admin/volunteering/${res.data.id}/description`);
-      } else {
-        const res = await api.patch(`/volunteering/admin/programs/${id}`, payload);
-        const nextSlug = (res.data as VolunteerProgramView)?.slug || savedSlug;
-        setSavedSlug(nextSlug);
-        setSlug(nextSlug);
-        showAlert('Program saved', 'success');
-        await loadProgram();
-      }
+      const res = await api.patch(`/volunteering/admin/programs/${id}`, payload);
+      const nextSlug = (res.data as VolunteerProgramView)?.slug || savedSlug;
+      setSavedSlug(nextSlug);
+      setSlug(nextSlug);
+      showAlert('Program saved', 'success');
+      await loadProgram();
     } catch (err) {
       showAlert(formatApiError(err, 'Failed to save program'), 'error');
     } finally {
@@ -453,12 +679,61 @@ export default function AdminVolunteerProgramEditor() {
 
   const handleSaveRole = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!id || isNew) return;
     const minutes = hoursInputToMinutes(roleDurationHours);
     if (minutes == null) {
       showAlert('Enter a valid default duration in hours (for example 3 or 2.5).', 'warning');
       return;
     }
+    if (!roleName.trim()) {
+      showAlert(`${terms.roleTitle} name is required.`, 'warning');
+      return;
+    }
+    const requiredCredentials = allCredentials
+      .filter((credential) => roleCredentialIds.includes(credential.id))
+      .map((credential) => ({
+        id: credential.id,
+        name: credential.name,
+        description: null,
+        pointOfContactEmail: '',
+      }));
+    if (isNew) {
+      const saved: VolunteerRoleView = {
+        id: editingRoleId ?? nextDraftId(draftIdCounter),
+        programId: 0,
+        name: roleName.trim(),
+        description: roleDescription.trim() || null,
+        defaultDurationMinutes: minutes,
+        requiredCredentials,
+      };
+      setDraftRoles((prev) => {
+        if (editingRoleId) {
+          return prev.map((role) => (role.id === editingRoleId ? saved : role));
+        }
+        return [...prev, saved];
+      });
+      if (editingRoleId) {
+        setDraftShifts((prev) =>
+          prev.map((shift) => ({
+            ...shift,
+            roles: shift.roles.map((role) =>
+              role.roleId === editingRoleId
+                ? {
+                    ...role,
+                    roleName: saved.name,
+                    roleDescription: saved.description,
+                    requiredCredentials: saved.requiredCredentials,
+                  }
+                : role
+            ),
+          }))
+        );
+      } else if (!newShiftRoleId) {
+        setNewShiftRoleId(saved.id);
+      }
+      resetRoleForm();
+      return;
+    }
+    if (!id) return;
     setSaving(true);
     try {
       const payload = {
@@ -469,46 +744,61 @@ export default function AdminVolunteerProgramEditor() {
       };
       if (editingRoleId) {
         await api.patch(`/volunteering/admin/roles/${editingRoleId}`, payload);
-        showAlert('Role updated', 'success');
+        showAlert(`${terms.roleTitle} updated`, 'success');
       } else {
         await api.post(`/volunteering/admin/programs/${id}/roles`, payload);
-        showAlert('Role created', 'success');
+        showAlert(`${terms.roleTitle} created`, 'success');
       }
       resetRoleForm();
       await loadProgram();
     } catch (err) {
-      showAlert(formatApiError(err, 'Failed to save role'), 'error');
+      showAlert(formatApiError(err, `Failed to save ${terms.roleSingular}`), 'error');
     } finally {
       setSaving(false);
     }
   };
 
   const handleDeleteRole = async (role: VolunteerRoleView) => {
+    if (isNew) {
+      setDraftRoles((prev) => prev.filter((item) => item.id !== role.id));
+      setDraftShifts((prev) =>
+        prev
+          .map((shift) => ({
+            ...shift,
+            roles: shift.roles.filter((item) => item.roleId !== role.id),
+          }))
+          .filter((shift) => shift.roles.length > 0)
+      );
+      setDraftRecurringShifts((prev) => prev.filter((item) => item.roleId !== role.id));
+      setDraftCalendarSyncedShifts((prev) => prev.filter((item) => item.roleId !== role.id));
+      if (editingRoleId === role.id) resetRoleForm();
+      if (newShiftRoleId === role.id) {
+        setNewShiftRoleId(draftRoles.find((item) => item.id !== role.id)?.id ?? null);
+      }
+      return;
+    }
     const ok = await confirm({
-      title: 'Delete role',
-      message: `Delete role "${role.name}"? Shifts using this role will lose that assignment.`,
+      title: `Delete ${terms.roleSingular}`,
+      message: `Delete ${terms.roleSingular} "${role.name}"? ${terms.shiftTab} using this ${terms.roleSingular} will lose that assignment.`,
       variant: 'danger',
     });
     if (!ok) return;
     try {
       await api.delete(`/volunteering/admin/roles/${role.id}`);
-      showAlert('Role deleted', 'success');
+      showAlert(`${terms.roleTitle} deleted`, 'success');
       if (editingRoleId === role.id) resetRoleForm();
       await loadProgram();
     } catch (err) {
-      showAlert(formatApiError(err, 'Failed to delete role'), 'error');
+      showAlert(formatApiError(err, `Failed to delete ${terms.roleSingular}`), 'error');
     }
   };
 
   const resetNewShiftForm = () => {
-    setNewShiftTimes([
-      createEmptyTimeRow(
-        program?.startDate,
-        selectedRoleForShift?.defaultDurationMinutes ||
-          (program?.startDate ? 180 : null)
-      ),
-    ]);
+    setNewShiftTimes([createEmptyTimeRow()]);
     setNewShiftNeeded(1);
+    setNewShiftCreditHours('');
+    setNewShiftCreditMode('shift-length');
+    setNewShiftAssignCredit(false);
     setRecurringMode(false);
   };
 
@@ -531,21 +821,100 @@ export default function AdminVolunteerProgramEditor() {
       }
       return [
         ...prev,
-        createEmptyTimeRow(
-          program?.startDate,
-          selectedRoleForShift?.defaultDurationMinutes ||
-            (program?.startDate ? 180 : null)
-        ),
+        createEmptyTimeRow(),
       ];
     });
   };
 
+  const resolveNewShiftCreditHours = ():
+    | { creditHours: number | undefined }
+    | { error: string } => {
+    if (signupKind === 'general') {
+      if (!newShiftAssignCredit) return { creditHours: 0 };
+      const parsed = Number.parseFloat(newShiftCreditHours);
+      if (newShiftCreditHours.trim() === '' || !Number.isFinite(parsed) || parsed < 0) {
+        return { error: 'Enter volunteer credit hours.' };
+      }
+      return { creditHours: snapVolunteerCreditHours(parsed, newShiftDurationHours) };
+    }
+    if (newShiftCreditMode !== 'custom') {
+      return { creditHours: undefined };
+    }
+    const parsed = Number.parseFloat(newShiftCreditHours);
+    if (newShiftCreditHours.trim() === '' || !Number.isFinite(parsed) || parsed < 0) {
+      return { error: 'Enter volunteer credit hours.' };
+    }
+    if (newShiftDurationHours > 0 && parsed > newShiftDurationHours + 1e-9) {
+      return { error: `Volunteer credit hours cannot exceed the ${terms.shiftSingular} length.` };
+    }
+    return { creditHours: snapVolunteerCreditHours(parsed, newShiftDurationHours) };
+  };
+
   const handleCreateShift = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!id || isNew || !newShiftRoleId) return;
+    if (!newShiftRoleId) return;
+    if (shiftAddSource === 'calendar') {
+      if (!attachedCalendarEvent) {
+        showAlert('Attach a calendar event on the Settings tab first.', 'warning');
+        return;
+      }
+      const creditResult = resolveNewShiftCreditHours();
+      if ('error' in creditResult) {
+        showAlert(creditResult.error, 'warning');
+        return;
+      }
+      const { creditHours } = creditResult;
+      const previewCount = attachedCalendarEvent.occurrenceCount ?? 1;
+      if (isNew) {
+        setDraftCalendarSyncedShifts((prev) => [
+          ...prev,
+          {
+            key: `calendar-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            roleId: newShiftRoleId,
+            volunteersNeeded: newShiftNeeded,
+            creditHours:
+              creditHours ??
+              defaultVolunteerCreditHours(
+                signupKind,
+                attachedCalendarEvent.start,
+                attachedCalendarEvent.end
+              ),
+            previewCount,
+          },
+        ]);
+        showAlert(
+          previewCount === 1
+            ? `${terms.shiftTitle} added`
+            : `${previewCount} ${terms.shiftPlural} will be created from the calendar event`,
+          'success'
+        );
+        resetNewShiftForm();
+        return;
+      }
+      setSavingShift(true);
+      try {
+        const result = await api.post(`/volunteering/admin/programs/${id}/shifts/from-calendar-event`, {
+          roleId: newShiftRoleId,
+          volunteersNeeded: newShiftNeeded,
+          creditHours,
+        });
+        const count = result.data?.shiftIds?.length ?? previewCount;
+        showAlert(
+          count === 1 ? `${terms.shiftTitle} created` : `${count} ${terms.shiftPlural} created`,
+          'success'
+        );
+        resetNewShiftForm();
+        await loadProgram();
+      } catch (err) {
+        showAlert(formatApiError(err, `Failed to create ${terms.shiftPlural}`), 'error');
+      } finally {
+        setSavingShift(false);
+      }
+      return;
+    }
     const incomplete = newShiftTimes.some((row) => !row.startLocal || !row.endLocal);
     if (incomplete) {
-      showAlert('Choose a start and end time for every shift.', 'warning');
+      showAlert(`Choose a start and end time for every ${terms.shiftSingular}.`, 'warning');
       return;
     }
     if (recurringMode) {
@@ -554,15 +923,86 @@ export default function AdminVolunteerProgramEditor() {
         return;
       }
       if (!newShiftRecurrence.endDate && newShiftRecurrence.count === '') {
-        showAlert('Recurring shifts need an end date or a count.', 'warning');
+        showAlert(`Recurring ${terms.shiftPlural} need an end date or a count.`, 'warning');
         return;
       }
     }
+    const creditResult = resolveNewShiftCreditHours();
+    if ('error' in creditResult) {
+      showAlert(creditResult.error, 'warning');
+      return;
+    }
+    const { creditHours } = creditResult;
+    const selectedRole = workingRoles.find((role) => role.id === newShiftRoleId) ?? null;
+
+    if (isNew) {
+      if (recurringMode) {
+        const recurrence = newShiftRecurrence.payload;
+        if (!recurrence) return;
+        setDraftRecurringShifts((prev) => [
+          ...prev,
+          {
+            key: `recurring-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            startDt: fromDateTimeLocal(newShiftTimes[0].startLocal),
+            endDt: fromDateTimeLocal(newShiftTimes[0].endLocal),
+            creditHours:
+              creditHours ??
+              defaultVolunteerCreditHours(
+                signupKind,
+                fromDateTimeLocal(newShiftTimes[0].startLocal),
+                fromDateTimeLocal(newShiftTimes[0].endLocal)
+              ),
+            roleId: newShiftRoleId,
+            volunteersNeeded: newShiftNeeded,
+            recurrence,
+            previewCount: newShiftRecurrence.previewCount ?? 1,
+          },
+        ]);
+        showAlert(
+          (newShiftRecurrence.previewCount ?? 1) === 1
+            ? `${terms.shiftTitle} added`
+            : `${newShiftRecurrence.previewCount} ${terms.shiftPlural} added`,
+          'success'
+        );
+        resetNewShiftForm();
+        return;
+      }
+      const added: VolunteerShiftView[] = newShiftTimes.map((row) => {
+        const shiftId = nextDraftId(draftIdCounter);
+        const startDt = fromDateTimeLocal(row.startLocal);
+        const endDt = fromDateTimeLocal(row.endLocal);
+        const hours =
+          creditHours ?? defaultVolunteerCreditHours(signupKind, startDt, endDt);
+        return {
+          id: shiftId,
+          programId: 0,
+          startDt,
+          endDt,
+          creditHours: hours,
+          recurrenceSeriesId: null,
+          recurrenceRule: null,
+          recurrenceDate: null,
+          sourceCalendarEventId: null,
+          roles: buildDraftShiftRoles(
+            shiftId,
+            [{ roleId: newShiftRoleId, volunteersNeeded: newShiftNeeded }],
+            selectedRole ? [selectedRole] : workingRoles
+          ),
+        };
+      });
+      setDraftShifts((prev) => [...prev, ...added]);
+      showAlert(added.length === 1 ? `${terms.shiftTitle} added` : `${added.length} ${terms.shiftPlural} added`, 'success');
+      resetNewShiftForm();
+      return;
+    }
+
+    if (!id) return;
     setSavingShift(true);
     try {
       const template = {
         startDt: fromDateTimeLocal(newShiftTimes[0].startLocal),
         endDt: fromDateTimeLocal(newShiftTimes[0].endLocal),
+        creditHours,
         roles: [{ roleId: newShiftRoleId, volunteersNeeded: newShiftNeeded }],
       };
       const result = await api.post(`/volunteering/admin/programs/${id}/shifts/bulk`, recurringMode
@@ -571,6 +1011,14 @@ export default function AdminVolunteerProgramEditor() {
             shifts: newShiftTimes.map((row) => ({
               startDt: fromDateTimeLocal(row.startLocal),
               endDt: fromDateTimeLocal(row.endLocal),
+              creditHours:
+                creditHours != null
+                  ? creditHours
+                  : defaultVolunteerCreditHours(
+                      signupKind,
+                      fromDateTimeLocal(row.startLocal),
+                      fromDateTimeLocal(row.endLocal)
+                    ),
               roles: [{ roleId: newShiftRoleId, volunteersNeeded: newShiftNeeded }],
             })),
           });
@@ -580,13 +1028,13 @@ export default function AdminVolunteerProgramEditor() {
           ? (newShiftRecurrence.previewCount ?? 1)
           : newShiftTimes.length;
       showAlert(
-        count === 1 ? 'Shift created' : `${count} shifts created`,
+        count === 1 ? `${terms.shiftTitle} created` : `${count} ${terms.shiftPlural} created`,
         'success'
       );
       resetNewShiftForm();
       await loadProgram();
     } catch (err) {
-      showAlert(formatApiError(err, 'Failed to create shifts'), 'error');
+      showAlert(formatApiError(err, `Failed to create ${terms.shiftPlural}`), 'error');
     } finally {
       setSavingShift(false);
     }
@@ -597,15 +1045,36 @@ export default function AdminVolunteerProgramEditor() {
     patch: {
       startLocal: string;
       endLocal: string;
+      creditHours: number;
       roles: DraftShiftRole[];
       scope: 'this' | 'all';
       recurrence?: { rrule: string; endDate?: string; count?: number } | null;
     }
   ) => {
+    if (isNew) {
+      const startDt = fromDateTimeLocal(patch.startLocal);
+      const endDt = fromDateTimeLocal(patch.endLocal);
+      setDraftShifts((prev) =>
+        prev.map((item) =>
+          item.id === shift.id
+            ? {
+                ...item,
+                startDt,
+                endDt,
+                creditHours: patch.creditHours,
+                roles: buildDraftShiftRoles(item.id, patch.roles, workingRoles),
+              }
+            : item
+        )
+      );
+      showAlert(`${terms.shiftTitle} updated`, 'success');
+      return;
+    }
     try {
       await api.patch(`/volunteering/admin/shifts/${shift.id}`, {
         startDt: fromDateTimeLocal(patch.startLocal),
         endDt: fromDateTimeLocal(patch.endLocal),
+        creditHours: patch.creditHours,
         roles: patch.roles,
         scope: shift.recurrenceSeriesId != null ? patch.scope : undefined,
         recurrence:
@@ -615,33 +1084,37 @@ export default function AdminVolunteerProgramEditor() {
       });
       showAlert(
         shift.recurrenceSeriesId != null && patch.scope === 'all'
-          ? 'Recurring shifts updated'
-          : 'Shift updated',
+          ? `Recurring ${terms.shiftPlural} updated`
+          : `${terms.shiftTitle} updated`,
         'success'
       );
       await loadProgram();
     } catch (err) {
-      showAlert(formatApiError(err, 'Failed to update shift'), 'error');
+      showAlert(formatApiError(err, `Failed to update ${terms.shiftSingular}`), 'error');
     }
   };
 
   const handleDeleteShift = async (shift: VolunteerShiftView) => {
+    if (isNew) {
+      setDraftShifts((prev) => prev.filter((item) => item.id !== shift.id));
+      return;
+    }
     if (shift.recurrenceSeriesId != null) {
       setDeleteShiftTarget(shift);
       return;
     }
     const ok = await confirm({
-      title: 'Delete shift',
-      message: `Delete the shift on ${formatVolunteerRange(shift.startDt, shift.endDt)}? Signups for this shift will be removed.`,
+      title: `Delete ${terms.shiftSingular}`,
+      message: `Delete the ${terms.shiftSingular} on ${formatVolunteerRange(shift.startDt, shift.endDt)}? Signups for this ${terms.shiftSingular} will be removed.`,
       variant: 'danger',
     });
     if (!ok) return;
     try {
       await api.delete(`/volunteering/admin/shifts/${shift.id}`);
-      showAlert('Shift deleted', 'success');
+      showAlert(`${terms.shiftTitle} deleted`, 'success');
       await loadProgram();
     } catch (err) {
-      showAlert(formatApiError(err, 'Failed to delete shift'), 'error');
+      showAlert(formatApiError(err, `Failed to delete ${terms.shiftSingular}`), 'error');
     }
   };
 
@@ -653,11 +1126,11 @@ export default function AdminVolunteerProgramEditor() {
       await api.delete(
         `/volunteering/admin/shifts/${shift.id}${scope === 'all' ? '?scope=all' : '?scope=this'}`
       );
-      showAlert(scope === 'all' ? 'Recurring shifts deleted' : 'Shift deleted', 'success');
+      showAlert(scope === 'all' ? `Recurring ${terms.shiftPlural} deleted` : `${terms.shiftTitle} deleted`, 'success');
       setDeleteShiftTarget(null);
       await loadProgram();
     } catch (err) {
-      showAlert(formatApiError(err, 'Failed to delete shift'), 'error');
+      showAlert(formatApiError(err, `Failed to delete ${terms.shiftSingular}`), 'error');
     } finally {
       setDeletingShift(false);
     }
@@ -670,7 +1143,7 @@ export default function AdminVolunteerProgramEditor() {
 
   const handleCopyEmailsFromDialog = async () => {
     if (copyEmailRoleIds.length === 0) {
-      showAlert('Select at least one role', 'warning');
+      showAlert(`Select at least one ${terms.roleSingular}`, 'warning');
       return;
     }
     const entries = buildVolunteerSignupEmailEntries(visibleSignupShifts, copyEmailRoleIds);
@@ -708,28 +1181,56 @@ export default function AdminVolunteerProgramEditor() {
       key: 'settings',
       label: 'Settings',
       isActive: activeTab === 'settings',
-      to: isNew ? '/admin/volunteering/new' : `/admin/volunteering/${id}`,
+      ...(isNew
+        ? {
+            onClick: () => {
+              flushDraftDescription();
+              navigate(newProgramTabTo('settings'));
+            },
+          }
+        : { to: `/admin/volunteering/${id}` }),
+    },
+    {
+      key: 'description',
+      label: 'Description',
+      isActive: activeTab === 'description',
+      ...(isNew
+        ? {
+            onClick: () => {
+              flushDraftDescription();
+              navigate(newProgramTabTo('description'));
+            },
+          }
+        : { to: `/admin/volunteering/${id}/description` }),
+    },
+    {
+      key: 'roles',
+      label: terms.roleTab,
+      isActive: activeTab === 'roles',
+      ...(isNew
+        ? {
+            onClick: () => {
+              flushDraftDescription();
+              navigate(newProgramTabTo('roles'));
+            },
+          }
+        : { to: `/admin/volunteering/${id}/roles` }),
+    },
+    {
+      key: 'shifts',
+      label: terms.shiftTab,
+      isActive: activeTab === 'shifts',
+      ...(isNew
+        ? {
+            onClick: () => {
+              flushDraftDescription();
+              navigate(newProgramTabTo('shifts'));
+            },
+          }
+        : { to: `/admin/volunteering/${id}/shifts` }),
     },
     ...(!isNew
       ? [
-          {
-            key: 'description',
-            label: 'Description',
-            isActive: activeTab === 'description',
-            to: `/admin/volunteering/${id}/description`,
-          },
-          {
-            key: 'roles',
-            label: 'Roles',
-            isActive: activeTab === 'roles',
-            to: `/admin/volunteering/${id}/roles`,
-          },
-          {
-            key: 'shifts',
-            label: 'Shifts',
-            isActive: activeTab === 'shifts',
-            to: `/admin/volunteering/${id}/shifts`,
-          },
           {
             key: 'signups',
             label: 'Signups',
@@ -745,31 +1246,132 @@ export default function AdminVolunteerProgramEditor() {
       <AppPage>
         <AppPageHeader
           title="Edit program"
-          actions={<BackButton label="Back to programs" to="/admin/volunteering" />}
+          actions={<BackButton label="Sign-ups" to="/admin/volunteering" />}
         />
         <AppStateCard title="Loading program..." />
       </AppPage>
     );
   }
 
-  const shiftsByDate = (program?.shifts || []).reduce<Record<string, VolunteerShiftView[]>>((acc, shift) => {
+  const shiftsByDate = workingShifts.reduce<Record<string, VolunteerShiftView[]>>((acc, shift) => {
     const key = shift.startDt.slice(0, 10);
     (acc[key] ||= []).push(shift);
     return acc;
   }, {});
 
+  const kindLabelId = `${baseId}-signup-kind`;
+
+  if (isNew && !kindChosen) {
+    return (
+      <AppPage>
+        <AppPageHeader
+          title="Create program"
+          description="Choose the kind of sign-up before adding details."
+          actions={<BackButton label="Sign-ups" to={programsListTo} />}
+        />
+        <form
+          className="max-w-3xl space-y-6"
+          onSubmit={(e) => {
+            e.preventDefault();
+            setKindChosen(true);
+            setFeatureOnDashboard(signupKind === 'volunteering');
+            if (signupKind === 'general') {
+              setNewShiftCreditHours('');
+              setNewShiftAssignCredit(false);
+              setNewShiftCreditMode('shift-length');
+            }
+            const next = new URLSearchParams(searchParams);
+            next.set('kind', signupKind);
+            setSearchParams(next, { replace: true });
+          }}
+        >
+          <FormSection title="Sign-up type" surface="panel">
+            <FormField
+              label="What kind of sign-up is this?"
+              labelId={kindLabelId}
+              required
+            >
+              <ChoiceInput<VolunteerSignupKind>
+                layout="block"
+                ariaLabelledBy={kindLabelId}
+                name="signup-kind"
+                options={[
+                  {
+                    value: 'volunteering',
+                    label: 'Volunteering sign-up',
+                    description:
+                      'Club volunteer work. These appear on the Volunteering tab, can be featured on the member dashboard, and grant volunteer credit hours based on the shift length unless you change that.',
+                  },
+                  {
+                    value: 'general',
+                    label: 'General sign-up',
+                    description:
+                      'Other club RSVPs and sign-ups that are not volunteer work. These appear under Other sign-ups, cannot be featured on the dashboard, and do not grant volunteer credit unless you set hours on a time.',
+                  },
+                ]}
+                value={signupKind}
+                onChange={(next) => {
+                  if (next === 'volunteering' || next === 'general') setSignupKind(next);
+                }}
+              />
+            </FormField>
+            <div>
+              <Button type="submit">Continue</Button>
+            </div>
+          </FormSection>
+        </form>
+      </AppPage>
+    );
+  }
+
   return (
     <AppPage>
       <AppPageHeader
-        title={isNew ? 'Create volunteer program' : program?.title || 'Edit program'}
-        description={isNew ? 'Add a program, then add a description. Roles and shifts are optional.' : undefined}
-        actions={<BackButton label="Back to programs" to="/admin/volunteering" />}
+        title={
+          isNew
+            ? signupKind === 'general'
+              ? 'Create general sign-up'
+              : 'Create volunteering sign-up'
+            : program?.title || 'Edit program'
+        }
+        description={
+          isNew
+            ? `Add settings, a description, ${terms.rolePlural}, and ${terms.shiftPlural}, then create the program. You can move between tabs without losing your work.`
+            : signupKind === 'general'
+              ? 'General sign-up'
+              : 'Volunteering sign-up'
+        }
+        actions={
+          <>
+            {isNew ? (
+              <Button type="button" disabled={saving} onClick={() => void handleCreateProgram()}>
+                {saving ? 'Creating…' : 'Create program'}
+              </Button>
+            ) : null}
+            <BackButton label="Sign-ups" to={programsListTo} />
+          </>
+        }
       />
       <PageTabs items={tabItems} />
 
       {activeTab === 'settings' ? (
         <form onSubmit={handleSaveSettings} className="space-y-6 max-w-3xl">
           <FormSection title="Program details" surface="panel">
+            {isNew ? (
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                {signupKind === 'general' ? 'General sign-up. ' : 'Volunteering sign-up. '}
+                <button
+                  type="button"
+                  className="font-medium text-primary-teal-link hover:underline"
+                  onClick={() => {
+                    flushDraftDescription();
+                    setKindChosen(false);
+                  }}
+                >
+                  Change type
+                </button>
+              </p>
+            ) : null}
             <FormField label="Title" htmlFor={`${baseId}-title`} required>
               <input
                 id={`${baseId}-title`}
@@ -807,19 +1409,6 @@ export default function AdminVolunteerProgramEditor() {
               value={locationChoice}
               onChange={setLocationChoice}
             />
-            <FormField
-              label="Start date"
-              htmlFor={`${baseId}-start-date`}
-              optional
-            >
-              <input
-                id={`${baseId}-start-date`}
-                type="date"
-                className="app-input w-full max-w-xs"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-              />
-            </FormField>
             <FormField label="Managers" htmlFor={`${baseId}-managers`}>
               <MemberMultiSelect
                 selectedIds={managerIds}
@@ -827,33 +1416,24 @@ export default function AdminVolunteerProgramEditor() {
                 placeholder="Search members to add as managers..."
               />
             </FormField>
-            <FormField
-              label="Priority"
-              htmlFor={`${baseId}-priority`}
-              optional
-              helperText="Lower numbers appear first on the volunteering hub and member dashboard. Leave blank to sort after programs that have a priority."
-            >
-              <input
-                id={`${baseId}-priority`}
-                type="number"
-                step={1}
-                className="app-input w-full max-w-xs"
-                value={priority}
-                onChange={(e) => setPriority(e.target.value)}
-              />
-            </FormField>
             <FormCheckbox
               label="Published"
               checked={published}
               onChange={setPublished}
-              helperText="Published programs appear on the volunteering hub."
+              helperText={
+                signupKind === 'general'
+                  ? 'Published programs appear on the Other sign-ups tab.'
+                  : 'Published programs appear on the Volunteering tab.'
+              }
             />
-            <FormCheckbox
-              label="Feature on dashboard"
-              checked={featureOnDashboard}
-              onChange={setFeatureOnDashboard}
-              helperText="When enabled, open shifts from this program can appear in the member dashboard opportunities section."
-            />
+            {signupKind === 'volunteering' ? (
+              <FormCheckbox
+                label="Feature on dashboard"
+                checked={featureOnDashboard}
+                onChange={setFeatureOnDashboard}
+                helperText="When enabled, open shifts from this program can appear in the member dashboard opportunities section."
+              />
+            ) : null}
             <FormCheckbox
               label="Allow public sign-ups"
               checked={publicSignups}
@@ -897,6 +1477,19 @@ export default function AdminVolunteerProgramEditor() {
               </FormField>
             ) : null}
           </FormSection>
+          <FormSection
+            title="Calendar event"
+            surface="panel"
+            description="Attach a free-form calendar event so people can open the event and go to this sign-up. If public sign-ups are on, the link also appears on the public calendar."
+          >
+            <AttachCalendarEventField
+              value={attachedCalendarEvent}
+              onChange={(next) => {
+                setAttachedCalendarEvent(next);
+                setShiftAddSource(next ? 'calendar' : 'manual');
+              }}
+            />
+          </FormSection>
           <div className="flex gap-3">
             <Button type="submit" disabled={saving}>
               {saving ? 'Saving…' : isNew ? 'Create program' : 'Save settings'}
@@ -905,14 +1498,17 @@ export default function AdminVolunteerProgramEditor() {
         </form>
       ) : null}
 
-      {activeTab === 'description' && program ? (
-        <form onSubmit={handleSaveDescription} className="space-y-4">
+      {activeTab === 'description' && (program || isNew) ? (
+        <form
+          onSubmit={handleSaveDescription}
+          className="space-y-4"
+        >
           <FormField
             label="Description"
             labelId={descriptionLabelId}
             optional
             helperPlacement="after-label"
-            helperText="Shown on the volunteering hub and program pages. If you do not add roles and shifts, the program still appears as an opportunity with this description."
+            helperText={`Shown on Volunteering & sign-ups and program pages. If you do not add ${terms.rolePlural} and ${terms.shiftPlural}, the program still appears as an opportunity with this description.`}
           >
             {({ describedBy }) => (
               <div
@@ -922,9 +1518,9 @@ export default function AdminVolunteerProgramEditor() {
                 className="flex min-h-[460px] flex-col overflow-hidden rounded-lg border border-gray-300 dark:border-gray-600"
               >
                 <MarkdownDescriptionEditor
-                  key={program.id}
+                  key={isNew ? 'draft' : program?.id}
                   ref={descriptionEditorRef}
-                  initialValue={program.description ?? ''}
+                  initialValue={isNew ? draftDescription : (program?.description ?? '')}
                   dark={resolvedTheme === 'dark'}
                   fill
                   includeHiddenContactRecipients
@@ -934,18 +1530,26 @@ export default function AdminVolunteerProgramEditor() {
               </div>
             )}
           </FormField>
-          <div>
-            <Button type="submit" disabled={saving}>
-              {saving ? 'Saving…' : 'Save description'}
-            </Button>
-          </div>
+          {isNew ? (
+            <div>
+              <Button type="button" disabled={saving} onClick={() => void handleCreateProgram()}>
+                {saving ? 'Creating…' : 'Create program'}
+              </Button>
+            </div>
+          ) : (
+            <div>
+              <Button type="submit" disabled={saving}>
+                {saving ? 'Saving…' : 'Save description'}
+              </Button>
+            </div>
+          )}
         </form>
       ) : null}
 
-      {activeTab === 'roles' && program ? (
+      {activeTab === 'roles' && (program || isNew) ? (
         <div className="grid gap-6 lg:grid-cols-2">
           <form onSubmit={handleSaveRole} className="space-y-4">
-            <FormSection title={editingRoleId ? 'Edit role' : 'Add role'} surface="panel">
+            <FormSection title={editingRoleId ? `Edit ${terms.roleSingular}` : `Add ${terms.roleSingular}`} surface="panel">
               <FormField label="Name" htmlFor={`${baseId}-role-name`} required>
                 <input
                   id={`${baseId}-role-name`}
@@ -967,7 +1571,7 @@ export default function AdminVolunteerProgramEditor() {
                 label="Default duration (hours)"
                 htmlFor={`${baseId}-role-duration`}
                 required
-                helperText="Used to auto-fill shift end time when this role is selected."
+                helperText={`Used to auto-fill ${terms.shiftSingular} end time when this ${terms.roleSingular} is selected.`}
               >
                 <input
                   id={`${baseId}-role-duration`}
@@ -990,7 +1594,7 @@ export default function AdminVolunteerProgramEditor() {
                           Manage credentials
                         </Link>
                       ) : (
-                        'Ask a credential manager to add credentials if a role should require them.'
+                        `Ask a credential manager to add credentials if a ${terms.roleSingular} should require them.`
                       )
                     }
                   />
@@ -1010,7 +1614,7 @@ export default function AdminVolunteerProgramEditor() {
               </FormField>
               <div className="flex flex-wrap gap-2">
                 <Button type="submit" disabled={saving}>
-                  {saving ? 'Saving…' : editingRoleId ? 'Update role' : 'Add role'}
+                  {saving ? 'Saving…' : editingRoleId ? `Update ${terms.roleSingular}` : `Add ${terms.roleSingular}`}
                 </Button>
                 {editingRoleId ? (
                   <Button type="button" variant="secondary" onClick={resetRoleForm}>
@@ -1022,11 +1626,17 @@ export default function AdminVolunteerProgramEditor() {
           </form>
 
           <div className="space-y-3">
-            <h2 className="app-section-title">Roles ({program.roles.length})</h2>
-            {program.roles.length === 0 ? (
-              <InlineStateMessage title="No roles yet. Add the jobs volunteers can fill, or skip this tab if the description is enough." />
+            <h2 className="app-section-title">{terms.roleTab} ({workingRoles.length})</h2>
+            {workingRoles.length === 0 ? (
+              <InlineStateMessage
+                title={
+                  signupKind === 'general'
+                    ? 'No lists yet. Add the groups people can sign up for, or skip this tab if the description is enough.'
+                    : 'No roles yet. Add the jobs volunteers can fill, or skip this tab if the description is enough.'
+                }
+              />
             ) : (
-              program.roles.map((role) => (
+              workingRoles.map((role) => (
                 <div key={role.id} className="app-card p-4 space-y-2">
                   <div className="flex items-start justify-between gap-3">
                     <div>
@@ -1063,15 +1673,15 @@ export default function AdminVolunteerProgramEditor() {
         </div>
       ) : null}
 
-      {activeTab === 'shifts' && program ? (
+      {activeTab === 'shifts' && (program || isNew) ? (
         <div className="space-y-8">
-          {program.roles.length === 0 ? (
+          {workingRoles.length === 0 ? (
             <AppStateCard
-              title="Add roles first"
-              description="Create at least one role before adding shifts."
+              title={`Add ${terms.rolePlural} first`}
+              description={`Create at least one ${terms.roleSingular} before adding ${terms.shiftPlural}.`}
               action={
-                <Link to={`/admin/volunteering/${id}/roles`}>
-                  <Button type="button">Go to roles</Button>
+                <Link to={isNew ? newProgramTabTo('roles') : `/admin/volunteering/${id}/roles`}>
+                  <Button type="button">Go to {terms.rolePlural}</Button>
                 </Link>
               }
             />
@@ -1079,11 +1689,15 @@ export default function AdminVolunteerProgramEditor() {
             <>
               <form onSubmit={handleCreateShift} className="max-w-3xl">
                 <FormSection
-                  title="Add shift"
+                  title={`Add ${terms.shiftSingular}`}
                   surface="panel"
-                  description="A shift specifies a time period for volunteers to work."
+                  description={
+                    signupKind === 'general'
+                      ? 'A time is a date and window people can sign up for.'
+                      : 'A shift specifies a time period for volunteers to work.'
+                  }
                 >
-                  <FormField label="Role" htmlFor={`${baseId}-shift-role`} required>
+                  <FormField label={terms.roleTitle} htmlFor={`${baseId}-shift-role`} required>
                     <ChoiceInput<number>
                       inputId={`${baseId}-shift-role`}
                       options={roleOptions}
@@ -1091,16 +1705,56 @@ export default function AdminVolunteerProgramEditor() {
                       onChange={(next) => {
                         setNewShiftRoleId(Array.isArray(next) ? next[0] ?? null : next);
                       }}
-                      placeholder="Select a role..."
+                      placeholder={`Select a ${terms.roleSingular}...`}
                     />
                   </FormField>
-                  {selectedRoleForShift ? (
+                  {attachedCalendarEvent ? (
+                    <FormField
+                      label={`How should this ${terms.shiftSingular} get its time?`}
+                      labelId={`${baseId}-shift-source`}
+                      required
+                    >
+                      <ChoiceInput<ShiftAddSource>
+                        layout="block"
+                        name={`${baseId}-shift-source`}
+                        ariaLabelledBy={`${baseId}-shift-source`}
+                        options={[
+                          {
+                            value: 'calendar',
+                            label: 'Use calendar event',
+                            description: `Match ${attachedCalendarEvent.title} (${formatAttachedCalendarEventWhen(attachedCalendarEvent)}${
+                              attachedCalendarEvent.occurrenceCount &&
+                              attachedCalendarEvent.occurrenceCount > 1
+                                ? ` · ${attachedCalendarEvent.occurrenceCount} ${terms.shiftPlural}`
+                                : ''
+                            }). Later calendar changes update these ${terms.shiftPlural}.`,
+                          },
+                          {
+                            value: 'manual',
+                            label: `Add ${terms.shiftSingular} manually`,
+                            description: `Choose start and end times yourself. These ${terms.shiftPlural} stay as you set them.`,
+                          },
+                        ]}
+                        value={shiftAddSource}
+                        onChange={(next) => {
+                          if (next === 'calendar' || next === 'manual') {
+                            setShiftAddSource(next);
+                            if (next === 'calendar') setRecurringMode(false);
+                          }
+                        }}
+                      />
+                    </FormField>
+                  ) : null}
+
+                  {selectedRoleForShift && shiftAddSource === 'manual' ? (
                     <p className="text-sm text-gray-600 dark:text-gray-400 -mt-2 mb-3">
-                      Default duration for this role:{' '}
+                      Default duration for this {terms.roleSingular}:{' '}
                       {formatDurationMinutes(selectedRoleForShift.defaultDurationMinutes || 180)}
                     </p>
                   ) : null}
 
+                  {shiftAddSource === 'manual' ? (
+                  <>
                   <div className="space-y-4">
                     {(recurringMode ? newShiftTimes.slice(0, 1) : newShiftTimes).map((row) => (
                       <div
@@ -1196,7 +1850,7 @@ export default function AdminVolunteerProgramEditor() {
                           className="text-sm font-medium text-primary-teal-link hover:underline"
                           onClick={addAdditionalShiftTime}
                         >
-                          Add additional shift
+                          Add additional {terms.shiftSingular}
                         </button>
                         {newShiftTimes.length === 1 ? (
                           <>
@@ -1215,7 +1869,7 @@ export default function AdminVolunteerProgramEditor() {
                                 setRecurringMode(true);
                               }}
                             >
-                              Set up recurring shifts
+                              Set up recurring {terms.shiftPlural}
                             </button>
                           </>
                         ) : null}
@@ -1241,12 +1895,14 @@ export default function AdminVolunteerProgramEditor() {
                       state={newShiftRecurrence}
                     />
                   ) : null}
+                  </>
+                  ) : null}
 
                   <FormField
                     label={
-                      recurringMode || newShiftTimes.length > 1
-                        ? 'Volunteers needed per shift'
-                        : 'Volunteers needed'
+                      shiftAddSource === 'calendar' || recurringMode || newShiftTimes.length > 1
+                        ? `Capacity per ${terms.shiftSingular}`
+                        : 'Capacity'
                     }
                     htmlFor={`${baseId}-shift-needed`}
                     required
@@ -1261,27 +1917,186 @@ export default function AdminVolunteerProgramEditor() {
                         const n = Number.parseInt(e.target.value, 10);
                         setNewShiftNeeded(Number.isFinite(n) && n > 0 ? n : 1);
                       }}
-                      required
-                    />
+                    required
+                  />
                   </FormField>
+                  {signupKind === 'general' ? (
+                    newShiftAssignCredit ? (
+                      <FormField
+                        label="Volunteer credit hours"
+                        htmlFor={`${baseId}-shift-credit`}
+                        helperText={
+                          newShiftCreditMax > 0
+                            ? `0 to ${newShiftCreditMax} hours.`
+                            : undefined
+                        }
+                      >
+                        <input
+                          id={`${baseId}-shift-credit`}
+                          type="number"
+                          min={0}
+                          max={newShiftCreditMax > 0 ? newShiftCreditMax : undefined}
+                          step={VOLUNTEER_CREDIT_HOURS_STEP}
+                          className="app-input w-32"
+                          value={newShiftCreditHours}
+                          onChange={(e) => setNewShiftCreditHours(e.target.value)}
+                        />
+                      </FormField>
+                    ) : (
+                      <button
+                        type="button"
+                        className="text-sm font-medium text-primary-teal-link hover:underline"
+                        onClick={() => {
+                          setNewShiftAssignCredit(true);
+                          setNewShiftCreditHours(
+                            newShiftCreditMax > 0 ? String(newShiftCreditMax) : ''
+                          );
+                        }}
+                      >
+                        Assign volunteer credit?
+                      </button>
+                    )
+                  ) : (
+                    <FormField
+                      label="Volunteer credit hours"
+                      labelId={`${baseId}-shift-credit`}
+                      helperText={
+                        newShiftCreditMode === 'custom' && newShiftCreditMax > 0
+                          ? `0 to ${newShiftCreditMax} hours.`
+                          : undefined
+                      }
+                    >
+                      <div className="flex flex-wrap items-center gap-3">
+                        <ChoiceInput<NewShiftCreditMode>
+                          layout="inline"
+                          name={`${baseId}-shift-credit-mode`}
+                          ariaLabelledBy={`${baseId}-shift-credit`}
+                          options={[
+                            { value: 'shift-length', label: 'Use shift length' },
+                            { value: 'custom', label: 'Custom' },
+                          ]}
+                          value={newShiftCreditMode}
+                          onChange={(next) => {
+                            if (next !== 'shift-length' && next !== 'custom') return;
+                            setNewShiftCreditMode(next);
+                            if (next === 'custom') {
+                              setNewShiftCreditHours(
+                                newShiftCreditMax > 0 ? String(newShiftCreditMax) : '0'
+                              );
+                            }
+                          }}
+                        />
+                        {newShiftCreditMode === 'custom' ? (
+                          <input
+                            id={`${baseId}-shift-credit-custom`}
+                            type="number"
+                            min={0}
+                            max={newShiftCreditMax > 0 ? newShiftCreditMax : undefined}
+                            step={VOLUNTEER_CREDIT_HOURS_STEP}
+                            className="app-input w-24"
+                            value={newShiftCreditHours}
+                            onChange={(e) => setNewShiftCreditHours(e.target.value)}
+                            aria-label="Custom volunteer credit hours"
+                          />
+                        ) : null}
+                      </div>
+                    </FormField>
+                  )}
                   <div className="flex flex-wrap gap-2">
                     <Button type="submit" disabled={savingShift || !newShiftRoleId}>
                       {savingShift
                         ? 'Saving…'
-                        : recurringMode || newShiftTimes.length > 1
-                          ? 'Add shifts'
-                          : 'Add shift'}
+                        : shiftAddSource === 'calendar' &&
+                            (attachedCalendarEvent?.occurrenceCount ?? 1) > 1
+                          ? `Add ${terms.shiftPlural}`
+                          : recurringMode || newShiftTimes.length > 1
+                            ? `Add ${terms.shiftPlural}`
+                            : `Add ${terms.shiftSingular}`}
                     </Button>
                   </div>
                 </FormSection>
               </form>
 
               <section className="space-y-4">
-                <h2 className="app-section-title">Existing shifts ({program.shifts.length})</h2>
-                {program.shifts.length === 0 ? (
-                  <InlineStateMessage title="No shifts saved yet." />
+                <h2 className="app-section-title">
+                  Existing {terms.shiftPlural} ({workingShifts.length + draftRecurringShifts.length + draftCalendarSyncedShifts.length})
+                </h2>
+                {workingShifts.length === 0 &&
+                draftRecurringShifts.length === 0 &&
+                draftCalendarSyncedShifts.length === 0 ? (
+                  <InlineStateMessage
+                    title={isNew ? `No ${terms.shiftPlural} added yet.` : `No ${terms.shiftPlural} saved yet.`}
+                  />
                 ) : (
-                  Object.entries(shiftsByDate)
+                  <>
+                    {draftCalendarSyncedShifts.map((batch) => {
+                      const roleName =
+                        workingRoles.find((role) => role.id === batch.roleId)?.name || terms.roleTitle;
+                      return (
+                        <div key={batch.key} className="app-card space-y-2 p-4">
+                          <div className="font-medium text-gray-900 dark:text-gray-100">
+                            Matches calendar event
+                            {batch.previewCount > 1
+                              ? ` · ${batch.previewCount} ${terms.shiftPlural}`
+                              : ''}
+                          </div>
+                          <p className="text-sm text-gray-600 dark:text-gray-400">
+                            {roleName}
+                            {attachedCalendarEvent
+                              ? ` · ${formatAttachedCalendarEventWhen(attachedCalendarEvent)}`
+                              : ''}
+                            {' · '}
+                            Capacity {batch.volunteersNeeded}
+                          </p>
+                          <div>
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              onClick={() =>
+                                setDraftCalendarSyncedShifts((prev) =>
+                                  prev.filter((item) => item.key !== batch.key)
+                                )
+                              }
+                            >
+                              Remove
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {draftRecurringShifts.map((batch) => {
+                      const roleName =
+                        workingRoles.find((role) => role.id === batch.roleId)?.name || terms.roleTitle;
+                      return (
+                        <div key={batch.key} className="app-card space-y-2 p-4">
+                          <div className="font-medium text-gray-900 dark:text-gray-100">
+                            Recurring · {batch.previewCount}{' '}
+                            {batch.previewCount === 1 ? terms.shiftSingular : terms.shiftPlural}
+                          </div>
+                          <p className="text-sm text-gray-600 dark:text-gray-400">
+                            {roleName}
+                            {' · '}
+                            {formatVolunteerRange(batch.startDt, batch.endDt)}
+                            {' · '}
+                            Capacity {batch.volunteersNeeded}
+                          </p>
+                          <div>
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              onClick={() =>
+                                setDraftRecurringShifts((prev) =>
+                                  prev.filter((item) => item.key !== batch.key)
+                                )
+                              }
+                            >
+                              Remove
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {Object.entries(shiftsByDate)
                     .sort(([a], [b]) => a.localeCompare(b))
                     .map(([dateKey, shifts]) => (
                       <div key={dateKey} className="space-y-3">
@@ -1298,13 +2113,15 @@ export default function AdminVolunteerProgramEditor() {
                             key={shift.id}
                             baseId={`${baseId}-shift-${shift.id}`}
                             shift={shift}
-                            roles={program.roles}
+                            roles={workingRoles}
+                            terms={terms}
                             onSave={(patch) => handleUpdateExistingShift(shift, patch)}
                             onDelete={() => handleDeleteShift(shift)}
                           />
                         ))}
                       </div>
-                    ))
+                    ))}
+                  </>
                 )}
               </section>
             </>
@@ -1318,7 +2135,7 @@ export default function AdminVolunteerProgramEditor() {
             <AppPageControlsRow
               left={
                 <IncludeArchivedToggle
-                  label="Include past shifts"
+                  label={`Include past ${terms.shiftPlural}`}
                   checked={includeArchivedSignups}
                   onChange={setIncludeArchivedSignups}
                 />
@@ -1337,11 +2154,14 @@ export default function AdminVolunteerProgramEditor() {
           ) : null}
           <div className="space-y-4">
             {program.shifts.length === 0 ? (
-              <AppStateCard title="No shifts yet" description="Add shifts before managing signups." />
+              <AppStateCard
+                title={`No ${terms.shiftPlural} yet`}
+                description={`Add ${terms.shiftPlural} before managing signups.`}
+              />
             ) : visibleSignupShifts.length === 0 ? (
               <AppStateCard
                 title="No upcoming sign-ups"
-                description="Past shifts are hidden. Include past shifts to review them."
+                description={`Past ${terms.shiftPlural} are hidden. Include past ${terms.shiftPlural} to review them.`}
               />
             ) : (
               visibleSignupShifts.map((shift) => (
@@ -1373,6 +2193,7 @@ export default function AdminVolunteerProgramEditor() {
                                   ),
                                   requiresCredentials: role.requiredCredentials.length > 0,
                                   callerIsSignedUp: role.callerIsSignedUp,
+                                  signupKind,
                                   manageForOthers: true,
                                   signedUpMemberIds: role.signups
                                     .map((signup) => signup.memberId)
@@ -1380,7 +2201,7 @@ export default function AdminVolunteerProgramEditor() {
                                 })
                               }
                             >
-                              Add volunteers
+                              {terms.addPeople}
                             </Button>
                           ) : null}
                         </div>
@@ -1452,7 +2273,7 @@ export default function AdminVolunteerProgramEditor() {
       >
         <div className="space-y-5">
           <FormField
-            label="Roles"
+            label={terms.roleTab}
             labelId={copyEmailRolesLabelId}
             helperText="Copies unique emails from sign-ups currently listed on this page."
           >
@@ -1468,7 +2289,7 @@ export default function AdminVolunteerProgramEditor() {
                 layout="block"
                 maxSelectedItems={null}
                 multiSelectionIndicatorStyle="checkboxes"
-                listboxLabel="Roles"
+                listboxLabel={terms.roleTab}
                 name="copy-email-roles"
               />
             )}
@@ -1488,13 +2309,13 @@ export default function AdminVolunteerProgramEditor() {
         onClose={() => {
           if (!deletingShift) setDeleteShiftTarget(null);
         }}
-        title="Delete shift"
+        title={`Delete ${terms.shiftSingular}`}
       >
         {deleteShiftTarget ? (
           <div className="space-y-4">
             <p className="text-sm text-gray-600 dark:text-gray-400">
-              This is a recurring shift. Delete this instance only, or all remaining instances in
-              the series? Signups for deleted shifts will be removed.
+              This is a recurring {terms.shiftSingular}. Delete this instance only, or all remaining instances in
+              the series? Signups for deleted {terms.shiftPlural} will be removed.
             </p>
             <div className="flex flex-wrap gap-2">
               <Button
@@ -1533,8 +2354,8 @@ export default function AdminVolunteerProgramEditor() {
             setSignupTarget(null);
             showAlert(
               count === 1
-                ? 'Volunteer signed up. A confirmation email is on the way.'
-                : `${count} volunteers signed up. Confirmation emails are on the way.`,
+                ? `1 ${terms.peopleSingular} signed up. A confirmation email is on the way.`
+                : `${count} ${terms.peoplePlural} signed up. Confirmation emails are on the way.`,
               'success'
             );
             await loadProgram();
@@ -1549,15 +2370,18 @@ function ExistingShiftEditor({
   baseId,
   shift,
   roles,
+  terms,
   onSave,
   onDelete,
 }: {
   baseId: string;
   shift: VolunteerShiftView;
   roles: VolunteerRoleView[];
+  terms: VolunteerProgramUiTerms;
   onSave: (patch: {
     startLocal: string;
     endLocal: string;
+    creditHours: number;
     roles: DraftShiftRole[];
     scope: 'this' | 'all';
     recurrence?: { rrule: string; endDate?: string; count?: number } | null;
@@ -1566,12 +2390,16 @@ function ExistingShiftEditor({
 }) {
   const [startLocal, setStartLocal] = useState(toDateTimeLocal(shift.startDt));
   const [endLocal, setEndLocal] = useState(toDateTimeLocal(shift.endDt));
+  const [creditHours, setCreditHours] = useState(
+    String(shift.creditHours ?? volunteerHoursFromRange(shift.startDt, shift.endDt))
+  );
   const [shiftRoles, setShiftRoles] = useState<DraftShiftRole[]>(
     shift.roles.map((r) => ({ roleId: r.roleId, volunteersNeeded: r.volunteersNeeded }))
   );
   const [showAddRole, setShowAddRole] = useState(false);
   const [editScope, setEditScope] = useState<'this' | 'all'>('this');
   const isRecurring = shift.recurrenceSeriesId != null;
+  const matchesCalendar = shift.sourceCalendarEventId != null;
   const recurrence = useRecurrenceState(shift.recurrenceRule ?? '', startLocal.slice(0, 10));
   const scopeLabelId = `${baseId}-scope-label`;
   const isEditingSingleInstance = isRecurring && editScope === 'this';
@@ -1579,6 +2407,7 @@ function ExistingShiftEditor({
   useEffect(() => {
     setStartLocal(toDateTimeLocal(shift.startDt));
     setEndLocal(toDateTimeLocal(shift.endDt));
+    setCreditHours(String(shift.creditHours ?? volunteerHoursFromRange(shift.startDt, shift.endDt)));
     setShiftRoles(shift.roles.map((r) => ({ roleId: r.roleId, volunteersNeeded: r.volunteersNeeded })));
     setShowAddRole(false);
   }, [shift]);
@@ -1599,8 +2428,12 @@ function ExistingShiftEditor({
 
   return (
     <div className="app-card p-4 space-y-3">
-      {isRecurring ? (
-        <p className="text-sm text-gray-600 dark:text-gray-400">Recurring shift</p>
+      {matchesCalendar ? (
+        <p className="text-sm text-gray-600 dark:text-gray-400">
+          Times match the attached calendar event and update automatically.
+        </p>
+      ) : isRecurring ? (
+        <p className="text-sm text-gray-600 dark:text-gray-400">Recurring {terms.shiftSingular}</p>
       ) : null}
       <div className="grid gap-3 md:grid-cols-2">
         <FormField label="Start" htmlFor={`${baseId}-start`} required>
@@ -1610,6 +2443,7 @@ function ExistingShiftEditor({
             className="app-input"
             value={startLocal}
             onChange={(e) => setStartLocal(e.target.value)}
+            readOnly={matchesCalendar}
           />
         </FormField>
         <FormField label="End" htmlFor={`${baseId}-end`} required>
@@ -1619,13 +2453,29 @@ function ExistingShiftEditor({
             className="app-input"
             value={endLocal}
             onChange={(e) => setEndLocal(e.target.value)}
+            readOnly={matchesCalendar}
           />
         </FormField>
       </div>
+      <FormField
+        label="Volunteer credit hours"
+        htmlFor={`${baseId}-credit`}
+        helperText={`Hours of volunteer credit granted for completing this ${terms.shiftSingular}.`}
+      >
+        <input
+          id={`${baseId}-credit`}
+          type="number"
+          min={0}
+          step={0.1}
+          className="app-input w-32"
+          value={creditHours}
+          onChange={(e) => setCreditHours(e.target.value)}
+        />
+      </FormField>
 
       {isRecurring ? (
         <FormField
-          label="This is a recurring shift. Apply changes to:"
+          label={`This is a recurring ${terms.shiftSingular}. Apply changes to:`}
           labelId={scopeLabelId}
         >
           <ChoiceInput<'this' | 'all'>
@@ -1643,7 +2493,7 @@ function ExistingShiftEditor({
         </FormField>
       ) : null}
 
-      {isRecurring && !isEditingSingleInstance ? (
+      {isRecurring && !isEditingSingleInstance && !matchesCalendar ? (
         <RecurrenceFields
           idPrefix={`${baseId}-recurrence`}
           startDate={startLocal.slice(0, 10)}
@@ -1657,15 +2507,15 @@ function ExistingShiftEditor({
       {!multiRole && shiftRoles[0] ? (
         <>
           <div>
-            <div className="app-label">Role</div>
+            <div className="app-label">{terms.roleTitle}</div>
             <div className="font-medium text-gray-900 dark:text-gray-100">
               {roles.find((r) => r.id === shiftRoles[0].roleId)?.name
                 || shift.roles.find((r) => r.roleId === shiftRoles[0].roleId)?.roleName
-                || `Role ${shiftRoles[0].roleId}`}
+                || `${terms.roleTitle} ${shiftRoles[0].roleId}`}
             </div>
           </div>
           <FormField
-            label="Volunteers needed for this shift"
+            label="Capacity"
             htmlFor={`${baseId}-need-${shiftRoles[0].roleId}`}
             required
           >
@@ -1682,12 +2532,12 @@ function ExistingShiftEditor({
         </>
       ) : (
         <div className="inline-grid max-w-full grid-cols-[auto_7rem_auto] items-center gap-x-4 gap-y-2">
-          <div className="text-sm font-medium text-gray-700 dark:text-gray-300">Role</div>
-          <div className="text-sm font-medium text-gray-700 dark:text-gray-300">Volunteers</div>
+          <div className="text-sm font-medium text-gray-700 dark:text-gray-300">{terms.roleTitle}</div>
+          <div className="text-sm font-medium text-gray-700 dark:text-gray-300">Capacity</div>
           <div />
           {shiftRoles.map((role) => {
             const meta = roles.find((r) => r.id === role.roleId);
-            const roleName = meta?.name || `Role ${role.roleId}`;
+            const roleName = meta?.name || `${terms.roleTitle} ${role.roleId}`;
             const needId = `${baseId}-need-${role.roleId}`;
             return (
               <Fragment key={role.roleId}>
@@ -1702,7 +2552,7 @@ function ExistingShiftEditor({
                   value={role.volunteersNeeded}
                   onChange={(e) => updateNeeded(role.roleId, e.target.value)}
                   required
-                  aria-label={`Volunteers needed for ${roleName}`}
+                  aria-label={`Capacity for ${roleName}`}
                 />
                 <button
                   type="button"
@@ -1721,7 +2571,7 @@ function ExistingShiftEditor({
 
       {availableRoles.length > 0 ? (
         showAddRole ? (
-          <FormField label="Role to add" htmlFor={`${baseId}-add-role`}>
+          <FormField label={`${terms.roleTitle} to add`} htmlFor={`${baseId}-add-role`}>
             <ChoiceInput<number>
               key={`add-role-${availableRoles.map((r) => r.id).join('-')}`}
               inputId={`${baseId}-add-role`}
@@ -1733,7 +2583,7 @@ function ExistingShiftEditor({
                 setShiftRoles((prev) => [...prev, { roleId, volunteersNeeded: 1 }]);
                 if (availableRoles.length <= 1) setShowAddRole(false);
               }}
-              placeholder="Select a role..."
+              placeholder={`Select a ${terms.roleSingular}...`}
             />
           </FormField>
         ) : (
@@ -1742,7 +2592,7 @@ function ExistingShiftEditor({
             className="text-sm font-medium text-primary-teal-link hover:underline"
             onClick={() => setShowAddRole(true)}
           >
-            Add another role
+            Add another {terms.roleSingular}
           </button>
         )
       ) : null}
@@ -1751,7 +2601,7 @@ function ExistingShiftEditor({
         <Button
           type="button"
           onClick={() => {
-            if (isRecurring && editScope === 'all') {
+            if (isRecurring && editScope === 'all' && !matchesCalendar) {
               if (!recurrence.payload) {
                 return;
               }
@@ -1759,16 +2609,22 @@ function ExistingShiftEditor({
                 return;
               }
             }
+            const parsedCredit = Number.parseFloat(creditHours);
             onSave({
               startLocal,
               endLocal,
+              creditHours:
+                Number.isFinite(parsedCredit) && parsedCredit >= 0
+                  ? parsedCredit
+                  : volunteerHoursFromRange(fromDateTimeLocal(startLocal), fromDateTimeLocal(endLocal)),
               roles: shiftRoles,
               scope: editScope,
-              recurrence: isRecurring && editScope === 'all' ? recurrence.payload : undefined,
+              recurrence:
+                !matchesCalendar && isRecurring && editScope === 'all' ? recurrence.payload : undefined,
             });
           }}
         >
-          Save shift
+          Save {terms.shiftSingular}
         </Button>
         <Button type="button" variant="secondary" onClick={onDelete}>
           Delete

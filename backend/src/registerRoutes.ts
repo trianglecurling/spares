@@ -50,6 +50,7 @@ import { buildingAccessRoutes } from './routes/buildingAccess.js';
 import { memberCommunicationsRoutes } from './routes/memberCommunications.js';
 import { boardMeetingMinutesRoutes } from './routes/boardMeetingMinutes.js';
 import { serviceAccountRoutes } from './routes/serviceAccounts.js';
+import { teamCatalogRoutes } from './routes/teams.js';
 import { observabilityEmailRoutes } from './routes/observabilityEmails.js';
 
 export async function registerPublicApiRoutes(fastify: FastifyInstance): Promise<void> {
@@ -78,6 +79,7 @@ export async function registerProtectedApiRoutes(fastify: FastifyInstance): Prom
   await fastify.register(credentialRoutes, { prefix: '/api' });
   await fastify.register(leagueRoutes, { prefix: '/api' });
   await fastify.register(leagueSetupRoutes, { prefix: '/api' });
+  await fastify.register(teamCatalogRoutes, { prefix: '/api' });
   await fastify.register(gameRoutes, { prefix: '/api' });
   await fastify.register(resultsRoutes, { prefix: '/api' });
   await fastify.register(schedulingRoutes, { prefix: '/api' });

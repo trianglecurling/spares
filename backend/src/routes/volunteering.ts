@@ -10,6 +10,7 @@ import {
   createProgram,
   createRole,
   createShiftsBulk,
+  createShiftsFromCalendarEvent,
   deleteProgram,
   deleteRole,
   deleteShift,
@@ -23,7 +24,10 @@ import {
   listMySignups,
   getSeasonVolunteerLedger,
   listVolunteerStats,
+  listDirectCalendarEventsOnDate,
+  getDirectCalendarEventForSignup,
   removeSignupAsManager,
+  reorderPrograms,
   signUpForShiftRole,
   updateOwnSignupComments,
   updateProgram,
@@ -79,11 +83,18 @@ const programBodySchema = z.object({
   published: z.boolean().optional(),
   featureOnDashboard: z.boolean().optional(),
   publicSignups: z.boolean().optional(),
+  signupKind: z.enum(['volunteering', 'general']).optional(),
   priority: z.number().int().nullable().optional(),
   managerIds: z.array(z.number().int().positive()).optional(),
+  calendarEventId: z.number().int().positive().nullable().optional(),
 });
 
 const programPatchSchema = programBodySchema.partial();
+
+const reorderProgramsSchema = z.object({
+  programIds: z.array(z.number().int().positive()).min(1),
+  signupKind: z.enum(['volunteering', 'general']),
+});
 
 const duplicateProgramSchema = z.object({
   title: z.string().min(1),
@@ -116,12 +127,19 @@ const recurrenceSchema = z.object({
   count: z.number().int().positive().optional(),
 });
 
+const shiftsFromCalendarEventSchema = z.object({
+  roleId: z.number().int().positive(),
+  volunteersNeeded: z.number().int().positive(),
+  creditHours: z.number().min(0).nullable().optional(),
+});
+
 const shiftsBulkSchema = z.object({
   shifts: z
     .array(
       z.object({
         startDt: z.string().min(1),
         endDt: z.string().min(1),
+        creditHours: z.number().min(0).nullable().optional(),
         roles: z.array(shiftRoleSchema).min(1),
       })
     )
@@ -132,6 +150,7 @@ const shiftsBulkSchema = z.object({
 const shiftPatchSchema = z.object({
   startDt: z.string().min(1).optional(),
   endDt: z.string().min(1).optional(),
+  creditHours: z.number().min(0).nullable().optional(),
   roles: z.array(shiftRoleSchema).min(1).optional(),
   scope: z.enum(['this', 'all']).optional(),
   recurrence: recurrenceSchema.optional(),
@@ -378,6 +397,61 @@ export async function volunteeringRoutes(fastify: FastifyInstance): Promise<void
   );
 
   // ---- Admin programs ----
+  fastify.get(
+    '/volunteering/admin/direct-calendar-events',
+    {
+      schema: {
+        tags: ['volunteering'],
+        querystring: {
+          type: 'object',
+          required: ['date'],
+          properties: {
+            date: { type: 'string', description: 'Club-local date YYYY-MM-DD' },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const member = getMember(request as AuthenticatedRequest);
+      if (!member) return sendApiError(reply, 401, 'Unauthorized');
+      const managed = await listManagedProgramIds(member);
+      if (managed !== 'all' && managed.length === 0 && !isVolunteerManager(member)) {
+        return sendApiError(reply, 403, 'Forbidden');
+      }
+      const parsed = z
+        .object({
+          date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD'),
+        })
+        .safeParse(request.query);
+      if (!parsed.success) return sendValidationError(reply, 'Invalid date', parsed.error.flatten());
+      try {
+        return { events: await listDirectCalendarEventsOnDate(parsed.data.date) };
+      } catch (err) {
+        return handleServiceError(reply, err);
+      }
+    }
+  );
+
+  fastify.get<{ Params: { id: string } }>(
+    '/volunteering/admin/direct-calendar-events/:id',
+    { schema: { tags: ['volunteering'] } },
+    async (request, reply) => {
+      const member = getMember(request as AuthenticatedRequest);
+      if (!member) return sendApiError(reply, 401, 'Unauthorized');
+      const managed = await listManagedProgramIds(member);
+      if (managed !== 'all' && managed.length === 0 && !isVolunteerManager(member)) {
+        return sendApiError(reply, 403, 'Forbidden');
+      }
+      const eventId = Number.parseInt(request.params.id, 10);
+      if (!Number.isFinite(eventId)) return sendApiError(reply, 400, 'Invalid calendar event id');
+      try {
+        return await getDirectCalendarEventForSignup(eventId);
+      } catch (err) {
+        return handleServiceError(reply, err);
+      }
+    }
+  );
+
   fastify.get('/volunteering/admin/programs', { schema: { tags: ['volunteering'] } }, async (request, reply) => {
     const member = getMember(request as AuthenticatedRequest);
     if (!member) return sendApiError(reply, 401, 'Unauthorized');
@@ -422,6 +496,20 @@ export async function volunteeringRoutes(fastify: FastifyInstance): Promise<void
         createdByMemberId: member.id,
       });
       return reply.code(201).send(result);
+    } catch (err) {
+      return handleServiceError(reply, err);
+    }
+  });
+
+  fastify.post('/volunteering/admin/programs/reorder', { schema: { tags: ['volunteering'] } }, async (request, reply) => {
+    const member = getMember(request as AuthenticatedRequest);
+    if (!member) return sendApiError(reply, 401, 'Unauthorized');
+    if (!isVolunteerManager(member)) return sendApiError(reply, 403, 'Forbidden');
+    const parsed = reorderProgramsSchema.safeParse(request.body);
+    if (!parsed.success) return sendValidationError(reply, 'Invalid program order', parsed.error.flatten());
+    try {
+      await reorderPrograms(parsed.data);
+      return { ok: true };
     } catch (err) {
       return handleServiceError(reply, err);
     }
@@ -655,6 +743,31 @@ export async function volunteeringRoutes(fastify: FastifyInstance): Promise<void
           programId,
           shifts: parsed.data.shifts,
           recurrence: parsed.data.recurrence,
+        });
+        return reply.code(201).send(result);
+      } catch (err) {
+        return handleServiceError(reply, err);
+      }
+    }
+  );
+
+  fastify.post<{ Params: { id: string } }>(
+    '/volunteering/admin/programs/:id/shifts/from-calendar-event',
+    { schema: { tags: ['volunteering'] } },
+    async (request, reply) => {
+      const member = getMember(request as AuthenticatedRequest);
+      if (!member) return sendApiError(reply, 401, 'Unauthorized');
+      const programId = Number.parseInt(request.params.id, 10);
+      if (!Number.isFinite(programId)) return sendApiError(reply, 400, 'Invalid program id');
+      if (!(await canManageProgram(member, programId))) return sendApiError(reply, 403, 'Forbidden');
+      const parsed = shiftsFromCalendarEventSchema.safeParse(request.body);
+      if (!parsed.success) return sendValidationError(reply, 'Invalid shift data', parsed.error.flatten());
+      try {
+        const result = await createShiftsFromCalendarEvent({
+          programId,
+          roleId: parsed.data.roleId,
+          volunteersNeeded: parsed.data.volunteersNeeded,
+          creditHours: parsed.data.creditHours,
         });
         return reply.code(201).send(result);
       } catch (err) {

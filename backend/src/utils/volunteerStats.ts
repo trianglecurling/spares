@@ -12,6 +12,17 @@ export type VolunteerStatsPeriodTotals = {
   shifts: number;
 };
 
+export type VolunteerSignupKind = 'volunteering' | 'general';
+
+export function isVolunteerSignupKind(value: unknown): value is VolunteerSignupKind {
+  return value === 'volunteering' || value === 'general';
+}
+
+export function parseVolunteerSignupKind(value: unknown): VolunteerSignupKind {
+  if (isVolunteerSignupKind(value)) return value;
+  return 'volunteering';
+}
+
 export type VolunteerStatsCompletedSignup = {
   signupId: number;
   memberId: number | null;
@@ -20,6 +31,8 @@ export type VolunteerStatsCompletedSignup = {
   startDt: string;
   endDt: string;
   startDateOnly: string;
+  creditHours?: number | null;
+  signupKind?: VolunteerSignupKind | null;
   programTitle?: string | null;
   roleName?: string | null;
 };
@@ -92,6 +105,34 @@ export function volunteerShiftDurationHours(startDt: string, endDt: string): num
 
 export function roundVolunteerHours(hours: number): number {
   return Math.round(hours * 10) / 10;
+}
+
+export function defaultVolunteerCreditHours(
+  signupKind: VolunteerSignupKind,
+  startDt: string,
+  endDt: string
+): number {
+  if (signupKind === 'general') return 0;
+  return roundVolunteerHours(volunteerShiftDurationHours(startDt, endDt));
+}
+
+export function parseVolunteerCreditHours(value: unknown): number | null {
+  if (value == null || value === '') return null;
+  const hours = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(hours) || hours < 0) return null;
+  return roundVolunteerHours(hours);
+}
+
+/** Prefer stored credit hours; fall back to shift duration for older rows. */
+export function volunteerCreditHoursForSignup(row: {
+  creditHours?: number | null;
+  startDt: string;
+  endDt: string;
+}): number {
+  if (row.creditHours != null && Number.isFinite(row.creditHours) && row.creditHours >= 0) {
+    return row.creditHours;
+  }
+  return volunteerShiftDurationHours(row.startDt, row.endDt);
 }
 
 function personShiftKey(row: VolunteerStatsCompletedSignup): string {
@@ -197,7 +238,7 @@ export function aggregateVolunteerStats(
     const key = personShiftKey(row);
     if (!countedPersonShifts.has(key)) {
       countedPersonShifts.add(key);
-      const hours = volunteerShiftDurationHours(row.startDt, row.endDt);
+      const hours = volunteerCreditHoursForSignup(row);
       addPeriod(clubHours, hours, month, season);
       if (row.memberId === options.viewerMemberId) {
         addPeriod(meHours, hours, month, season);
@@ -335,7 +376,7 @@ export function buildSeasonVolunteerLedger(
       id: `shift:${row.shiftId}`,
       kind: 'shift',
       date: row.startDateOnly,
-      hours: roundVolunteerHours(volunteerShiftDurationHours(row.startDt, row.endDt)),
+      hours: roundVolunteerHours(volunteerCreditHoursForSignup(row)),
       summary: row.programTitle?.trim() || 'Volunteer shift',
       detail: null,
       roles: roleName ? [roleName] : [],

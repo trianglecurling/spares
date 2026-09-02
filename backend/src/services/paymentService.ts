@@ -2423,7 +2423,20 @@ export class PaymentService {
   private async notifyPointOfContactForPaidEventRegistration(
     orderId: number,
     registrationId: number,
-    event: { id: number; title: string; point_of_contact: string; registrationFields?: unknown[] },
+    event: {
+      id: number;
+      title: string;
+      point_of_contact: string;
+      registrationFields?: unknown[];
+      timespans?: Array<{
+        start_dt?: string;
+        end_dt?: string;
+        startDt?: string;
+        endDt?: string;
+        sort_order?: number;
+        sortOrder?: number;
+      }>;
+    },
     status: string,
   ): Promise<void> {
     let claimed = false;

@@ -24,6 +24,12 @@ import {
   volunteerCredentialIsValidOn,
   volunteerShiftDayKey,
   volunteerShiftHasEnded,
+  defaultVolunteerCreditHours,
+  volunteerCreditHoursFromShift,
+  compareVolunteerProgramsForList,
+  volunteerProgramUiTerms,
+  snapVolunteerCreditHours,
+  maxVolunteerCreditHoursOnStep,
 } from './volunteering';
 
 describe('volunteerProgramShiftsForCaller', () => {
@@ -631,5 +637,110 @@ describe('buildPastVolunteeringItems', () => {
     expect(summarizePastVolunteering(items)).toEqual({ shifts: 1, hours: 3.5 });
     expect(formatVolunteerShiftCount(1)).toBe('1 shift');
     expect(formatVolunteerHoursLabel(3.5)).toBe('3.5 hours');
+  });
+
+  test('uses stored credit hours for shift totals', () => {
+    const items = buildPastVolunteeringItems(
+      [
+        {
+          ...signup({
+            signupId: 1,
+            startDt: '2026-10-10T18:00:00.000Z',
+            endDt: '2026-10-10T20:00:00.000Z',
+          }),
+          creditHours: 0,
+        },
+      ],
+      []
+    );
+    expect(summarizePastVolunteering(items)).toEqual({ shifts: 1, hours: 0 });
+  });
+});
+
+describe('snapVolunteerCreditHours', () => {
+  test('snaps to half hours and does not exceed duration', () => {
+    expect(snapVolunteerCreditHours(1.1, 3)).toBe(1);
+    expect(snapVolunteerCreditHours(1.4, 3)).toBe(1.5);
+    expect(snapVolunteerCreditHours(2.9, 2.3)).toBe(2);
+    expect(snapVolunteerCreditHours(-1, 3)).toBe(0);
+  });
+
+  test('maxVolunteerCreditHoursOnStep uses the 0.5 grid', () => {
+    expect(maxVolunteerCreditHoursOnStep(2.3)).toBe(2);
+    expect(maxVolunteerCreditHoursOnStep(3)).toBe(3);
+    expect(maxVolunteerCreditHoursOnStep(0.3)).toBe(0);
+  });
+});
+
+describe('defaultVolunteerCreditHours', () => {
+  test('uses duration for volunteering and zero for general sign-ups', () => {
+    expect(
+      defaultVolunteerCreditHours(
+        'volunteering',
+        '2026-10-10T18:00:00.000Z',
+        '2026-10-10T21:00:00.000Z'
+      )
+    ).toBe(3);
+    expect(
+      defaultVolunteerCreditHours(
+        'general',
+        '2026-10-10T18:00:00.000Z',
+        '2026-10-10T21:00:00.000Z'
+      )
+    ).toBe(0);
+  });
+
+  test('prefers stored credit hours on a shift', () => {
+    expect(
+      volunteerCreditHoursFromShift({
+        startDt: '2026-10-10T18:00:00.000Z',
+        endDt: '2026-10-10T21:00:00.000Z',
+        creditHours: 1,
+      })
+    ).toBe(1);
+  });
+});
+
+describe('compareVolunteerProgramsForList', () => {
+  const program = (
+    title: string,
+    priority: number | null,
+    startDt?: string
+  ) => ({
+    title,
+    priority,
+    shifts: startDt ? [{ startDt }] : [],
+  });
+
+  test('sorts lower priority numbers first', () => {
+    expect(
+      compareVolunteerProgramsForList(program('B', 2), program('A', 1))
+    ).toBeGreaterThan(0);
+  });
+
+  test('treats missing priority as last', () => {
+    expect(
+      compareVolunteerProgramsForList(program('Soon', null, '2026-08-01T12:00:00.000Z'), program('Numbered', 10))
+    ).toBeGreaterThan(0);
+  });
+});
+
+describe('volunteerProgramUiTerms', () => {
+  test('uses lists and times for general sign-ups', () => {
+    expect(volunteerProgramUiTerms('general')).toMatchObject({
+      roleTab: 'Lists',
+      shiftTab: 'Times',
+      roleSingular: 'list',
+      shiftSingular: 'time',
+      addPeople: 'Add sign-ups',
+      peopleFieldLabel: 'People',
+    });
+  });
+
+  test('keeps roles and shifts for volunteering', () => {
+    expect(volunteerProgramUiTerms('volunteering')).toMatchObject({
+      roleTab: 'Roles',
+      shiftTab: 'Shifts',
+    });
   });
 });

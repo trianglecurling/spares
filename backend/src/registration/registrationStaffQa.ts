@@ -8,15 +8,12 @@ import {
   DRAFT_REGISTRATION_STATUSES,
   SUBMITTED_CURLER_REGISTRATION_STATUSES,
 } from './registrationDraftProgress.js';
-import {
-  labelPriorityEntries,
-  priorityRosterAllReturning,
-  priorityRosterIsComplete,
-  type LeaguePriorityGuaranteeLabel,
-  type PriorityLabelCandidate,
-  type PriorityLeagueShape,
-} from './leaguePriorityRules.js';
+import type { LeaguePriorityGuaranteeLabel } from './leaguePriorityRules.js';
 import type { LeaguePriorityInput } from './registrationContext.js';
+import {
+  asPriorityLeague,
+  evaluateGuaranteeLabels,
+} from './registrationPriorityLabels.js';
 import { RegistrationStaffValidationError } from './registrationStaffService.js';
 import { getScheduleRegistrationWindow } from './registrationShellService.js';
 import { parseTeamRosterPlacements } from './waitlistTeamRoster.js';
@@ -33,7 +30,6 @@ export const RETURNING_PLAYER_QA_STATUSES = [
 export type ReturningPlayerQaStatus = (typeof RETURNING_PLAYER_QA_STATUSES)[number];
 
 const ROSTERED_STATUSES = ['active', 'completed'] as const;
-const ACTIVE_SABBATICAL_STATUSES = ['active', 'staff_overridden', 'returning'] as const;
 
 type DrizzleBundle = ReturnType<typeof getDrizzleDb>;
 
@@ -284,100 +280,6 @@ export function classifyReturningPlayerQa(input: {
     return { status: 'guaranteed_return', priorityRank, guaranteeLabel };
   }
   return { status: 'third_or_higher', priorityRank, guaranteeLabel };
-}
-
-function asPriorityLeague(row: {
-  league_type: 'standard' | 'bring_your_own_team';
-  format: 'teams' | 'doubles' | 'instructional';
-  waitlist_id: number | null;
-  is_play_in_based: number | null;
-  registration_fee_minor: number | null;
-}): PriorityLeagueShape {
-  return {
-    leagueType: row.league_type,
-    format: row.format,
-    allowsWaitlist: row.waitlist_id != null,
-    isPlayInBased: row.is_play_in_based === 1,
-    registrationFeeMinor: row.registration_fee_minor ?? 0,
-  };
-}
-
-function sabbaticalMatchesLeague(input: {
-  originalLeagueId: number | null;
-  currentLeagueId: number | null;
-  predecessorLeagueId: number | null;
-  leagueId: number;
-}): boolean {
-  return (
-    input.currentLeagueId === input.predecessorLeagueId ||
-    input.originalLeagueId === input.predecessorLeagueId ||
-    input.currentLeagueId === input.leagueId ||
-    input.originalLeagueId === input.leagueId
-  );
-}
-
-function evaluateGuaranteeLabels(input: {
-  priorities: LeaguePriorityInput[];
-  desiredLeagueCount: number | null;
-  mode: 'priority' | 'open';
-  memberId: number;
-  isReturningMember: boolean;
-  participatedLeagueIds: ReadonlySet<number>;
-  sabbaticals: Array<{ originalLeagueId: number | null; currentLeagueId: number | null; status: string }>;
-  leaguesById: Map<
-    number,
-    {
-      id: number;
-      predecessorLeagueId: number | null;
-      league: PriorityLeagueShape;
-    }
-  >;
-  returnEligibleMemberIdsByLeagueId: ReadonlyMap<number, ReadonlySet<number>>;
-}): Map<number, LeaguePriorityGuaranteeLabel> {
-  const candidates: PriorityLabelCandidate[] = [...input.priorities]
-    .sort((a, b) => a.priorityRank - b.priorityRank)
-    .flatMap((priority) => {
-      const leagueRow = input.leaguesById.get(priority.leagueId);
-      if (!leagueRow) return [];
-      const predecessorId = leagueRow.predecessorLeagueId;
-      const sabbaticalRight = input.sabbaticals.some(
-        (sabbatical) =>
-          (ACTIVE_SABBATICAL_STATUSES as readonly string[]).includes(sabbatical.status) &&
-          sabbaticalMatchesLeague({
-            originalLeagueId: sabbatical.originalLeagueId,
-            currentLeagueId: sabbatical.currentLeagueId,
-            predecessorLeagueId: predecessorId,
-            leagueId: leagueRow.id,
-          }),
-      );
-      const hasReturnRight =
-        input.mode === 'priority' &&
-        input.isReturningMember &&
-        predecessorId != null &&
-        (input.participatedLeagueIds.has(predecessorId) || sabbaticalRight);
-      const returnEligible = new Set(input.returnEligibleMemberIdsByLeagueId.get(priority.leagueId) ?? []);
-      if (hasReturnRight) returnEligible.add(input.memberId);
-      return [
-        {
-          leagueId: priority.leagueId,
-          priorityRank: priority.priorityRank,
-          hasReturnRight,
-          rosterComplete: priorityRosterIsComplete(leagueRow.league, priority, input.memberId),
-          rosterAllReturning: priorityRosterAllReturning(leagueRow.league, priority, returnEligible, input.memberId),
-          feeMinor: leagueRow.league.registrationFeeMinor,
-          allowsWaitlist: leagueRow.league.allowsWaitlist,
-          isPlayInBased: leagueRow.league.isPlayInBased === true,
-          isInstructional: leagueRow.league.format === 'instructional',
-        },
-      ];
-    });
-
-  const evaluation = labelPriorityEntries({
-    candidates,
-    desiredLeagueCount: input.desiredLeagueCount,
-    mode: input.mode,
-  });
-  return new Map(evaluation.entries.map((entry) => [entry.leagueId, entry.label]));
 }
 
 export async function getStaffReturningPlayersQa(input: {

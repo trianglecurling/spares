@@ -5,6 +5,9 @@ import AppPageControlsRow from '../../components/AppPageControlsRow';
 import AppStateCard from '../../components/AppStateCard';
 import Button from '../../components/Button';
 import PageTabs from '../../components/PageTabs';
+import DragHandle from '../../components/dragDrop/DragHandle';
+import SortableList from '../../components/dragDrop/SortableList';
+import SortableRow from '../../components/dragDrop/SortableRow';
 import IncludeArchivedToggle from '../../components/softDelete/IncludeArchivedToggle';
 import SoftDeleteRowActions from '../../components/softDelete/SoftDeleteRowActions';
 import DataTable from '../../components/table/DataTable';
@@ -16,10 +19,12 @@ import { useConfirm } from '../../contexts/ConfirmContext';
 import { isArchivedAt } from '../../utils/softDelete';
 import { memberHasScope } from '../../utils/permissions';
 import {
+  compareVolunteerProgramsForList,
   formatVolunteerDateOnly,
   volunteerProgramFirstShiftDate,
   volunteerProgramLastShiftHasEnded,
   volunteerProgramSignupTotals,
+  parseVolunteerSignupKind,
   type VolunteerProgramView,
 } from '../../utils/volunteering';
 import AdminVolunteerProgramDuplicateModal from './AdminVolunteerProgramDuplicateModal';
@@ -31,42 +36,57 @@ export default function AdminVolunteering() {
   const canManageHourLogs =
     memberHasScope(member, 'volunteering.manage') || Boolean(member?.isServerAdmin);
   const hourLogsTab = location.pathname.endsWith('/hour-logs');
+  const generalTab = location.pathname.endsWith('/general');
 
   return (
     <AppPage>
       <AppPageHeader
-        title="Manage volunteering"
+        title="Manage sign-ups"
         description={
           hourLogsTab
             ? 'Review and manage hours logged for time outside scheduled programs.'
-            : 'Volunteer programs, descriptions, roles, and shifts.'
+            : generalTab
+              ? 'General sign-ups, descriptions, lists, and times.'
+              : 'Volunteer programs, descriptions, roles, and shifts.'
         }
       />
-      {canManageHourLogs ? (
-        <PageTabs
-          items={[
-            {
-              key: 'programs',
-              label: 'Programs',
-              isActive: !hourLogsTab,
-              onClick: () => navigate('/admin/volunteering'),
-            },
-            {
-              key: 'hour-logs',
-              label: 'Self-reported hours',
-              isActive: hourLogsTab,
-              onClick: () => navigate('/admin/volunteering/hour-logs'),
-            },
-          ]}
-        />
-      ) : null}
+      <PageTabs
+        items={[
+          {
+            key: 'volunteering',
+            label: 'Volunteering',
+            isActive: !hourLogsTab && !generalTab,
+            onClick: () => navigate('/admin/volunteering'),
+          },
+          {
+            key: 'general',
+            label: 'General sign-ups',
+            isActive: generalTab,
+            onClick: () => navigate('/admin/volunteering/general'),
+          },
+          ...(canManageHourLogs
+            ? [
+                {
+                  key: 'hour-logs',
+                  label: 'Self-reported hours',
+                  isActive: hourLogsTab,
+                  onClick: () => navigate('/admin/volunteering/hour-logs'),
+                },
+              ]
+            : []),
+        ]}
+      />
       <Outlet />
     </AppPage>
   );
 }
 
 export function AdminVolunteeringPrograms() {
+  const location = useLocation();
   const navigate = useNavigate();
+  const generalTab = location.pathname.endsWith('/general');
+  const listKind = generalTab ? 'general' : 'volunteering';
+  const createProgramTo = `/admin/signups/new?kind=${listKind}`;
   const [programs, setPrograms] = useState<VolunteerProgramView[]>([]);
   const [loading, setLoading] = useState(true);
   const [includeArchived, setIncludeArchived] = useState(false);
@@ -107,7 +127,7 @@ export function AdminVolunteeringPrograms() {
 
   const handleArchive = async (program: VolunteerProgramView) => {
     const confirmed = await confirm({
-      message: `Archive "${program.title}"? It will be unpublished and hidden from the volunteering hub but can be restored later.`,
+      message: `Archive "${program.title}"? It will be unpublished and hidden from Volunteering & sign-ups but can be restored later.`,
       title: 'Archive program',
       variant: 'danger',
     });
@@ -139,7 +159,9 @@ export function AdminVolunteeringPrograms() {
 
   const handlePermanentDelete = async (program: VolunteerProgramView) => {
     const confirmed = await confirm({
-      message: `Permanently delete "${program.title}"? This removes roles, shifts, and signups.`,
+      message: `Permanently delete "${program.title}"? This removes ${
+        parseVolunteerSignupKind(program.signupKind) === 'general' ? 'lists, times' : 'roles, shifts'
+      }, and signups.`,
       title: 'Delete program',
       variant: 'danger',
     });
@@ -152,6 +174,59 @@ export function AdminVolunteeringPrograms() {
       showAlert(formatApiError(err, 'Failed to delete program'), 'error');
     }
   };
+
+  const handleReorder = async (nextVisible: VolunteerProgramView[]) => {
+    const remaining = programs
+      .filter((program) => parseVolunteerSignupKind(program.signupKind) === listKind)
+      .filter((program) => !nextVisible.some((row) => row.id === program.id))
+      .sort(compareVolunteerProgramsForList);
+    const ordered = [...nextVisible, ...remaining];
+    const priorityById = new Map(ordered.map((program, index) => [program.id, index]));
+    setPrograms((prev) =>
+      prev.map((program) =>
+        priorityById.has(program.id) ? { ...program, priority: priorityById.get(program.id)! } : program
+      )
+    );
+    try {
+      await api.post('/volunteering/admin/programs/reorder', {
+        programIds: ordered.map((program) => program.id),
+        signupKind: listKind,
+      });
+    } catch (err) {
+      showAlert(formatApiError(err, 'Failed to update program order'), 'error');
+      loadPrograms();
+    }
+  };
+
+  const renderProgramActions = (row: VolunteerProgramView) => (
+    <div className="flex items-center justify-end gap-1">
+      <button
+        type="button"
+        onClick={() => setDuplicateSourceProgram(row)}
+        className="rounded px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+        title="Duplicate"
+      >
+        Duplicate
+      </button>
+      {!isArchivedAt(row.archivedAt) ? (
+        <button
+          type="button"
+          onClick={() => handleTogglePublish(row)}
+          className="rounded px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-100"
+          title={row.published ? 'Unpublish' : 'Publish'}
+        >
+          {row.published ? 'Unpublish' : 'Publish'}
+        </button>
+      ) : null}
+      <SoftDeleteRowActions
+        archived={isArchivedAt(row.archivedAt)}
+        isServerAdmin={isServerAdmin}
+        onArchive={() => handleArchive(row)}
+        onRestore={() => handleRestore(row)}
+        onDeletePermanently={() => handlePermanentDelete(row)}
+      />
+    </div>
+  );
 
   const columns: Array<DataTableColumn<VolunteerProgramView>> = useMemo(
     () => [
@@ -203,10 +278,12 @@ export function AdminVolunteeringPrograms() {
   );
 
   const visiblePrograms = useMemo(() => {
-    if (includeArchived) return programs;
-    const nowIso = new Date().toISOString();
-    return programs.filter((program) => !volunteerProgramLastShiftHasEnded(program, nowIso));
-  }, [programs, includeArchived]);
+    const byKind = programs.filter((program) => parseVolunteerSignupKind(program.signupKind) === listKind);
+    const filtered = includeArchived
+      ? byKind
+      : byKind.filter((program) => !volunteerProgramLastShiftHasEnded(program, new Date().toISOString()));
+    return [...filtered].sort(compareVolunteerProgramsForList);
+  }, [programs, includeArchived, listKind]);
 
   return (
     <>
@@ -219,7 +296,7 @@ export function AdminVolunteeringPrograms() {
           }
           right={
             canCreate ? (
-              <Button type="button" onClick={() => navigate('/admin/volunteering/new')}>
+              <Button type="button" onClick={() => navigate(createProgramTo)}>
                 Create program
               </Button>
             ) : null
@@ -234,66 +311,105 @@ export function AdminVolunteeringPrograms() {
           title={
             includeArchived
               ? 'No programs match these filters.'
-              : programs.length > 0
+              : programs.some((program) => parseVolunteerSignupKind(program.signupKind) === listKind)
                 ? 'No upcoming programs.'
-                : 'No programs yet.'
+                : generalTab
+                  ? 'No general sign-ups yet.'
+                  : 'No programs yet.'
           }
           description={
-            !includeArchived && programs.length > 0
+            !includeArchived &&
+            programs.some((program) => parseVolunteerSignupKind(program.signupKind) === listKind)
               ? 'Past programs are hidden. Include archived items to review them.'
               : canCreate
-                ? 'Create a volunteer program to start adding a description, roles, and shifts.'
-                : 'You are not a manager of any volunteer programs.'
+                ? generalTab
+                  ? 'Create a general sign-up to start adding a description, lists, and times.'
+                  : 'Create a volunteer program to start adding a description, roles, and shifts.'
+                : 'You are not a manager of any programs in this list.'
           }
           action={
             canCreate && !includeArchived ? (
-              <Link to="/admin/volunteering/new">
+              <Link to={createProgramTo}>
                 <Button type="button">Create program</Button>
               </Link>
             ) : undefined
           }
         />
+      ) : canCreate ? (
+        <div className="space-y-3">
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            Drag programs to change the order they appear on Volunteering & sign-ups and the member dashboard.
+          </p>
+          <SortableList
+            items={visiblePrograms}
+            getId={(row) => row.id}
+            getItemLabel={(row) => row.title}
+            itemNoun="program"
+            onReorder={(nextRows) => void handleReorder(nextRows)}
+            renderItem={({ item: row, isDragging, isOverlay, dragHandle }) => {
+              const firstShiftDate = volunteerProgramFirstShiftDate(row);
+              const { signedUp, needed } = volunteerProgramSignupTotals(row);
+              return (
+                <SortableRow
+                  isDragging={isDragging}
+                  isOverlay={isOverlay}
+                  className="border-gray-200 px-3 py-3 dark:border-gray-700"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex min-w-0 items-start gap-3">
+                      {dragHandle}
+                      <div className="min-w-0 space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Link
+                            to={`/admin/volunteering/${row.id}`}
+                            className="font-medium text-primary-teal-link hover:underline"
+                          >
+                            {row.title}
+                          </Link>
+                          {!row.published ? (
+                            <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                              Unpublished
+                            </span>
+                          ) : null}
+                          {isArchivedAt(row.archivedAt) ? (
+                            <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                              Archived
+                            </span>
+                          ) : null}
+                        </div>
+                        {row.location ? (
+                          <div className="text-sm text-gray-500 dark:text-gray-400">{row.location}</div>
+                        ) : null}
+                        <div className="text-sm text-gray-600 dark:text-gray-400">
+                          {firstShiftDate ? formatVolunteerDateOnly(firstShiftDate) : generalTab ? 'No times yet' : 'No shifts yet'}
+                          {' · '}
+                          {signedUp}/{needed} sign-ups
+                          {row.managers.length > 0
+                            ? ` · ${row.managers.map((manager) => manager.name).join(', ')}`
+                            : ''}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="shrink-0">{renderProgramActions(row)}</div>
+                  </div>
+                </SortableRow>
+              );
+            }}
+            renderOverlay={(row) => (
+              <SortableRow isDragging isOverlay className="px-3 py-3">
+                <div className="flex items-center gap-3">
+                  <DragHandle label={`Reorder ${row.title}`} disabled />
+                  <div className="font-medium">{row.title}</div>
+                </div>
+              </SortableRow>
+            )}
+          />
+        </div>
       ) : (
         <DataTable
           rows={visiblePrograms}
           rowKey={(row) => row.id}
           columns={columns}
-          actions={
-            canCreate
-              ? {
-                  widthClassName: 'w-[20rem]',
-                  renderActions: (row) => (
-                    <div className="flex items-center justify-end gap-1">
-                      <button
-                        type="button"
-                        onClick={() => setDuplicateSourceProgram(row)}
-                        className="rounded px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-100"
-                        title="Duplicate"
-                      >
-                        Duplicate
-                      </button>
-                      {!isArchivedAt(row.archivedAt) ? (
-                        <button
-                          type="button"
-                          onClick={() => handleTogglePublish(row)}
-                          className="rounded px-2 py-1 text-xs text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-100"
-                          title={row.published ? 'Unpublish' : 'Publish'}
-                        >
-                          {row.published ? 'Unpublish' : 'Publish'}
-                        </button>
-                      ) : null}
-                      <SoftDeleteRowActions
-                        archived={isArchivedAt(row.archivedAt)}
-                        isServerAdmin={isServerAdmin}
-                        onArchive={() => handleArchive(row)}
-                        onRestore={() => handleRestore(row)}
-                        onDeletePermanently={() => handlePermanentDelete(row)}
-                      />
-                    </div>
-                  ),
-                }
-              : undefined
-          }
         />
       )}
 

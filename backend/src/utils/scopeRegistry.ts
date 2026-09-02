@@ -66,6 +66,11 @@ export const SCOPE_REGISTRY: ScopeRegistryEntry[] = [
   { scope: 'expenses.manage', category: 'Expenses', description: 'Update expense report status and staff notes.' },
 
   { scope: 'leagues.manage', category: 'Leagues', description: 'Manage leagues globally or in a scoped context (league id).' },
+  {
+    scope: 'teams.read',
+    category: 'Teams',
+    description: 'Read the catalog of current league and bonspiel teams, including player names and positions.',
+  },
 
   { scope: 'events.read', category: 'Events', description: 'View events and event registration data.' },
   { scope: 'events.manage', category: 'Events', description: 'Create, edit, delete events and manage registrations.' },

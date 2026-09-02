@@ -56,6 +56,7 @@ import {
   removeLeagueSabbatical,
   SabbaticalStaffValidationError,
 } from '../registration/sabbaticalStaffService.js';
+import { loadRosterRegistrationStatuses } from '../registration/rosterRegistrationStatusService.js';
 import type { Member } from '../types.js';
 
 type DrizzleDb = ReturnType<typeof getDrizzleDb>['db'];
@@ -827,14 +828,23 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
         assignmentMap.set(entry.member_id, { teamId: entry.team_id, teamName: entry.team_name });
       }
 
+      const includeRegistrationStatus = await hasLeagueSetupAccess(member, leagueId);
+      // Guarantee labels are manager-only; skip the registration lookup for other viewers.
+      const statusByMemberId = includeRegistrationStatus
+        ? await loadRosterRegistrationStatuses(leagueId, rosterMemberIds)
+        : new Map();
+
       return rosterRows.map((row) => {
         const assignment = assignmentMap.get(row.member_id);
+        const status = statusByMemberId.get(row.member_id);
         return {
           memberId: row.member_id,
           name: row.name,
           email: row.email,
           assignedTeamId: assignment?.teamId ?? null,
           assignedTeamName: assignment?.teamName ?? null,
+          guaranteeLabel: status?.guaranteeLabel ?? null,
+          priorityRank: status?.priorityRank ?? null,
         };
       });
     }

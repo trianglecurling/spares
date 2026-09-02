@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   aggregateVolunteerStats,
   buildSeasonVolunteerLedger,
+  defaultVolunteerCreditHours,
   volunteerShiftDurationHours,
   volunteerStatsSeasonCountStart,
 } from './volunteerStats';
@@ -39,6 +40,28 @@ describe('volunteerShiftDurationHours', () => {
   test('is 0 when the range is empty or inverted', () => {
     expect(
       volunteerShiftDurationHours('2026-01-15T18:00:00.000Z', '2026-01-15T18:00:00.000Z')
+    ).toBe(0);
+  });
+});
+
+describe('defaultVolunteerCreditHours', () => {
+  test('uses shift duration for volunteering', () => {
+    expect(
+      defaultVolunteerCreditHours(
+        'volunteering',
+        '2026-01-15T18:00:00.000Z',
+        '2026-01-15T20:00:00.000Z'
+      )
+    ).toBe(2);
+  });
+
+  test('is zero for general sign-ups', () => {
+    expect(
+      defaultVolunteerCreditHours(
+        'general',
+        '2026-01-15T18:00:00.000Z',
+        '2026-01-15T20:00:00.000Z'
+      )
     ).toBe(0);
   });
 });
@@ -100,6 +123,30 @@ describe('aggregateVolunteerStats', () => {
     expect(result.club.shifts.month).toBe(1);
     expect(result.me.hours.month).toBe(2);
     expect(result.me.shifts.month).toBe(1);
+  });
+
+  test('uses stored credit hours instead of shift duration', () => {
+    const result = aggregateVolunteerStats(
+      [
+        row({
+          signupId: 1,
+          shiftId: 5,
+          startDt: '2026-10-10T18:00:00.000Z',
+          endDt: '2026-10-10T20:00:00.000Z',
+          startDateOnly: '2026-10-10',
+          creditHours: 0.5,
+        }),
+      ],
+      {
+        viewerMemberId: 10,
+        nowIso,
+        monthPrefix,
+        season,
+        membershipCount: 50,
+      }
+    );
+    expect(result.club.hours.month).toBe(0.5);
+    expect(result.me.hours.month).toBe(0.5);
   });
 
   test('buckets month, season, and since-tracking totals separately', () => {

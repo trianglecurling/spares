@@ -125,6 +125,8 @@ export interface CalendarEvent {
   source?: string;
   /** Public event slug when source is 'events' */
   slug?: string;
+  /** Linked volunteer/general sign-up, when this is a free-form calendar event */
+  signup?: { slug: string; title: string; publicSignups: boolean };
 }
 
 /** True if event is from the leagues schedule (read-only) */
@@ -145,6 +147,15 @@ function isRegistrableEvent(ev: CalendarEvent): boolean {
 /** Events that cannot be edited or deleted via calendar admin UI */
 export function isReadOnlyCalendarEvent(ev: CalendarEvent): boolean {
   return isLeagueEvent(ev) || isIceBookingEvent(ev) || isRegistrableEvent(ev);
+}
+
+function calendarEventSignupHref(event: CalendarEvent, publicMode: boolean): string | null {
+  const signup = event.signup;
+  if (!signup) return null;
+  if (publicMode && !signup.publicSignups) return null;
+  return publicMode
+    ? `/volunteering/public/programs/${encodeURIComponent(signup.slug)}`
+    : `/volunteering/programs/${encodeURIComponent(signup.slug)}`;
 }
 
 const LOCATION_LABELS: Record<string, string> = {
@@ -493,6 +504,7 @@ export function apiEventToCalendar(
     article?: ArticleOption;
     source?: string;
     slug?: string;
+    signup?: { slug: string; title: string; publicSignups: boolean };
   },
   timeZone?: string
 ): CalendarEvent {
@@ -516,6 +528,7 @@ export function apiEventToCalendar(
     slug: ev.slug,
     createdBy: ev.createdBy,
     article: ev.article,
+    signup: ev.signup,
   };
 }
 
@@ -699,6 +712,7 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
       article?: ArticleOption;
       source?: string;
       slug?: string;
+      signup?: { slug: string; title: string; publicSignups: boolean };
     };
     type PublicCalendarBundle = {
       events: EventPayload[];
@@ -1304,6 +1318,7 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
             const hasDescription = Boolean(descriptionText);
             const isIceBooking = isIceBookingEvent(selectedEvent);
             const showDescriptionTab = hasDescription && !isIceBooking;
+            const signupHref = calendarEventSignupHref(selectedEvent, publicMode);
             return (
               <div className="flex flex-col min-h-[680px] space-y-3">
                 {showDescriptionTab && (
@@ -1399,6 +1414,20 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
                                   onClick={() => setSelectedEvent(null)}
                                 >
                                   View event
+                                </Link>
+                              </dd>
+                            </>
+                          )}
+                          {signupHref && (
+                            <>
+                              <dt className="text-gray-500 dark:text-gray-400">Sign-up</dt>
+                              <dd>
+                                <Link
+                                  to={signupHref}
+                                  className="text-primary-teal-link underline hover:opacity-80"
+                                  onClick={() => setSelectedEvent(null)}
+                                >
+                                  Go to sign-up
                                 </Link>
                               </dd>
                             </>

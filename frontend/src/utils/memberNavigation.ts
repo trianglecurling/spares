@@ -41,7 +41,7 @@ export function getAdminLinks(member: AuthenticatedMember | null): MemberNavLink
     ...(canManageContent ? [{ to: '/admin/content', label: 'Manage content' }] : []),
     ...(canManageGovernance ? [{ to: '/admin/governance', label: 'Manage governance' }] : []),
     ...(canAccessEventsAdmin ? [{ to: '/admin/events', label: 'Manage events' }] : []),
-    ...(canAccessVolunteeringAdmin ? [{ to: '/admin/volunteering', label: 'Manage volunteering' }] : []),
+    ...(canAccessVolunteeringAdmin ? [{ to: '/admin/volunteering', label: 'Manage sign-ups' }] : []),
     ...(canManageRegistrations || canManageRegistration
       ? [{ to: '/admin/registrations', label: 'Manage registration' }]
       : []),

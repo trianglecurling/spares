@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { formatEventTimespansForDisplay } from './formatEventTimespans.js';
+import { formatEventStartForDisplay, formatEventTimespansForDisplay } from './formatEventTimespans.js';
 import { localDateTimeToIso } from './timeZone.js';
 
 const EASTERN = 'America/New_York';
@@ -45,5 +45,29 @@ describe('formatEventTimespansForDisplay', () => {
     const formatted = formatEventTimespansForDisplay([{ start_dt: start, end_dt: end }], EASTERN);
     expect(formatted.text).toMatch(/Start:.*September 11, 2026, 10:00\sPM/i);
     expect(formatted.text).toMatch(/End:.*September 12, 2026, 1:00\sAM/i);
+  });
+});
+
+describe('formatEventStartForDisplay', () => {
+  test('formats the first timespan start as weekday, date, and time', () => {
+    const start = localDateTimeToIso('2026-09-08', '10:00', EASTERN);
+    const end = localDateTimeToIso('2026-09-08', '12:00', EASTERN);
+    const laterStart = localDateTimeToIso('2026-09-09', '09:00', EASTERN);
+    const laterEnd = localDateTimeToIso('2026-09-09', '11:00', EASTERN);
+
+    const formatted = formatEventStartForDisplay(
+      [
+        { start_dt: laterStart, end_dt: laterEnd, sort_order: 1 },
+        { startDt: start, endDt: end, sortOrder: 0 },
+      ],
+      EASTERN,
+    );
+
+    expect(formatted).toMatch(/^Tuesday, September 8, 2026 at 10:00\sAM$/i);
+  });
+
+  test('returns null when the event has no usable start', () => {
+    expect(formatEventStartForDisplay([], EASTERN)).toBeNull();
+    expect(formatEventStartForDisplay([{ start_dt: 'not-a-date' }], EASTERN)).toBeNull();
   });
 });

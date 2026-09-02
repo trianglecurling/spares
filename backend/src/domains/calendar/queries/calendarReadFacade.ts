@@ -1,6 +1,7 @@
 import { and, asc, eq } from 'drizzle-orm';
 import { getDrizzleDb } from '../../../db/drizzle-db.js';
-import { fetchDirectCalendarEventsForRange, fetchLeagueCalendarEventsForRange } from '../../../services/calendarExpansion.js';
+import { fetchDirectCalendarEventsForRange, fetchLeagueCalendarEventsForRange, parseDirectCalendarFeedId } from '../../../services/calendarExpansion.js';
+import { calendarSignupsByDirectEventId } from '../../../services/volunteeringService.js';
 import { getEventTimespansForCalendar } from '../../../services/eventService.js';
 import { isBonspielCalendarType, parseCalendarTypeIds } from '../../../services/eventCalendarTypes.js';
 import { fetchIceBookingsAsCalendarEvents } from '../../../services/iceBookingsCalendar.js';
@@ -64,13 +65,20 @@ export async function getCalendarFeed(input: CalendarFeedInput) {
   const visibilityFilter = getVisibilityFilter(input.member);
   const iceViewer = getIceViewer(input.member);
 
-  const [direct, ice, eventItems] = await Promise.all([
+  const [direct, ice, eventItems, signupMap] = await Promise.all([
     fetchDirectCalendarEventsForRange(rangeStart, rangeEnd),
     fetchIceBookingsAsCalendarEvents(rangeStart, rangeEnd, iceViewer),
     getEventTimespansForCalendar(input.start, input.end, visibilityFilter),
+    calendarSignupsByDirectEventId({ forPublic: !input.member }),
   ]);
 
-  return [...direct, ...ice, ...eventItems];
+  const directWithSignups = direct.map((event) => {
+    const parsed = parseDirectCalendarFeedId(event.id);
+    const signup = parsed ? signupMap.get(parsed.dbId) : undefined;
+    return signup ? { ...event, signup } : event;
+  });
+
+  return [...directWithSignups, ...ice, ...eventItems];
 }
 
 export async function getLeagueCalendarFeed(start: string, end: string) {

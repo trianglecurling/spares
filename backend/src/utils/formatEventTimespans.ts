@@ -95,3 +95,32 @@ export function formatEventTimespansForDisplay(
     html: formatted.map((part) => part.html).join('<br><br>'),
   };
 }
+
+/** First timespan start in club time, e.g. "Tuesday, September 8, 2026 at 10:00 AM". */
+export function formatEventStartForDisplay(
+  timespans: EventTimespanLike[] | null | undefined,
+  timeZone: string = config.timeZone,
+): string | null {
+  if (!timespans?.length) return null;
+
+  const normalized = timespans
+    .map((ts) => ({
+      start: ts.start_dt ?? ts.startDt ?? '',
+      sortOrder: ts.sort_order ?? ts.sortOrder ?? 0,
+    }))
+    .filter((ts) => ts.start.length > 0)
+    .sort((a, b) => a.sortOrder - b.sortOrder || a.start.localeCompare(b.start));
+
+  const startDt = normalized[0]?.start;
+  if (!startDt) return null;
+
+  try {
+    const start = new Date(startDt);
+    if (Number.isNaN(start.getTime())) return null;
+    const date = formatInClubZone(start, LONG_DATE_FORMAT, timeZone);
+    const time = formatInClubZone(start, TIME_FORMAT, timeZone);
+    return `${date} at ${time}`;
+  } catch {
+    return null;
+  }
+}

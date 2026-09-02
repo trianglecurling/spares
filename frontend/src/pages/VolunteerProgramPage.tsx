@@ -15,9 +15,11 @@ import { useAlert } from '../contexts/AlertContext';
 import { formatApiError } from '../utils/api';
 import {
   formatProgramShiftDateSpan,
+  parseVolunteerSignupKind,
   volunteerProgramHasIneligibleCredentialRoles,
   volunteerProgramHasOpenShifts,
   volunteerProgramShiftsForCaller,
+  volunteerProgramUiTerms,
   volunteerShiftsDistinctRoleCount,
   type VolunteerHubCredential,
   type VolunteerProgramView,
@@ -58,7 +60,7 @@ export default function VolunteerProgramPage() {
           setNotFound(true);
           setProgram(null);
         } else {
-          showAlert(formatApiError(err, 'Failed to load volunteer program'), 'error');
+          showAlert(formatApiError(err, 'Failed to load sign-up'), 'error');
         }
         return;
       }
@@ -87,11 +89,11 @@ export default function VolunteerProgramPage() {
     return (
       <AppPage>
         <AppPageHeader
-          title="Volunteer program"
+          title="Sign-up"
           description="Loading program details."
-          actions={<BackButton label="Back to volunteering hub" to="/volunteering" />}
+          actions={<BackButton label="Volunteering & sign-ups" to="/volunteering" />}
         />
-        <AppStateCard title="Loading program" description="Fetching shifts and signup options." />
+        <AppStateCard title="Loading program" description="Fetching signup options." />
       </AppPage>
     );
   }
@@ -100,13 +102,13 @@ export default function VolunteerProgramPage() {
     return (
       <AppPage>
         <AppPageHeader
-          title="Volunteer program"
+          title="Sign-up"
           description="This program is unavailable."
-          actions={<BackButton label="Back to volunteering hub" to="/volunteering" />}
+          actions={<BackButton label="Volunteering & sign-ups" to="/volunteering" />}
         />
         <AppStateCard
           title="Program not found"
-          description="This volunteer program may be unpublished, archived, or no longer available."
+          description="This sign-up may be unpublished, archived, or no longer available."
         />
       </AppPage>
     );
@@ -122,6 +124,7 @@ export default function VolunteerProgramPage() {
   const hasShifts = visibleShifts.length > 0 || hasHiddenCredentialRoles;
   const shiftless = program.roles.length === 0 && !volunteerProgramHasOpenShifts(program);
   const showGroupBy = volunteerShiftsDistinctRoleCount(visibleShifts) > 1;
+  const terms = volunteerProgramUiTerms(parseVolunteerSignupKind(program.signupKind));
 
   return (
     <AppPage>
@@ -130,7 +133,16 @@ export default function VolunteerProgramPage() {
         description={
           visibleShifts.length > 0 ? formatProgramShiftDateSpan(visibleShifts) : undefined
         }
-        actions={<BackButton label="Back to volunteering hub" to="/volunteering" />}
+        actions={
+          <BackButton
+            label="Volunteering & sign-ups"
+            to={
+              parseVolunteerSignupKind(program.signupKind) === 'general'
+                ? '/volunteering?tab=other'
+                : '/volunteering'
+            }
+          />
+        }
       />
 
       <div className="space-y-4">
@@ -154,8 +166,14 @@ export default function VolunteerProgramPage() {
                       layout="inline"
                       name="volunteer-program-group-by"
                       options={[
-                        { value: 'shift', label: 'Shift time' },
-                        { value: 'role', label: 'Role' },
+                        {
+                          value: 'shift',
+                          label:
+                            parseVolunteerSignupKind(program.signupKind) === 'general'
+                              ? terms.shiftTitle
+                              : 'Shift time',
+                        },
+                        { value: 'role', label: terms.roleTitle },
                       ]}
                       value={groupBy}
                       onChange={(v) => {
@@ -177,8 +195,8 @@ export default function VolunteerProgramPage() {
           </>
         ) : shiftless ? null : (
           <AppStateCard
-            title="No upcoming shifts"
-            description="There are no upcoming shifts to sign up for in this program right now."
+            title={`No upcoming ${terms.shiftPlural}`}
+            description={`There are no upcoming ${terms.shiftPlural} to sign up for in this program right now.`}
           />
         )}
       </div>

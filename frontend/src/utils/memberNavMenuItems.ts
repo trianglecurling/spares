@@ -206,7 +206,7 @@ export function buildMemberNavMenuItemsFallback({
       ...(isSocialMember ? [] : [internalLink(52, 'Book ice time', '/book-ice')]),
     ]),
     section(7, 'Volunteering', [
-      internalLink(71, 'Volunteering hub', '/volunteering'),
+      internalLink(71, 'Volunteering & sign-ups', '/volunteering'),
       internalLink(72, 'My volunteering', '/volunteering?tab=shifts'),
       internalLink(73, 'Expense reports', '/expenses'),
     ]),

@@ -7136,6 +7136,8 @@ export interface paths {
                             email: null | string;
                             assignedTeamId: null | number;
                             assignedTeamName: null | string;
+                            guaranteeLabel: null | ("guaranteed_return" | "awaiting_roster_entry" | "guaranteed_fallback" | "available" | "temporary_spot_available" | "waitlisted" | "subject_to_availability" | "superfluous");
+                            priorityRank: null | number;
                         }[];
                     };
                 };
@@ -8204,6 +8206,106 @@ export interface paths {
                 };
             };
         };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/teams": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List current league and bonspiel teams
+         * @description Returns defined teams for leagues and bonspiels that have not concluded. Requires the teams.read scope.
+         */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            events: {
+                                id: number;
+                                name: string;
+                                teams: {
+                                    teamName: string;
+                                    players: {
+                                        firstName: string;
+                                        lastName: string;
+                                        homeClub: string;
+                                        /** @enum {string} */
+                                        position: "lead" | "second" | "third" | "fourth" | "player1" | "player2";
+                                        isVice: boolean;
+                                        isSkip: boolean;
+                                    }[];
+                                }[];
+                            }[];
+                            leagues: {
+                                id: number;
+                                name: string;
+                                teams: {
+                                    teamName: string;
+                                    players: {
+                                        firstName: string;
+                                        lastName: string;
+                                        homeClub: string;
+                                        /** @enum {string} */
+                                        position: "lead" | "second" | "third" | "fourth" | "player1" | "player2";
+                                        isVice: boolean;
+                                        isSkip: boolean;
+                                    }[];
+                                }[];
+                            }[];
+                        };
+                    };
+                };
+                /** @description Default Response */
+                401: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -22055,6 +22157,77 @@ export interface paths {
         };
         trace?: never;
     };
+    "/volunteering/admin/direct-calendar-events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query: {
+                    /** @description Club-local date YYYY-MM-DD */
+                    date: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/volunteering/admin/direct-calendar-events/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/volunteering/admin/programs": {
         parameters: {
             query?: never;
@@ -22176,6 +22349,39 @@ export interface paths {
                 };
             };
         };
+        trace?: never;
+    };
+    "/volunteering/admin/programs/reorder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/volunteering/admin/programs/{id}/duplicate": {
@@ -22388,6 +22594,41 @@ export interface paths {
         trace?: never;
     };
     "/volunteering/admin/programs/{id}/shifts/bulk": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/volunteering/admin/programs/{id}/shifts/from-calendar-event": {
         parameters: {
             query?: never;
             header?: never;

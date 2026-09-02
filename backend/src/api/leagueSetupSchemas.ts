@@ -101,6 +101,21 @@ export const divisionUpdateBodySchema = {
   },
 } as const;
 
+/** Derived registration guarantee label. Same enum as staff QA / registration chips. */
+export const leaguePriorityGuaranteeLabelSchema = {
+  type: 'string',
+  enum: [
+    'guaranteed_return',
+    'awaiting_roster_entry',
+    'guaranteed_fallback',
+    'available',
+    'temporary_spot_available',
+    'waitlisted',
+    'subject_to_availability',
+    'superfluous',
+  ],
+} as const;
+
 export const rosterMemberSchema = {
   type: 'object',
   additionalProperties: false,
@@ -110,8 +125,20 @@ export const rosterMemberSchema = {
     email: { type: ['string', 'null'] },
     assignedTeamId: { type: ['number', 'null'] },
     assignedTeamName: { type: ['string', 'null'] },
+    guaranteeLabel: {
+      anyOf: [{ type: 'null' }, leaguePriorityGuaranteeLabelSchema],
+    },
+    priorityRank: { type: ['number', 'null'] },
   },
-  required: ['memberId', 'name', 'email', 'assignedTeamId', 'assignedTeamName'],
+  required: [
+    'memberId',
+    'name',
+    'email',
+    'assignedTeamId',
+    'assignedTeamName',
+    'guaranteeLabel',
+    'priorityRank',
+  ],
 } as const;
 
 export const rosterListResponseSchema = {

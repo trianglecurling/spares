@@ -498,6 +498,27 @@
       "when": 1780352498512,
       "tag": "0071_add_volunteer_credential_archived_at",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1780352498513,
+      "tag": "0072_volunteer_signup_kind_and_credit_hours",
+      "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1780352498514,
+      "tag": "0073_volunteer_program_calendar_event",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1780352498515,
+      "tag": "0074_volunteer_shift_source_calendar_event",
+      "breakpoints": true
     }
   ]
 }

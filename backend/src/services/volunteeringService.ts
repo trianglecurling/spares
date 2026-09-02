@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNotNull, isNull, lte, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { getCurrentTimeAsync } from '../utils/time.js';
 import { isVolunteerManager } from '../utils/auth.js';
@@ -12,6 +12,14 @@ import {
   localDateTimeToIso,
   shiftInstantByCalendarDays,
 } from '../utils/timeZone.js';
+import { fetchDirectCalendarEventsForRange } from './calendarExpansion.js';
+import {
+  applyCalendarExceptionsAndOverrides,
+  pickDirectCalendarEventsOverlappingRange,
+  planCalendarSyncedShiftChanges,
+  type CalendarOccurrence,
+  type DirectCalendarEventChoice,
+} from '../utils/volunteerCalendarAttach.js';
 import {
   composeRecurrenceRule,
   expandAllRecurrenceInstances,
@@ -22,6 +30,7 @@ import {
 } from '../utils/calendarRecurrence.js';
 import { DEFAULT_SITE_NAME } from './spaDocumentMeta.js';
 import { VolunteeringServiceError } from './volunteeringServiceError.js';
+import { isUniqueConstraintViolation } from '../api/errors.js';
 import { normalizePersonName } from '../utils/memberName.js';
 import {
   sendVolunteerSignupConfirmationEmail,
@@ -36,8 +45,12 @@ import {
 import {
   aggregateVolunteerStats,
   buildSeasonVolunteerLedger,
+  defaultVolunteerCreditHours,
+  parseVolunteerCreditHours,
+  parseVolunteerSignupKind,
   VOLUNTEER_SEASON_LEDGER_UNAVAILABLE,
   type VolunteerSeasonLedger,
+  type VolunteerSignupKind,
   type VolunteerStatsCompletedSignup,
   type VolunteerStatsHourLog,
   type VolunteerStatsResult,
@@ -120,6 +133,20 @@ function parseOptionalPriority(value: number | null | undefined): number | null 
     throw new VolunteeringServiceError('Priority must be a whole number');
   }
   return value;
+}
+
+async function nextPriorityForSignupKind(signupKind: VolunteerSignupKind): Promise<number> {
+  const { db, schema } = getDrizzleDb();
+  const rows = await db
+    .select({ priority: schema.volunteerPrograms.priority })
+    .from(schema.volunteerPrograms)
+    .where(eq(schema.volunteerPrograms.signup_kind, signupKind));
+  let max = -1;
+  for (const row of rows) {
+    const current = normalizePriority(row.priority);
+    if (current != null && current > max) max = current;
+  }
+  return max + 1;
 }
 
 function normalizePriority(value: unknown): number | null {
@@ -230,14 +257,22 @@ function validateShiftRoles(
   }
 }
 
+function requireCreditHours(value: unknown, startDt: string, endDt: string, signupKind: VolunteerSignupKind): number {
+  const parsed = parseVolunteerCreditHours(value);
+  if (parsed != null) return parsed;
+  return defaultVolunteerCreditHours(signupKind, startDt, endDt);
+}
+
 async function insertShiftRow(input: {
   programId: number;
   startDt: string;
   endDt: string;
+  creditHours: number;
   roles: ShiftRoleInput[];
   recurrenceSeriesId?: number | null;
   recurrenceRule?: string | null;
   recurrenceDate?: string | null;
+  sourceCalendarEventId?: number | null;
 }): Promise<number> {
   const { db, schema } = getDrizzleDb();
   const [created] = await db
@@ -246,9 +281,11 @@ async function insertShiftRow(input: {
       program_id: input.programId,
       start_dt: input.startDt,
       end_dt: input.endDt,
+      credit_hours: input.creditHours,
       recurrence_series_id: input.recurrenceSeriesId ?? null,
       recurrence_rule: input.recurrenceRule ?? null,
       recurrence_date: input.recurrenceDate ?? null,
+      source_calendar_event_id: input.sourceCalendarEventId ?? null,
     } as any)
     .returning({ id: schema.volunteerShifts.id });
   await db.insert(schema.volunteerShiftRoles).values(
@@ -412,10 +449,28 @@ export type VolunteerShiftView = {
   programId: number;
   startDt: string;
   endDt: string;
+  creditHours: number;
   recurrenceSeriesId: number | null;
   recurrenceRule: string | null;
   recurrenceDate: string | null;
+  sourceCalendarEventId: number | null;
   roles: VolunteerShiftRoleView[];
+};
+
+export type VolunteerAttachedCalendarEvent = {
+  id: number;
+  title: string;
+  start: string;
+  end: string;
+  allDay: boolean;
+  isRecurring: boolean;
+  occurrenceCount: number;
+};
+
+export type CalendarEventSignupLink = {
+  slug: string;
+  title: string;
+  publicSignups: boolean;
 };
 
 export type VolunteerProgramView = {
@@ -429,6 +484,7 @@ export type VolunteerProgramView = {
   published: boolean;
   featureOnDashboard: boolean;
   publicSignups: boolean;
+  signupKind: VolunteerSignupKind;
   priority: number | null;
   archivedAt: string | null;
   createdAt: string;
@@ -437,6 +493,7 @@ export type VolunteerProgramView = {
   roles: VolunteerRoleView[];
   shifts: VolunteerShiftView[];
   canManage: boolean;
+  calendarEvent: VolunteerAttachedCalendarEvent | null;
 };
 
 export type PublicVolunteerProgramView = {
@@ -515,6 +572,7 @@ export type MySignupView = {
   roleName: string;
   startDt: string;
   endDt: string;
+  creditHours: number;
   status: 'confirmed' | 'cancelled';
   comments: string | null;
   canCancel: boolean;
@@ -533,6 +591,39 @@ async function isProgramManager(programId: number, memberId: number): Promise<bo
     )
     .limit(1);
   return rows.length > 0;
+}
+
+async function resolveDirectCalendarEventId(eventId: number): Promise<number> {
+  const { db, schema } = getDrizzleDb();
+  const [row] = await db
+    .select({
+      id: schema.calendarEvents.id,
+      source: schema.calendarEvents.source,
+      parentEventId: schema.calendarEvents.parent_event_id,
+    })
+    .from(schema.calendarEvents)
+    .where(eq(schema.calendarEvents.id, eventId))
+    .limit(1);
+  if (!row) throw new VolunteeringServiceError('Calendar event not found', 404);
+  if (row.source !== 'direct') {
+    throw new VolunteeringServiceError('Only free-form calendar events can be attached', 400);
+  }
+  return row.parentEventId ?? row.id;
+}
+
+async function assertCalendarEventAvailableForProgram(
+  eventId: number,
+  excludeProgramId?: number
+): Promise<void> {
+  const { db, schema } = getDrizzleDb();
+  const [existing] = await db
+    .select({ id: schema.volunteerPrograms.id })
+    .from(schema.volunteerPrograms)
+    .where(eq(schema.volunteerPrograms.calendar_event_id, eventId))
+    .limit(1);
+  if (existing && existing.id !== excludeProgramId) {
+    throw new VolunteeringServiceError('That calendar event is already attached to another sign-up', 409);
+  }
 }
 
 export async function canManageProgram(member: Member, programId?: number): Promise<boolean> {
@@ -636,8 +727,10 @@ export async function createProgram(input: {
   published?: boolean;
   featureOnDashboard?: boolean;
   publicSignups?: boolean;
+  signupKind?: VolunteerSignupKind;
   priority?: number | null;
   managerIds?: number[];
+  calendarEventId?: number | null;
   createdByMemberId: number;
 }): Promise<{ id: number; slug: string }> {
   const { db, schema } = getDrizzleDb();
@@ -646,27 +739,48 @@ export async function createProgram(input: {
   if (!title) throw new VolunteeringServiceError('Title is required');
   if (!pointOfContact) throw new VolunteeringServiceError('Point of contact is required');
   const startDate = parseOptionalDateOnly(input.startDate, 'start date');
-  const priority = parseOptionalPriority(input.priority);
   const clubName = await getConfiguredClubName();
   const slug = await ensureUniqueVolunteerProgramSlug(input.slug?.trim() || title);
+  const signupKind = parseVolunteerSignupKind(input.signupKind);
+  const priority =
+    input.priority !== undefined
+      ? parseOptionalPriority(input.priority)
+      : await nextPriorityForSignupKind(signupKind);
+  const canFeature = signupKind === 'volunteering';
+  let calendarEventId: number | null = null;
+  if (input.calendarEventId != null) {
+    calendarEventId = await resolveDirectCalendarEventId(input.calendarEventId);
+    await assertCalendarEventAvailableForProgram(calendarEventId);
+  }
 
-  const [row] = await db
-    .insert(schema.volunteerPrograms)
-    .values({
-      title,
-      slug,
-      description: input.description?.trim() || null,
-      point_of_contact: pointOfContact,
-      location: normalizeVolunteerLocation(input.location, clubName),
-      start_date: startDate,
-      published: input.published ? 1 : 0,
-      // Default on so programs surface on dashboards unless explicitly opted out.
-      feature_on_dashboard: input.featureOnDashboard === false ? 0 : 1,
-      public_signups: input.publicSignups ? 1 : 0,
-      priority,
-      created_by_member_id: input.createdByMemberId,
-    } as any)
-    .returning({ id: schema.volunteerPrograms.id, slug: schema.volunteerPrograms.slug });
+  let row: { id: number; slug: string };
+  try {
+    const inserted = await db
+      .insert(schema.volunteerPrograms)
+      .values({
+        title,
+        slug,
+        description: input.description?.trim() || null,
+        point_of_contact: pointOfContact,
+        location: normalizeVolunteerLocation(input.location, clubName),
+        start_date: startDate,
+        published: input.published ? 1 : 0,
+        // Default on so volunteering programs surface on dashboards unless explicitly opted out.
+        feature_on_dashboard: canFeature && input.featureOnDashboard !== false ? 1 : 0,
+        public_signups: input.publicSignups ? 1 : 0,
+        signup_kind: signupKind,
+        priority,
+        calendar_event_id: calendarEventId,
+        created_by_member_id: input.createdByMemberId,
+      } as any)
+      .returning({ id: schema.volunteerPrograms.id, slug: schema.volunteerPrograms.slug });
+    row = inserted[0];
+  } catch (err) {
+    if (isUniqueConstraintViolation(err)) {
+      throw new VolunteeringServiceError('That calendar event is already attached to another sign-up', 409);
+    }
+    throw err;
+  }
 
   await replaceProgramManagers(row.id, input.managerIds ?? []);
   return { id: row.id, slug: row.slug };
@@ -684,8 +798,10 @@ export async function updateProgram(
     published?: boolean;
     featureOnDashboard?: boolean;
     publicSignups?: boolean;
+    signupKind?: VolunteerSignupKind;
     priority?: number | null;
     managerIds?: number[];
+    calendarEventId?: number | null;
   }
 ): Promise<void> {
   const { db, schema } = getDrizzleDb();
@@ -722,7 +838,16 @@ export async function updateProgram(
   if (input.published !== undefined) {
     patch.published = input.published ? 1 : 0;
   }
-  if (input.featureOnDashboard !== undefined) {
+  const nextSignupKind =
+    input.signupKind !== undefined
+      ? parseVolunteerSignupKind(input.signupKind)
+      : parseVolunteerSignupKind(existing[0].signup_kind);
+  if (input.signupKind !== undefined) {
+    patch.signup_kind = nextSignupKind;
+  }
+  if (nextSignupKind === 'general') {
+    patch.feature_on_dashboard = 0;
+  } else if (input.featureOnDashboard !== undefined) {
     patch.feature_on_dashboard = input.featureOnDashboard ? 1 : 0;
   }
   if (input.publicSignups !== undefined) {
@@ -731,11 +856,71 @@ export async function updateProgram(
   if (input.priority !== undefined) {
     patch.priority = parseOptionalPriority(input.priority);
   }
+  if (input.calendarEventId !== undefined) {
+    if (input.calendarEventId == null) {
+      patch.calendar_event_id = null;
+    } else {
+      const resolved = await resolveDirectCalendarEventId(input.calendarEventId);
+      await assertCalendarEventAvailableForProgram(resolved, programId);
+      patch.calendar_event_id = resolved;
+    }
+  }
 
-  await db.update(schema.volunteerPrograms).set(patch as any).where(eq(schema.volunteerPrograms.id, programId));
+  try {
+    await db.update(schema.volunteerPrograms).set(patch as any).where(eq(schema.volunteerPrograms.id, programId));
+  } catch (err) {
+    if (isUniqueConstraintViolation(err)) {
+      throw new VolunteeringServiceError('That calendar event is already attached to another sign-up', 409);
+    }
+    throw err;
+  }
+
+  if (input.calendarEventId !== undefined) {
+    const previous = existing[0].calendar_event_id ?? null;
+    const next = (patch.calendar_event_id as number | null | undefined) ?? null;
+    if (previous != null && previous !== next) {
+      await unlinkCalendarSyncedShifts(programId, previous);
+    }
+  }
 
   if (input.managerIds !== undefined) {
     await replaceProgramManagers(programId, input.managerIds);
+  }
+}
+
+export async function reorderPrograms(input: {
+  programIds: number[];
+  signupKind: VolunteerSignupKind;
+}): Promise<void> {
+  if (input.programIds.length === 0) return;
+  const seen = new Set<number>();
+  for (const id of input.programIds) {
+    if (seen.has(id)) throw new VolunteeringServiceError('Program order contains duplicates', 400);
+    seen.add(id);
+  }
+
+  const { db, schema } = getDrizzleDb();
+  const rows = await db
+    .select({
+      id: schema.volunteerPrograms.id,
+      signupKind: schema.volunteerPrograms.signup_kind,
+    })
+    .from(schema.volunteerPrograms)
+    .where(inArray(schema.volunteerPrograms.id, input.programIds));
+  if (rows.length !== input.programIds.length) {
+    throw new VolunteeringServiceError('One or more programs were not found', 404);
+  }
+  for (const row of rows) {
+    if (parseVolunteerSignupKind(row.signupKind) !== input.signupKind) {
+      throw new VolunteeringServiceError('All programs must match the list type', 400);
+    }
+  }
+
+  for (let index = 0; index < input.programIds.length; index += 1) {
+    await db
+      .update(schema.volunteerPrograms)
+      .set({ priority: index, updated_at: new Date() } as any)
+      .where(eq(schema.volunteerPrograms.id, input.programIds[index]));
   }
 }
 
@@ -818,8 +1003,8 @@ export async function duplicateProgram(
   let dayDelta = 0;
   if (sourceShifts.length > 0 && newStartDate) {
     const sourceStartDate =
-      normalizeDateOnly(source.start_date) ??
-      formatDateInTimeZone(new Date(requireIso(sourceShifts[0].start_dt as any, 'start datetime')), timeZone);
+      formatDateInTimeZone(new Date(requireIso(sourceShifts[0].start_dt as any, 'start datetime')), timeZone) ||
+      normalizeDateOnly(source.start_date);
     if (!sourceStartDate) {
       throw new VolunteeringServiceError('Could not determine source program start date for shift shifting');
     }
@@ -837,6 +1022,7 @@ export async function duplicateProgram(
     startDate: newStartDate,
     featureOnDashboard: Number(source.feature_on_dashboard) === 1,
     publicSignups: Number(source.public_signups) === 1,
+    signupKind: parseVolunteerSignupKind(source.signup_kind),
     priority: normalizePriority(source.priority),
     managerIds: input.managerIds,
     createdByMemberId: input.createdByMemberId,
@@ -931,6 +1117,12 @@ export async function duplicateProgram(
             programId: created.id,
             startDt,
             endDt,
+            creditHours: requireCreditHours(
+              (memberShift as { credit_hours?: unknown }).credit_hours,
+              startDt,
+              endDt,
+              parseVolunteerSignupKind(source.signup_kind)
+            ),
             roles: mappedRolesFor(memberShift.id),
             recurrenceSeriesId: newSeriesId,
             recurrenceRule,
@@ -968,6 +1160,12 @@ export async function duplicateProgram(
         programId: created.id,
         startDt,
         endDt,
+        creditHours: requireCreditHours(
+          (shift as { credit_hours?: unknown }).credit_hours,
+          startDt,
+          endDt,
+          parseVolunteerSignupKind(source.signup_kind)
+        ),
         roles: mappedRolesFor(shift.id),
       });
     }
@@ -1061,6 +1259,7 @@ export async function createShiftsBulk(input: {
   shifts: Array<{
     startDt: string;
     endDt: string;
+    creditHours?: number | null;
     roles: Array<{ roleId: number; volunteersNeeded: number }>;
   }>;
   recurrence?: VolunteerShiftRecurrenceInput;
@@ -1072,11 +1271,12 @@ export async function createShiftsBulk(input: {
   }
 
   const program = await db
-    .select({ id: schema.volunteerPrograms.id })
+    .select({ id: schema.volunteerPrograms.id, signupKind: schema.volunteerPrograms.signup_kind })
     .from(schema.volunteerPrograms)
     .where(eq(schema.volunteerPrograms.id, input.programId))
     .limit(1);
   if (!program[0]) throw new VolunteeringServiceError('Program not found', 404);
+  const signupKind = parseVolunteerSignupKind(program[0].signupKind);
 
   const programRoles = await db
     .select({ id: schema.volunteerRoles.id })
@@ -1094,9 +1294,11 @@ export async function createShiftsBulk(input: {
         }
         validateShiftRoles(shift.roles, validRoleIds);
         const { composed, instances } = expandBoundedShiftRecurrence(startDt, endDt, input.recurrence!);
+        const creditHours = requireCreditHours(shift.creditHours, startDt, endDt, signupKind);
         return instances.map((inst) => ({
           startDt: inst.start,
           endDt: inst.end,
+          creditHours,
           roles: shift.roles,
           recurrenceRule: composed,
           recurrenceDate: inst.recurrenceDate,
@@ -1109,7 +1311,14 @@ export async function createShiftsBulk(input: {
           throw new VolunteeringServiceError('Shift end must be after start');
         }
         validateShiftRoles(shift.roles, validRoleIds);
-        return { startDt, endDt, roles: shift.roles, recurrenceRule: null as string | null, recurrenceDate: null as string | null };
+        return {
+          startDt,
+          endDt,
+          creditHours: requireCreditHours(shift.creditHours, startDt, endDt, signupKind),
+          roles: shift.roles,
+          recurrenceRule: null as string | null,
+          recurrenceDate: null as string | null,
+        };
       });
 
   const shiftIds: number[] = [];
@@ -1119,6 +1328,7 @@ export async function createShiftsBulk(input: {
       programId: input.programId,
       startDt: template.startDt,
       endDt: template.endDt,
+      creditHours: template.creditHours,
       roles: template.roles,
       recurrenceSeriesId: seriesId,
       recurrenceRule: template.recurrenceRule,
@@ -1144,6 +1354,7 @@ async function applyTimesToSeriesMember(input: {
   endTime: string;
   daySpan: number;
   recurrenceRule: string;
+  creditHours?: number;
 }): Promise<void> {
   const { db, schema } = getDrizzleDb();
   const timeZone = config.timeZone;
@@ -1152,15 +1363,17 @@ async function applyTimesToSeriesMember(input: {
   if (new Date(endDt) <= new Date(startDt)) {
     throw new VolunteeringServiceError('Shift end must be after start');
   }
+  const patch: Record<string, unknown> = {
+    start_dt: startDt,
+    end_dt: endDt,
+    recurrence_rule: input.recurrenceRule,
+    recurrence_date: input.recurrenceDate,
+    updated_at: new Date(),
+  };
+  if (input.creditHours != null) patch.credit_hours = input.creditHours;
   await db
     .update(schema.volunteerShifts)
-    .set({
-      start_dt: startDt,
-      end_dt: endDt,
-      recurrence_rule: input.recurrenceRule,
-      recurrence_date: input.recurrenceDate,
-      updated_at: new Date(),
-    } as any)
+    .set(patch as any)
     .where(eq(schema.volunteerShifts.id, input.shiftId));
 }
 
@@ -1169,6 +1382,7 @@ async function reconcileShiftSeries(input: {
   programId: number;
   startDt: string;
   endDt: string;
+  creditHours?: number;
   roles?: ShiftRoleInput[];
   recurrence: VolunteerShiftRecurrenceInput;
 }): Promise<void> {
@@ -1194,15 +1408,17 @@ async function reconcileShiftSeries(input: {
   for (const inst of kept) {
     const current = byDate.get(inst.recurrenceDate);
     if (current) {
+      const patch: Record<string, unknown> = {
+        start_dt: inst.start,
+        end_dt: inst.end,
+        recurrence_rule: composed,
+        recurrence_date: inst.recurrenceDate,
+        updated_at: new Date(),
+      };
+      if (input.creditHours != null) patch.credit_hours = input.creditHours;
       await db
         .update(schema.volunteerShifts)
-        .set({
-          start_dt: inst.start,
-          end_dt: inst.end,
-          recurrence_rule: composed,
-          recurrence_date: inst.recurrenceDate,
-          updated_at: new Date(),
-        } as any)
+        .set(patch as any)
         .where(eq(schema.volunteerShifts.id, current.id));
       if (input.roles) {
         await syncShiftRoles(current.id, input.programId, input.roles);
@@ -1223,6 +1439,9 @@ async function reconcileShiftSeries(input: {
         programId: input.programId,
         startDt: inst.start,
         endDt: inst.end,
+        creditHours:
+          input.creditHours ??
+          (existing[0] ? Number((existing[0] as { credit_hours?: unknown }).credit_hours) || 0 : 0),
         roles,
         recurrenceSeriesId: input.seriesId,
         recurrenceRule: composed,
@@ -1243,6 +1462,7 @@ export async function updateShift(
   input: {
     startDt?: string;
     endDt?: string;
+    creditHours?: number | null;
     roles?: Array<{ roleId: number; volunteersNeeded: number }>;
     scope?: 'this' | 'all';
     recurrence?: VolunteerShiftRecurrenceInput;
@@ -1255,6 +1475,33 @@ export async function updateShift(
     .where(eq(schema.volunteerShifts.id, shiftId))
     .limit(1);
   if (!existing[0]) throw new VolunteeringServiceError('Shift not found', 404);
+
+  if (existing[0].source_calendar_event_id != null) {
+    const seriesId = existing[0].recurrence_series_id;
+    const scope = input.scope ?? 'this';
+    const creditHours = parseVolunteerCreditHours(input.creditHours);
+    const targetIds =
+      seriesId != null && scope === 'all'
+        ? (
+            await db
+              .select({ id: schema.volunteerShifts.id })
+              .from(schema.volunteerShifts)
+              .where(eq(schema.volunteerShifts.recurrence_series_id, seriesId))
+          ).map((row) => row.id)
+        : [shiftId];
+    if (creditHours != null) {
+      await db
+        .update(schema.volunteerShifts)
+        .set({ credit_hours: creditHours, updated_at: new Date() } as any)
+        .where(inArray(schema.volunteerShifts.id, targetIds));
+    }
+    if (input.roles !== undefined) {
+      for (const id of targetIds) {
+        await syncShiftRoles(id, existing[0].program_id, input.roles);
+      }
+    }
+    return { programId: existing[0].program_id };
+  }
 
   const startDt = input.startDt
     ? parseDateInput(input.startDt, 'start datetime')
@@ -1296,6 +1543,7 @@ export async function updateShift(
         programId: existing[0].program_id,
         startDt,
         endDt,
+        creditHours: parseVolunteerCreditHours(input.creditHours) ?? undefined,
         roles: input.roles,
         recurrence: nextRecurrence,
       });
@@ -1326,6 +1574,7 @@ export async function updateShift(
         endTime,
         daySpan,
         recurrenceRule: rule,
+        creditHours: parseVolunteerCreditHours(input.creditHours) ?? undefined,
       });
       if (input.roles) {
         await syncShiftRoles(member.id, existing[0].program_id, input.roles);
@@ -1334,13 +1583,16 @@ export async function updateShift(
     return { programId: existing[0].program_id };
   }
 
+  const singlePatch: Record<string, unknown> = {
+    start_dt: startDt,
+    end_dt: endDt,
+    updated_at: new Date(),
+  };
+  const creditHours = parseVolunteerCreditHours(input.creditHours);
+  if (creditHours != null) singlePatch.credit_hours = creditHours;
   await db
     .update(schema.volunteerShifts)
-    .set({
-      start_dt: startDt,
-      end_dt: endDt,
-      updated_at: new Date(),
-    } as any)
+    .set(singlePatch as any)
     .where(eq(schema.volunteerShifts.id, shiftId));
 
   if (input.roles !== undefined) {
@@ -1413,6 +1665,32 @@ async function buildProgramViews(options: {
 
   const programIds = programs.map((p) => p.id);
   const globalManager = isVolunteerManager(options.member);
+
+  const calendarEventIds = [
+    ...new Set(
+      programs
+        .map((program) => program.calendar_event_id)
+        .filter((id): id is number => id != null)
+    ),
+  ];
+  const calendarEventById = new Map<number, VolunteerAttachedCalendarEvent>();
+  if (calendarEventIds.length > 0) {
+    const eventRows = await db
+      .select({
+        id: schema.calendarEvents.id,
+        title: schema.calendarEvents.title,
+        startDt: schema.calendarEvents.start_dt,
+        endDt: schema.calendarEvents.end_dt,
+        allDay: schema.calendarEvents.all_day,
+        recurrenceRule: schema.calendarEvents.recurrence_rule,
+        parentEventId: schema.calendarEvents.parent_event_id,
+      })
+      .from(schema.calendarEvents)
+      .where(inArray(schema.calendarEvents.id, calendarEventIds));
+    for (const [eventId, detail] of await describeDirectCalendarEvents(calendarEventIds)) {
+      calendarEventById.set(eventId, detail.event);
+    }
+  }
 
   const managers = await db
     .select({
@@ -1557,9 +1835,16 @@ async function buildProgramViews(options: {
           programId: shift.program_id,
           startDt: shiftStart,
           endDt: requireIso(shift.end_dt as any, 'endDt'),
+          creditHours: requireCreditHours(
+            (shift as { credit_hours?: unknown }).credit_hours,
+            shiftStart,
+            requireIso(shift.end_dt as any, 'endDt'),
+            parseVolunteerSignupKind(program.signup_kind)
+          ),
           recurrenceSeriesId: shift.recurrence_series_id ?? null,
           recurrenceRule: shift.recurrence_rule ?? null,
           recurrenceDate: shift.recurrence_date ?? null,
+          sourceCalendarEventId: shift.source_calendar_event_id ?? null,
           roles: rolesForShift,
         };
       });
@@ -1575,6 +1860,7 @@ async function buildProgramViews(options: {
       published: Number(program.published) === 1,
       featureOnDashboard: Number(program.feature_on_dashboard) === 1,
       publicSignups: Number(program.public_signups) === 1,
+      signupKind: parseVolunteerSignupKind(program.signup_kind),
       priority: normalizePriority(program.priority),
       archivedAt: toIso(program.archived_at as any),
       createdAt: requireIso(program.created_at as any, 'createdAt'),
@@ -1583,8 +1869,386 @@ async function buildProgramViews(options: {
       roles: programRoles,
       shifts: programShifts,
       canManage,
+      calendarEvent: program.calendar_event_id != null
+        ? calendarEventById.get(program.calendar_event_id) ?? null
+        : null,
     };
   });
+}
+
+export async function listDirectCalendarEventsOnDate(
+  dateYmd: string
+): Promise<DirectCalendarEventChoice[]> {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateYmd)) {
+    throw new VolunteeringServiceError('Date must be YYYY-MM-DD', 400);
+  }
+  const timeZone = config.timeZone;
+  const rangeStartIso = localDateTimeToIso(dateYmd, '00:00:00', timeZone);
+  const rangeEndIso = localDateTimeToIso(addCalendarDays(dateYmd, 1), '00:00:00', timeZone);
+  const padStart = new Date(localDateTimeToIso(addCalendarDays(dateYmd, -1), '00:00:00', timeZone));
+  const padEnd = new Date(localDateTimeToIso(addCalendarDays(dateYmd, 2), '00:00:00', timeZone));
+  const events = await fetchDirectCalendarEventsForRange(padStart, padEnd);
+  return pickDirectCalendarEventsOverlappingRange(events, rangeStartIso, rangeEndIso);
+}
+
+type DirectCalendarEventDetail = {
+  event: VolunteerAttachedCalendarEvent;
+  occurrences: CalendarOccurrence[];
+  recurrenceRule: string | null;
+};
+
+async function describeDirectCalendarEvents(
+  eventIds: number[]
+): Promise<Map<number, DirectCalendarEventDetail>> {
+  const result = new Map<number, DirectCalendarEventDetail>();
+  if (eventIds.length === 0) return result;
+  const { db, schema } = getDrizzleDb();
+  const uniqueIds = [...new Set(eventIds)];
+  const eventRows = await db
+    .select({
+      id: schema.calendarEvents.id,
+      source: schema.calendarEvents.source,
+      title: schema.calendarEvents.title,
+      startDt: schema.calendarEvents.start_dt,
+      endDt: schema.calendarEvents.end_dt,
+      allDay: schema.calendarEvents.all_day,
+      recurrenceRule: schema.calendarEvents.recurrence_rule,
+      parentEventId: schema.calendarEvents.parent_event_id,
+    })
+    .from(schema.calendarEvents)
+    .where(inArray(schema.calendarEvents.id, uniqueIds));
+
+  const rootIds = [
+    ...new Set(eventRows.map((row) => row.parentEventId ?? row.id)),
+  ];
+  const rootRows =
+    rootIds.length === 0
+      ? []
+      : await db
+          .select({
+            id: schema.calendarEvents.id,
+            source: schema.calendarEvents.source,
+            title: schema.calendarEvents.title,
+            startDt: schema.calendarEvents.start_dt,
+            endDt: schema.calendarEvents.end_dt,
+            allDay: schema.calendarEvents.all_day,
+            recurrenceRule: schema.calendarEvents.recurrence_rule,
+            parentEventId: schema.calendarEvents.parent_event_id,
+          })
+          .from(schema.calendarEvents)
+          .where(inArray(schema.calendarEvents.id, rootIds));
+  const rootById = new Map(rootRows.map((row) => [row.id, row]));
+
+  const exceptions =
+    rootIds.length === 0
+      ? []
+      : await db
+          .select({
+            parentEventId: schema.calendarEventExceptions.parent_event_id,
+            exceptionDate: schema.calendarEventExceptions.exception_date,
+          })
+          .from(schema.calendarEventExceptions)
+          .where(inArray(schema.calendarEventExceptions.parent_event_id, rootIds));
+  const exceptionsByParent = new Map<number, Set<string>>();
+  for (const row of exceptions) {
+    const set = exceptionsByParent.get(row.parentEventId) ?? new Set<string>();
+    set.add(row.exceptionDate);
+    exceptionsByParent.set(row.parentEventId, set);
+  }
+
+  const overrides =
+    rootIds.length === 0
+      ? []
+      : await db
+          .select({
+            parentEventId: schema.calendarEvents.parent_event_id,
+            recurrenceDate: schema.calendarEvents.recurrence_date,
+            startDt: schema.calendarEvents.start_dt,
+            endDt: schema.calendarEvents.end_dt,
+            allDay: schema.calendarEvents.all_day,
+          })
+          .from(schema.calendarEvents)
+          .where(inArray(schema.calendarEvents.parent_event_id, rootIds));
+  const overridesByParent = new Map<number, Map<string, { start: string; end: string; allDay: boolean }>>();
+  for (const row of overrides) {
+    if (row.parentEventId == null || !row.recurrenceDate) continue;
+    const map = overridesByParent.get(row.parentEventId) ?? new Map();
+    map.set(row.recurrenceDate, {
+      start: requireIso(row.startDt as any, 'override start'),
+      end: requireIso(row.endDt as any, 'override end'),
+      allDay: Number(row.allDay) === 1,
+    });
+    overridesByParent.set(row.parentEventId, map);
+  }
+
+  for (const requested of eventRows) {
+    const root = rootById.get(requested.parentEventId ?? requested.id) ?? requested;
+    if (root.source !== 'direct') continue;
+    const start = requireIso(root.startDt as any, 'calendar event start');
+    const end = requireIso(root.endDt as any, 'calendar event end');
+    const allDay = Number(root.allDay) === 1;
+    const recurrenceRule = root.recurrenceRule ?? null;
+    const startDate = formatDateInTimeZone(new Date(start), config.timeZone) ?? start.slice(0, 10);
+    let instances: Array<{ start: string; end: string; recurrenceDate: string }> = [
+      { start, end, recurrenceDate: startDate },
+    ];
+    if (recurrenceRule) {
+      instances = expandAllRecurrenceInstances(start, end, recurrenceRule, config.timeZone);
+      if (instances.length > MAX_MATERIALIZED_RECURRENCE_INSTANCES) {
+        instances = instances.slice(0, MAX_MATERIALIZED_RECURRENCE_INSTANCES);
+      }
+    }
+    const occurrences = applyCalendarExceptionsAndOverrides(
+      instances,
+      allDay,
+      exceptionsByParent.get(root.id) ?? new Set(),
+      overridesByParent.get(root.id) ?? new Map()
+    );
+    const event: VolunteerAttachedCalendarEvent = {
+      id: root.id,
+      title: root.title,
+      start,
+      end,
+      allDay,
+      isRecurring: Boolean(recurrenceRule),
+      occurrenceCount: occurrences.length,
+    };
+    result.set(requested.id, { event, occurrences, recurrenceRule });
+    result.set(root.id, { event, occurrences, recurrenceRule });
+  }
+  return result;
+}
+
+export async function getDirectCalendarEventForSignup(eventId: number): Promise<
+  VolunteerAttachedCalendarEvent & { occurrences: CalendarOccurrence[] }
+> {
+  const resolved = await resolveDirectCalendarEventId(eventId);
+  const details = await describeDirectCalendarEvents([resolved]);
+  const detail = details.get(resolved);
+  if (!detail) throw new VolunteeringServiceError('Calendar event not found', 404);
+  return { ...detail.event, occurrences: detail.occurrences };
+}
+
+export async function createShiftsFromCalendarEvent(input: {
+  programId: number;
+  roleId: number;
+  volunteersNeeded: number;
+  creditHours?: number | null;
+}): Promise<{ shiftIds: number[] }> {
+  const { db, schema } = getDrizzleDb();
+  const [program] = await db
+    .select({
+      id: schema.volunteerPrograms.id,
+      signupKind: schema.volunteerPrograms.signup_kind,
+      calendarEventId: schema.volunteerPrograms.calendar_event_id,
+    })
+    .from(schema.volunteerPrograms)
+    .where(eq(schema.volunteerPrograms.id, input.programId))
+    .limit(1);
+  if (!program) throw new VolunteeringServiceError('Program not found', 404);
+  if (program.calendarEventId == null) {
+    throw new VolunteeringServiceError('Attach a calendar event before creating times from it', 400);
+  }
+
+  const details = await describeDirectCalendarEvents([program.calendarEventId]);
+  const detail = details.get(program.calendarEventId);
+  if (!detail || detail.occurrences.length === 0) {
+    throw new VolunteeringServiceError('The attached calendar event has no times to copy', 400);
+  }
+
+  const programRoles = await db
+    .select({ id: schema.volunteerRoles.id })
+    .from(schema.volunteerRoles)
+    .where(eq(schema.volunteerRoles.program_id, input.programId));
+  const validRoleIds = new Set(programRoles.map((role) => role.id));
+  const roles = [{ roleId: input.roleId, volunteersNeeded: input.volunteersNeeded }];
+  validateShiftRoles(roles, validRoleIds);
+
+  const signupKind = parseVolunteerSignupKind(program.signupKind);
+  const first = detail.occurrences[0];
+  const creditHours = requireCreditHours(input.creditHours, first.start, first.end, signupKind);
+  const recurrenceRule = detail.occurrences.length > 1 ? detail.recurrenceRule : null;
+
+  const shiftIds: number[] = [];
+  let seriesId: number | null = null;
+  for (const occurrence of detail.occurrences) {
+    const createdId = await insertShiftRow({
+      programId: input.programId,
+      startDt: occurrence.start,
+      endDt: occurrence.end,
+      creditHours,
+      roles,
+      recurrenceSeriesId: seriesId,
+      recurrenceRule,
+      recurrenceDate: occurrence.recurrenceDate,
+      sourceCalendarEventId: program.calendarEventId,
+    });
+    shiftIds.push(createdId);
+    if (detail.occurrences.length > 1 && seriesId == null) {
+      seriesId = createdId;
+      await db
+        .update(schema.volunteerShifts)
+        .set({ recurrence_series_id: seriesId, updated_at: new Date() } as any)
+        .where(eq(schema.volunteerShifts.id, createdId));
+    }
+  }
+  return { shiftIds };
+}
+
+async function unlinkCalendarSyncedShifts(programId: number, calendarEventId: number): Promise<void> {
+  const { db, schema } = getDrizzleDb();
+  await db
+    .update(schema.volunteerShifts)
+    .set({ source_calendar_event_id: null, updated_at: new Date() } as any)
+    .where(
+      and(
+        eq(schema.volunteerShifts.program_id, programId),
+        eq(schema.volunteerShifts.source_calendar_event_id, calendarEventId)
+      )
+    );
+}
+
+export async function deleteVolunteerShiftsSyncedToCalendarEvent(calendarEventId: number): Promise<void> {
+  const { db, schema } = getDrizzleDb();
+  const rows = await db
+    .select({
+      id: schema.volunteerShifts.id,
+      seriesId: schema.volunteerShifts.recurrence_series_id,
+    })
+    .from(schema.volunteerShifts)
+    .where(eq(schema.volunteerShifts.source_calendar_event_id, calendarEventId));
+  if (rows.length === 0) return;
+  const seriesIds = [...new Set(rows.map((row) => row.seriesId).filter((id): id is number => id != null))];
+  await db.delete(schema.volunteerShifts).where(eq(schema.volunteerShifts.source_calendar_event_id, calendarEventId));
+  if (seriesIds.length > 0) {
+    await db
+      .delete(schema.volunteerShiftExceptions)
+      .where(inArray(schema.volunteerShiftExceptions.recurrence_series_id, seriesIds));
+  }
+}
+
+export async function syncVolunteerShiftsForCalendarEvent(calendarEventId: number): Promise<void> {
+  const { db, schema } = getDrizzleDb();
+  let resolved = calendarEventId;
+  try {
+    resolved = await resolveDirectCalendarEventId(calendarEventId);
+  } catch {
+    await deleteVolunteerShiftsSyncedToCalendarEvent(calendarEventId);
+    return;
+  }
+
+  const rows = await db
+    .select()
+    .from(schema.volunteerShifts)
+    .where(eq(schema.volunteerShifts.source_calendar_event_id, resolved));
+  if (rows.length === 0) return;
+
+  const details = await describeDirectCalendarEvents([resolved]);
+  const detail = details.get(resolved);
+  if (!detail || detail.occurrences.length === 0) {
+    await deleteVolunteerShiftsSyncedToCalendarEvent(resolved);
+    return;
+  }
+
+  const groups = new Map<string, typeof rows>();
+  for (const row of rows) {
+    const key = row.recurrence_series_id != null ? `series:${row.recurrence_series_id}` : `shift:${row.id}`;
+    const list = groups.get(key) ?? [];
+    list.push(row);
+    groups.set(key, list);
+  }
+
+  for (const group of groups.values()) {
+    const template = group[0];
+    const seriesId = template.recurrence_series_id;
+    const skipDates = seriesId != null ? await listSeriesExceptionDates(seriesId) : new Set<string>();
+    const plan = planCalendarSyncedShiftChanges(
+      group.map((row) => ({ id: row.id, recurrenceDate: row.recurrence_date })),
+      detail.occurrences,
+      skipDates
+    );
+    const recurrenceRule = detail.occurrences.length > 1 ? detail.recurrenceRule : null;
+    let nextSeriesId = seriesId;
+
+    for (const update of plan.updates) {
+      await db
+        .update(schema.volunteerShifts)
+        .set({
+          start_dt: update.start,
+          end_dt: update.end,
+          recurrence_date: update.recurrenceDate,
+          recurrence_rule: recurrenceRule,
+          updated_at: new Date(),
+        } as any)
+        .where(eq(schema.volunteerShifts.id, update.id));
+    }
+
+    const templateRoles = await db
+      .select({
+        roleId: schema.volunteerShiftRoles.role_id,
+        volunteersNeeded: schema.volunteerShiftRoles.volunteers_needed,
+      })
+      .from(schema.volunteerShiftRoles)
+      .where(eq(schema.volunteerShiftRoles.shift_id, template.id));
+    const creditHours = Number((template as { credit_hours?: unknown }).credit_hours) || 0;
+
+    for (const create of plan.creates) {
+      const createdId = await insertShiftRow({
+        programId: template.program_id,
+        startDt: create.start,
+        endDt: create.end,
+        creditHours,
+        roles: templateRoles,
+        recurrenceSeriesId: nextSeriesId,
+        recurrenceRule,
+        recurrenceDate: create.recurrenceDate,
+        sourceCalendarEventId: resolved,
+      });
+      if (detail.occurrences.length > 1 && nextSeriesId == null) {
+        nextSeriesId = createdId;
+        const idsToSeries = [createdId, ...plan.updates.map((row) => row.id)];
+        await db
+          .update(schema.volunteerShifts)
+          .set({ recurrence_series_id: nextSeriesId, updated_at: new Date() } as any)
+          .where(inArray(schema.volunteerShifts.id, idsToSeries));
+      }
+    }
+
+    for (const id of plan.deleteIds) {
+      await deleteShiftRow(id);
+    }
+  }
+}
+
+export async function calendarSignupsByDirectEventId(options: {
+  forPublic: boolean;
+}): Promise<Map<number, CalendarEventSignupLink>> {
+  const { db, schema } = getDrizzleDb();
+  const rows = await db
+    .select({
+      calendarEventId: schema.volunteerPrograms.calendar_event_id,
+      slug: schema.volunteerPrograms.slug,
+      title: schema.volunteerPrograms.title,
+      publicSignups: schema.volunteerPrograms.public_signups,
+      published: schema.volunteerPrograms.published,
+      archivedAt: schema.volunteerPrograms.archived_at,
+    })
+    .from(schema.volunteerPrograms)
+    .where(isNotNull(schema.volunteerPrograms.calendar_event_id));
+
+  const map = new Map<number, CalendarEventSignupLink>();
+  for (const row of rows) {
+    if (row.calendarEventId == null) continue;
+    if (row.archivedAt) continue;
+    if (Number(row.published) !== 1) continue;
+    if (options.forPublic && Number(row.publicSignups) !== 1) continue;
+    map.set(row.calendarEventId, {
+      slug: String(row.slug),
+      title: row.title,
+      publicSignups: Number(row.publicSignups) === 1,
+    });
+  }
+  return map;
 }
 
 export async function listHubPrograms(member: Member): Promise<{
@@ -1720,6 +2384,7 @@ export async function listDashboardOpportunities(memberId: number): Promise<Dash
         isNull(schema.volunteerPrograms.archived_at),
         eq(schema.volunteerPrograms.published, 1),
         eq(schema.volunteerPrograms.feature_on_dashboard, 1),
+        eq(schema.volunteerPrograms.signup_kind, 'volunteering'),
         gte(schema.volunteerShifts.start_dt, nowIso),
         lte(schema.volunteerShifts.start_dt, horizon)
       )
@@ -1892,10 +2557,12 @@ export async function listMySignups(memberId: number): Promise<{
       programId: schema.volunteerPrograms.id,
       programTitle: schema.volunteerPrograms.title,
       location: schema.volunteerPrograms.location,
+      signupKind: schema.volunteerPrograms.signup_kind,
       roleId: schema.volunteerRoles.id,
       roleName: schema.volunteerRoles.name,
       startDt: schema.volunteerShifts.start_dt,
       endDt: schema.volunteerShifts.end_dt,
+      creditHours: schema.volunteerShifts.credit_hours,
     })
     .from(schema.volunteerSignups)
     .innerJoin(
@@ -1920,6 +2587,7 @@ export async function listMySignups(memberId: number): Promise<{
   const past: MySignupView[] = [];
   for (const row of rows) {
     const startDt = requireIso(row.startDt as any, 'startDt');
+    const endDt = requireIso(row.endDt as any, 'endDt');
     const view: MySignupView = {
       signupId: row.signupId,
       shiftRoleId: row.shiftRoleId,
@@ -1929,7 +2597,13 @@ export async function listMySignups(memberId: number): Promise<{
       roleId: row.roleId,
       roleName: row.roleName,
       startDt,
-      endDt: requireIso(row.endDt as any, 'endDt'),
+      endDt,
+      creditHours: requireCreditHours(
+        row.creditHours,
+        startDt,
+        endDt,
+        parseVolunteerSignupKind(row.signupKind)
+      ),
       status: row.status as 'confirmed' | 'cancelled',
       comments: row.comments ?? null,
       canCancel: startDt > nowIso,
@@ -2863,6 +3537,8 @@ async function loadVolunteerStatsContext(): Promise<VolunteerStatsContext> {
         shiftId: schema.volunteerShifts.id,
         startDt: schema.volunteerShifts.start_dt,
         endDt: schema.volunteerShifts.end_dt,
+        creditHours: schema.volunteerShifts.credit_hours,
+        signupKind: schema.volunteerPrograms.signup_kind,
         programTitle: schema.volunteerPrograms.title,
         roleName: schema.volunteerRoles.name,
       })
@@ -2881,14 +3557,18 @@ async function loadVolunteerStatsContext(): Promise<VolunteerStatsContext> {
 
   const signups = signupRows.map((row) => {
     const startDt = requireIso(row.startDt as any, 'startDt');
+    const endDt = requireIso(row.endDt as any, 'endDt');
+    const signupKind = parseVolunteerSignupKind(row.signupKind);
     return {
       signupId: row.signupId,
       memberId: row.memberId ?? null,
       memberName: row.memberName ? normalizePersonName(row.memberName) || row.memberName : null,
       shiftId: row.shiftId,
       startDt,
-      endDt: requireIso(row.endDt as any, 'endDt'),
+      endDt,
       startDateOnly: shiftDateOnly(startDt),
+      creditHours: requireCreditHours(row.creditHours, startDt, endDt, signupKind),
+      signupKind,
       programTitle: row.programTitle?.trim() || null,
       roleName: row.roleName?.trim() || null,
     };

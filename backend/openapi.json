@@ -12192,6 +12192,32 @@
                           "null",
                           "string"
                         ]
+                      },
+                      "guaranteeLabel": {
+                        "anyOf": [
+                          {
+                            "type": "null"
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "guaranteed_return",
+                              "awaiting_roster_entry",
+                              "guaranteed_fallback",
+                              "available",
+                              "temporary_spot_available",
+                              "waitlisted",
+                              "subject_to_availability",
+                              "superfluous"
+                            ]
+                          }
+                        ]
+                      },
+                      "priorityRank": {
+                        "type": [
+                          "null",
+                          "number"
+                        ]
                       }
                     },
                     "required": [
@@ -12199,7 +12225,9 @@
                       "name",
                       "email",
                       "assignedTeamId",
-                      "assignedTeamName"
+                      "assignedTeamName",
+                      "guaranteeLabel",
+                      "priorityRank"
                     ]
                   }
                 }
@@ -13847,6 +13875,232 @@
                   },
                   "required": [
                     "success"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/teams": {
+      "get": {
+        "summary": "List current league and bonspiel teams",
+        "tags": [
+          "teams"
+        ],
+        "description": "Returns defined teams for leagues and bonspiels that have not concluded. Requires the teams.read scope.",
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "events": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "teams": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "properties": {
+                                "teamName": {
+                                  "type": "string"
+                                },
+                                "players": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "firstName": {
+                                        "type": "string"
+                                      },
+                                      "lastName": {
+                                        "type": "string"
+                                      },
+                                      "homeClub": {
+                                        "type": "string"
+                                      },
+                                      "position": {
+                                        "type": "string",
+                                        "enum": [
+                                          "lead",
+                                          "second",
+                                          "third",
+                                          "fourth",
+                                          "player1",
+                                          "player2"
+                                        ]
+                                      },
+                                      "isVice": {
+                                        "type": "boolean"
+                                      },
+                                      "isSkip": {
+                                        "type": "boolean"
+                                      }
+                                    },
+                                    "required": [
+                                      "firstName",
+                                      "lastName",
+                                      "homeClub",
+                                      "position",
+                                      "isVice",
+                                      "isSkip"
+                                    ]
+                                  }
+                                }
+                              },
+                              "required": [
+                                "teamName",
+                                "players"
+                              ]
+                            }
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "teams"
+                        ]
+                      }
+                    },
+                    "leagues": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "teams": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "properties": {
+                                "teamName": {
+                                  "type": "string"
+                                },
+                                "players": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "firstName": {
+                                        "type": "string"
+                                      },
+                                      "lastName": {
+                                        "type": "string"
+                                      },
+                                      "homeClub": {
+                                        "type": "string"
+                                      },
+                                      "position": {
+                                        "type": "string",
+                                        "enum": [
+                                          "lead",
+                                          "second",
+                                          "third",
+                                          "fourth",
+                                          "player1",
+                                          "player2"
+                                        ]
+                                      },
+                                      "isVice": {
+                                        "type": "boolean"
+                                      },
+                                      "isSkip": {
+                                        "type": "boolean"
+                                      }
+                                    },
+                                    "required": [
+                                      "firstName",
+                                      "lastName",
+                                      "homeClub",
+                                      "position",
+                                      "isVice",
+                                      "isSkip"
+                                    ]
+                                  }
+                                }
+                              },
+                              "required": [
+                                "teamName",
+                                "players"
+                              ]
+                            }
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "teams"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "events",
+                    "leagues"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
                   ]
                 }
               }
@@ -31305,6 +31559,51 @@
         }
       }
     },
+    "/volunteering/admin/direct-calendar-events": {
+      "get": {
+        "tags": [
+          "volunteering"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "date",
+            "required": true,
+            "description": "Club-local date YYYY-MM-DD"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/volunteering/admin/direct-calendar-events/{id}": {
+      "get": {
+        "tags": [
+          "volunteering"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/volunteering/admin/programs": {
       "get": {
         "tags": [
@@ -31381,6 +31680,18 @@
             "name": "id",
             "required": true
           }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/volunteering/admin/programs/reorder": {
+      "post": {
+        "tags": [
+          "volunteering"
         ],
         "responses": {
           "200": {
@@ -31584,6 +31895,28 @@
       }
     },
     "/volunteering/admin/programs/{id}/shifts/bulk": {
+      "post": {
+        "tags": [
+          "volunteering"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/volunteering/admin/programs/{id}/shifts/from-calendar-event": {
       "post": {
         "tags": [
           "volunteering"

@@ -19,3 +19,4 @@ backend/data/google-oauth.token.json
 backend/data/minutes-migration-cache/
 backend/data/minutes-drive-migration-manifest.json
 backend/data/board-meeting-minutes-export.json
+backend/data/db-dumps/

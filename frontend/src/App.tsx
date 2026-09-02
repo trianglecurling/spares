@@ -761,9 +761,22 @@ function App() {
                         }
                       >
                         <Route index element={<AdminVolunteeringPrograms />} />
+                        <Route path="general" element={<AdminVolunteeringPrograms />} />
                         <Route path="hour-logs" element={<AdminVolunteerHourLogs />} />
                         <Route path="credentials" element={<Navigate to="/admin/members/credentials" replace />} />
                       </Route>
+                      <Route
+                        path="/admin/signups/new/:tab?"
+                        element={
+                          <ProtectedRoute>
+                            <AdminVolunteerProgramEditor />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
+                        path="/admin/volunteering/new"
+                        element={<Navigate to="/admin/signups/new" replace />}
+                      />
                       <Route
                         path="/admin/volunteering/:id/:tab?"
                         element={

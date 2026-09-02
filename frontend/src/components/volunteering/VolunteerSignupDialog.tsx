@@ -6,6 +6,11 @@ import Modal from '../Modal';
 import { post } from '../../api/client';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatApiError } from '../../utils/api';
+import {
+  parseVolunteerSignupKind,
+  volunteerProgramUiTerms,
+  type VolunteerSignupKind,
+} from '../../utils/volunteering';
 
 export type VolunteerSignupTarget = {
   shiftRoleId: number;
@@ -14,6 +19,7 @@ export type VolunteerSignupTarget = {
   remainingSpots: number;
   requiresCredentials: boolean;
   callerIsSignedUp: boolean;
+  signupKind?: VolunteerSignupKind;
   /** Program owner adding people without pre-selecting themselves. */
   manageForOthers?: boolean;
   signedUpMemberIds?: number[];
@@ -35,6 +41,7 @@ export default function VolunteerSignupDialog({
   const volunteersInputId = useId();
   const commentsInputId = useId();
   const volunteersLabelId = useId();
+  const terms = volunteerProgramUiTerms(parseVolunteerSignupKind(target.signupKind));
   const manageForOthers = Boolean(target.manageForOthers);
   const signedUpMemberIds = useMemo(
     () => new Set(target.signedUpMemberIds ?? []),
@@ -83,14 +90,14 @@ export default function VolunteerSignupDialog({
 
   const submit = async () => {
     if (totalSelected < 1) {
-      setError('Select at least one volunteer.');
+      setError(terms.selectAtLeastOne);
       return;
     }
     if (totalSelected > maxSelections) {
       setError(
         maxSelections === 1
-          ? 'Only 1 spot remaining for this role.'
-          : `Only ${maxSelections} spots remaining for this role.`
+          ? `Only 1 spot remaining for this ${terms.roleSingular}.`
+          : `Only ${maxSelections} spots remaining for this ${terms.roleSingular}.`
       );
       return;
     }
@@ -120,7 +127,7 @@ export default function VolunteerSignupDialog({
     <Modal
       isOpen
       onClose={onClose}
-      title={manageForOthers ? `Add volunteers · ${target.roleName}` : `Sign up · ${target.roleName}`}
+      title={manageForOthers ? `${terms.addPeople} · ${target.roleName}` : `Sign up · ${target.roleName}`}
       size="lg"
       verticalAlign="start"
       contentOverflow="visible"
@@ -130,19 +137,16 @@ export default function VolunteerSignupDialog({
         <p className="text-sm text-gray-600 dark:text-gray-400">
           {maxSelections} spot{maxSelections === 1 ? '' : 's'} remaining.
           {target.requiresCredentials
-            ? ' This role requires credentials, so only eligible members can be added.'
+            ? ` This ${terms.roleSingular} requires credentials, so only eligible members can be added.`
             : null}
         </p>
         {manageForOthers ? (
-          <p className="text-sm text-gray-600 dark:text-gray-400">
-            You're adding volunteers as a program owner. Confirmation emails are sent to selected
-            members.
-          </p>
+          <p className="text-sm text-gray-600 dark:text-gray-400">{terms.addingAsOwnerHelp}</p>
         ) : null}
 
         {showMemberPicker ? (
           <FormField
-            label="Volunteers"
+            label={terms.peopleFieldLabel}
             htmlFor={volunteersInputId}
             required
             helperText="Confirmation emails are sent to selected members. Non-members can be added by name."
@@ -193,7 +197,7 @@ export default function VolunteerSignupDialog({
           </FormField>
         ) : (
           <FormField
-            label="Volunteers"
+            label={terms.peopleFieldLabel}
             labelId={volunteersLabelId}
             required
             error={error && totalSelected < 1 ? error : undefined}
@@ -237,7 +241,7 @@ export default function VolunteerSignupDialog({
             value={comments}
             onChange={(e) => setComments(e.target.value)}
             maxLength={2000}
-            placeholder="Anything other volunteers or program owners should know"
+            placeholder={terms.commentsPlaceholder}
           />
         </FormField>
 
@@ -252,7 +256,13 @@ export default function VolunteerSignupDialog({
             Cancel
           </Button>
           <Button type="button" onClick={() => void submit()} disabled={submitting || totalSelected < 1}>
-            {submitting ? (manageForOthers ? 'Adding…' : 'Signing up…') : manageForOthers ? 'Add volunteers' : 'Confirm signup'}
+            {submitting
+              ? manageForOthers
+                ? 'Adding…'
+                : 'Signing up…'
+              : manageForOthers
+                ? terms.addPeople
+                : 'Confirm signup'}
           </Button>
         </div>
       </div>

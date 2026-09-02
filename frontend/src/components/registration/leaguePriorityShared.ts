@@ -1062,3 +1062,32 @@ export function guaranteeChipClassName(label: LeaguePriorityGuaranteeLabel): str
   if (label === 'superfluous') return 'bg-rose-100 text-rose-900';
   return 'bg-gray-100 text-gray-800';
 }
+
+/** 1 → "1st", 2 → "2nd", 3 → "3rd", 4 → "4th". */
+export function formatPriorityOrdinal(rank: number): string {
+  const remainder = rank % 100;
+  if (remainder >= 11 && remainder <= 13) return `${rank}th`;
+  switch (rank % 10) {
+    case 1:
+      return `${rank}st`;
+    case 2:
+      return `${rank}nd`;
+    case 3:
+      return `${rank}rd`;
+    default:
+      return `${rank}th`;
+  }
+}
+
+/** Roster-page chip text. Subject-to-availability includes the list rank. */
+export function rosterGuaranteeChipLabel(
+  label: LeaguePriorityGuaranteeLabel,
+  priorityRank?: number | null,
+  league?: ByotGuaranteedReturnCaveatLeague,
+): string {
+  const text = guaranteeChipLabel(label, league);
+  if (label === 'subject_to_availability' && priorityRank != null && priorityRank > 0) {
+    return `${text} (${formatPriorityOrdinal(priorityRank)} priority)`;
+  }
+  return text;
+}
