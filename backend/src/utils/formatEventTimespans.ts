@@ -6,7 +6,7 @@ export type FormattedEventWhen = {
   html: string;
 };
 
-type EventTimespanLike = {
+export type EventTimespanLike = {
   start_dt?: string;
   end_dt?: string;
   startDt?: string;
@@ -14,6 +14,19 @@ type EventTimespanLike = {
   sort_order?: number;
   sortOrder?: number;
 };
+
+function asEventTimespanLike(value: unknown): EventTimespanLike | null {
+  if (typeof value !== 'object' || value === null) return null;
+  return value as EventTimespanLike;
+}
+
+function normalizeEventTimespans(timespans: unknown): EventTimespanLike[] {
+  if (!Array.isArray(timespans)) return [];
+  return timespans.flatMap((value) => {
+    const timespan = asEventTimespanLike(value);
+    return timespan ? [timespan] : [];
+  });
+}
 
 const LONG_DATE_FORMAT: Intl.DateTimeFormatOptions = {
   weekday: 'long',
@@ -69,14 +82,15 @@ function formatOneTimespan(startDt: string, endDt: string, timeZone: string): { 
 
 /** Matches public event detail page timespan display (all spans, single- vs multi-day). */
 export function formatEventTimespansForDisplay(
-  timespans: EventTimespanLike[] | null | undefined,
+  timespans: EventTimespanLike[] | unknown[] | null | undefined,
   timeZone: string = config.timeZone,
 ): FormattedEventWhen {
-  if (!timespans?.length) {
+  const source = normalizeEventTimespans(timespans);
+  if (!source.length) {
     return { text: 'TBD', html: 'TBD' };
   }
 
-  const normalized = timespans
+  const normalized = source
     .map((ts) => ({
       start: ts.start_dt ?? ts.startDt ?? '',
       end: ts.end_dt ?? ts.endDt ?? ts.start_dt ?? ts.startDt ?? '',
@@ -98,12 +112,13 @@ export function formatEventTimespansForDisplay(
 
 /** First timespan start in club time, e.g. "Tuesday, September 8, 2026 at 10:00 AM". */
 export function formatEventStartForDisplay(
-  timespans: EventTimespanLike[] | null | undefined,
+  timespans: EventTimespanLike[] | unknown[] | null | undefined,
   timeZone: string = config.timeZone,
 ): string | null {
-  if (!timespans?.length) return null;
+  const source = normalizeEventTimespans(timespans);
+  if (!source.length) return null;
 
-  const normalized = timespans
+  const normalized = source
     .map((ts) => ({
       start: ts.start_dt ?? ts.startDt ?? '',
       sortOrder: ts.sort_order ?? ts.sortOrder ?? 0,

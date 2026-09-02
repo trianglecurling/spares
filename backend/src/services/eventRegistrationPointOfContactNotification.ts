@@ -27,14 +27,7 @@ type EventWithRegistrationFields = {
   title: string;
   point_of_contact: string;
   registrationFields?: EventRegistrationField[] | unknown[];
-  timespans?: Array<{
-    start_dt?: string;
-    end_dt?: string;
-    startDt?: string;
-    endDt?: string;
-    sort_order?: number;
-    sortOrder?: number;
-  }>;
+  timespans?: unknown[];
 };
 
 type DbRegistration = {
