@@ -532,6 +532,18 @@ describe('formatVolunteerDateOnly', () => {
   });
 });
 
+describe('volunteerShiftDayKey', () => {
+  test('groups an evening club-local shift on the club calendar day, not UTC', () => {
+    // 9:00 PM Sept 22 in America/New_York (EDT, UTC-4) stores as Sept 23 UTC.
+    expect(volunteerShiftDayKey('2026-09-23T01:00:00.000Z')).toBe('2026-09-22');
+  });
+
+  test('groups a winter evening shift on the club calendar day', () => {
+    // 9:00 PM Jan 8 in America/New_York (EST, UTC-5) stores as Jan 9 UTC.
+    expect(volunteerShiftDayKey('2026-01-09T02:00:00.000Z')).toBe('2026-01-08');
+  });
+});
+
 describe('roundVolunteerHoursUp', () => {
   test('rounds up to the next half hour', () => {
     expect(roundVolunteerHoursUp(1.1)).toBe(1.5);

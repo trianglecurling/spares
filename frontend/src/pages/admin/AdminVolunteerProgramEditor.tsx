@@ -38,6 +38,7 @@ import {
   addMinutesToDateTimeLocal,
   formatDurationMinutes,
   formatAttachedCalendarEventWhen,
+  formatVolunteerDayHeading,
   formatVolunteerRange,
   fromDateTimeLocal,
   hoursInputToMinutes,
@@ -46,6 +47,7 @@ import {
   VOLUNTEER_LOCATION_CLUB,
   volunteerLocationChoiceFromStored,
   volunteerLocationStoredFromChoice,
+  volunteerShiftDayKey,
   volunteerShiftHasEnded,
   defaultVolunteerCreditHours,
   parseVolunteerSignupKind,
@@ -1254,7 +1256,7 @@ export default function AdminVolunteerProgramEditor() {
   }
 
   const shiftsByDate = workingShifts.reduce<Record<string, VolunteerShiftView[]>>((acc, shift) => {
-    const key = shift.startDt.slice(0, 10);
+    const key = volunteerShiftDayKey(shift.startDt);
     (acc[key] ||= []).push(shift);
     return acc;
   }, {});
@@ -2101,12 +2103,7 @@ export default function AdminVolunteerProgramEditor() {
                     .map(([dateKey, shifts]) => (
                       <div key={dateKey} className="space-y-3">
                         <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">
-                          {new Date(`${dateKey}T12:00:00`).toLocaleDateString('en-US', {
-                            weekday: 'long',
-                            month: 'long',
-                            day: 'numeric',
-                            year: 'numeric',
-                          })}
+                          {formatVolunteerDayHeading(dateKey)}
                         </h3>
                         {shifts.map((shift) => (
                           <ExistingShiftEditor
