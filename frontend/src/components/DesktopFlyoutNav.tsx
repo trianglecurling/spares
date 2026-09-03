@@ -9,7 +9,7 @@ import {
 export interface NavMenuItemNode {
   id: number;
   label: string;
-  linkType: 'internal' | 'external' | null;
+  linkType: 'internal' | 'external' | 'separator' | null;
   url: string | null;
   openInNewTab: boolean;
   children: NavMenuItemNode[];
@@ -39,10 +39,24 @@ const TOP_CLOSE_DELAY_MS = 120;
 const flyoutBridgeClass =
   'pointer-events-auto absolute top-0 bottom-0 z-40 w-[12rem] max-w-[50vw]';
 
+export function isMenuSeparator(item: Pick<NavMenuItemNode, 'linkType'>): boolean {
+  return item.linkType === 'separator';
+}
+
+export function MenuSeparatorRule({ className }: { className?: string }) {
+  return (
+    <hr
+      className={
+        className ?? 'my-1 border-0 border-t border-gray-200 dark:border-gray-600'
+      }
+    />
+  );
+}
+
 export function linkForItem(
   item: NavMenuItemNode,
 ): { kind: 'internal' | 'external' | 'none'; href: string | null } {
-  if (!item.url) return { kind: 'none', href: null };
+  if (isMenuSeparator(item) || !item.url) return { kind: 'none', href: null };
   // Root-relative "Other" URLs are in-app routes; use the SPA router unless opening a new tab.
   const isAppRelative = item.url.startsWith('/') && !item.openInNewTab;
   if (item.linkType === 'internal' || (item.linkType === 'external' && isAppRelative)) {
@@ -124,7 +138,7 @@ function FlyoutItem({
   list: FlyoutListApi<number>;
   classes: DesktopFlyoutNavClasses;
 }) {
-  const hasChildren = item.children.length > 0;
+  const hasChildren = !isMenuSeparator(item) && item.children.length > 0;
   const link = linkForItem(item);
   const isOpen = list.openId === item.id;
   const submenuRef = useRef<HTMLUListElement>(null);
@@ -134,6 +148,14 @@ function FlyoutItem({
     list.registerSubmenu(item.id, submenuRef.current);
     return () => list.registerSubmenu(item.id, null);
   }, [hasChildren, item.id, isOpen, list]);
+
+  if (isMenuSeparator(item)) {
+    return (
+      <li className="list-none px-2 py-1">
+        <MenuSeparatorRule />
+      </li>
+    );
+  }
 
   const rowHandlers = hasChildren
     ? {
@@ -236,8 +258,16 @@ function DesktopNavItem({
   onScheduleClose: () => void;
   onCloseNow: () => void;
 }) {
-  const hasChildren = item.children.length > 0;
+  const hasChildren = !isMenuSeparator(item) && item.children.length > 0;
   const link = linkForItem(item);
+
+  if (isMenuSeparator(item)) {
+    return (
+      <li className="list-none self-stretch px-1 py-1">
+        <span className="block h-5 w-px bg-gray-300 dark:bg-gray-600" role="separator" />
+      </li>
+    );
+  }
 
   if (!hasChildren) {
     if (link.kind === 'external' && link.href) {
@@ -423,8 +453,16 @@ export function MobileMenuItem({
   onNavigate: () => void;
 }) {
   const link = linkForItem(item);
-  const hasChildren = item.children.length > 0;
+  const hasChildren = !isMenuSeparator(item) && item.children.length > 0;
   const rowStyle = { paddingLeft: `${0.75 + level * 0.8}rem` };
+
+  if (isMenuSeparator(item)) {
+    return (
+      <div className="px-3 py-1" style={rowStyle}>
+        <MenuSeparatorRule />
+      </div>
+    );
+  }
 
   if (hasChildren) {
     return (

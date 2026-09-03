@@ -80,7 +80,7 @@ type SiteConfig = NonNullable<HomeData['siteConfig']>;
 interface MenuItemNode {
   id: number;
   label: string;
-  linkType: 'internal' | 'external' | null;
+  linkType: 'internal' | 'external' | 'separator' | null;
   url: string | null;
   openInNewTab: boolean;
   children: MenuItemNode[];

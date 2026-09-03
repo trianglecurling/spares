@@ -1,7 +1,7 @@
 import { useCallback, useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import { Link } from 'react-router-dom';
 import type { NavMenuItemNode } from './DesktopFlyoutNav';
-import { linkForItem, MobileMenuItem } from './DesktopFlyoutNav';
+import { isMenuSeparator, linkForItem, MenuSeparatorRule, MobileMenuItem } from './DesktopFlyoutNav';
 import { useAuth } from '../contexts/AuthContext';
 import { useAlert } from '../contexts/AlertContext';
 import { useMemberNavigation } from '../hooks/useMemberNavigation';
@@ -122,6 +122,14 @@ function MemberFlyoutNavNode({
   const link = linkForItem(item);
   const itemClass = [flyoutItemClass, item.labelClassName].filter(Boolean).join(' ');
 
+  if (isMenuSeparator(item)) {
+    return (
+      <FlyoutMenuLeaf>
+        <MenuSeparatorRule className="mx-1 my-1 border-0 border-t border-gray-200 dark:border-gray-600" />
+      </FlyoutMenuLeaf>
+    );
+  }
+
   if (item.children.length > 0) {
     return (
       <FlyoutMenuItem
@@ -131,6 +139,13 @@ function MemberFlyoutNavNode({
         triggerClassName={flyoutTriggerClass}
       >
         {item.children.map((child) => {
+          if (isMenuSeparator(child)) {
+            return (
+              <li key={child.id} className="list-none px-1 py-1">
+                <MenuSeparatorRule />
+              </li>
+            );
+          }
           const childLink = linkForItem(child);
           const childClass = [flyoutItemClass, child.labelClassName].filter(Boolean).join(' ');
           if (childLink.kind === 'none') {

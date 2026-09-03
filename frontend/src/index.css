@@ -565,6 +565,15 @@ html.dark body {
     @apply text-gray-900 dark:text-gray-100;
   }
 
+  .article-html-content a {
+    @apply text-primary-teal-link underline underline-offset-2 hover:opacity-90;
+  }
+
+  /* Chip/button links (FAQ pills) keep their own fill and contrast. */
+  .article-html-content a[class*='bg-blue-'] {
+    @apply text-white no-underline hover:opacity-100;
+  }
+
   .markdown-content a {
     @apply text-primary-teal-link underline underline-offset-2 hover:opacity-90;
   }

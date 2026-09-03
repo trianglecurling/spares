@@ -519,6 +519,13 @@
       "when": 1780352498515,
       "tag": "0074_volunteer_shift_source_calendar_event",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1780352498516,
+      "tag": "0075_allow_menu_items_separator_link_type",
+      "breakpoints": true
     }
   ]
 }

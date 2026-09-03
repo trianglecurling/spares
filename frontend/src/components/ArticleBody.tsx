@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
+import { scrollArticleToHash } from '../utils/articleHashScroll';
 import { ArticleMarkdown } from './ArticleMarkdown';
 
 /** Tracks executed script content to avoid double-run under React Strict Mode */
@@ -41,10 +43,7 @@ function ArticleHtmlContent({ content }: { content: string }) {
   }, [parsed.js]);
 
   return (
-    <div
-      ref={containerRef}
-      className="article-html-content [&_a]:text-primary-teal-link [&_a]:underline dark:[&_a]:text-primary-teal-link"
-    >
+    <div ref={containerRef} className="article-html-content">
       <div dangerouslySetInnerHTML={{ __html: parsed.html }} />
     </div>
   );
@@ -57,8 +56,36 @@ export function ArticleBody({
   contentType?: 'markdown' | 'html';
   content: string;
 }) {
-  if (contentType === 'html') {
-    return <ArticleHtmlContent content={content} />;
-  }
-  return <ArticleMarkdown markdown={content} />;
+  const location = useLocation();
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root || !content) return;
+
+    let canceled = false;
+    let timer = 0;
+    let attempts = 0;
+
+    const tryScroll = () => {
+      if (canceled) return;
+      if (scrollArticleToHash(location.hash, root)) return;
+      if (attempts >= 20) return;
+      attempts += 1;
+      timer = window.setTimeout(tryScroll, 50);
+    };
+
+    const frame = window.requestAnimationFrame(tryScroll);
+    return () => {
+      canceled = true;
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
+  }, [content, contentType, location.hash, location.pathname]);
+
+  return (
+    <div ref={rootRef}>
+      {contentType === 'html' ? <ArticleHtmlContent content={content} /> : <ArticleMarkdown markdown={content} />}
+    </div>
+  );
 }

@@ -52,7 +52,7 @@ type MenuItem = {
   parentId: number | null;
   label: string;
   sortOrder: number;
-  linkType: 'internal' | 'external' | null;
+  linkType: 'internal' | 'external' | 'separator' | null;
   url: string | null;
   openInNewTab: boolean;
   articleId: number | null;
@@ -91,12 +91,14 @@ type FileOrphanFilter = 'all' | 'suspected';
 type FileVisibilityFilter = 'all' | 'public' | 'authenticated';
 type FileTypeFilter = 'all' | 'image' | 'video' | 'audio' | 'document' | 'other';
 
-type MenuLinkTypeChoice = 'none' | 'internal' | 'external';
+type MenuLinkType = 'internal' | 'external' | 'separator';
+type MenuLinkTypeChoice = 'none' | MenuLinkType;
 
 const MENU_LINK_TYPE_CHOICES: ChoiceOption<MenuLinkTypeChoice>[] = [
   { value: 'none', label: '— None (dropdown parent only) —' },
   { value: 'internal', label: 'Article' },
   { value: 'external', label: 'Other (custom URL)' },
+  { value: 'separator', label: 'Separator' },
 ];
 
 const MENU_EDITOR_TYPES: MenuEditorType[] = ['navbar', 'member'];
@@ -194,7 +196,7 @@ function buildMenuParentChoiceOptions(
     const items = byParent.get(parentId) ?? [];
     const result: ChoiceOption<number>[] = [];
     for (const m of items) {
-      if (excludeIds.has(m.id)) continue;
+      if (excludeIds.has(m.id) || m.linkType === 'separator') continue;
       const prefix = depth > 0 ? '\u00A0\u00A0'.repeat(depth) + '- ' : '';
       result.push({ value: m.id, label: `${prefix}${m.label}` });
       result.push(...flatten(m.id, depth + 1));
@@ -328,7 +330,7 @@ export default function AdminContent() {
   const [menuForm, setMenuForm] = useState({
     label: '',
     parentId: null as number | null,
-    linkType: null as 'internal' | 'external' | null,
+    linkType: null as MenuLinkType | null,
     url: '',
     openInNewTab: false,
     selectedArticleId: null as number | null,
@@ -913,7 +915,14 @@ export default function AdminContent() {
     const useArticleTitleForLabel = Boolean(
       menuForm.linkType === 'internal' && article && !menuForm.labelOverridden
     );
-    if (!useArticleTitleForLabel && !menuForm.label.trim()) {
+    const editingHasChildren = Boolean(
+      editingMenuItem && menuItems.some((item) => item.parentId === editingMenuItem.id)
+    );
+    if (menuForm.linkType === 'separator' && editingHasChildren) {
+      showAlert('Separators cannot have child items. Move or delete the nested items first.', 'error');
+      return;
+    }
+    if (menuForm.linkType !== 'separator' && !useArticleTitleForLabel && !menuForm.label.trim()) {
       showAlert('Label is required', 'error');
       return;
     }
@@ -928,7 +937,12 @@ export default function AdminContent() {
     }
     setSaving(true);
     try {
-      const labelToSend = useArticleTitleForLabel ? article!.title : menuForm.label.trim();
+      const labelToSend =
+        menuForm.linkType === 'separator'
+          ? 'Separator'
+          : useArticleTitleForLabel
+            ? article!.title
+            : menuForm.label.trim();
       const url =
         menuForm.linkType === 'internal' && article
           ? buildMenuArticleUrl(
@@ -998,8 +1012,11 @@ export default function AdminContent() {
 
   const handleDeleteMenuItem = async (item: MenuItem) => {
     const ok = await confirm({
-      title: 'Delete menu item',
-      message: `Delete "${item.label}"? Child items will also be removed.`,
+      title: item.linkType === 'separator' ? 'Delete separator' : 'Delete menu item',
+      message:
+        item.linkType === 'separator'
+          ? 'Delete this separator?'
+          : `Delete "${item.label}"? Child items will also be removed.`,
       confirmText: 'Delete',
       variant: 'danger',
     });
@@ -1577,8 +1594,8 @@ export default function AdminContent() {
                 />
                 <p className="text-gray-500 mb-4">
                   {menuEditorType === 'navbar'
-                    ? 'Public navbar menu items. Hover between items to add. Click the arrow to expand or collapse nested items. Drag to reorder within the same level.'
-                    : 'Members-area menu items. Hover between items to add. Click the arrow to expand or collapse nested items. Drag to reorder within the same level. Article links use /members-area/{section}/{slug} so the members layout stays put and the matching top-level section stays highlighted. Personal league links are added under Leagues automatically. Admin links fill the Admin section based on each member’s permissions. Building access and Member communications show only for active members; Book ice time and spare links are hidden for social memberships.'}
+                    ? 'Public navbar menu items. Hover between items to add. Click the arrow to expand or collapse nested items. Drag to reorder within the same level. Use the Separator link type for a horizontal line in a dropdown.'
+                    : 'Members-area menu items. Hover between items to add. Click the arrow to expand or collapse nested items. Drag to reorder within the same level. Use the Separator link type for a horizontal line. Article links use /members-area/{section}/{slug} so the members layout stays put and the matching top-level section stays highlighted. Personal league links are added under Leagues automatically. Admin links fill the Admin section based on each member’s permissions. Building access and Member communications show only for active members; Book ice time and spare links are hidden for social memberships.'}
                 </p>
                 {(() => {
                   const byParent = new Map<number | null, MenuItem[]>();
@@ -1603,7 +1620,9 @@ export default function AdminContent() {
                       items={menuItems}
                       getId={(item) => item.id}
                       getParentId={(item) => item.parentId}
-                      getItemLabel={(item) => item.label}
+                      getItemLabel={(item) =>
+                        item.linkType === 'separator' ? 'Separator' : item.label
+                      }
                       sortSiblings={(siblings) => siblings.sort(sortByOrder)}
                       isExpanded={(item) => menuExpandedIds.has(item.id)}
                       canDragItem={(_, siblings) => siblings.length > 1}
@@ -1672,17 +1691,29 @@ export default function AdminContent() {
                                 )}
                                 {canDrag ? dragHandle : <span className="w-8 shrink-0" aria-hidden />}
                                 <div className="min-w-0">
-                                  <span className="font-medium">{item.label}</span>
-                                  {item.linkType && item.url && (
-                                    <span className="ml-2 text-sm text-gray-500">
-                                      ({item.linkType === 'internal' ? 'Article' : 'Other'}: {item.url}
-                                      {item.linkType === 'external'
-                                        ? item.openInNewTab
-                                          ? ' - new tab'
-                                          : ' - same tab'
-                                        : ''}
-                                      )
+                                  {item.linkType === 'separator' ? (
+                                    <span className="flex min-w-0 items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+                                      <span
+                                        className="inline-block w-16 shrink-0 border-t border-gray-300 dark:border-gray-600"
+                                        aria-hidden
+                                      />
+                                      Separator
                                     </span>
+                                  ) : (
+                                    <>
+                                      <span className="font-medium">{item.label}</span>
+                                      {item.linkType && item.url && (
+                                        <span className="ml-2 text-sm text-gray-500">
+                                          ({item.linkType === 'internal' ? 'Article' : 'Other'}: {item.url}
+                                          {item.linkType === 'external'
+                                            ? item.openInNewTab
+                                              ? ' - new tab'
+                                              : ' - same tab'
+                                            : ''}
+                                          )
+                                        </span>
+                                      )}
+                                    </>
                                   )}
                                 </div>
                               </div>
@@ -1709,14 +1740,29 @@ export default function AdminContent() {
                       renderOverlay={(item) => (
                         <SortableRow isDragging isOverlay className="px-3 py-2">
                           <div className="flex items-center gap-2">
-                            <DragHandle label={`Reorder ${item.label}`} disabled />
+                            <DragHandle
+                              label={`Reorder ${item.linkType === 'separator' ? 'Separator' : item.label}`}
+                              disabled
+                            />
                             <div className="min-w-0">
-                              <span className="font-medium">{item.label}</span>
-                              {item.linkType && item.url ? (
-                                <span className="ml-2 text-sm text-gray-500">
-                                  ({item.linkType === 'internal' ? 'Article' : 'Other'}: {item.url})
+                              {item.linkType === 'separator' ? (
+                                <span className="flex min-w-0 items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+                                  <span
+                                    className="inline-block w-16 shrink-0 border-t border-gray-300 dark:border-gray-600"
+                                    aria-hidden
+                                  />
+                                  Separator
                                 </span>
-                              ) : null}
+                              ) : (
+                                <>
+                                  <span className="font-medium">{item.label}</span>
+                                  {item.linkType && item.url ? (
+                                    <span className="ml-2 text-sm text-gray-500">
+                                      ({item.linkType === 'internal' ? 'Article' : 'Other'}: {item.url})
+                                    </span>
+                                  ) : null}
+                                </>
+                              )}
                             </div>
                           </div>
                         </SortableRow>
@@ -1737,17 +1783,32 @@ export default function AdminContent() {
                   title={editingMenuItem ? 'Edit menu item' : 'Add menu item'}
                 >
                   <form onSubmit={handleSaveMenuItem} className="space-y-4">
-                    <FormField label="Link type" htmlFor={`${formFieldId}-menu-link-type`}>
+                    <FormField
+                      label="Link type"
+                      htmlFor={`${formFieldId}-menu-link-type`}
+                      helperText={
+                        menuForm.linkType === 'separator'
+                          ? 'Renders as a horizontal line in the menu. Separators cannot have nested items.'
+                          : undefined
+                      }
+                    >
                       <ChoiceInput<MenuLinkTypeChoice>
                         inputId={`${formFieldId}-menu-link-type`}
-                        options={MENU_LINK_TYPE_CHOICES}
-                        value={
-                          menuForm.linkType === null
-                            ? 'none'
-                            : menuForm.linkType === 'internal'
-                              ? 'internal'
-                              : 'external'
+                        options={
+                          editingMenuItem &&
+                          menuItems.some((item) => item.parentId === editingMenuItem.id)
+                            ? MENU_LINK_TYPE_CHOICES.map((option) =>
+                                'value' in option && option.value === 'separator'
+                                  ? {
+                                      ...option,
+                                      disabled: true,
+                                      description: 'Move or delete nested items first',
+                                    }
+                                  : option
+                              )
+                            : MENU_LINK_TYPE_CHOICES
                         }
+                        value={menuForm.linkType === null ? 'none' : menuForm.linkType}
                         onChange={(next) => {
                           if (next == null || Array.isArray(next)) return;
                           const linkType = next === 'none' ? null : next;
@@ -1759,6 +1820,8 @@ export default function AdminContent() {
                             selectedArticleId: linkType === 'internal' ? f.selectedArticleId : null,
                             selectedArticleTitle: linkType === 'internal' ? f.selectedArticleTitle : '',
                             selectedArticleSlug: linkType === 'internal' ? f.selectedArticleSlug : '',
+                            label: linkType === 'separator' ? '' : f.label,
+                            labelOverridden: linkType === 'separator' ? false : f.labelOverridden,
                           }));
                         }}
                         listboxLabel="Link type"
@@ -1824,45 +1887,47 @@ export default function AdminContent() {
                         />
                       </>
                     )}
-                    <FormField
-                      label={
-                        <>
-                          Label{' '}
-                          {menuForm.linkType === 'internal' &&
-                            menuForm.selectedArticleId &&
-                            !menuForm.labelOverridden &&
-                            '(from article)'}
-                        </>
-                      }
-                      htmlFor={`${formFieldId}-menu-label`}
-                    >
-                      <input
-                        id={`${formFieldId}-menu-label`}
-                        type="text"
-                        value={menuForm.label}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          setMenuForm((f) => ({
-                            ...f,
-                            label: value,
-                            labelOverridden: value.trim() !== '',
-                          }));
-                        }}
-                        placeholder={
-                          menuForm.linkType === 'internal' && menuForm.selectedArticleId
-                            ? 'Override to use custom label'
-                            : 'e.g. Home, Articles'
+                    {menuForm.linkType !== 'separator' && (
+                      <FormField
+                        label={
+                          <>
+                            Label{' '}
+                            {menuForm.linkType === 'internal' &&
+                              menuForm.selectedArticleId &&
+                              !menuForm.labelOverridden &&
+                              '(from article)'}
+                          </>
                         }
-                        className="app-input"
-                        required={
-                          !(
-                            menuForm.linkType === 'internal' &&
-                            menuForm.selectedArticleId &&
-                            !menuForm.labelOverridden
-                          )
-                        }
-                      />
-                    </FormField>
+                        htmlFor={`${formFieldId}-menu-label`}
+                      >
+                        <input
+                          id={`${formFieldId}-menu-label`}
+                          type="text"
+                          value={menuForm.label}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            setMenuForm((f) => ({
+                              ...f,
+                              label: value,
+                              labelOverridden: value.trim() !== '',
+                            }));
+                          }}
+                          placeholder={
+                            menuForm.linkType === 'internal' && menuForm.selectedArticleId
+                              ? 'Override to use custom label'
+                              : 'e.g. Home, Articles'
+                          }
+                          className="app-input"
+                          required={
+                            !(
+                              menuForm.linkType === 'internal' &&
+                              menuForm.selectedArticleId &&
+                              !menuForm.labelOverridden
+                            )
+                          }
+                        />
+                      </FormField>
+                    )}
                     <FormField label="Parent" htmlFor={`${formFieldId}-menu-parent`}>
                       <ChoiceInput<number>
                         inputId={`${formFieldId}-menu-parent`}

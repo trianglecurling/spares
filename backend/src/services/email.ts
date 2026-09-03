@@ -130,7 +130,7 @@ async function sendMailWithTransporter(
     html: fullHtmlContent,
     ...(options.textContent ? { text: options.textContent } : {}),
     ...(options.replyTo && options.replyTo.trim().length > 0
-      ? { replyTo: options.replyTo.trim() }
+      ? { replyTo: formatReplyTo(options.replyTo, options.replyToName) }
       : {}),
   });
 }
@@ -154,6 +154,8 @@ interface EmailOptions {
   textContent?: string;
   recipientName: string;
   replyTo?: string;
+  /** Display name paired with `replyTo` when present. */
+  replyToName?: string;
   /** Send-budget category; defaults to staff (fail-open). */
   budgetKind?: SendBudgetKind;
   /** When true, over-budget still sends (staff). Public/OTP should leave false. */
@@ -302,9 +304,8 @@ export async function sendEmail(options: EmailOptions, memberToken?: string): Pr
         },
       };
       if (options.replyTo && options.replyTo.trim().length > 0) {
-        (message as EmailMessage & { replyTo: Array<{ address: string }> }).replyTo = [
-          { address: options.replyTo.trim() },
-        ];
+        (message as EmailMessage & { replyTo: Array<{ address: string; displayName?: string }> }).replyTo =
+          [formatAzureReplyTo(options.replyTo, options.replyToName)];
       }
 
       const poller = await client.beginSend(message);

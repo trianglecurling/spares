@@ -6,7 +6,7 @@ export const MEMBER_MENU_TYPE = 'member';
 
 type MemberMenuSeedNode = {
   label: string;
-  linkType: 'internal' | 'external' | null;
+  linkType: 'internal' | 'external' | 'separator' | null;
   url: string | null;
   children?: MemberMenuSeedNode[];
 };

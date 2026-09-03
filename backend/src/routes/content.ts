@@ -136,12 +136,36 @@ const menuItemBodySchema = z.object({
   parentId: z.number().nullable().optional(),
   label: z.string().min(1),
   sortOrder: z.number().optional(),
-  linkType: z.enum(['internal', 'external']).nullable().optional(),
+  linkType: z.enum(['internal', 'external', 'separator']).nullable().optional(),
   url: z.string().nullable().optional(),
   openInNewTab: z.boolean().optional(),
   articleId: z.number().nullable().optional(),
   useArticleTitleForLabel: z.boolean().optional(),
 });
+
+function menuLinkTypeRequiresUrl(linkType: string | null | undefined): boolean {
+  return linkType === 'internal' || linkType === 'external';
+}
+
+async function getMenuItemLinkType(id: number): Promise<string | null | undefined> {
+  const { db, schema } = getDrizzleDb();
+  const [row] = await db
+    .select({ link_type: schema.menuItems.link_type })
+    .from(schema.menuItems)
+    .where(eq(schema.menuItems.id, id))
+    .limit(1);
+  return row ? (row.link_type ?? null) : undefined;
+}
+
+async function menuItemHasChildren(id: number): Promise<boolean> {
+  const { db, schema } = getDrizzleDb();
+  const [child] = await db
+    .select({ id: schema.menuItems.id })
+    .from(schema.menuItems)
+    .where(eq(schema.menuItems.parent_id, id))
+    .limit(1);
+  return Boolean(child);
+}
 
 const contactRecipientSlugSchema = z.string().trim().min(1).max(64).regex(/^[a-z0-9-]+$/);
 
@@ -1397,22 +1421,32 @@ export async function contentRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: 'Invalid request', details: parsed.error.flatten() });
     }
     const body = parsed.data;
-    if (body.linkType && !body.url?.trim()) {
+    if (menuLinkTypeRequiresUrl(body.linkType) && !body.url?.trim()) {
       return reply.code(400).send({ error: 'URL is required when link type is set' });
     }
+    if (body.parentId != null) {
+      const parentLinkType = await getMenuItemLinkType(body.parentId);
+      if (parentLinkType === undefined) {
+        return reply.code(400).send({ error: 'Parent menu item not found' });
+      }
+      if (parentLinkType === 'separator') {
+        return reply.code(400).send({ error: 'Separators cannot have child items' });
+      }
+    }
+    const isSeparator = body.linkType === 'separator';
     const { db, schema } = getDrizzleDb();
     const [row] = await db
       .insert(schema.menuItems)
       .values({
         menu_type: body.menuType,
         parent_id: body.parentId ?? null,
-        label: body.label,
+        label: isSeparator ? (body.label.trim() || 'Separator') : body.label,
         sort_order: body.sortOrder ?? 0,
         link_type: body.linkType ?? null,
-        url: body.url?.trim() || null,
-        open_in_new_tab: body.openInNewTab ? 1 : 0,
-        article_id: body.articleId ?? null,
-        use_article_title_for_label: body.useArticleTitleForLabel ? 1 : 0,
+        url: isSeparator ? null : body.url?.trim() || null,
+        open_in_new_tab: isSeparator ? 0 : body.openInNewTab ? 1 : 0,
+        article_id: isSeparator ? null : body.articleId ?? null,
+        use_article_title_for_label: isSeparator ? 0 : body.useArticleTitleForLabel ? 1 : 0,
       })
       .returning();
     return {
@@ -1460,21 +1494,44 @@ export async function contentRoutes(fastify: FastifyInstance) {
       return reply.code(400).send({ error: 'Invalid request', details: parsed.error.flatten() });
     }
     const body = parsed.data;
-    if (body.linkType && body.url !== undefined && !body.url?.trim()) {
+    if (menuLinkTypeRequiresUrl(body.linkType) && body.url !== undefined && !body.url?.trim()) {
       return reply.code(400).send({ error: 'URL is required when link type is set' });
+    }
+    if (body.parentId != null) {
+      if (body.parentId === id) {
+        return reply.code(400).send({ error: 'A menu item cannot be its own parent' });
+      }
+      const parentLinkType = await getMenuItemLinkType(body.parentId);
+      if (parentLinkType === undefined) {
+        return reply.code(400).send({ error: 'Parent menu item not found' });
+      }
+      if (parentLinkType === 'separator') {
+        return reply.code(400).send({ error: 'Separators cannot have child items' });
+      }
+    }
+    if (body.linkType === 'separator' && (await menuItemHasChildren(id))) {
+      return reply.code(400).send({ error: 'Separators cannot have child items' });
     }
     const { db, schema } = getDrizzleDb();
     const updates: Record<string, unknown> = {};
+    const isSeparator = body.linkType === 'separator';
     if (body.menuType !== undefined) updates.menu_type = body.menuType;
     if (body.parentId !== undefined) updates.parent_id = body.parentId;
-    if (body.label !== undefined) updates.label = body.label;
+    if (body.label !== undefined) updates.label = isSeparator ? (body.label.trim() || 'Separator') : body.label;
     if (body.sortOrder !== undefined) updates.sort_order = body.sortOrder;
     if (body.linkType !== undefined) updates.link_type = body.linkType;
-    if (body.url !== undefined) updates.url = body.url?.trim() || null;
-    if (body.openInNewTab !== undefined) updates.open_in_new_tab = body.openInNewTab ? 1 : 0;
-    if (body.articleId !== undefined) updates.article_id = body.articleId;
-    if (body.useArticleTitleForLabel !== undefined)
-      updates.use_article_title_for_label = body.useArticleTitleForLabel ? 1 : 0;
+    if (isSeparator) {
+      updates.url = null;
+      updates.open_in_new_tab = 0;
+      updates.article_id = null;
+      updates.use_article_title_for_label = 0;
+    } else {
+      if (body.url !== undefined) updates.url = body.url?.trim() || null;
+      if (body.openInNewTab !== undefined) updates.open_in_new_tab = body.openInNewTab ? 1 : 0;
+      if (body.articleId !== undefined) updates.article_id = body.articleId;
+      if (body.useArticleTitleForLabel !== undefined)
+        updates.use_article_title_for_label = body.useArticleTitleForLabel ? 1 : 0;
+    }
     if (Object.keys(updates).length === 0) {
       return reply.code(400).send({ error: 'No fields to update' });
     }
