@@ -381,8 +381,14 @@ function errorMessage(error: unknown, fallback: string): string {
   return editValidationErrorMessage(error, fallback);
 }
 
+function isRecognizedEmailLoginConflict(error: unknown): boolean {
+  if (!axios.isAxiosError(error) || error.response?.status !== 409) return false;
+  const details = error.response.data?.details;
+  return Boolean(details && typeof details === 'object' && (details as { requiresLogin?: unknown }).requiresLogin === true);
+}
+
 function isRegistrationInProgressConflict(error: unknown): boolean {
-  return axios.isAxiosError(error) && error.response?.status === 409;
+  return axios.isAxiosError(error) && error.response?.status === 409 && !isRecognizedEmailLoginConflict(error);
 }
 
 function formatRegistrationDiscountOffPhrase(slot: RegistrationDiscountSlot): string {
@@ -915,6 +921,7 @@ export default function RegistrationShellPage() {
   const [returningLoginTempToken, setReturningLoginTempToken] = useState('');
   const [returningLoginUnrecognizedChoice, setReturningLoginUnrecognizedChoice] =
     useState<ReturningUnrecognizedChoice>(null);
+  const [recognizedEmailLogin, setRecognizedEmailLogin] = useState(false);
   /** Sub-screen on returning-member identity step (delegation message or new-member form). */
   const [returningIdentityAuxMode, setReturningIdentityAuxMode] = useState<
     null | 'other_new_member' | 'delegation_instructions'
@@ -2387,6 +2394,23 @@ export default function RegistrationShellPage() {
     setReturningLoginMultipleMembers([]);
     setReturningLoginTempToken('');
     setReturningLoginUnrecognizedChoice(null);
+    setRecognizedEmailLogin(false);
+  }
+
+  function beginRecognizedEmailLogin(email: string) {
+    setRecognizedEmailLogin(true);
+    setReturningLoginEmail(email.trim());
+    setReturningLoginCode('');
+    setReturningLoginMultipleMembers([]);
+    setReturningLoginTempToken('');
+    setReturningLoginUnrecognizedChoice(null);
+    setReturningGuestLoginPhase('email');
+    setError('');
+  }
+
+  async function guestEmailIsRecognized(email: string): Promise<boolean> {
+    const { data } = await api.post<{ recognized: boolean }>('/registration/guest/check-email', { email: email.trim() });
+    return data.recognized === true;
   }
 
   async function finalizeAuthenticatedReturningRegistration(
@@ -2478,8 +2502,14 @@ export default function RegistrationShellPage() {
       }
     } catch (err: unknown) {
       if (axios.isAxiosError(err) && err.response?.status === 404) {
-        setReturningLoginUnrecognizedChoice(null);
-        setReturningGuestLoginPhase('unrecognized-followup');
+        if (recognizedEmailLogin) {
+          setError(
+            'That email address was not found. Use Back to return to account setup, or try the email on your existing account.',
+          );
+        } else {
+          setReturningLoginUnrecognizedChoice(null);
+          setReturningGuestLoginPhase('unrecognized-followup');
+        }
       } else {
         const msg = axios.isAxiosError(err) ? err.response?.data?.error : undefined;
         setError(typeof msg === 'string' ? msg : 'Unable to send a login code.');
@@ -2862,10 +2892,19 @@ export default function RegistrationShellPage() {
         hydrateFromServerPayload({ id: registrationId, ...data });
         navigate('/registration/policies');
       } else if (windowState) {
+        persistGuestDraftRef.current('identity');
+        if (form.email.trim() && (await guestEmailIsRecognized(form.email))) {
+          beginRecognizedEmailLogin(form.email);
+          return;
+        }
         persistGuestDraftRef.current('policies');
         navigate('/registration/policies');
       }
     } catch (err) {
+      if (isRecognizedEmailLoginConflict(err)) {
+        beginRecognizedEmailLogin(form.email);
+        return;
+      }
       setError(errorMessage(err, 'Unable to set up the registration account.'));
     } finally {
       setLoading(false);
@@ -3484,6 +3523,11 @@ export default function RegistrationShellPage() {
         navigate('/registration/success');
       }
     } catch (err) {
+      if (!member && isRecognizedEmailLoginConflict(err)) {
+        beginRecognizedEmailLogin(demographics.email);
+        navigate('/registration/identity');
+        return;
+      }
       setError(errorMessage(err, 'Unable to submit registration.'));
       setConfirmingPayLater(false);
     } finally {
@@ -4288,6 +4332,121 @@ export default function RegistrationShellPage() {
         </RegistrationCard>
       );
       }
+    } else if (recognizedEmailLogin && returningGuestLoginPhase) {
+      content = (
+        <RegistrationCard>
+          <RegistrationFlowHeader />
+          {returningGuestLoginPhase === 'email' ? (
+            <>
+              <h1 className="text-3xl font-bold text-[#121033]">Account found</h1>
+              <p className="mt-3 text-gray-600">
+                We already have a Triangle Curling account for this email. Log in to continue registration instead of
+                creating a new account.
+              </p>
+              <form onSubmit={handleReturningGuestMagicLinkSendCode} className="mt-6 space-y-4">
+                <FormField label="Email address" htmlFor={returningEmailInputId} required tone="public">
+                  <FieldInput
+                    id={returningEmailInputId}
+                    type="email"
+                    value={returningLoginEmail}
+                    onChange={setReturningLoginEmail}
+                    autoComplete="email"
+                  />
+                </FormField>
+                {error ? <p className="text-sm text-red-600">{error}</p> : null}
+                <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:gap-3">
+                  <Button type="submit" disabled={loading}>
+                    {loading ? 'Sending…' : 'Send login code'}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={loading}
+                    onClick={() => {
+                      setRecognizedEmailLogin(false);
+                      resetReturningGuestLoginFlow();
+                      setError('');
+                    }}
+                  >
+                    Back
+                  </Button>
+                </div>
+              </form>
+            </>
+          ) : returningGuestLoginPhase === 'code' ? (
+            <>
+              <h1 className="text-3xl font-bold text-[#121033]">Enter your login code</h1>
+              <p className="mt-3 text-gray-600">Check email for {returningLoginEmail.trim()}.</p>
+              <form onSubmit={handleReturningGuestMagicLinkVerify} className="mt-6 space-y-4">
+                <FormField label="Six-digit login code" htmlFor={returningCodeInputId} required tone="public">
+                  <FieldInput
+                    id={returningCodeInputId}
+                    type="text"
+                    value={returningLoginCode}
+                    onChange={(v: string) => setReturningLoginCode(v.replace(/\D/g, '').slice(0, 6))}
+                    autoComplete="one-time-code"
+                    required={false}
+                  />
+                </FormField>
+                {error ? <p className="text-sm text-red-600">{error}</p> : null}
+                <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:gap-3">
+                  <Button type="submit" disabled={loading || returningLoginCode.length !== 6}>
+                    {loading ? 'Verifying…' : 'Verify code'}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={loading}
+                    onClick={() => {
+                      setReturningGuestLoginPhase('email');
+                      setReturningLoginCode('');
+                      setError('');
+                    }}
+                  >
+                    Back
+                  </Button>
+                </div>
+              </form>
+            </>
+          ) : returningGuestLoginPhase === 'select' ? (
+            <>
+              <h1 className="text-3xl font-bold text-[#121033]">Choose your profile</h1>
+              <p className="mt-3 text-gray-600">
+                Multiple members share {returningLoginEmail.trim()}. Select the profile you usually use to sign in.
+              </p>
+              {error ? <p className="mt-4 text-sm text-red-600">{error}</p> : null}
+              <div className="mt-6 space-y-2">
+                {returningLoginMultipleMembers.map((pick) => (
+                  <button
+                    key={pick.id}
+                    type="button"
+                    disabled={loading}
+                    className="w-full rounded-xl border border-gray-200 px-4 py-3 text-left text-gray-900 transition hover:bg-gray-50 disabled:opacity-50"
+                    onClick={() => void handleReturningGuestMagicLinkSelect(pick.id)}
+                  >
+                    {pick.name}
+                  </button>
+                ))}
+              </div>
+              <Button
+                className="mt-6"
+                type="button"
+                variant="secondary"
+                disabled={loading}
+                onClick={() => {
+                  setReturningGuestLoginPhase('email');
+                  setReturningLoginCode('');
+                  setReturningLoginMultipleMembers([]);
+                  setReturningLoginTempToken('');
+                  setError('');
+                }}
+              >
+                Back
+              </Button>
+            </>
+          ) : null}
+        </RegistrationCard>
+      );
     } else {
       content = (
       <RegistrationCard>

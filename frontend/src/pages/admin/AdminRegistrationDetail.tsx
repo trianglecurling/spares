@@ -4,6 +4,7 @@ import { AppPage, AppPageHeader } from '../../components/AppPage';
 import AppStateCard from '../../components/AppStateCard';
 import BackButton from '../../components/BackButton';
 import Button from '../../components/Button';
+import FormCheckbox from '../../components/FormCheckbox';
 import Modal from '../../components/Modal';
 import RecordOfflinePaymentModal from '../../components/registration/RecordOfflinePaymentModal';
 import RegistrationViewEditModals, {
@@ -315,6 +316,7 @@ export default function AdminRegistrationDetail() {
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [cancelModalOpen, setCancelModalOpen] = useState(false);
+  const [notifyCurlerOnCancel, setNotifyCurlerOnCancel] = useState(true);
   const [requestingPayment, setRequestingPayment] = useState(false);
   const [recordingPayment, setRecordingPayment] = useState(false);
   const [offlinePaymentOpen, setOfflinePaymentOpen] = useState(false);
@@ -462,7 +464,7 @@ export default function AdminRegistrationDetail() {
     try {
       const response = await api.post<{ refundIssued: boolean }>(
         `/registration/staff/registrations/${numericId}/cancel`,
-        { refund },
+        { refund, notify: notifyCurlerOnCancel },
       );
       showAlert(
         response.data.refundIssued
@@ -492,7 +494,15 @@ export default function AdminRegistrationDetail() {
           }
           actions={
             detail?.canCancel ? (
-              <Button type="button" variant="outline-danger" disabled={deleting} onClick={() => setCancelModalOpen(true)}>
+              <Button
+                type="button"
+                variant="outline-danger"
+                disabled={deleting}
+                onClick={() => {
+                  setNotifyCurlerOnCancel(true);
+                  setCancelModalOpen(true);
+                }}
+              >
                 Cancel registration
               </Button>
             ) : undefined
@@ -847,6 +857,13 @@ export default function AdminRegistrationDetail() {
               applied to another registration.
             </p>
           ) : null}
+          <FormCheckbox
+            label="Email the curler about this cancellation"
+            checked={notifyCurlerOnCancel}
+            onChange={setNotifyCurlerOnCancel}
+            disabled={deleting}
+            helperText="Turn this off for duplicate cleanup so they are not told this registration was canceled."
+          />
           <div className="flex flex-wrap justify-end gap-2 pt-2">
             <Button
               type="button"

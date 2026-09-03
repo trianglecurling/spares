@@ -27,6 +27,7 @@ import {
 } from '../utils/nameTag.js';
 import { formatMemberDisplayName, normalizePersonName } from '../utils/memberName.js';
 import { applyMemberGuardianUpdate } from '../services/memberGuardian.js';
+import { assertNewRegistrationEmailAvailable } from './registrationEmailRecognition.js';
 
 export const REQUIRED_REGISTRATION_POLICIES: Array<{
   type: PolicyAcceptanceKindSqlite;
@@ -715,18 +716,39 @@ export async function attachNewCurler(input: {
   useSubmitterEmailForCurler?: boolean;
 }): Promise<{ registration: RegistrationShellRow; submitter: MemberSummary; curler: MemberSummary }> {
   const { db, schema } = getDrizzleDb();
-  const submitter = input.actorMemberId
-    ? mapMemberSummary((await db.select().from(schema.members).where(eq(schema.members.id, input.actorMemberId)).limit(1))[0])
+  const actorRow = input.actorMemberId
+    ? (await db.select().from(schema.members).where(eq(schema.members.id, input.actorMemberId)).limit(1))[0]
+    : null;
+  const actorEmail = actorRow?.email ?? null;
+  const pendingSubmitterEmail = input.actorMemberId ? null : (input.submitter ?? input.curler).email;
+
+  if (pendingSubmitterEmail) {
+    await assertNewRegistrationEmailAvailable({
+      candidateEmail: pendingSubmitterEmail,
+      actorMemberId: null,
+    });
+  }
+
+  const resolvedCurlerEmail = input.useSubmitterEmailForCurler
+    ? actorEmail ?? pendingSubmitterEmail ?? input.curler.email
+    : input.curler.email;
+
+  if (!input.registeringForSelf) {
+    await assertNewRegistrationEmailAvailable({
+      candidateEmail: resolvedCurlerEmail,
+      actorMemberId: input.actorMemberId ?? null,
+      actorEmail: actorEmail ?? pendingSubmitterEmail,
+    });
+  }
+
+  const submitter = actorRow
+    ? mapMemberSummary(actorRow)
     : await createMemberForRegistration(input.submitter ?? input.curler);
 
   const registration = await getRegistrationById(input.registrationId);
   if (!registration) {
     throw new RegistrationShellValidationError({ registration: 'Registration was not found.' });
   }
-
-  const resolvedCurlerEmail = input.useSubmitterEmailForCurler
-    ? submitter.email ?? input.curler.email
-    : input.curler.email;
 
   const curler = input.registeringForSelf
     ? submitter

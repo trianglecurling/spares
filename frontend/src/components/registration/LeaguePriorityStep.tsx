@@ -30,7 +30,7 @@ import {
   filterPrioritiesToAllowedLeagues,
   guaranteeChipClassName,
   guaranteeChipLabel,
-  leagueHasVacancies,
+  leagueCatalogAvailabilityLabel,
   shouldShowGuaranteeChip,
   hydratePriorityList,
   incompletePlayInLeagueNames,
@@ -130,11 +130,6 @@ function leagueRowSubtitle(
   return [schedule, formatCurrency(leagueDisplayFeeMinor(league, discountClaims))]
     .filter(Boolean)
     .join(' · ');
-}
-
-function leagueDropdownAvailabilityLabel(league: LeagueCatalogItem): string {
-  if (leagueHasVacancies(league)) return 'Available';
-  return 'Waitlist';
 }
 
 function omittedWaitlistNotice(leagues: LeagueCatalogItem[]) {
@@ -1052,7 +1047,7 @@ export default function LeaguePriorityStep({
                     value: league.id,
                     label:
                       (registrationState ?? payload?.registrationState) === 'open'
-                        ? `${league.name} · ${leagueDropdownAvailabilityLabel(league)}`
+                        ? `${league.name} · ${leagueCatalogAvailabilityLabel(league)}`
                         : league.name,
                     description: leagueRowSubtitle(league, discountClaims),
                   }))}

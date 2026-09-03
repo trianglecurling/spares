@@ -139,6 +139,17 @@ export const abuseRouteRateLimits = {
     keyGenerator: (request: FastifyRequest) => `guest-reg:${clientIp(request)}`,
     errorResponseBuilder: rateLimitError('Too many registration attempts. Please try again later.'),
   },
+  guestEmailCheck: {
+    hook: 'preHandler' as const,
+    max: 10,
+    timeWindow: '15 minutes' as const,
+    allowList: shouldBypassIpLimit,
+    keyGenerator: (request: FastifyRequest) => {
+      const contact = contactFromBody(request);
+      return `guest-email-check:${clientIp(request)}:${contact || 'none'}`;
+    },
+    errorResponseBuilder: rateLimitError('Too many email checks. Please try again later.'),
+  },
   expenseSubmit: {
     hook: 'preHandler' as const,
     max: 10,

@@ -715,12 +715,16 @@ async function loadCompletedSessions(memberId: number): Promise<RegistrationCont
   }));
 }
 
-async function loadLeaguesForSession(sessionId: number, defaultLeagueFeeMinor: number): Promise<Record<number, LeagueConfig>> {
+async function loadLeaguesForSession(
+  sessionId: number,
+  defaultLeagueFeeMinor: number,
+  options?: { excludeRegistrationId?: number | null },
+): Promise<Record<number, LeagueConfig>> {
   const { db, schema } = getDrizzleDb();
   const rows = await db.select().from(schema.leagues).where(eq(schema.leagues.session_id, sessionId));
   const mapped = rows.map((row) => mapLeagueConfig(row, defaultLeagueFeeMinor));
   const { attachLiveLeagueAvailability } = await import('./leagueAvailability.js');
-  const withAvailability = await attachLiveLeagueAvailability(mapped);
+  const withAvailability = await attachLiveLeagueAvailability(mapped, options);
   return Object.fromEntries(withAvailability.map((league) => [league.id, league]));
 }
 
@@ -1020,7 +1024,9 @@ async function buildRegistrationContextFromSourceRow(
   const shouldLoadLeagues = options.registrationId != null || options.includeSessionLeagues === true;
   const [loadedLeagues, loadedSelections, priorities, activeLeagueIds, existingSabbaticals, existingWaitlistEntries, juniorAssistance] = shouldLoadLeagues
     ? await Promise.all([
-        loadLeaguesForSession(registration.session_id, defaultLeagueFeeMinor),
+        loadLeaguesForSession(registration.session_id, defaultLeagueFeeMinor, {
+          excludeRegistrationId: options.registrationId,
+        }),
         options.registrationId ? loadRegistrationSelections(options.registrationId) : Promise.resolve([]),
         options.registrationId ? loadRegistrationLeaguePriorities(options.registrationId) : Promise.resolve([]),
         memberId ? loadActiveLeagueIds(memberId, registration.session_id) : Promise.resolve([]),

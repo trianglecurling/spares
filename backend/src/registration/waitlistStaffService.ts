@@ -45,6 +45,7 @@ import { sendWaitlistEntryJoinedNotifications } from './waitlistJoinedNotificati
 import { assertMembersAvailableForWaitlist } from './waitlistMemberMembership.js';
 import { WaitlistStaffValidationError } from './waitlistErrors.js';
 import { syncWaitlistOfferPreferencesForPriorityOpen } from './waitlistPreferenceReset.js';
+import { loadEarmarkedRegistrationDemandByLeagueId } from './leagueVacancyDemand.js';
 import type { LeagueConfig } from './registrationContext.js';
 import {
   assignWaitlistJoinOrder,
@@ -223,9 +224,14 @@ export function calculateWaitlistVacancies(input: {
   permanentPlacements: number;
   temporaryPlacements: number;
   activeSabbaticals: number;
+  /** Priority-list demand not already on the roster or waitlist. */
+  earmarkedDemand?: number;
 }): { permanentVacancies: number; temporarySabbaticalFillVacancies: number } {
   return {
-    permanentVacancies: Math.max(0, input.capacity - input.permanentPlacements - input.activeSabbaticals),
+    permanentVacancies: Math.max(
+      0,
+      input.capacity - input.permanentPlacements - input.activeSabbaticals - (input.earmarkedDemand ?? 0),
+    ),
     temporarySabbaticalFillVacancies: Math.max(0, input.activeSabbaticals - input.temporaryPlacements),
   };
 }
@@ -233,10 +239,14 @@ export function calculateWaitlistVacancies(input: {
 /** Remaining permanent and temporary-fill spots per league, using staff waitlist vacancy math. */
 export async function loadLeagueVacancyCountsByLeagueId(
   leagues: Array<{ id: number; capacityValue: number }>,
+  options?: { excludeRegistrationId?: number | null },
 ): Promise<Map<number, { permanentVacancies: number; temporarySabbaticalFillVacancies: number }>> {
   const leagueIds = leagues.map((league) => league.id);
-  const rosterCounts = await activeRosterCountByLeague(leagueIds);
-  const sabbaticalCounts = await activeSabbaticalCountByLeague(leagueIds);
+  const [rosterCounts, sabbaticalCounts, earmarkedDemand] = await Promise.all([
+    activeRosterCountByLeague(leagueIds),
+    activeSabbaticalCountByLeague(leagueIds),
+    loadEarmarkedRegistrationDemandByLeagueId(leagueIds, options),
+  ]);
   const counts = new Map<number, { permanentVacancies: number; temporarySabbaticalFillVacancies: number }>();
   for (const league of leagues) {
     const roster = rosterCounts.get(league.id) ?? { permanent: 0, temporary: 0 };
@@ -247,6 +257,7 @@ export async function loadLeagueVacancyCountsByLeagueId(
         permanentPlacements: roster.permanent,
         temporaryPlacements: roster.temporary,
         activeSabbaticals: sabbaticalCounts.get(league.id) ?? 0,
+        earmarkedDemand: earmarkedDemand.get(league.id) ?? 0,
       }),
     );
   }
@@ -496,6 +507,7 @@ export async function getWaitlistDashboard(input: { sessionId?: number | null } 
   const rosterCounts = await activeRosterCountByLeague(leagueIds);
   const sabbaticalCounts = await activeSabbaticalCountByLeague(leagueIds);
   const { waitlists, offers } = await countActiveWaitlistsAndPendingOffers(leagueIds);
+  const earmarkedDemand = await loadEarmarkedRegistrationDemandByLeagueId(leagueIds);
   const rows = [];
   for (const league of leagues) {
     const roster = rosterCounts.get(league.id) ?? { permanent: 0, temporary: 0 };
@@ -505,6 +517,7 @@ export async function getWaitlistDashboard(input: { sessionId?: number | null } 
       permanentPlacements: roster.permanent,
       temporaryPlacements: roster.temporary,
       activeSabbaticals: sabbaticals,
+      earmarkedDemand: earmarkedDemand.get(league.id) ?? 0,
     });
     rows.push({
       id: league.id,
@@ -604,11 +617,13 @@ export async function getLeagueWaitlistManager(leagueId: number) {
     .orderBy(desc(schema.waitlistAuditEvents.created_at), desc(schema.waitlistAuditEvents.id))
     .limit(100);
 
+  const earmarkedDemand = await loadEarmarkedRegistrationDemandByLeagueId([leagueId]);
   const vacancies = calculateWaitlistVacancies({
     capacity: league.capacity_value ?? 0,
     permanentPlacements: roster.permanent,
     temporaryPlacements: roster.temporary,
     activeSabbaticals: sabbaticals,
+    earmarkedDemand: earmarkedDemand.get(leagueId) ?? 0,
   });
 
   return {

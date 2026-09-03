@@ -79,6 +79,10 @@ import {
 import { WaitlistStaffValidationError } from '../registration/waitlistErrors.js';
 import { canActorImpersonateTarget } from '../services/accountAccess.js';
 import { memberCanManageRegistrations } from '../utils/registrationStaffAccess.js';
+import {
+  RegistrationEmailRecognizedError,
+  registrationEmailIsRecognized,
+} from '../registration/registrationEmailRecognition.js';
 
 interface AuthenticatedRequest extends FastifyRequest {
   member: Member;
@@ -245,6 +249,10 @@ const guestPreviewSchema = z.object({
   juniorAssistancePercent: z.number().int().refine((value) => [0, 25, 50, 75].includes(value)).optional(),
 });
 
+const guestCheckEmailSchema = z.object({
+  email: z.string().email().max(320),
+});
+
 const guestPreviewLeagueCatalogSchema = guestPreviewSchema.extend({
   desiredLeagueCount: z.number().int().min(1).max(MAX_DESIRED_LEAGUE_COUNT).nullable().optional(),
   priorities: z.array(leaguePrioritySchema).optional(),
@@ -307,6 +315,9 @@ function handleRegistrationError(reply: FastifyReply, error: unknown) {
       409,
       'You already have a registration in progress. Continue from the registration start page or start over.',
     );
+  }
+  if (error instanceof RegistrationEmailRecognizedError) {
+    return sendApiError(reply, 409, error.message, error.details);
   }
   if (error instanceof RegistrationShellValidationError) {
     return sendValidationError(reply, error.message, error.details);
@@ -442,6 +453,41 @@ export async function publicRegistrationShellRoutes(fastify: FastifyInstance) {
     }
   );
 
+  fastify.post<{ Body: z.infer<typeof guestCheckEmailSchema>; Reply: { recognized: boolean } | ApiErrorResponse }>(
+    '/registration/guest/check-email',
+    {
+      config: {
+        rateLimit: abuseRouteRateLimits.guestEmailCheck,
+      },
+      schema: {
+        tags: ['registration'],
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { email: { type: 'string', format: 'email', maxLength: 320 } },
+          required: ['email'],
+        },
+        response: {
+          200: {
+            type: 'object',
+            additionalProperties: false,
+            properties: { recognized: { type: 'boolean' } },
+            required: ['recognized'],
+          },
+          400: apiErrorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      try {
+        const body = guestCheckEmailSchema.parse(request.body);
+        return { recognized: await registrationEmailIsRecognized(body.email) };
+      } catch (error) {
+        return handleRegistrationError(reply, error);
+      }
+    }
+  );
+
   fastify.post<{ Body: z.infer<typeof guestPreviewLeagueCatalogSchema>; Reply: unknown | ApiErrorResponse }>(
     '/registration/guest/preview-membership-payment',
     {
@@ -489,7 +535,7 @@ export async function publicRegistrationShellRoutes(fastify: FastifyInstance) {
       schema: {
         tags: ['registration'],
         body: anyObjectSchema,
-        response: { 200: anyObjectSchema, 400: apiErrorResponseSchema },
+        response: { 200: anyObjectSchema, 400: apiErrorResponseSchema, 409: apiErrorResponseSchema },
       },
     },
     async (request, reply) => {
@@ -715,7 +761,7 @@ export async function protectedRegistrationShellRoutes(fastify: FastifyInstance)
         tags: ['registration'],
         params: idParamsJsonSchema,
         body: anyObjectSchema,
-        response: { 200: anyObjectSchema, 400: apiErrorResponseSchema, 403: apiErrorResponseSchema },
+        response: { 200: anyObjectSchema, 400: apiErrorResponseSchema, 403: apiErrorResponseSchema, 409: apiErrorResponseSchema },
       },
     },
     async (request, reply) => {

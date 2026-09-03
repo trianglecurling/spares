@@ -187,6 +187,7 @@ export async function cancelStaffRegistration(input: {
   registrationId: number;
   actor: Member;
   issueRefund?: boolean;
+  notifyCurler?: boolean;
 }): Promise<{ registrationId: number; refundIssued: boolean }> {
   if (!memberCanManageRegistrations(input.actor)) {
     throw new RegistrationPriorityEditValidationError({ registration: 'Registration was not found.' });
@@ -220,6 +221,7 @@ async function cancelMemberRegistrationCore(input: {
   registrationId: number;
   actor: Member;
   issueRefund?: boolean;
+  notifyCurler?: boolean;
 }): Promise<{ registrationId: number; refundIssued: boolean }> {
   const registration = await getRegistrationById(input.registrationId);
   if (!registration) {
@@ -435,14 +437,16 @@ async function cancelMemberRegistrationCore(input: {
     );
   }
 
-  await sendRegistrationCancelledByMemberEmail({
-    registrationId: input.registrationId,
-    refundIssued,
-    refundSkipped: hadSucceededPayment && !refundIssued,
-    amountRefundedMinor,
-    paymentReference,
-    paymentDetailsUrl: resolvedPaymentDetailsUrl,
-  });
+  if (input.notifyCurler !== false) {
+    await sendRegistrationCancelledByMemberEmail({
+      registrationId: input.registrationId,
+      refundIssued,
+      refundSkipped: hadSucceededPayment && !refundIssued,
+      amountRefundedMinor,
+      paymentReference,
+      paymentDetailsUrl: resolvedPaymentDetailsUrl,
+    });
+  }
 
   return { registrationId: input.registrationId, refundIssued };
 }

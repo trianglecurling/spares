@@ -105,6 +105,7 @@ const staffSubmitSchema = z.object({
 });
 const staffCancelSchema = z.object({
   refund: z.boolean().optional(),
+  notify: z.boolean().optional(),
 });
 const staffCreateSchema = z
   .object({
@@ -350,7 +351,24 @@ export async function protectedRegistrationStaffRoutes(fastify: FastifyInstance)
     }
   });
 
-  fastify.post('/registration/staff/registrations/:id/cancel', async (request, reply) => {
+  fastify.post('/registration/staff/registrations/:id/cancel', {
+    schema: {
+      tags: ['registration'],
+      params: {
+        type: 'object',
+        properties: { id: { type: 'string' } },
+        required: ['id'],
+      },
+      body: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          refund: { type: 'boolean' },
+          notify: { type: 'boolean' },
+        },
+      },
+    },
+  }, async (request, reply) => {
     if (!requireRegistrationManage(request, reply)) return;
     try {
       const params = idParamsSchema.parse(request.params);
@@ -359,6 +377,7 @@ export async function protectedRegistrationStaffRoutes(fastify: FastifyInstance)
         registrationId: params.id,
         actor: (request as AuthenticatedRequest).member,
         issueRefund: body.refund,
+        notifyCurler: body.notify,
       });
     } catch (error) {
       if (handleStaffRegistrationError(reply, error)) return;

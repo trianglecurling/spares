@@ -361,7 +361,9 @@ export function isGuaranteedLabel(label: LeaguePriorityGuaranteeLabel): boolean 
 
 /**
  * A league has vacancies when current waitlist demand is strictly below the
- * remaining open spots. Missing counts are treated as zero so we do not
+ * remaining open spots. Open spots already subtract roster placements,
+ * sabbaticals, and earmarked priority-list demand that is not yet on the
+ * roster or waitlist. Missing counts are treated as zero so we do not
  * over-promise availability.
  */
 export function leagueHasVacancies(league: {

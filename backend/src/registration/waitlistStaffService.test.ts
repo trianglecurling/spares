@@ -47,6 +47,21 @@ describe('Phase 8 staff waitlist helpers', () => {
     });
   });
 
+  test('earmarked registration demand reduces permanent vacancies', () => {
+    expect(
+      calculateWaitlistVacancies({
+        capacity: 24,
+        permanentPlacements: 0,
+        temporaryPlacements: 0,
+        activeSabbaticals: 0,
+        earmarkedDemand: 33,
+      })
+    ).toEqual({
+      permanentVacancies: 0,
+      temporarySabbaticalFillVacancies: 0,
+    });
+  });
+
   test('first decline preserves position and increments decline count', () => {
     expect(
       resolveWaitlistDecline({

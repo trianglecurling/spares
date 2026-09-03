@@ -208,9 +208,12 @@ function validationDetails(context: RegistrationContext): Record<string, string>
   return details;
 }
 
-async function leaguesWithActiveWaitlistEntryCounts(leagues: LeagueConfig[]): Promise<LeagueConfig[]> {
+async function leaguesWithActiveWaitlistEntryCounts(
+  leagues: LeagueConfig[],
+  options?: { excludeRegistrationId?: number | null },
+): Promise<LeagueConfig[]> {
   const { attachLiveLeagueAvailability } = await import('./leagueAvailability.js');
-  return attachLiveLeagueAvailability(leagues);
+  return attachLiveLeagueAvailability(leagues, options);
 }
 
 /**
@@ -265,6 +268,7 @@ async function catalogPayloadFromContext(
 ) {
   const leagues = await leaguesWithActiveWaitlistEntryCounts(
     await sortLeaguesByDayThenFirstDraw(Object.values(context.leagues)),
+    { excludeRegistrationId: extras.registrationId },
   );
   const { buildByotDeclaredTeamSummaries } = await import('./byotDeclaredTeamService.js');
   return {

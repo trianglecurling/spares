@@ -65,6 +65,17 @@ export {
 };
 export type { LabeledPriorityEntry, LeaguePriorityGuaranteeLabel, PriorityLabelMode, PriorityLabelResult };
 
+/** Picker status from the same vacancy check the chips use. */
+export function leagueCatalogAvailabilityLabel(league: {
+  allowsWaitlist?: boolean;
+  activeWaitlistEntryCount?: number | null;
+  openSpotCount?: number | null;
+}): 'Available' | 'Waitlist' | 'Subject to availability' {
+  if (leagueHasVacancies(league)) return 'Available';
+  if (league.allowsWaitlist) return 'Waitlist';
+  return 'Subject to availability';
+}
+
 /** One league on the registrant's list, most wanted first. */
 export type LeaguePriorityInput = {
   leagueId: number;

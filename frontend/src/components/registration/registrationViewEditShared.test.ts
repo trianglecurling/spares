@@ -8,6 +8,7 @@ import {
   defaultDesiredLeagueCount,
   evaluatePriorityList,
   guaranteeChipLabel,
+  leagueCatalogAvailabilityLabel,
   hydratePriorityList,
   incompletePlayInLeagueNames,
   isFreeLeague,
@@ -868,6 +869,13 @@ describe('guarantee labels shown while reordering', () => {
     expect(guaranteeChipLabel('guaranteed_return', playInLeague)).toBe('Guaranteed entry');
     expect(guaranteeChipLabel('awaiting_roster_entry')).toBe('Awaiting roster entry');
     expect(guaranteeChipLabel('guaranteed_fallback')).toBe('Guaranteed fallback');
+    expect(leagueCatalogAvailabilityLabel({ openSpotCount: 4, activeWaitlistEntryCount: 0 })).toBe('Available');
+    expect(
+      leagueCatalogAvailabilityLabel({ allowsWaitlist: true, openSpotCount: 0, activeWaitlistEntryCount: 3 }),
+    ).toBe('Waitlist');
+    expect(
+      leagueCatalogAvailabilityLabel({ allowsWaitlist: false, openSpotCount: 0, activeWaitlistEntryCount: 0 }),
+    ).toBe('Subject to availability');
     expect(guaranteeChipLabel('available')).toBe('Available');
     expect(guaranteeChipLabel('temporary_spot_available')).toBe('Temporary spot available');
     expect(guaranteeChipLabel('waitlisted')).toBe('Waitlisted');

@@ -118,8 +118,11 @@ Open registration does not grant guaranteed returns or guaranteed fallbacks.
 Labels come from live vacancies instead:
 
 A league has vacancies when its active waitlist entry count is **strictly less
-than** its remaining open spots (capacity minus permanent roster placements and
-active sabbaticals).
+than** its remaining open spots (capacity minus permanent roster placements,
+active sabbaticals, and other registrations that already listed the league
+inside their desired count and are not yet on the roster or waitlist). The
+current registration is left out of that earmark so adding a league does not
+immediately mark it full for that registrant.
 
 ```
 availableGranted = 0
@@ -143,9 +146,11 @@ for entry in rank order:
 # then the same superfluous pass as priority registration
 ```
 
-The add-a-league picker shows **Available** or **Waitlist** next to each league
-from that vacancy check, independent of how many available spots the registrant
-has already taken. Temporary sabbatical-fill vacancies do not count as
+The add-a-league picker shows **Available**, **Waitlist**, or **Subject to
+availability** next to each league from that vacancy check, independent of how
+many available spots the registrant has already taken. Full programs without a
+waitlist use Subject to availability so the picker does not imply a queue that
+does not exist. Temporary sabbatical-fill vacancies do not count as
 available and are not shown at a discounted price. Those spots are offered
 only through the waitlist.
 
@@ -225,7 +230,9 @@ but cannot continue until those extra rows are removed or reordered.
 
 Instructional programs such as Saturday Instructional use live vacancies in
 both priority and open registration, instead of return rights or the two-spot
-available budget:
+available budget. Remaining space includes people who already listed the
+program inside their desired count, even when they are not on the official
+roster or a waitlist yet:
 
 - Remaining space → **Available**, billed immediately.
 - Full → **Subject to availability**, payment deferred until staff can place
