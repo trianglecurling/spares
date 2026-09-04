@@ -1,10 +1,9 @@
 import { useEffect, useId, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { get } from '../../api/client';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
 import AppPageControlsRow from '../../components/AppPageControlsRow';
 import AppStateCard from '../../components/AppStateCard';
-import Button from '../../components/Button';
 import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
 import DataTable from '../../components/table/DataTable';
 import FormField from '../../components/FormField';
@@ -23,7 +22,6 @@ import {
 const SORT_KEYS = ['submittedAt'] as const;
 
 export default function AdminExpenses() {
-  const navigate = useNavigate();
   const statusId = useId();
   const searchId = useId();
   const {
@@ -197,7 +195,6 @@ export default function AdminExpenses() {
           rows={items}
           rowKey={(row) => row.id}
           columns={columns}
-          onRowClick={(row) => navigate(`/admin/expenses/${row.id}`)}
           pagination={{
             page,
             pageSize,
@@ -209,9 +206,12 @@ export default function AdminExpenses() {
           actions={{
             header: 'View',
             renderActions: (row) => (
-              <Button type="button" variant="secondary" onClick={() => navigate(`/admin/expenses/${row.id}`)}>
+              <Link
+                to={`/admin/expenses/${row.id}`}
+                className="font-medium text-primary-teal-link hover:underline"
+              >
                 View
-              </Button>
+              </Link>
             ),
           }}
         />

@@ -17,13 +17,13 @@ export function fieldErrorsFromUnknown(err: unknown): ExpenseFieldError[] {
 export async function postExpenseFormData(
   path: string,
   payload: Record<string, unknown>,
-  files: Array<{ index: number; file: File }>,
+  files: Array<{ expenseIndex: number; documentIndex: number; file: File }>,
   method: 'post' | 'patch' = 'post'
 ) {
   const formData = new FormData();
   formData.append('payload', JSON.stringify(payload));
   for (const item of files) {
-    formData.append(`receiptFile_${item.index}`, item.file);
+    formData.append(`expenseFile_${item.expenseIndex}_${item.documentIndex}`, item.file);
   }
   return api.request({
     url: path,
@@ -34,8 +34,31 @@ export async function postExpenseFormData(
 }
 
 export async function openExpenseReceipt(path: string): Promise<void> {
+  const viewer = window.open('about:blank', '_blank');
+  if (viewer) viewer.opener = null;
+  try {
+    const response = await api.get(path, { responseType: 'blob' });
+    const blobUrl = URL.createObjectURL(response.data);
+    if (viewer) {
+      viewer.location.href = blobUrl;
+    } else {
+      window.open(blobUrl, '_blank', 'noopener,noreferrer');
+    }
+    window.setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+  } catch (error) {
+    viewer?.close();
+    throw error;
+  }
+}
+
+export async function downloadExpenseReceipt(path: string, filename: string): Promise<void> {
   const response = await api.get(path, { responseType: 'blob' });
   const blobUrl = URL.createObjectURL(response.data);
-  window.open(blobUrl, '_blank', 'noopener,noreferrer');
-  window.setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+  const link = document.createElement('a');
+  link.href = blobUrl;
+  link.download = filename || 'supporting-document';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(blobUrl);
 }

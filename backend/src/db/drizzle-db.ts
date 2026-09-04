@@ -131,7 +131,8 @@ type PgSchema = {
   volunteerSignups: typeof pgSchema.volunteerSignupsPg;
   volunteerHourLogs: typeof pgSchema.volunteerHourLogsPg;
   expenseReports: typeof pgSchema.expenseReportsPg;
-  expenseReceipts: typeof pgSchema.expenseReceiptsPg;
+  expenseReportItems: typeof pgSchema.expenseReportItemsPg;
+  expenseDocuments: typeof pgSchema.expenseDocumentsPg;
   expenseReportNotes: typeof pgSchema.expenseReportNotesPg;
   expenseReportChanges: typeof pgSchema.expenseReportChangesPg;
 };
@@ -287,7 +288,8 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       volunteerSignups: sqliteSchema.volunteerSignupsSqlite,
       volunteerHourLogs: sqliteSchema.volunteerHourLogsSqlite,
       expenseReports: sqliteSchema.expenseReportsSqlite,
-      expenseReceipts: sqliteSchema.expenseReceiptsSqlite,
+      expenseReportItems: sqliteSchema.expenseReportItemsSqlite,
+      expenseDocuments: sqliteSchema.expenseDocumentsSqlite,
       expenseReportNotes: sqliteSchema.expenseReportNotesSqlite,
       expenseReportChanges: sqliteSchema.expenseReportChangesSqlite,
     } as unknown as DrizzleSchema;
@@ -432,7 +434,8 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       volunteerSignups: pgSchema.volunteerSignupsPg,
       volunteerHourLogs: pgSchema.volunteerHourLogsPg,
       expenseReports: pgSchema.expenseReportsPg,
-      expenseReceipts: pgSchema.expenseReceiptsPg,
+      expenseReportItems: pgSchema.expenseReportItemsPg,
+      expenseDocuments: pgSchema.expenseDocumentsPg,
       expenseReportNotes: pgSchema.expenseReportNotesPg,
       expenseReportChanges: pgSchema.expenseReportChangesPg,
     } as DrizzleSchema;

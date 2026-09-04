@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { get } from '../api/client';
 import { AppPage, AppPageHeader } from '../components/AppPage';
 import AppStateCard from '../components/AppStateCard';
@@ -15,7 +15,6 @@ import {
 } from '../utils/expenseReports';
 
 export default function MemberExpenses() {
-  const navigate = useNavigate();
   const [items, setItems] = useState<ExpenseReportListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -93,13 +92,12 @@ export default function MemberExpenses() {
           rows={items}
           rowKey={(row) => row.id}
           columns={columns}
-          onRowClick={(row) => navigate(`/expenses/${row.id}`)}
           actions={{
             header: 'View',
             renderActions: (row) => (
-              <Button type="button" variant="secondary" onClick={() => navigate(`/expenses/${row.id}`)}>
+              <Link to={`/expenses/${row.id}`} className="font-medium text-primary-teal-link hover:underline">
                 View
-              </Button>
+              </Link>
             ),
           }}
         />

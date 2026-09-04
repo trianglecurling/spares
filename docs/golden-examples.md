@@ -51,9 +51,11 @@ Why:
 - `frontend/src/components/table/DataTableSelectionCell.tsx`
 - `frontend/src/hooks/useTableQueryState.ts`
 - `frontend/src/pages/admin/AdminContent.tsx`
+- `frontend/src/pages/admin/AdminEvents.tsx`
+- `frontend/src/pages/admin/AdminRegistrationsList.tsx`
 
 Why:
-- These files define the canonical admin table system for server-backed sorting, URL-synced filters and pagination, stable selection behavior, fixed-width action columns, and the default `Showing x-y of n` footer. Start with the Files table in `frontend/src/pages/admin/AdminContent.tsx` when you need a full reference.
+- These files define the canonical admin table system for server-backed sorting, URL-synced filters and pagination, stable selection behavior, fixed-width action columns, and the default `Showing x-y of n` footer. Start with the Files table in `frontend/src/pages/admin/AdminContent.tsx` when you need a full reference. Use **AdminEvents** and **AdminRegistrationsList** for opening a record with a real `Link` on a named cell or in the actions column, not a whole-row click.
 
 ## Form system
 

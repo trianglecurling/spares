@@ -36,6 +36,7 @@ This repo has explicit consistency rules. Follow existing product patterns befor
 - Keep server-backed table state such as page, sort, order, and filters in the URL through the shared query-state hook.
 - Put table filters on the left and primary or bulk actions on the right of `frontend/src/components/AppPageControlsRow.tsx`.
 - Keep the row-actions column stable and move selected-row bulk actions above the table to avoid layout shift.
+- Open a table record with a real `Link` on a named cell or in the actions column. Do not make the whole row clickable, and do not use `<button>` plus `navigate()` for `View` or similar.
 - Do not add page-size selectors by default for admin tables.
 - Use `@dnd-kit/core`, `@dnd-kit/sortable`, and the shared components in `frontend/src/components/dragDrop/` for row-based drag and drop.
 - Do not introduce new native HTML5 drag-and-drop reorder implementations for lists or tree editors.

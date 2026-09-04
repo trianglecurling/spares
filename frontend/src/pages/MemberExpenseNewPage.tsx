@@ -71,7 +71,7 @@ export default function MemberExpenseNewPage() {
                   setSubmitted(false);
                 }}
               >
-                Submit another expense
+                Submit another report
               </Button>
             </div>
           }

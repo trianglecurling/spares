@@ -96,6 +96,8 @@ Exceptions:
 - Do not add page-size selectors by default. Each table should use a single page size unless a clear exception is documented.
 - Show `Showing x-y of n` below paginated tables by default.
 - Prefer truncation and richer stacked cells over horizontal scrolling when possible.
+- Do not make an entire table row clickable to open a record. Put a real link on a named cell (title, name, or similar) and/or in the actions column.
+- Row actions that navigate — including `View`, titles, and names — must be React Router `Link`/`NavLink` or a native `<a>`. Do not use `<button>` plus `navigate()`, and do not use `DataTable` `onRowClick` for route changes.
 
 ## Drag and drop
 
@@ -129,7 +131,7 @@ Exceptions:
 ## Accessibility defaults
 
 - Every control must have an accessible name.
-- Navigation to another route or URL must use a real link: native `<a>` for normal URLs or React Router `Link`/`NavLink` for app routes. Do not use `<button>` plus programmatic navigation for content links, list item titles, table names, cards, menu items, or other interactions users expect to open in a new tab, copy as a link, or discover as link semantics.
+- Navigation to another route or URL must use a real link: native `<a>` for normal URLs or React Router `Link`/`NavLink` for app routes. Do not use `<button>` plus programmatic navigation, or a clickable container such as a whole table row, for content links, list item titles, table names, cards, menu items, row actions like `View`, or other interactions users expect to open in a new tab, copy as a link, or discover as link semantics.
 - Reserve `<button>` for actions that change state on the current page, submit forms, open dialogs/menus, or trigger commands without changing location.
 - Required state cannot rely on color alone.
 - Destructive and confirmation dialogs must remain keyboard operable.

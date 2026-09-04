@@ -199,7 +199,7 @@ export default function PublicExpenseReportPage() {
 
   const handleSubmit = async (input: {
     payload: Record<string, unknown>;
-    files: Array<{ index: number; file: File }>;
+    files: Array<{ expenseIndex: number; documentIndex: number; file: File }>;
   }) => {
     setSubmitting(true);
     setFieldErrors([]);
@@ -247,7 +247,7 @@ export default function PublicExpenseReportPage() {
                     setStep(member ? 'form' : 'email');
                   }}
                 >
-                  Submit another expense
+                  Submit another report
                 </Button>
               </div>
             }

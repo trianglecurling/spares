@@ -2319,6 +2319,7 @@ export type ExpenseTripPurpose =
   | 'supply_pickup_delivery'
   | 'other';
 export type ExpenseReceiptCurrency = 'usd' | 'cad' | 'other';
+export type ExpenseDocumentType = 'receipt' | 'invoice' | 'other_supporting_evidence';
 
 export const volunteerProgramsSqlite = sqliteTable('volunteer_programs', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -2569,15 +2570,27 @@ export const expenseReportsSqlite = sqliteTable('expense_reports', {
   accessTokenUnique: uniqueIndex('expense_reports_access_token_unique').on(table.access_token),
 }));
 
-export const expenseReceiptsSqlite = sqliteTable('expense_receipts', {
+export const expenseReportItemsSqlite = sqliteTable('expense_report_items', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   report_id: integer('report_id').notNull().references(() => expenseReportsSqlite.id, { onDelete: 'cascade' }),
   name: text('name').notNull(),
-  receipt_date: text('receipt_date').notNull(),
+  expense_date: text('expense_date').notNull(),
   amount_minor: integer('amount_minor').notNull(),
   currency: text('currency').default('usd').notNull().$type<ExpenseReceiptCurrency>(),
   currency_other: text('currency_other'),
   includes_durable_good: integer('includes_durable_good').default(0).notNull(),
+  no_receipt_explanation: text('no_receipt_explanation'),
+  sort_order: integer('sort_order').default(0).notNull(),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  reportIdx: index('idx_expense_report_items_report_id').on(table.report_id),
+}));
+
+export const expenseDocumentsSqlite = sqliteTable('expense_documents', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  expense_item_id: integer('expense_item_id').notNull().references(() => expenseReportItemsSqlite.id, { onDelete: 'cascade' }),
+  document_type: text('document_type').default('receipt').notNull().$type<ExpenseDocumentType>(),
   storage_key: text('storage_key').notNull(),
   original_filename: text('original_filename').notNull(),
   mime_type: text('mime_type').notNull(),
@@ -2586,7 +2599,10 @@ export const expenseReceiptsSqlite = sqliteTable('expense_receipts', {
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
 }, (table) => ({
-  reportIdx: index('idx_expense_receipts_report_id').on(table.report_id),
+  expenseItemIdx: index('idx_expense_documents_expense_item_id').on(table.expense_item_id),
+  oneReceiptPerExpense: uniqueIndex('expense_documents_one_receipt_per_expense')
+    .on(table.expense_item_id)
+    .where(sql`${table.document_type} = 'receipt'`),
 }));
 
 export const expenseReportNotesSqlite = sqliteTable('expense_report_notes', {
@@ -4896,15 +4912,27 @@ export const expenseReportsPg = pgTable('expense_reports', {
   accessTokenUnique: uniqueIndexPg('expense_reports_access_token_unique').on(table.access_token),
 }));
 
-export const expenseReceiptsPg = pgTable('expense_receipts', {
+export const expenseReportItemsPg = pgTable('expense_report_items', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
   report_id: integerPg('report_id').notNull().references(() => expenseReportsPg.id, { onDelete: 'cascade' }),
   name: textPg('name').notNull(),
-  receipt_date: date('receipt_date').notNull(),
+  expense_date: date('expense_date').notNull(),
   amount_minor: integerPg('amount_minor').notNull(),
   currency: textPg('currency').default('usd').notNull().$type<ExpenseReceiptCurrency>(),
   currency_other: textPg('currency_other'),
   includes_durable_good: integerPg('includes_durable_good').default(0).notNull(),
+  no_receipt_explanation: textPg('no_receipt_explanation'),
+  sort_order: integerPg('sort_order').default(0).notNull(),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  reportIdx: indexPg('idx_expense_report_items_report_id').on(table.report_id),
+}));
+
+export const expenseDocumentsPg = pgTable('expense_documents', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  expense_item_id: integerPg('expense_item_id').notNull().references(() => expenseReportItemsPg.id, { onDelete: 'cascade' }),
+  document_type: textPg('document_type').default('receipt').notNull().$type<ExpenseDocumentType>(),
   storage_key: textPg('storage_key').notNull(),
   original_filename: textPg('original_filename').notNull(),
   mime_type: textPg('mime_type').notNull(),
@@ -4913,7 +4941,10 @@ export const expenseReceiptsPg = pgTable('expense_receipts', {
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
 }, (table) => ({
-  reportIdx: indexPg('idx_expense_receipts_report_id').on(table.report_id),
+  expenseItemIdx: indexPg('idx_expense_documents_expense_item_id').on(table.expense_item_id),
+  oneReceiptPerExpense: uniqueIndexPg('expense_documents_one_receipt_per_expense')
+    .on(table.expense_item_id)
+    .where(sql`${table.document_type} = 'receipt'`),
 }));
 
 export const expenseReportNotesPg = pgTable('expense_report_notes', {
@@ -5063,7 +5094,8 @@ export const sqliteSchema = {
   volunteerSignups: volunteerSignupsSqlite,
   volunteerHourLogs: volunteerHourLogsSqlite,
   expenseReports: expenseReportsSqlite,
-  expenseReceipts: expenseReceiptsSqlite,
+  expenseReportItems: expenseReportItemsSqlite,
+  expenseDocuments: expenseDocumentsSqlite,
   expenseReportNotes: expenseReportNotesSqlite,
   expenseReportChanges: expenseReportChangesSqlite,
 };
@@ -5190,7 +5222,8 @@ export const pgSchema = {
   volunteerSignups: volunteerSignupsPg,
   volunteerHourLogs: volunteerHourLogsPg,
   expenseReports: expenseReportsPg,
-  expenseReceipts: expenseReceiptsPg,
+  expenseReportItems: expenseReportItemsPg,
+  expenseDocuments: expenseDocumentsPg,
   expenseReportNotes: expenseReportNotesPg,
   expenseReportChanges: expenseReportChangesPg,
 };

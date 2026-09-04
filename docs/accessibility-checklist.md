@@ -57,6 +57,7 @@ Do **not** leave a visible `app-label` (or plain text) that only *looks* like a 
 - Page headings should make sense in outline order.
 - Tables should only be used for tabular data.
 - Links and buttons should match their behavior.
+- Opening another route or URL must use a real link (`<a>` or React Router `Link`/`NavLink`), including table titles and `View` actions. Do not use a row `onClick` or a `<button>` plus `navigate()` for those.
 
 ## Review question
 

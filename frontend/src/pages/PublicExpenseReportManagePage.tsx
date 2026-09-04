@@ -119,8 +119,8 @@ export default function PublicExpenseReportManagePage() {
             fieldErrors={fieldErrors}
             submitting={submitting}
             submitLabel="Save changes"
-            receiptFilePath={(receiptId) =>
-              `/public/expenses/manage/${encodeURIComponent(accessToken ?? '')}/receipts/${receiptId}`
+            documentFilePath={(documentId) =>
+              `/public/expenses/manage/${encodeURIComponent(accessToken ?? '')}/receipts/${documentId}`
             }
             onSubmit={async ({ payload, files }) => {
               if (!accessToken) return;

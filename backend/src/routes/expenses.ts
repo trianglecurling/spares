@@ -200,7 +200,8 @@ export async function protectedExpenseRoutes(fastify: FastifyInstance): Promise<
           reportId: params.id,
           payload: parsed.payload,
           files: parsed.files,
-          removeReceiptIds: parsed.removeReceiptIds,
+          removeExpenseIds: parsed.removeExpenseIds,
+          removeDocumentIds: parsed.removeDocumentIds,
           memberId: member.id,
         });
       } catch (err) {
@@ -383,7 +384,8 @@ export async function protectedExpenseRoutes(fastify: FastifyInstance): Promise<
           reportId: params.id,
           payload: parsed.payload,
           files: parsed.files,
-          removeReceiptIds: parsed.removeReceiptIds,
+          removeExpenseIds: parsed.removeExpenseIds,
+          removeDocumentIds: parsed.removeDocumentIds,
           memberId: null,
           skipEditableCheck: true,
           staffActor: staffActorFromMember(member),

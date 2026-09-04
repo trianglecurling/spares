@@ -1,8 +1,13 @@
 import path from 'path';
 import { randomUUID } from 'crypto';
-import { and, asc, desc, eq, gte, isNull, notInArray, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, notInArray, or, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
-import type { ExpenseReportKind, ExpenseReportStatus, ExpenseTripPurpose } from '../db/drizzle-schema.js';
+import type {
+  ExpenseDocumentType,
+  ExpenseReportKind,
+  ExpenseReportStatus,
+  ExpenseTripPurpose,
+} from '../db/drizzle-schema.js';
 import { generateEventRegistrationAccessToken } from '../utils/eventRegistrationAccessToken.js';
 import { expenseReportManageUrl } from '../utils/expenseReportManageUrl.js';
 import { getFileStorageAdapter } from '../utils/fileStorage.js';
@@ -19,15 +24,16 @@ import {
   ALLOWED_RECEIPT_MIME_TYPES,
   CHARITABLE_MILEAGE_RATE_CENTS_PER_MILE,
   CLUB_CREDIT_CARD_HOLDER_CREDENTIAL_NAME,
+  EXPENSE_DOCUMENT_TYPE_LABELS,
   EXPENSE_STATUS_LABELS,
-  MAX_EXPENSE_RECEIPTS,
+  MAX_EXPENSE_DOCUMENTS,
 } from './expenseReportConstants.js';
 import {
   isSubmitterEditableStatus,
   shouldSendCheckMailedEmail,
   validateExpenseReportPayload,
+  type ExpenseItemInput,
   type ExpenseMailingAddressInput,
-  type ExpenseReceiptInput,
   type ExpenseReportPayloadInput,
 } from './expenseReportValidation.js';
 
@@ -42,25 +48,34 @@ export class ExpenseReportError extends Error {
   }
 }
 
-export type ExpenseReceiptFileUpload = {
-  index: number;
+export type ExpenseDocumentFileUpload = {
+  expenseIndex: number;
+  documentIndex: number;
   originalFilename: string;
   mimeType: string;
   buffer: Buffer;
 };
 
-export type ExpenseReceiptView = {
+export type ExpenseDocumentView = {
   id: number;
-  name: string;
-  receiptDate: string;
-  amountMinor: number;
-  currency: string;
-  currencyOther: string | null;
-  includesDurableGood: boolean;
+  documentType: ExpenseDocumentType;
   originalFilename: string;
   mimeType: string;
   byteSize: number;
   sortOrder: number;
+};
+
+export type ExpenseItemView = {
+  id: number;
+  name: string;
+  expenseDate: string;
+  amountMinor: number;
+  currency: string;
+  currencyOther: string | null;
+  includesDurableGood: boolean;
+  noReceiptExplanation: string | null;
+  sortOrder: number;
+  documents: ExpenseDocumentView[];
 };
 
 export type ExpenseReportNoteView = {
@@ -108,7 +123,7 @@ export type ExpenseReportView = {
   roundTripMiles: number | null;
   tripPurpose: string | null;
   tripPurposeOther: string | null;
-  receipts: ExpenseReceiptView[];
+  expenses: ExpenseItemView[];
   submittedAt: string;
   createdAt: string;
   updatedAt: string;
@@ -137,7 +152,9 @@ export type ExpenseReportListItem = {
 };
 
 type ReportRow = Record<string, unknown>;
-type ReceiptRow = Record<string, unknown>;
+type ExpenseItemRow = Record<string, unknown>;
+type ExpenseDocumentRow = Record<string, unknown>;
+type ExpenseData = { items: ExpenseItemRow[]; documents: ExpenseDocumentRow[] };
 
 function asIso(value: unknown): string {
   if (!value) return '';
@@ -232,21 +249,21 @@ function serializeMailingAddress(address: ExpenseMailingAddressInput | null | un
   });
 }
 
-function createReceiptStorageKey(filename: string): string {
+function createExpenseDocumentStorageKey(filename: string): string {
   const ext = path.extname(filename).toLowerCase().slice(0, 12);
   const ymd = new Date().toISOString().slice(0, 10);
-  return `expense-receipts/${ymd}/${randomUUID()}${ext}`;
+  return `expense-documents/${ymd}/${randomUUID()}${ext}`;
 }
 
-function mapReceipt(row: ReceiptRow): ExpenseReceiptView {
+function asDocumentType(value: unknown): ExpenseDocumentType {
+  if (value === 'invoice' || value === 'other_supporting_evidence') return value;
+  return 'receipt';
+}
+
+function mapDocument(row: ExpenseDocumentRow): ExpenseDocumentView {
   return {
     id: asInt(row.id),
-    name: String(row.name ?? ''),
-    receiptDate: asDateOnly(row.receipt_date) ?? '',
-    amountMinor: asInt(row.amount_minor),
-    currency: String(row.currency ?? 'usd'),
-    currencyOther: row.currency_other == null ? null : String(row.currency_other),
-    includesDurableGood: asBool(row.includes_durable_good) === true,
+    documentType: asDocumentType(row.document_type),
     originalFilename: String(row.original_filename ?? ''),
     mimeType: String(row.mime_type ?? ''),
     byteSize: asInt(row.byte_size),
@@ -254,9 +271,28 @@ function mapReceipt(row: ReceiptRow): ExpenseReceiptView {
   };
 }
 
+function mapExpense(item: ExpenseItemRow, documents: ExpenseDocumentRow[]): ExpenseItemView {
+  const itemId = asInt(item.id);
+  return {
+    id: itemId,
+    name: String(item.name ?? ''),
+    expenseDate: asDateOnly(item.expense_date) ?? '',
+    amountMinor: asInt(item.amount_minor),
+    currency: String(item.currency ?? 'usd'),
+    currencyOther: item.currency_other == null ? null : String(item.currency_other),
+    includesDurableGood: asBool(item.includes_durable_good) === true,
+    noReceiptExplanation:
+      item.no_receipt_explanation == null ? null : String(item.no_receipt_explanation),
+    sortOrder: asInt(item.sort_order),
+    documents: documents
+      .filter((document) => asInt(document.expense_item_id) === itemId)
+      .map(mapDocument),
+  };
+}
+
 function mapReport(
   row: ReportRow,
-  receipts: ReceiptRow[],
+  expenseData: ExpenseData,
   options: {
     includeManage?: boolean;
     includeAdminReview?: boolean;
@@ -297,7 +333,7 @@ function mapReport(
     roundTripMiles: row.round_trip_miles == null ? null : Number(row.round_trip_miles),
     tripPurpose: row.trip_purpose == null ? null : String(row.trip_purpose),
     tripPurposeOther: row.trip_purpose_other == null ? null : String(row.trip_purpose_other),
-    receipts: receipts.map(mapReceipt),
+    expenses: expenseData.items.map((item) => mapExpense(item, expenseData.documents)),
     submittedAt: asIso(row.submitted_at),
     createdAt: asIso(row.created_at),
     updatedAt: asIso(row.updated_at),
@@ -355,7 +391,7 @@ const FIELD_CHANGE_LABELS: Record<string, string> = {
   roundTripMiles: 'Round trip miles',
   tripPurpose: 'Trip purpose',
   mailingAddress: 'Mailing address',
-  receipts: 'Receipts',
+  expenses: 'Expenses',
 };
 
 function formatMinorMoney(amountMinor: number, currency = 'usd'): string {
@@ -374,7 +410,7 @@ function formatStoredChangeAmount(value: string): string {
   return formatMinorMoney(Number(match[1]), match[2]);
 }
 
-function snapshotReportFields(row: ReportRow, receipts: ReceiptRow[]): FieldSnapshot {
+function snapshotReportFields(row: ReportRow, expenseData: ExpenseData): FieldSnapshot {
   const committee = String(row.committee_custom || row.committee_name || '');
   const fromKind = row.from_kind == null ? '' : String(row.from_kind);
   const fromOther = row.from_other == null ? '' : String(row.from_other);
@@ -406,12 +442,18 @@ function snapshotReportFields(row: ReportRow, receipts: ReceiptRow[]): FieldSnap
         ? String(row.trip_purpose_other ?? '')
         : String(row.trip_purpose ?? ''),
     mailingAddress: row.mailing_address == null ? '' : String(row.mailing_address),
-    receipts: receipts
-      .map((receipt) => {
-        const name = String(receipt.name);
-        const date = asDateOnly(receipt.receipt_date) ?? '';
-        const amount = formatMinorMoney(asInt(receipt.amount_minor), String(receipt.currency ?? 'usd'));
-        return date ? `${name} (${date}): ${amount}` : `${name}: ${amount}`;
+    expenses: expenseData.items
+      .map((expense) => {
+        const expenseId = asInt(expense.id);
+        const name = String(expense.name);
+        const date = asDateOnly(expense.expense_date) ?? '';
+        const amount = formatMinorMoney(asInt(expense.amount_minor), String(expense.currency ?? 'usd'));
+        const documentLabels = expenseData.documents
+          .filter((document) => asInt(document.expense_item_id) === expenseId)
+          .map((document) => EXPENSE_DOCUMENT_TYPE_LABELS[asDocumentType(document.document_type)])
+          .join(', ');
+        const detail = date ? `${name} (${date}): ${amount}` : `${name}: ${amount}`;
+        return documentLabels ? `${detail} [${documentLabels}]` : `${detail} [No receipt]`;
       })
       .join('; '),
   };
@@ -530,27 +572,43 @@ async function loadChanges(reportId: number): Promise<ExpenseReportChangeView[]>
   return rows.map((row) => mapChange(row as Record<string, unknown>));
 }
 
-function validateReceiptFile(upload: ExpenseReceiptFileUpload) {
-  const filename = sanitizeFilename(upload.originalFilename || 'receipt.bin');
+function validateDocumentFile(upload: ExpenseDocumentFileUpload) {
+  const filename = sanitizeFilename(upload.originalFilename || 'expense-document.bin');
   const mimeType = detectMimeType(upload.mimeType, filename);
   if (!ALLOWED_RECEIPT_MIME_TYPES.has(mimeType)) {
-    throw new ExpenseReportError('Receipt files must be PDF, JPEG, PNG, WebP, or HEIC.', 400, {
-      field: `receipts.${upload.index}.file`,
+    throw new ExpenseReportError('Supporting documents must be PDF, JPEG, PNG, WebP, or HEIC.', 400, {
+      field: `expenses.${upload.expenseIndex}.documents.${upload.documentIndex}.file`,
     });
   }
   if (!upload.buffer.length) {
-    throw new ExpenseReportError('Receipt file is empty.', 400, { field: `receipts.${upload.index}.file` });
+    throw new ExpenseReportError('Supporting document file is empty.', 400, {
+      field: `expenses.${upload.expenseIndex}.documents.${upload.documentIndex}.file`,
+    });
   }
   return { filename, mimeType };
 }
 
-async function loadReceipts(reportId: number): Promise<ReceiptRow[]> {
+async function loadExpenseData(reportId: number): Promise<ExpenseData> {
   const { db, schema } = getDrizzleDb();
-  return db
+  const items = await db
     .select()
-    .from(schema.expenseReceipts)
-    .where(eq(schema.expenseReceipts.report_id, reportId))
-    .orderBy(asc(schema.expenseReceipts.sort_order), asc(schema.expenseReceipts.id)) as Promise<ReceiptRow[]>;
+    .from(schema.expenseReportItems)
+    .where(eq(schema.expenseReportItems.report_id, reportId))
+    .orderBy(
+      asc(schema.expenseReportItems.sort_order),
+      asc(schema.expenseReportItems.id)
+    ) as ExpenseItemRow[];
+  const itemIds = items.map((item) => asInt(item.id));
+  if (itemIds.length === 0) return { items, documents: [] };
+  const documents = await db
+    .select()
+    .from(schema.expenseDocuments)
+    .where(inArray(schema.expenseDocuments.expense_item_id, itemIds))
+    .orderBy(
+      asc(schema.expenseDocuments.sort_order),
+      asc(schema.expenseDocuments.id)
+    ) as ExpenseDocumentRow[];
+  return { items, documents };
 }
 
 async function loadReportRow(id: number): Promise<ReportRow | null> {
@@ -682,9 +740,9 @@ function reportValuesFromPayload(
     committee_name: committee.committeeName,
     committee_custom: committee.committeeCustom,
     purpose: payload.purpose?.trim() || null,
-    requested_amount_minor: payload.requestedAmountMinor,
+    requested_amount_minor: usedCard === 1 ? 0 : payload.requestedAmountMinor,
     requested_currency: (payload.requestedCurrency || 'usd').toLowerCase(),
-    amount_justification: payload.amountJustification?.trim() || null,
+    amount_justification: usedCard === 1 ? null : payload.amountJustification?.trim() || null,
     used_club_credit_card: usedCard,
     club_credit_card_owner_member_id:
       usedCard === 1
@@ -705,25 +763,20 @@ function reportValuesFromPayload(
   };
 }
 
-async function insertReceipt(
-  reportId: number,
-  receipt: ExpenseReceiptInput,
-  upload: ExpenseReceiptFileUpload,
+async function insertExpenseDocument(
+  expenseItemId: number,
+  documentType: ExpenseDocumentType,
+  upload: ExpenseDocumentFileUpload,
   sortOrder: number
 ) {
   const { db, schema } = getDrizzleDb();
   const storage = getFileStorageAdapter();
-  const { filename, mimeType } = validateReceiptFile(upload);
-  const storageKey = createReceiptStorageKey(filename);
+  const { filename, mimeType } = validateDocumentFile(upload);
+  const storageKey = createExpenseDocumentStorageKey(filename);
   await storage.put(storageKey, upload.buffer);
-  await db.insert(schema.expenseReceipts).values({
-    report_id: reportId,
-    name: receipt.name.trim(),
-    receipt_date: receipt.receiptDate,
-    amount_minor: receipt.amountMinor,
-    currency: receipt.currency,
-    currency_other: receipt.currencyOther?.trim() || null,
-    includes_durable_good: receipt.includesDurableGood ? 1 : 0,
+  await db.insert(schema.expenseDocuments).values({
+    expense_item_id: expenseItemId,
+    document_type: documentType,
     storage_key: storageKey,
     original_filename: filename,
     mime_type: mimeType,
@@ -733,24 +786,54 @@ async function insertReceipt(
   });
 }
 
-async function storeReceipts(
+async function insertExpenseItem(
   reportId: number,
-  receipts: ExpenseReceiptInput[],
-  filesByIndex: Map<number, ExpenseReceiptFileUpload>
+  expense: ExpenseItemInput,
+  expenseIndex: number
+): Promise<number> {
+  const { db, schema } = getDrizzleDb();
+  const inserted = await db
+    .insert(schema.expenseReportItems)
+    .values({
+      report_id: reportId,
+      name: expense.name.trim(),
+      expense_date: expense.expenseDate,
+      amount_minor: expense.amountMinor,
+      currency: expense.currency,
+      currency_other: expense.currencyOther?.trim() || null,
+      includes_durable_good: expense.includesDurableGood ? 1 : 0,
+      no_receipt_explanation: expense.noReceiptExplanation?.trim() || null,
+      sort_order: expenseIndex,
+      updated_at: new Date() as any,
+    })
+    .returning({ id: schema.expenseReportItems.id });
+  return inserted[0].id;
+}
+
+async function storeExpenses(
+  reportId: number,
+  expenses: ExpenseItemInput[],
+  filesByIndex: Map<string, ExpenseDocumentFileUpload>
 ) {
-  for (let index = 0; index < receipts.length; index += 1) {
-    const receipt = receipts[index];
-    const upload = filesByIndex.get(index);
-    if (!upload) {
-      throw new ExpenseReportError('Upload a receipt file.', 400, { field: `receipts.${index}.file` });
+  for (let expenseIndex = 0; expenseIndex < expenses.length; expenseIndex += 1) {
+    const expense = expenses[expenseIndex];
+    const expenseItemId = await insertExpenseItem(reportId, expense, expenseIndex);
+    for (let documentIndex = 0; documentIndex < expense.documents.length; documentIndex += 1) {
+      const document = expense.documents[documentIndex];
+      const upload = filesByIndex.get(`${expenseIndex}:${documentIndex}`);
+      if (!upload) {
+        throw new ExpenseReportError('Upload a file.', 400, {
+          field: `expenses.${expenseIndex}.documents.${documentIndex}.file`,
+        });
+      }
+      await insertExpenseDocument(expenseItemId, document.documentType, upload, documentIndex);
     }
-    await insertReceipt(reportId, receipt, upload, index);
   }
 }
 
 export async function createExpenseReport(options: {
   payload: ExpenseReportPayloadInput;
-  files: ExpenseReceiptFileUpload[];
+  files: ExpenseDocumentFileUpload[];
   memberId: number | null;
 }): Promise<ExpenseReportView> {
   const askClubCreditCard = options.memberId
@@ -758,11 +841,13 @@ export async function createExpenseReport(options: {
     : false;
   const payload = { ...options.payload, askClubCreditCard };
   throwIfInvalid(payload);
-  if (payload.kind === 'expense' && options.files.length > MAX_EXPENSE_RECEIPTS) {
-    throw new ExpenseReportError(`You can attach up to ${MAX_EXPENSE_RECEIPTS} receipts.`, 400);
+  if (payload.kind === 'expense' && options.files.length > MAX_EXPENSE_DOCUMENTS) {
+    throw new ExpenseReportError(`You can attach up to ${MAX_EXPENSE_DOCUMENTS} documents.`, 400);
   }
 
-  const filesByIndex = new Map(options.files.map((file) => [file.index, file]));
+  const filesByIndex = new Map(
+    options.files.map((file) => [`${file.expenseIndex}:${file.documentIndex}`, file])
+  );
   const committee = payload.kind === 'expense'
     ? await resolveCommitteeSnapshot(payload.committeeId ?? null, payload.committeeCustom ?? null)
     : { committeeId: null, committeeName: null, committeeCustom: null };
@@ -785,12 +870,12 @@ export async function createExpenseReport(options: {
   const reportId = inserted[0].id;
 
   if (payload.kind === 'expense') {
-    await storeReceipts(reportId, payload.receipts, filesByIndex);
+    await storeExpenses(reportId, payload.expenses, filesByIndex);
   }
 
   const row = await loadReportRow(reportId);
-  const receipts = await loadReceipts(reportId);
-  const view = mapReport(row!, receipts, { includeManage: true });
+  const expenseData = await loadExpenseData(reportId);
+  const view = mapReport(row!, expenseData, { includeManage: true });
   const club = await clubName();
   await sendExpenseReportConfirmationEmail({
     to: view.submitterEmail,
@@ -809,13 +894,12 @@ async function requireEditable(row: ReportRow) {
   }
 }
 
-export type ExpenseReceiptUpdateInput = ExpenseReceiptInput & { id?: number };
-
 export async function updateExpenseReportRecord(options: {
   reportId: number;
   payload: ExpenseReportPayloadInput;
-  files: ExpenseReceiptFileUpload[];
-  removeReceiptIds?: number[];
+  files: ExpenseDocumentFileUpload[];
+  removeExpenseIds?: number[];
+  removeDocumentIds?: number[];
   memberId: number | null;
   skipEditableCheck?: boolean;
   staffActor?: StaffActor;
@@ -825,8 +909,10 @@ export async function updateExpenseReportRecord(options: {
   if (!options.skipEditableCheck) {
     await requireEditable(existing);
   }
-  const existingReceipts = await loadReceipts(options.reportId);
-  const beforeSnapshot = options.staffActor ? snapshotReportFields(existing, existingReceipts) : null;
+  const existingExpenseData = await loadExpenseData(options.reportId);
+  const beforeSnapshot = options.staffActor
+    ? snapshotReportFields(existing, existingExpenseData)
+    : null;
 
   const ownerMemberId =
     existing.member_id == null ? options.memberId : asInt(existing.member_id);
@@ -859,69 +945,135 @@ export async function updateExpenseReportRecord(options: {
     .where(eq(schema.expenseReports.id, options.reportId));
 
   if (payload.kind === 'expense') {
-    const currentReceipts = await loadReceipts(options.reportId);
-    const removeIds = new Set(options.removeReceiptIds ?? []);
     const storage = getFileStorageAdapter();
-    for (const receipt of currentReceipts) {
-      if (removeIds.has(asInt(receipt.id))) {
+    const removeDocumentIds = new Set(options.removeDocumentIds ?? []);
+    const removeExpenseIds = new Set(options.removeExpenseIds ?? []);
+    const allowedRemoveDocumentIds = existingExpenseData.documents
+      .map((document) => asInt(document.id))
+      .filter((documentId) => removeDocumentIds.has(documentId));
+
+    for (const document of existingExpenseData.documents) {
+      const expenseItemId = asInt(document.expense_item_id);
+      if (removeDocumentIds.has(asInt(document.id)) || removeExpenseIds.has(expenseItemId)) {
         try {
-          await storage.delete(String(receipt.storage_key));
+          await storage.delete(String(document.storage_key));
         } catch {
           // continue even if the file is already gone
         }
-        await db.delete(schema.expenseReceipts).where(eq(schema.expenseReceipts.id, asInt(receipt.id)));
       }
     }
+    if (allowedRemoveDocumentIds.length > 0) {
+      await db
+        .delete(schema.expenseDocuments)
+        .where(inArray(schema.expenseDocuments.id, allowedRemoveDocumentIds));
+    }
+    if (removeExpenseIds.size > 0) {
+      await db
+        .delete(schema.expenseReportItems)
+        .where(
+          and(
+            eq(schema.expenseReportItems.report_id, options.reportId),
+            inArray(schema.expenseReportItems.id, [...removeExpenseIds])
+          )
+        );
+    }
 
-    const filesByIndex = new Map(options.files.map((file) => [file.index, file]));
-    const remaining = await loadReceipts(options.reportId);
-    const remainingById = new Map(remaining.map((row) => [asInt(row.id), row]));
+    const filesByIndex = new Map(
+      options.files.map((file) => [`${file.expenseIndex}:${file.documentIndex}`, file])
+    );
+    const remaining = await loadExpenseData(options.reportId);
+    const remainingItemsById = new Map(remaining.items.map((row) => [asInt(row.id), row]));
+    const remainingDocumentsById = new Map(
+      remaining.documents.map((row) => [asInt(row.id), row])
+    );
 
-    for (let index = 0; index < payload.receipts.length; index += 1) {
-      const receipt = payload.receipts[index] as ExpenseReceiptUpdateInput;
-      const upload = filesByIndex.get(index);
-      if (receipt.id && remainingById.has(receipt.id)) {
-        const updates: Record<string, unknown> = {
-          name: receipt.name.trim(),
-          receipt_date: receipt.receiptDate,
-          amount_minor: receipt.amountMinor,
-          currency: receipt.currency,
-          currency_other: receipt.currencyOther?.trim() || null,
-          includes_durable_good: receipt.includesDurableGood ? 1 : 0,
-          sort_order: index,
-          updated_at: new Date() as any,
-        };
-        if (upload) {
-          const { filename, mimeType } = validateReceiptFile(upload);
-          const storageKey = createReceiptStorageKey(filename);
-          await storage.put(storageKey, upload.buffer);
-          try {
-            await storage.delete(String(remainingById.get(receipt.id)?.storage_key));
-          } catch {
-            // ignore missing old file
-          }
-          updates.storage_key = storageKey;
-          updates.original_filename = filename;
-          updates.mime_type = mimeType;
-          updates.byte_size = upload.buffer.length;
-        }
+    for (let expenseIndex = 0; expenseIndex < payload.expenses.length; expenseIndex += 1) {
+      const expense = payload.expenses[expenseIndex];
+      let expenseItemId: number;
+      if (expense.id && remainingItemsById.has(expense.id)) {
+        expenseItemId = expense.id;
         await db
-          .update(schema.expenseReceipts)
-          .set(updates)
-          .where(eq(schema.expenseReceipts.id, receipt.id));
+          .update(schema.expenseReportItems)
+          .set({
+            name: expense.name.trim(),
+            expense_date: expense.expenseDate,
+            amount_minor: expense.amountMinor,
+            currency: expense.currency,
+            currency_other: expense.currencyOther?.trim() || null,
+            includes_durable_good: expense.includesDurableGood ? 1 : 0,
+            no_receipt_explanation: expense.noReceiptExplanation?.trim() || null,
+            sort_order: expenseIndex,
+            updated_at: new Date() as any,
+          })
+          .where(eq(schema.expenseReportItems.id, expenseItemId));
       } else {
-        if (!upload) {
-          throw new ExpenseReportError('Upload a receipt file.', 400, { field: `receipts.${index}.file` });
+        expenseItemId = await insertExpenseItem(options.reportId, expense, expenseIndex);
+      }
+
+      for (let documentIndex = 0; documentIndex < expense.documents.length; documentIndex += 1) {
+        const document = expense.documents[documentIndex];
+        const upload = filesByIndex.get(`${expenseIndex}:${documentIndex}`);
+        if (document.id && remainingDocumentsById.has(document.id)) {
+          const existingDocument = remainingDocumentsById.get(document.id)!;
+          if (asInt(existingDocument.expense_item_id) !== expenseItemId) {
+            throw new ExpenseReportError('Supporting document does not belong to this expense.', 400);
+          }
+          const updates: Record<string, unknown> = {
+            document_type: document.documentType,
+            sort_order: documentIndex,
+            updated_at: new Date() as any,
+          };
+          if (upload) {
+            const { filename, mimeType } = validateDocumentFile(upload);
+            const storageKey = createExpenseDocumentStorageKey(filename);
+            await storage.put(storageKey, upload.buffer);
+            try {
+              await storage.delete(String(existingDocument.storage_key));
+            } catch {
+              // ignore missing old file
+            }
+            updates.storage_key = storageKey;
+            updates.original_filename = filename;
+            updates.mime_type = mimeType;
+            updates.byte_size = upload.buffer.length;
+          }
+          await db
+            .update(schema.expenseDocuments)
+            .set(updates)
+            .where(eq(schema.expenseDocuments.id, document.id));
+        } else {
+          if (!upload) {
+            throw new ExpenseReportError('Upload a file.', 400, {
+              field: `expenses.${expenseIndex}.documents.${documentIndex}.file`,
+            });
+          }
+          await insertExpenseDocument(
+            expenseItemId,
+            document.documentType,
+            upload,
+            documentIndex
+          );
         }
-        await insertReceipt(options.reportId, receipt, upload, index);
       }
     }
+  } else if (existingExpenseData.items.length > 0) {
+    const storage = getFileStorageAdapter();
+    for (const document of existingExpenseData.documents) {
+      try {
+        await storage.delete(String(document.storage_key));
+      } catch {
+        // continue even if the file is already gone
+      }
+    }
+    await db
+      .delete(schema.expenseReportItems)
+      .where(eq(schema.expenseReportItems.report_id, options.reportId));
   }
 
   const row = await loadReportRow(options.reportId);
-  const receipts = await loadReceipts(options.reportId);
+  const expenseData = await loadExpenseData(options.reportId);
   if (options.staffActor && beforeSnapshot) {
-    const details = diffFieldSnapshots(beforeSnapshot, snapshotReportFields(row!, receipts));
+    const details = diffFieldSnapshots(beforeSnapshot, snapshotReportFields(row!, expenseData));
     if (details.length > 0) {
       await insertExpenseReportChange({
         reportId: options.reportId,
@@ -934,7 +1086,7 @@ export async function updateExpenseReportRecord(options: {
   }
   return options.staffActor
     ? getExpenseReportForAdmin(options.reportId)
-    : mapReport(row!, receipts);
+    : mapReport(row!, expenseData);
 }
 
 function memberOwnsReport(row: ReportRow, member: { id: number; email: string | null }): boolean {
@@ -953,8 +1105,8 @@ export async function getExpenseReportByAccessToken(accessToken: string): Promis
     .where(eq(schema.expenseReports.access_token, accessToken.trim()))
     .limit(1);
   if (!row) throw new ExpenseReportError('Expense report not found.', 404);
-  const receipts = await loadReceipts(asInt(row.id));
-  return mapReport(row as ReportRow, receipts);
+  const expenseData = await loadExpenseData(asInt(row.id));
+  return mapReport(row as ReportRow, expenseData);
 }
 
 export async function getExpenseReportForMember(
@@ -965,19 +1117,19 @@ export async function getExpenseReportForMember(
   if (!row || !memberOwnsReport(row, member)) {
     throw new ExpenseReportError('Expense report not found.', 404);
   }
-  const receipts = await loadReceipts(reportId);
-  return mapReport(row, receipts);
+  const expenseData = await loadExpenseData(reportId);
+  return mapReport(row, expenseData);
 }
 
 export async function getExpenseReportForAdmin(reportId: number): Promise<ExpenseReportView> {
   const row = await loadReportRow(reportId);
   if (!row) throw new ExpenseReportError('Expense report not found.', 404);
-  const [receipts, notes, changes] = await Promise.all([
-    loadReceipts(reportId),
+  const [expenseData, notes, changes] = await Promise.all([
+    loadExpenseData(reportId),
     loadNotes(reportId),
     loadChanges(reportId),
   ]);
-  return mapReport(row, receipts, {
+  return mapReport(row, expenseData, {
     includeManage: true,
     includeAdminReview: true,
     notes,
@@ -1109,8 +1261,12 @@ export async function updateExpenseReportAdmin(
   }
 
   if (shouldSendCheckMailedEmail(previousStatus, nextStatus)) {
-    const receipts = await loadReceipts(reportId);
-    const view = mapReport({ ...existing, status: nextStatus }, receipts, { includeManage: true });
+    const expenseData = await loadExpenseData(reportId);
+    const view = mapReport(
+      { ...existing, status: nextStatus },
+      expenseData,
+      { includeManage: true }
+    );
     const accessToken = String(existing.access_token ?? '');
     await sendExpenseReportCheckMailedEmail({
       to: view.submitterEmail,
@@ -1199,16 +1355,30 @@ export type ExpenseReceiptFile = {
 async function receiptFile(reportId: number, receiptId: number): Promise<ExpenseReceiptFile> {
   const { db, schema } = getDrizzleDb();
   const [row] = await db
-    .select()
-    .from(schema.expenseReceipts)
-    .where(and(eq(schema.expenseReceipts.id, receiptId), eq(schema.expenseReceipts.report_id, reportId)))
+    .select({
+      originalFilename: schema.expenseDocuments.original_filename,
+      mimeType: schema.expenseDocuments.mime_type,
+      byteSize: schema.expenseDocuments.byte_size,
+      storageKey: schema.expenseDocuments.storage_key,
+    })
+    .from(schema.expenseDocuments)
+    .innerJoin(
+      schema.expenseReportItems,
+      eq(schema.expenseReportItems.id, schema.expenseDocuments.expense_item_id)
+    )
+    .where(
+      and(
+        eq(schema.expenseDocuments.id, receiptId),
+        eq(schema.expenseReportItems.report_id, reportId)
+      )
+    )
     .limit(1);
-  if (!row) throw new ExpenseReportError('Receipt not found.', 404);
+  if (!row) throw new ExpenseReportError('Supporting document not found.', 404);
   return {
-    originalFilename: String(row.original_filename),
-    mimeType: String(row.mime_type),
-    byteSize: asInt(row.byte_size),
-    storageKey: String(row.storage_key),
+    originalFilename: String(row.originalFilename),
+    mimeType: String(row.mimeType),
+    byteSize: asInt(row.byteSize),
+    storageKey: String(row.storageKey),
   };
 }
 

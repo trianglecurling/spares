@@ -14,6 +14,7 @@ Use this checklist in human or AI-assisted review.
 - If the change touches drag and drop, does it reuse the shared `frontend/src/components/dragDrop/` layer instead of hand-rolled HTML5 drag handlers?
 - Do drag-and-drop surfaces keep a visible handle, keyboard path, overlay, and reduced-motion-safe behavior?
 - If the change touches a sortable or paginated admin table, does it reuse the shared `frontend/src/components/table/` layer?
+- Do table record openers use real links on a named cell or in the actions column, rather than a whole-row click handler or a `View` button plus `navigate()`?
 - Does a server-backed table keep page, sort, order, and filters in the URL when that state should be navigable?
 - Are bulk row actions above the table and is the row-actions column stable enough to avoid CLS?
 - Has the table avoided introducing a page-size selector without a documented exception?

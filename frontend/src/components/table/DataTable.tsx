@@ -28,6 +28,7 @@ type DataTableProps<Row, SortKey extends string, RowId extends TableRowId> = {
   className?: string;
   shellClassName?: string;
   getRowClassName?: (row: Row) => string | undefined;
+  /** Do not use for navigation. Open records with a real `Link` in a cell or the actions column. */
   onRowClick?: (row: Row) => void;
 };
 

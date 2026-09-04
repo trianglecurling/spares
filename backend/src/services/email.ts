@@ -2279,11 +2279,18 @@ export async function sendExpenseReportConfirmationEmail(input: {
     activityDate?: string | null;
     roundTripMiles?: number | null;
     tripPurpose?: string | null;
-    receipts: Array<{ name: string; amountMinor: number; currency: string }>;
+    expenses: Array<{
+      name: string;
+      amountMinor: number;
+      currency: string;
+      noReceiptExplanation?: string | null;
+      documents: Array<{ documentType: 'receipt' | 'invoice' | 'other_supporting_evidence' }>;
+    }>;
   };
 }): Promise<void> {
   const isMileage = input.report.kind === 'mileage';
   const statusLabel = EXPENSE_STATUS_LABELS[input.report.status as keyof typeof EXPENSE_STATUS_LABELS] ?? input.report.status;
+  const showRequestedAmount = input.report.requestedAmountMinor > 0;
   const amount = formatExpenseMoney(input.report.requestedAmountMinor, input.report.requestedCurrency);
   const links = expenseManageLinkSections(input.manageUrl);
   const policyHtml = isMileage
@@ -2297,8 +2304,14 @@ export async function sendExpenseReportConfirmationEmail(input: {
   const tripPurpose = input.report.tripPurpose
     ? EXPENSE_TRIP_PURPOSE_LABELS[input.report.tripPurpose as keyof typeof EXPENSE_TRIP_PURPOSE_LABELS] ?? input.report.tripPurpose
     : null;
-  const receiptLines = input.report.receipts
-    .map((receipt) => `${receipt.name}: ${formatExpenseMoney(receipt.amountMinor, receipt.currency)}`)
+  const expenseLines = input.report.expenses
+    .map((expense) => {
+      const hasReceipt = expense.documents.some((document) => document.documentType === 'receipt');
+      const receiptStatus = hasReceipt ? 'receipt attached' : 'no receipt';
+      return `${escapeHtmlEmail(expense.name)}: ${escapeHtmlEmail(
+        formatExpenseMoney(expense.amountMinor, expense.currency)
+      )} (${receiptStatus})`;
+    })
     .join('<br>');
 
   const detailHtml = isMileage
@@ -2307,14 +2320,14 @@ export async function sendExpenseReportConfirmationEmail(input: {
        <p><strong>Purpose:</strong> ${escapeHtmlEmail(tripPurpose ?? '')}</p>`
     : `<p><strong>Committee:</strong> ${escapeHtmlEmail(committee ?? '')}</p>
        <p><strong>Purpose:</strong> ${escapeHtmlEmail(input.report.purpose ?? '')}</p>
-       ${receiptLines ? `<p><strong>Receipts:</strong><br>${receiptLines}</p>` : ''}`;
+       ${expenseLines ? `<p><strong>Expenses:</strong><br>${expenseLines}</p>` : ''}`;
 
   const htmlContent = `
     <h2>Expense report received</h2>
     <p>Hi ${escapeHtmlEmail(input.recipientName)},</p>
     <p>We received your ${isMileage ? 'mileage' : 'expense'} reimbursement report for ${escapeHtmlEmail(input.clubName)}.</p>
     <p><strong>Status:</strong> ${escapeHtmlEmail(statusLabel)}</p>
-    <p><strong>Amount requested:</strong> ${escapeHtmlEmail(amount)}</p>
+    ${showRequestedAmount ? `<p><strong>Amount requested:</strong> ${escapeHtmlEmail(amount)}</p>` : ''}
     ${detailHtml}
     ${input.report.comments ? `<p><strong>Comments:</strong> ${escapeHtmlEmail(input.report.comments)}</p>` : ''}
     ${policyHtml}
@@ -2328,7 +2341,7 @@ export async function sendExpenseReportConfirmationEmail(input: {
     '',
     `We received your ${isMileage ? 'mileage' : 'expense'} reimbursement report for ${input.clubName}.`,
     `Status: ${statusLabel}`,
-    `Amount requested: ${amount}`,
+    showRequestedAmount ? `Amount requested: ${amount}` : null,
     isMileage ? `Date: ${input.report.activityDate ?? ''}` : `Committee: ${committee ?? ''}`,
     isMileage ? `Miles: ${input.report.roundTripMiles ?? ''}` : `Purpose: ${input.report.purpose ?? ''}`,
     input.report.comments ? `Comments: ${input.report.comments}` : null,

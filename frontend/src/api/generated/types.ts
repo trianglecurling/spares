@@ -2940,18 +2940,25 @@ export interface paths {
                             roundTripMiles?: null | number;
                             tripPurpose?: null | string;
                             tripPurposeOther?: null | string;
-                            receipts?: {
+                            expenses?: {
                                 id?: number;
                                 name?: string;
-                                receiptDate?: string;
+                                expenseDate?: string;
                                 amountMinor?: number;
                                 currency?: string;
                                 currencyOther?: null | string;
                                 includesDurableGood?: boolean;
-                                originalFilename?: string;
-                                mimeType?: string;
-                                byteSize?: number;
+                                noReceiptExplanation?: null | string;
                                 sortOrder?: number;
+                                documents?: {
+                                    id?: number;
+                                    /** @enum {string} */
+                                    documentType?: "receipt" | "invoice" | "other_supporting_evidence";
+                                    originalFilename?: string;
+                                    mimeType?: string;
+                                    byteSize?: number;
+                                    sortOrder?: number;
+                                }[];
                             }[];
                             submittedAt?: string;
                             createdAt?: string;
@@ -3066,18 +3073,25 @@ export interface paths {
                             roundTripMiles?: null | number;
                             tripPurpose?: null | string;
                             tripPurposeOther?: null | string;
-                            receipts?: {
+                            expenses?: {
                                 id?: number;
                                 name?: string;
-                                receiptDate?: string;
+                                expenseDate?: string;
                                 amountMinor?: number;
                                 currency?: string;
                                 currencyOther?: null | string;
                                 includesDurableGood?: boolean;
-                                originalFilename?: string;
-                                mimeType?: string;
-                                byteSize?: number;
+                                noReceiptExplanation?: null | string;
                                 sortOrder?: number;
+                                documents?: {
+                                    id?: number;
+                                    /** @enum {string} */
+                                    documentType?: "receipt" | "invoice" | "other_supporting_evidence";
+                                    originalFilename?: string;
+                                    mimeType?: string;
+                                    byteSize?: number;
+                                    sortOrder?: number;
+                                }[];
                             }[];
                             submittedAt?: string;
                             createdAt?: string;
@@ -3184,18 +3198,25 @@ export interface paths {
                             roundTripMiles?: null | number;
                             tripPurpose?: null | string;
                             tripPurposeOther?: null | string;
-                            receipts?: {
+                            expenses?: {
                                 id?: number;
                                 name?: string;
-                                receiptDate?: string;
+                                expenseDate?: string;
                                 amountMinor?: number;
                                 currency?: string;
                                 currencyOther?: null | string;
                                 includesDurableGood?: boolean;
-                                originalFilename?: string;
-                                mimeType?: string;
-                                byteSize?: number;
+                                noReceiptExplanation?: null | string;
                                 sortOrder?: number;
+                                documents?: {
+                                    id?: number;
+                                    /** @enum {string} */
+                                    documentType?: "receipt" | "invoice" | "other_supporting_evidence";
+                                    originalFilename?: string;
+                                    mimeType?: string;
+                                    byteSize?: number;
+                                    sortOrder?: number;
+                                }[];
                             }[];
                             submittedAt?: string;
                             createdAt?: string;
@@ -23109,18 +23130,25 @@ export interface paths {
                             roundTripMiles?: null | number;
                             tripPurpose?: null | string;
                             tripPurposeOther?: null | string;
-                            receipts?: {
+                            expenses?: {
                                 id?: number;
                                 name?: string;
-                                receiptDate?: string;
+                                expenseDate?: string;
                                 amountMinor?: number;
                                 currency?: string;
                                 currencyOther?: null | string;
                                 includesDurableGood?: boolean;
-                                originalFilename?: string;
-                                mimeType?: string;
-                                byteSize?: number;
+                                noReceiptExplanation?: null | string;
                                 sortOrder?: number;
+                                documents?: {
+                                    id?: number;
+                                    /** @enum {string} */
+                                    documentType?: "receipt" | "invoice" | "other_supporting_evidence";
+                                    originalFilename?: string;
+                                    mimeType?: string;
+                                    byteSize?: number;
+                                    sortOrder?: number;
+                                }[];
                             }[];
                             submittedAt?: string;
                             createdAt?: string;
@@ -23241,18 +23269,25 @@ export interface paths {
                             roundTripMiles?: null | number;
                             tripPurpose?: null | string;
                             tripPurposeOther?: null | string;
-                            receipts?: {
+                            expenses?: {
                                 id?: number;
                                 name?: string;
-                                receiptDate?: string;
+                                expenseDate?: string;
                                 amountMinor?: number;
                                 currency?: string;
                                 currencyOther?: null | string;
                                 includesDurableGood?: boolean;
-                                originalFilename?: string;
-                                mimeType?: string;
-                                byteSize?: number;
+                                noReceiptExplanation?: null | string;
                                 sortOrder?: number;
+                                documents?: {
+                                    id?: number;
+                                    /** @enum {string} */
+                                    documentType?: "receipt" | "invoice" | "other_supporting_evidence";
+                                    originalFilename?: string;
+                                    mimeType?: string;
+                                    byteSize?: number;
+                                    sortOrder?: number;
+                                }[];
                             }[];
                             submittedAt?: string;
                             createdAt?: string;
@@ -23563,18 +23598,25 @@ export interface paths {
                             roundTripMiles?: null | number;
                             tripPurpose?: null | string;
                             tripPurposeOther?: null | string;
-                            receipts?: {
+                            expenses?: {
                                 id?: number;
                                 name?: string;
-                                receiptDate?: string;
+                                expenseDate?: string;
                                 amountMinor?: number;
                                 currency?: string;
                                 currencyOther?: null | string;
                                 includesDurableGood?: boolean;
-                                originalFilename?: string;
-                                mimeType?: string;
-                                byteSize?: number;
+                                noReceiptExplanation?: null | string;
                                 sortOrder?: number;
+                                documents?: {
+                                    id?: number;
+                                    /** @enum {string} */
+                                    documentType?: "receipt" | "invoice" | "other_supporting_evidence";
+                                    originalFilename?: string;
+                                    mimeType?: string;
+                                    byteSize?: number;
+                                    sortOrder?: number;
+                                }[];
                             }[];
                             submittedAt?: string;
                             createdAt?: string;
@@ -23702,18 +23744,25 @@ export interface paths {
                             roundTripMiles?: null | number;
                             tripPurpose?: null | string;
                             tripPurposeOther?: null | string;
-                            receipts?: {
+                            expenses?: {
                                 id?: number;
                                 name?: string;
-                                receiptDate?: string;
+                                expenseDate?: string;
                                 amountMinor?: number;
                                 currency?: string;
                                 currencyOther?: null | string;
                                 includesDurableGood?: boolean;
-                                originalFilename?: string;
-                                mimeType?: string;
-                                byteSize?: number;
+                                noReceiptExplanation?: null | string;
                                 sortOrder?: number;
+                                documents?: {
+                                    id?: number;
+                                    /** @enum {string} */
+                                    documentType?: "receipt" | "invoice" | "other_supporting_evidence";
+                                    originalFilename?: string;
+                                    mimeType?: string;
+                                    byteSize?: number;
+                                    sortOrder?: number;
+                                }[];
                             }[];
                             submittedAt?: string;
                             createdAt?: string;
@@ -23844,18 +23893,25 @@ export interface paths {
                             roundTripMiles?: null | number;
                             tripPurpose?: null | string;
                             tripPurposeOther?: null | string;
-                            receipts?: {
+                            expenses?: {
                                 id?: number;
                                 name?: string;
-                                receiptDate?: string;
+                                expenseDate?: string;
                                 amountMinor?: number;
                                 currency?: string;
                                 currencyOther?: null | string;
                                 includesDurableGood?: boolean;
-                                originalFilename?: string;
-                                mimeType?: string;
-                                byteSize?: number;
+                                noReceiptExplanation?: null | string;
                                 sortOrder?: number;
+                                documents?: {
+                                    id?: number;
+                                    /** @enum {string} */
+                                    documentType?: "receipt" | "invoice" | "other_supporting_evidence";
+                                    originalFilename?: string;
+                                    mimeType?: string;
+                                    byteSize?: number;
+                                    sortOrder?: number;
+                                }[];
                             }[];
                             submittedAt?: string;
                             createdAt?: string;
@@ -24002,18 +24058,25 @@ export interface paths {
                             roundTripMiles?: null | number;
                             tripPurpose?: null | string;
                             tripPurposeOther?: null | string;
-                            receipts?: {
+                            expenses?: {
                                 id?: number;
                                 name?: string;
-                                receiptDate?: string;
+                                expenseDate?: string;
                                 amountMinor?: number;
                                 currency?: string;
                                 currencyOther?: null | string;
                                 includesDurableGood?: boolean;
-                                originalFilename?: string;
-                                mimeType?: string;
-                                byteSize?: number;
+                                noReceiptExplanation?: null | string;
                                 sortOrder?: number;
+                                documents?: {
+                                    id?: number;
+                                    /** @enum {string} */
+                                    documentType?: "receipt" | "invoice" | "other_supporting_evidence";
+                                    originalFilename?: string;
+                                    mimeType?: string;
+                                    byteSize?: number;
+                                    sortOrder?: number;
+                                }[];
                             }[];
                             submittedAt?: string;
                             createdAt?: string;

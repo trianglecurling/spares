@@ -526,6 +526,27 @@
       "when": 1780352498516,
       "tag": "0075_allow_menu_items_separator_link_type",
       "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "7",
+      "when": 1780352498517,
+      "tag": "0076_add_expense_receipt_document_type",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1788487200000,
+      "tag": "0077_split_expense_items_and_documents",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1788487800000,
+      "tag": "0078_one_receipt_per_expense",
+      "breakpoints": true
     }
   ]
 }

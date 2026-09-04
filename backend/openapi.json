@@ -3574,7 +3574,7 @@
                         "string"
                       ]
                     },
-                    "receipts": {
+                    "expenses": {
                       "type": "array",
                       "items": {
                         "type": "object",
@@ -3586,7 +3586,7 @@
                           "name": {
                             "type": "string"
                           },
-                          "receiptDate": {
+                          "expenseDate": {
                             "type": "string"
                           },
                           "amountMinor": {
@@ -3604,17 +3604,46 @@
                           "includesDurableGood": {
                             "type": "boolean"
                           },
-                          "originalFilename": {
-                            "type": "string"
-                          },
-                          "mimeType": {
-                            "type": "string"
-                          },
-                          "byteSize": {
-                            "type": "number"
+                          "noReceiptExplanation": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
                           },
                           "sortOrder": {
                             "type": "number"
+                          },
+                          "documents": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "properties": {
+                                "id": {
+                                  "type": "number"
+                                },
+                                "documentType": {
+                                  "type": "string",
+                                  "enum": [
+                                    "receipt",
+                                    "invoice",
+                                    "other_supporting_evidence"
+                                  ]
+                                },
+                                "originalFilename": {
+                                  "type": "string"
+                                },
+                                "mimeType": {
+                                  "type": "string"
+                                },
+                                "byteSize": {
+                                  "type": "number"
+                                },
+                                "sortOrder": {
+                                  "type": "number"
+                                }
+                              }
+                            }
                           }
                         }
                       }
@@ -3960,7 +3989,7 @@
                         "string"
                       ]
                     },
-                    "receipts": {
+                    "expenses": {
                       "type": "array",
                       "items": {
                         "type": "object",
@@ -3972,7 +4001,7 @@
                           "name": {
                             "type": "string"
                           },
-                          "receiptDate": {
+                          "expenseDate": {
                             "type": "string"
                           },
                           "amountMinor": {
@@ -3990,17 +4019,46 @@
                           "includesDurableGood": {
                             "type": "boolean"
                           },
-                          "originalFilename": {
-                            "type": "string"
-                          },
-                          "mimeType": {
-                            "type": "string"
-                          },
-                          "byteSize": {
-                            "type": "number"
+                          "noReceiptExplanation": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
                           },
                           "sortOrder": {
                             "type": "number"
+                          },
+                          "documents": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "properties": {
+                                "id": {
+                                  "type": "number"
+                                },
+                                "documentType": {
+                                  "type": "string",
+                                  "enum": [
+                                    "receipt",
+                                    "invoice",
+                                    "other_supporting_evidence"
+                                  ]
+                                },
+                                "originalFilename": {
+                                  "type": "string"
+                                },
+                                "mimeType": {
+                                  "type": "string"
+                                },
+                                "byteSize": {
+                                  "type": "number"
+                                },
+                                "sortOrder": {
+                                  "type": "number"
+                                }
+                              }
+                            }
                           }
                         }
                       }
@@ -4344,7 +4402,7 @@
                         "string"
                       ]
                     },
-                    "receipts": {
+                    "expenses": {
                       "type": "array",
                       "items": {
                         "type": "object",
@@ -4356,7 +4414,7 @@
                           "name": {
                             "type": "string"
                           },
-                          "receiptDate": {
+                          "expenseDate": {
                             "type": "string"
                           },
                           "amountMinor": {
@@ -4374,17 +4432,46 @@
                           "includesDurableGood": {
                             "type": "boolean"
                           },
-                          "originalFilename": {
-                            "type": "string"
-                          },
-                          "mimeType": {
-                            "type": "string"
-                          },
-                          "byteSize": {
-                            "type": "number"
+                          "noReceiptExplanation": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
                           },
                           "sortOrder": {
                             "type": "number"
+                          },
+                          "documents": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "properties": {
+                                "id": {
+                                  "type": "number"
+                                },
+                                "documentType": {
+                                  "type": "string",
+                                  "enum": [
+                                    "receipt",
+                                    "invoice",
+                                    "other_supporting_evidence"
+                                  ]
+                                },
+                                "originalFilename": {
+                                  "type": "string"
+                                },
+                                "mimeType": {
+                                  "type": "string"
+                                },
+                                "byteSize": {
+                                  "type": "number"
+                                },
+                                "sortOrder": {
+                                  "type": "number"
+                                }
+                              }
+                            }
                           }
                         }
                       }
@@ -32520,7 +32607,7 @@
                         "string"
                       ]
                     },
-                    "receipts": {
+                    "expenses": {
                       "type": "array",
                       "items": {
                         "type": "object",
@@ -32532,7 +32619,7 @@
                           "name": {
                             "type": "string"
                           },
-                          "receiptDate": {
+                          "expenseDate": {
                             "type": "string"
                           },
                           "amountMinor": {
@@ -32550,17 +32637,46 @@
                           "includesDurableGood": {
                             "type": "boolean"
                           },
-                          "originalFilename": {
-                            "type": "string"
-                          },
-                          "mimeType": {
-                            "type": "string"
-                          },
-                          "byteSize": {
-                            "type": "number"
+                          "noReceiptExplanation": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
                           },
                           "sortOrder": {
                             "type": "number"
+                          },
+                          "documents": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "properties": {
+                                "id": {
+                                  "type": "number"
+                                },
+                                "documentType": {
+                                  "type": "string",
+                                  "enum": [
+                                    "receipt",
+                                    "invoice",
+                                    "other_supporting_evidence"
+                                  ]
+                                },
+                                "originalFilename": {
+                                  "type": "string"
+                                },
+                                "mimeType": {
+                                  "type": "string"
+                                },
+                                "byteSize": {
+                                  "type": "number"
+                                },
+                                "sortOrder": {
+                                  "type": "number"
+                                }
+                              }
+                            }
                           }
                         }
                       }
@@ -32924,7 +33040,7 @@
                         "string"
                       ]
                     },
-                    "receipts": {
+                    "expenses": {
                       "type": "array",
                       "items": {
                         "type": "object",
@@ -32936,7 +33052,7 @@
                           "name": {
                             "type": "string"
                           },
-                          "receiptDate": {
+                          "expenseDate": {
                             "type": "string"
                           },
                           "amountMinor": {
@@ -32954,17 +33070,46 @@
                           "includesDurableGood": {
                             "type": "boolean"
                           },
-                          "originalFilename": {
-                            "type": "string"
-                          },
-                          "mimeType": {
-                            "type": "string"
-                          },
-                          "byteSize": {
-                            "type": "number"
+                          "noReceiptExplanation": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
                           },
                           "sortOrder": {
                             "type": "number"
+                          },
+                          "documents": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "properties": {
+                                "id": {
+                                  "type": "number"
+                                },
+                                "documentType": {
+                                  "type": "string",
+                                  "enum": [
+                                    "receipt",
+                                    "invoice",
+                                    "other_supporting_evidence"
+                                  ]
+                                },
+                                "originalFilename": {
+                                  "type": "string"
+                                },
+                                "mimeType": {
+                                  "type": "string"
+                                },
+                                "byteSize": {
+                                  "type": "number"
+                                },
+                                "sortOrder": {
+                                  "type": "number"
+                                }
+                              }
+                            }
                           }
                         }
                       }
@@ -33594,7 +33739,7 @@
                         "string"
                       ]
                     },
-                    "receipts": {
+                    "expenses": {
                       "type": "array",
                       "items": {
                         "type": "object",
@@ -33606,7 +33751,7 @@
                           "name": {
                             "type": "string"
                           },
-                          "receiptDate": {
+                          "expenseDate": {
                             "type": "string"
                           },
                           "amountMinor": {
@@ -33624,17 +33769,46 @@
                           "includesDurableGood": {
                             "type": "boolean"
                           },
-                          "originalFilename": {
-                            "type": "string"
-                          },
-                          "mimeType": {
-                            "type": "string"
-                          },
-                          "byteSize": {
-                            "type": "number"
+                          "noReceiptExplanation": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
                           },
                           "sortOrder": {
                             "type": "number"
+                          },
+                          "documents": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "properties": {
+                                "id": {
+                                  "type": "number"
+                                },
+                                "documentType": {
+                                  "type": "string",
+                                  "enum": [
+                                    "receipt",
+                                    "invoice",
+                                    "other_supporting_evidence"
+                                  ]
+                                },
+                                "originalFilename": {
+                                  "type": "string"
+                                },
+                                "mimeType": {
+                                  "type": "string"
+                                },
+                                "byteSize": {
+                                  "type": "number"
+                                },
+                                "sortOrder": {
+                                  "type": "number"
+                                }
+                              }
+                            }
                           }
                         }
                       }
@@ -34020,7 +34194,7 @@
                         "string"
                       ]
                     },
-                    "receipts": {
+                    "expenses": {
                       "type": "array",
                       "items": {
                         "type": "object",
@@ -34032,7 +34206,7 @@
                           "name": {
                             "type": "string"
                           },
-                          "receiptDate": {
+                          "expenseDate": {
                             "type": "string"
                           },
                           "amountMinor": {
@@ -34050,17 +34224,46 @@
                           "includesDurableGood": {
                             "type": "boolean"
                           },
-                          "originalFilename": {
-                            "type": "string"
-                          },
-                          "mimeType": {
-                            "type": "string"
-                          },
-                          "byteSize": {
-                            "type": "number"
+                          "noReceiptExplanation": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
                           },
                           "sortOrder": {
                             "type": "number"
+                          },
+                          "documents": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "properties": {
+                                "id": {
+                                  "type": "number"
+                                },
+                                "documentType": {
+                                  "type": "string",
+                                  "enum": [
+                                    "receipt",
+                                    "invoice",
+                                    "other_supporting_evidence"
+                                  ]
+                                },
+                                "originalFilename": {
+                                  "type": "string"
+                                },
+                                "mimeType": {
+                                  "type": "string"
+                                },
+                                "byteSize": {
+                                  "type": "number"
+                                },
+                                "sortOrder": {
+                                  "type": "number"
+                                }
+                              }
+                            }
                           }
                         }
                       }
@@ -34426,7 +34629,7 @@
                         "string"
                       ]
                     },
-                    "receipts": {
+                    "expenses": {
                       "type": "array",
                       "items": {
                         "type": "object",
@@ -34438,7 +34641,7 @@
                           "name": {
                             "type": "string"
                           },
-                          "receiptDate": {
+                          "expenseDate": {
                             "type": "string"
                           },
                           "amountMinor": {
@@ -34456,17 +34659,46 @@
                           "includesDurableGood": {
                             "type": "boolean"
                           },
-                          "originalFilename": {
-                            "type": "string"
-                          },
-                          "mimeType": {
-                            "type": "string"
-                          },
-                          "byteSize": {
-                            "type": "number"
+                          "noReceiptExplanation": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
                           },
                           "sortOrder": {
                             "type": "number"
+                          },
+                          "documents": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "properties": {
+                                "id": {
+                                  "type": "number"
+                                },
+                                "documentType": {
+                                  "type": "string",
+                                  "enum": [
+                                    "receipt",
+                                    "invoice",
+                                    "other_supporting_evidence"
+                                  ]
+                                },
+                                "originalFilename": {
+                                  "type": "string"
+                                },
+                                "mimeType": {
+                                  "type": "string"
+                                },
+                                "byteSize": {
+                                  "type": "number"
+                                },
+                                "sortOrder": {
+                                  "type": "number"
+                                }
+                              }
+                            }
                           }
                         }
                       }
@@ -34871,7 +35103,7 @@
                         "string"
                       ]
                     },
-                    "receipts": {
+                    "expenses": {
                       "type": "array",
                       "items": {
                         "type": "object",
@@ -34883,7 +35115,7 @@
                           "name": {
                             "type": "string"
                           },
-                          "receiptDate": {
+                          "expenseDate": {
                             "type": "string"
                           },
                           "amountMinor": {
@@ -34901,17 +35133,46 @@
                           "includesDurableGood": {
                             "type": "boolean"
                           },
-                          "originalFilename": {
-                            "type": "string"
-                          },
-                          "mimeType": {
-                            "type": "string"
-                          },
-                          "byteSize": {
-                            "type": "number"
+                          "noReceiptExplanation": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
                           },
                           "sortOrder": {
                             "type": "number"
+                          },
+                          "documents": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "properties": {
+                                "id": {
+                                  "type": "number"
+                                },
+                                "documentType": {
+                                  "type": "string",
+                                  "enum": [
+                                    "receipt",
+                                    "invoice",
+                                    "other_supporting_evidence"
+                                  ]
+                                },
+                                "originalFilename": {
+                                  "type": "string"
+                                },
+                                "mimeType": {
+                                  "type": "string"
+                                },
+                                "byteSize": {
+                                  "type": "number"
+                                },
+                                "sortOrder": {
+                                  "type": "number"
+                                }
+                              }
+                            }
                           }
                         }
                       }

@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useId, useMemo, useState } from 'react';
+import { HiChevronDown } from 'react-icons/hi2';
 import { Link } from 'react-router-dom';
 import ChoiceInput, { type ChoiceOption } from './ChoiceInput';
 import FormCheckbox from './FormCheckbox';
@@ -7,6 +8,7 @@ import FormFieldMessage from './FormFieldMessage';
 import FormSection from './FormSection';
 import HelpCallout from './HelpCallout';
 import MemberAutocomplete from './MemberAutocomplete';
+import { MobileNavAccordionPanel } from './MobileNavAccordion';
 import PhysicalAddressCollect from './PhysicalAddressCollect';
 import Button from './Button';
 import { publicEventRegistrationInput } from './eventRegistration/PublicRegistrationFieldInput';
@@ -16,14 +18,19 @@ import {
   CHARITABLE_MILEAGE_RATE_CENTS_PER_MILE,
   DURABLE_GOOD_THRESHOLD_MINOR,
   EXPENSE_TRIP_PURPOSE_OPTIONS,
-  MAX_EXPENSE_RECEIPTS,
+  MAX_EXPENSE_DOCUMENTS,
+  MAX_EXPENSE_ITEMS,
+  asExpenseDocumentType,
   dollarsToMinor,
+  formatExpenseMoney,
   mileageCapCents,
   minorToDollarsInput,
+  type ExpenseDocumentView,
+  type ExpenseDocumentType,
   type ExpenseFieldError,
+  type ExpenseItemView,
   type ExpenseReportKind,
   type ExpenseReportView,
-  type ExpenseReceiptView,
 } from '../utils/expenseReports';
 
 export type ExpenseCommitteeOption = { id: number; name: string };
@@ -37,22 +44,35 @@ export type ExpenseFormOptions = {
 
 export type { ExpenseFieldError };
 
-type ReceiptDraft = {
+type ExpenseDocumentDraft = {
+  key: string;
+  id?: number;
+  documentType: ExpenseDocumentType;
+  file: File | null;
+  existingFilename?: string;
+};
+
+type ExpenseDraft = {
   key: string;
   id?: number;
   name: string;
-  receiptDate: string;
+  expenseDate: string;
   amount: string;
   currency: 'usd' | 'cad' | 'other';
   currencyOther: string;
   includesDurableGood: boolean;
-  file: File | null;
-  existingFilename?: string;
+  noReceipt: boolean;
+  noReceiptExplanation: string;
+  documents: ExpenseDocumentDraft[];
 };
 
 type ExpenseReportFormProps = {
   tone?: 'public' | 'app';
   readOnly?: boolean;
+  formId?: string;
+  density?: 'default' | 'compact';
+  showSubmitButton?: boolean;
+  showExistingReceiptActions?: boolean;
   formOptions: ExpenseFormOptions;
   identity: {
     name: string;
@@ -64,13 +84,14 @@ type ExpenseReportFormProps = {
   fieldErrors?: ExpenseFieldError[];
   submitting?: boolean;
   submitLabel?: string;
-  receiptFilePath?: (receiptId: number) => string;
+  documentFilePath?: (documentId: number) => string;
   /** Staff review always asks about club cards and who holds the card. */
   clubCardMode?: 'submitter' | 'staff';
   onSubmit: (input: {
     payload: Record<string, unknown>;
-    files: Array<{ index: number; file: File }>;
-    removeReceiptIds: number[];
+    files: Array<{ expenseIndex: number; documentIndex: number; file: File }>;
+    removeExpenseIds: number[];
+    removeDocumentIds: number[];
   }) => Promise<void> | void;
 };
 
@@ -82,45 +103,90 @@ function errorMap(errors: ExpenseFieldError[] | undefined): Record<string, strin
   return map;
 }
 
-function emptyReceipt(): ReceiptDraft {
+function emptyDocument(documentType: ExpenseDocumentType): ExpenseDocumentDraft {
   return {
-    key: `receipt-${Math.random().toString(36).slice(2)}`,
-    name: '',
-    receiptDate: '',
-    amount: '',
-    currency: 'usd',
-    currencyOther: '',
-    includesDurableGood: false,
+    key: `document-${Math.random().toString(36).slice(2)}`,
+    documentType,
     file: null,
   };
 }
 
-function receiptsFromReport(report: ExpenseReportView): ReceiptDraft[] {
-  if (!report.receipts?.length) return [emptyReceipt()];
-  return report.receipts.map((receipt: ExpenseReceiptView) => ({
-    key: `existing-${receipt.id}`,
-    id: receipt.id,
-    name: receipt.name,
-    receiptDate: receipt.receiptDate.slice(0, 10),
-    amount: minorToDollarsInput(receipt.amountMinor),
-    currency: receipt.currency === 'cad' || receipt.currency === 'other' ? receipt.currency : 'usd',
-    currencyOther: receipt.currencyOther ?? '',
-    includesDurableGood: receipt.includesDurableGood,
+function emptyExpense(): ExpenseDraft {
+  return {
+    key: `expense-${Math.random().toString(36).slice(2)}`,
+    name: '',
+    expenseDate: '',
+    amount: '',
+    currency: 'usd',
+    currencyOther: '',
+    includesDurableGood: false,
+    noReceipt: false,
+    noReceiptExplanation: '',
+    documents: [emptyDocument('receipt')],
+  };
+}
+
+function documentFromReport(document: ExpenseDocumentView): ExpenseDocumentDraft {
+  return {
+    key: `existing-document-${document.id}`,
+    id: document.id,
+    documentType: asExpenseDocumentType(document.documentType),
     file: null,
-    existingFilename: receipt.originalFilename,
-  }));
+    existingFilename: document.originalFilename,
+  };
+}
+
+function expenseSummary(expense: ExpenseDraft): string {
+  const parts: string[] = [];
+  if (expense.name.trim()) parts.push(expense.name.trim());
+  if (expense.expenseDate) parts.push(expense.expenseDate);
+  const amountMinor = dollarsToMinor(expense.amount);
+  if (amountMinor > 0) {
+    parts.push(
+      formatExpenseMoney(
+        amountMinor,
+        expense.currency === 'other' ? expense.currencyOther || 'usd' : expense.currency
+      )
+    );
+  }
+  return parts.join(' · ');
+}
+
+function expensesFromReport(report: ExpenseReportView): ExpenseDraft[] {
+  if (!report.expenses?.length) return [emptyExpense()];
+  return report.expenses.map((expense: ExpenseItemView) => {
+    const documents = expense.documents.map(documentFromReport);
+    const hasReceipt = documents.some((document) => document.documentType === 'receipt');
+    return {
+      key: `existing-expense-${expense.id}`,
+      id: expense.id,
+      name: expense.name,
+      expenseDate: expense.expenseDate.slice(0, 10),
+      amount: minorToDollarsInput(expense.amountMinor),
+      currency: expense.currency === 'cad' || expense.currency === 'other' ? expense.currency : 'usd',
+      currencyOther: expense.currencyOther ?? '',
+      includesDurableGood: expense.includesDurableGood,
+      noReceipt: !hasReceipt,
+      noReceiptExplanation: expense.noReceiptExplanation ?? '',
+      documents,
+    };
+  });
 }
 
 export default function ExpenseReportForm({
   tone = 'public',
   readOnly = false,
+  formId,
+  density = 'default',
+  showSubmitButton = true,
+  showExistingReceiptActions = true,
   formOptions,
   identity,
   initialReport,
   fieldErrors,
   submitting = false,
   submitLabel = 'Submit report',
-  receiptFilePath,
+  documentFilePath,
   clubCardMode = 'submitter',
   onSubmit,
 }: ExpenseReportFormProps) {
@@ -142,7 +208,7 @@ export default function ExpenseReportForm({
   const tripPurposeId = useId();
   const tripOtherId = useId();
   const mileageAmountId = useId();
-  const receiptsLabelId = useId();
+  const expensesLabelId = useId();
   const cardOwnerId = useId();
 
   const [kind, setKind] = useState<ExpenseReportKind | ''>(
@@ -155,21 +221,28 @@ export default function ExpenseReportForm({
   });
   const [committeeCustom, setCommitteeCustom] = useState(initialReport?.committeeCustom ?? '');
   const [purpose, setPurpose] = useState(initialReport?.purpose ?? '');
-  const [receipts, setReceipts] = useState<ReceiptDraft[]>(() =>
-    initialReport?.kind === 'expense' ? receiptsFromReport(initialReport) : [emptyReceipt()]
+  const [expenses, setExpenses] = useState<ExpenseDraft[]>(() =>
+    initialReport?.kind === 'expense' ? expensesFromReport(initialReport) : [emptyExpense()]
   );
-  const [removedReceiptIds, setRemovedReceiptIds] = useState<number[]>([]);
+  const [expandedExpenseKey, setExpandedExpenseKey] = useState<string | null>(() => {
+    if (initialReport?.kind === 'expense' && (initialReport.expenses?.length ?? 0) > 1) {
+      return `existing-expense-${initialReport.expenses![0].id}`;
+    }
+    return null;
+  });
+  const [removedExpenseIds, setRemovedExpenseIds] = useState<number[]>([]);
+  const [removedDocumentIds, setRemovedDocumentIds] = useState<number[]>([]);
   const [requestedAmount, setRequestedAmount] = useState(
     initialReport ? minorToDollarsInput(initialReport.requestedAmountMinor) : ''
   );
   const [requestedTouched, setRequestedTouched] = useState(() => {
     if (!initialReport || initialReport.kind !== 'expense') return false;
     const keys = new Set(
-      (initialReport.receipts ?? []).map((receipt) =>
-        receipt.currency === 'other' ? `other:${(receipt.currencyOther ?? '').trim().toLowerCase()}` : receipt.currency
+      (initialReport.expenses ?? []).map((expense) =>
+        expense.currency === 'other' ? `other:${(expense.currencyOther ?? '').trim().toLowerCase()}` : expense.currency
       )
     );
-    const sum = (initialReport.receipts ?? []).reduce((total, receipt) => total + receipt.amountMinor, 0);
+    const sum = (initialReport.expenses ?? []).reduce((total, expense) => total + expense.amountMinor, 0);
     return keys.size > 1 || initialReport.requestedAmountMinor !== sum;
   });
   const [amountJustification, setAmountJustification] = useState(initialReport?.amountJustification ?? '');
@@ -201,35 +274,46 @@ export default function ExpenseReportForm({
   const clubName = formOptions.clubName || 'the club';
   const askClubCard =
     kind === 'expense' && (clubCardMode === 'staff' || formOptions.isClubCreditCardHolder);
-  const showMailingAddress = kind === 'expense' && (!askClubCard || usedClubCreditCard === 'no');
+  const chargedToClubCard = usedClubCreditCard === 'yes';
+  const showReimbursementRequest =
+    kind === 'expense' && !chargedToClubCard && (!askClubCard || usedClubCreditCard === 'no');
+  const showMailingAddress = showReimbursementRequest;
 
-  const receiptSumMinor = useMemo(
-    () => receipts.reduce((sum, receipt) => sum + dollarsToMinor(receipt.amount), 0),
-    [receipts]
+  const expenseSumMinor = useMemo(
+    () => expenses.reduce((sum, expense) => sum + dollarsToMinor(expense.amount), 0),
+    [expenses]
   );
   const mixedCurrencies = useMemo(() => {
     const keys = new Set(
-      receipts.map((receipt) =>
-        receipt.currency === 'other' ? `other:${receipt.currencyOther.trim().toLowerCase()}` : receipt.currency
+      expenses.map((expense) =>
+        expense.currency === 'other'
+          ? `other:${expense.currencyOther.trim().toLowerCase()}`
+          : expense.currency
       )
     );
     return keys.size > 1;
-  }, [receipts]);
+  }, [expenses]);
+  const documentCount = useMemo(
+    () => expenses.reduce((sum, expense) => sum + expense.documents.length, 0),
+    [expenses]
+  );
+  const useExpenseAccordion = expenses.length > 1;
+  const activeExpenseKey = useExpenseAccordion ? expandedExpenseKey : expenses[0]?.key ?? null;
   const requestedMinor = dollarsToMinor(requestedAmount);
-  const amountDiffers = requestedMinor !== receiptSumMinor;
+  const amountDiffers = requestedMinor !== expenseSumMinor;
   const needsJustification = mixedCurrencies || amountDiffers;
 
   useEffect(() => {
     if (kind !== 'expense' || requestedTouched) return;
-    setRequestedAmount(receiptSumMinor > 0 ? minorToDollarsInput(receiptSumMinor) : '');
-  }, [kind, receiptSumMinor, requestedTouched]);
+    setRequestedAmount(expenseSumMinor > 0 ? minorToDollarsInput(expenseSumMinor) : '');
+  }, [kind, expenseSumMinor, requestedTouched]);
 
   useEffect(() => {
     if (kind !== 'expense' || mixedCurrencies) return;
-    if (dollarsToMinor(requestedAmount) === receiptSumMinor) {
+    if (dollarsToMinor(requestedAmount) === expenseSumMinor) {
       setRequestedTouched(false);
     }
-  }, [kind, mixedCurrencies, requestedAmount, receiptSumMinor]);
+  }, [kind, mixedCurrencies, requestedAmount, expenseSumMinor]);
 
   const milesNumber = Number.parseFloat(roundTripMiles);
   const mileageCap = Number.isFinite(milesNumber) && milesNumber > 0 ? mileageCapCents(milesNumber) : 0;
@@ -239,6 +323,15 @@ export default function ExpenseReportForm({
     setRequestedAmount(mileageCap > 0 ? minorToDollarsInput(mileageCap) : '');
   }, [kind, mileageCap, mileageTouched]);
 
+  useEffect(() => {
+    if (!useExpenseAccordion) return;
+    const firstError = (fieldErrors ?? []).find((error) => error.field.startsWith('expenses.'));
+    const match = firstError ? /^expenses\.(\d+)/.exec(firstError.field) : null;
+    if (!match) return;
+    const key = expenses[Number(match[1])]?.key;
+    if (key) setExpandedExpenseKey(key);
+  }, [fieldErrors, expenses, useExpenseAccordion]);
+
   const committeeOptions: ChoiceOption<string>[] = useMemo(
     () => [
       ...formOptions.committees.map((committee) => ({ value: String(committee.id), label: committee.name })),
@@ -247,11 +340,11 @@ export default function ExpenseReportForm({
     [formOptions.committees]
   );
 
-  const updateReceipt = (index: number, patch: Partial<ReceiptDraft>) => {
-    setReceipts((current) =>
-      current.map((receipt, receiptIndex) => {
-        if (receiptIndex !== index) return receipt;
-        const next = { ...receipt, ...patch };
+  const updateExpense = (index: number, patch: Partial<ExpenseDraft>) => {
+    setExpenses((current) =>
+      current.map((expense, expenseIndex) => {
+        if (expenseIndex !== index) return expense;
+        const next = { ...expense, ...patch };
         if (dollarsToMinor(next.amount) < DURABLE_GOOD_THRESHOLD_MINOR) {
           next.includesDurableGood = false;
         }
@@ -260,20 +353,85 @@ export default function ExpenseReportForm({
     );
   };
 
-  const removeReceipt = (index: number) => {
-    const target = receipts[index];
+  const updateDocument = (
+    expenseIndex: number,
+    documentIndex: number,
+    patch: Partial<ExpenseDocumentDraft>
+  ) => {
+    const expense = expenses[expenseIndex];
+    updateExpense(expenseIndex, {
+      documents: expense.documents.map((document, index) =>
+        index === documentIndex ? { ...document, ...patch } : document
+      ),
+    });
+  };
+
+  const removeDocument = (expenseIndex: number, documentIndex: number) => {
+    const expense = expenses[expenseIndex];
+    const target = expense.documents[documentIndex];
     if (target?.id) {
-      setRemovedReceiptIds((current) => [...current, target.id!]);
+      setRemovedDocumentIds((current) => [...current, target.id!]);
     }
-    setReceipts((current) => (current.length <= 1 ? [emptyReceipt()] : current.filter((_, i) => i !== index)));
+    updateExpense(expenseIndex, {
+      documents: expense.documents.filter((_, index) => index !== documentIndex),
+    });
+  };
+
+  const setNoReceipt = (expenseIndex: number, noReceipt: boolean) => {
+    const expense = expenses[expenseIndex];
+    if (noReceipt) {
+      const receipt = expense.documents.find((document) => document.documentType === 'receipt');
+      if (receipt?.id) {
+        setRemovedDocumentIds((current) => [...current, receipt.id!]);
+      }
+      updateExpense(expenseIndex, {
+        noReceipt: true,
+        documents: expense.documents.filter((document) => document.documentType !== 'receipt'),
+      });
+      return;
+    }
+    updateExpense(expenseIndex, {
+      noReceipt: false,
+      noReceiptExplanation: '',
+      documents: expense.documents.some((document) => document.documentType === 'receipt')
+        ? expense.documents
+        : [emptyDocument('receipt'), ...expense.documents],
+    });
+  };
+
+  const removeExpense = (index: number) => {
+    const target = expenses[index];
+    if (target?.id) {
+      setRemovedExpenseIds((current) => [...current, target.id!]);
+    } else {
+      const existingDocumentIds = target.documents
+        .map((document) => document.id)
+        .filter((id): id is number => Boolean(id));
+      setRemovedDocumentIds((current) => [...current, ...existingDocumentIds]);
+    }
+    const remaining =
+      expenses.length <= 1 ? [emptyExpense()] : expenses.filter((_, expenseIndex) => expenseIndex !== index);
+    setExpenses(remaining);
+    if (expandedExpenseKey && !remaining.some((item) => item.key === expandedExpenseKey)) {
+      const fallbackIndex = Math.min(index, remaining.length - 1);
+      setExpandedExpenseKey(remaining[Math.max(0, fallbackIndex)]?.key ?? remaining[0]?.key ?? null);
+    }
+  };
+
+  const addExpense = () => {
+    const next = emptyExpense();
+    setExpenses((current) => [...current, next]);
+    setExpandedExpenseKey(next.key);
   };
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     if (readOnly || submitting || !kind) return;
-    const files: Array<{ index: number; file: File }> = [];
-    receipts.forEach((receipt, index) => {
-      if (receipt.file) files.push({ index, file: receipt.file });
+    const files: Array<{ expenseIndex: number; documentIndex: number; file: File }> = [];
+    expenses.forEach((expense, expenseIndex) => {
+      expense.documents.forEach((document, documentIndex) => {
+        if (document.file) files.push({ expenseIndex, documentIndex, file: document.file });
+      });
     });
     const payload: Record<string, unknown> = {
       kind,
@@ -282,14 +440,15 @@ export default function ExpenseReportForm({
       submitterPhone: identity.phone || null,
       mailingAddress: showMailingAddress ? mailingAddress : identity.mailingAddress,
       comments: comments.trim() || null,
-      requestedAmountMinor: dollarsToMinor(requestedAmount),
+      requestedAmountMinor: chargedToClubCard ? 0 : dollarsToMinor(requestedAmount),
       requestedCurrency: 'usd',
     };
     if (kind === 'expense') {
       payload.committeeId = committeeChoice && committeeChoice !== 'custom' ? Number(committeeChoice) : null;
       payload.committeeCustom = committeeChoice === 'custom' ? committeeCustom : null;
       payload.purpose = purpose;
-      payload.amountJustification = needsJustification ? amountJustification.trim() || null : null;
+      payload.amountJustification =
+        chargedToClubCard || !needsJustification ? null : amountJustification.trim() || null;
       payload.usedClubCreditCard = !askClubCard
         ? null
         : usedClubCreditCard === 'yes'
@@ -306,16 +465,24 @@ export default function ExpenseReportForm({
         payload.clubCreditCardOwnerName = null;
         payload.clubCreditCardOwnerMemberId = null;
       }
-      payload.receipts = receipts.map((receipt) => ({
-        id: receipt.id,
-        name: receipt.name,
-        receiptDate: receipt.receiptDate,
-        amountMinor: dollarsToMinor(receipt.amount),
-        currency: receipt.currency,
-        currencyOther: receipt.currency === 'other' ? receipt.currencyOther : null,
-        includesDurableGood: receipt.includesDurableGood,
+      payload.expenses = expenses.map((expense) => ({
+        id: expense.id,
+        name: expense.name,
+        expenseDate: expense.expenseDate,
+        amountMinor: dollarsToMinor(expense.amount),
+        currency: expense.currency,
+        currencyOther: expense.currency === 'other' ? expense.currencyOther : null,
+        includesDurableGood: expense.includesDurableGood,
+        noReceiptExplanation: expense.noReceipt
+          ? expense.noReceiptExplanation.trim() || null
+          : null,
+        documents: expense.documents.map((document) => ({
+          id: document.id,
+          documentType: document.documentType,
+        })),
       }));
-      payload.removeReceiptIds = removedReceiptIds;
+      payload.removeExpenseIds = removedExpenseIds;
+      payload.removeDocumentIds = removedDocumentIds;
     } else {
       payload.activityDate = activityDate;
       payload.fromKind = fromKind;
@@ -325,9 +492,9 @@ export default function ExpenseReportForm({
       payload.roundTripMiles = Number.isFinite(milesNumber) ? milesNumber : null;
       payload.tripPurpose = tripPurpose || null;
       payload.tripPurposeOther = tripPurpose === 'other' ? tripPurposeOther : null;
-      payload.receipts = [];
+      payload.expenses = [];
     }
-    await onSubmit({ payload, files, removeReceiptIds: removedReceiptIds });
+    await onSubmit({ payload, files, removeExpenseIds: removedExpenseIds, removeDocumentIds: removedDocumentIds });
   };
 
   const kindOptions: ChoiceOption<string>[] = [
@@ -350,19 +517,23 @@ export default function ExpenseReportForm({
     'roundTripMiles',
     'tripPurpose',
     'tripPurposeOther',
-    'receipts',
+    'expenses',
   ]);
   if (askClubCard) visibleErrorKeys.add('usedClubCreditCard');
   if (askClubCard && clubCardMode === 'staff' && usedClubCreditCard === 'yes') {
     visibleErrorKeys.add('clubCreditCardOwnerName');
   }
   const leftoverErrors = (fieldErrors ?? []).filter((error) => {
-    if (error.field.startsWith('receipts.')) return false;
+    if (error.field.startsWith('expenses.')) return false;
     return !visibleErrorKeys.has(error.field);
   });
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-8">
+    <form
+      id={formId}
+      onSubmit={handleSubmit}
+      className={density === 'compact' ? 'space-y-5' : 'space-y-8'}
+    >
       {leftoverErrors.length > 0 ? (
         <FormFieldMessage tone={tone} intent="error">
           {leftoverErrors.map((error) => error.message).join(' ')}
@@ -465,162 +636,219 @@ export default function ExpenseReportForm({
             </FormField>
           </FormSection>
 
-          <FormSection tone={tone} title="Receipts" description="Add one or more receipts. PDF, JPEG, PNG, WebP, or HEIC, up to 10 MB each.">
-            <div role="group" aria-labelledby={receiptsLabelId} className="space-y-4">
-              <h3 id={receiptsLabelId} className="sr-only">
-                Receipts
+          <FormSection
+            tone={tone}
+            title="Expenses"
+            description="List each expense separately. Every expense needs one receipt or an explanation for why no receipt is available."
+          >
+            <div
+              role="group"
+              aria-labelledby={expensesLabelId}
+              className={useExpenseAccordion ? 'space-y-3' : 'space-y-7'}
+            >
+              <h3 id={expensesLabelId} className="sr-only">
+                Expenses
               </h3>
-              {receipts.map((receipt, index) => {
-                const amountMinor = dollarsToMinor(receipt.amount);
+              {errors.expenses ? (
+                <FormFieldMessage tone={tone} intent="error">
+                  {errors.expenses}
+                </FormFieldMessage>
+              ) : null}
+              {expenses.map((expense, expenseIndex) => {
+                const amountMinor = dollarsToMinor(expense.amount);
                 const durableDisabled = readOnly || amountMinor < DURABLE_GOOD_THRESHOLD_MINOR;
-                const fileId = `${receiptsLabelId}-${index}-file`;
+                const receiptIndex = expense.documents.findIndex(
+                  (document) => document.documentType === 'receipt'
+                );
+                const receipt = receiptIndex >= 0 ? expense.documents[receiptIndex] : null;
+                const supportingDocuments = expense.documents
+                  .map((document, documentIndex) => ({ document, documentIndex }))
+                  .filter(({ document }) => document.documentType !== 'receipt');
+                const receiptChoiceLabelId = `${expensesLabelId}-${expenseIndex}-receipt-choice`;
+                const headingId = `${expensesLabelId}-${expenseIndex}`;
+                const panelId = `${expensesLabelId}-${expenseIndex}-panel`;
+                const expanded = !useExpenseAccordion || activeExpenseKey === expense.key;
+                const summary = expenseSummary(expense);
                 return (
-                  <div
-                    key={receipt.key}
+                  <section
+                    key={expense.key}
                     role="group"
-                    aria-labelledby={`${receiptsLabelId}-${index}`}
-                    className="space-y-3 rounded-xl border border-gray-200 p-4 dark:border-gray-700"
+                    aria-labelledby={headingId}
+                    className={
+                      useExpenseAccordion
+                        ? 'rounded-lg border border-gray-200 dark:border-gray-700'
+                        : 'space-y-5 border-t border-gray-200 pt-6 first:border-t-0 first:pt-0 dark:border-gray-700'
+                    }
                   >
-                    <div className="flex items-center justify-between gap-3">
-                      <h4 id={`${receiptsLabelId}-${index}`} className="text-sm font-medium text-gray-800 dark:text-gray-200">
-                        Receipt {index + 1}
-                      </h4>
-                      {!readOnly && receipts.length > 1 ? (
-                        <Button type="button" variant="secondary" onClick={() => removeReceipt(index)}>
-                          Remove
+                    <div
+                      className={
+                        useExpenseAccordion
+                          ? `flex items-start justify-between gap-3 px-4 py-3 ${
+                              expanded ? 'border-b border-gray-200 dark:border-gray-700' : ''
+                            }`
+                          : 'flex items-center justify-between gap-3'
+                      }
+                    >
+                      {useExpenseAccordion ? (
+                        <button
+                          type="button"
+                          className="flex min-w-0 flex-1 items-start gap-3 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40"
+                          aria-expanded={expanded}
+                          aria-controls={panelId}
+                          onClick={() =>
+                            setExpandedExpenseKey((current) =>
+                              current === expense.key ? null : expense.key
+                            )
+                          }
+                        >
+                          <span className="min-w-0 flex-1">
+                            <span
+                              id={headingId}
+                              className="block text-base font-semibold text-gray-900 dark:text-gray-100"
+                            >
+                              Expense {expenseIndex + 1}
+                            </span>
+                            {!expanded && summary ? (
+                              <span className="mt-0.5 block truncate text-sm text-gray-600 dark:text-gray-400">
+                                {summary}
+                              </span>
+                            ) : null}
+                          </span>
+                          <HiChevronDown
+                            className={`mt-0.5 h-5 w-5 shrink-0 text-gray-500 transition-transform motion-reduce:transition-none ${
+                              expanded ? 'rotate-180' : ''
+                            }`}
+                            aria-hidden
+                          />
+                        </button>
+                      ) : (
+                        <h4
+                          id={headingId}
+                          className="text-base font-semibold text-gray-900 dark:text-gray-100"
+                        >
+                          Expense {expenseIndex + 1}
+                        </h4>
+                      )}
+                      {!readOnly && expenses.length > 1 ? (
+                        <Button type="button" variant="secondary" onClick={() => removeExpense(expenseIndex)}>
+                          Remove expense
                         </Button>
                       ) : null}
                     </div>
-                    <FormField
-                      label="Expense name"
-                      htmlFor={`${receiptsLabelId}-${index}-name`}
-                      required
-                      tone={tone}
-                      error={errors[`receipts.${index}.name`]}
+                    <MobileNavAccordionPanel expanded={expanded}>
+                    <div
+                      id={useExpenseAccordion ? panelId : undefined}
+                      className={useExpenseAccordion ? 'space-y-5 px-4 py-4' : 'space-y-5'}
                     >
-                      <input
-                        id={`${receiptsLabelId}-${index}-name`}
-                        className={inputClass}
-                        value={receipt.name}
-                        readOnly={readOnly}
-                        onChange={(event) => updateReceipt(index, { name: event.target.value })}
-                      />
-                    </FormField>
-                    <FormField
-                      label="Date"
-                      htmlFor={`${receiptsLabelId}-${index}-date`}
-                      required
-                      tone={tone}
-                      error={errors[`receipts.${index}.receiptDate`]}
-                    >
-                      <input
-                        id={`${receiptsLabelId}-${index}-date`}
-                        type="date"
-                        className={inputClass}
-                        value={receipt.receiptDate}
-                        readOnly={readOnly}
-                        onChange={(event) => updateReceipt(index, { receiptDate: event.target.value })}
-                      />
-                    </FormField>
-                    <FormField
-                      label="Amount"
-                      htmlFor={`${receiptsLabelId}-${index}-amount`}
-                      required
-                      tone={tone}
-                      error={errors[`receipts.${index}.amountMinor`]}
-                    >
-                      <input
-                        id={`${receiptsLabelId}-${index}-amount`}
-                        inputMode="decimal"
-                        className={inputClass}
-                        value={receipt.amount}
-                        readOnly={readOnly}
-                        onChange={(event) => updateReceipt(index, { amount: event.target.value })}
-                      />
-                    </FormField>
-                    <FormField
-                      label="Currency"
-                      htmlFor={`${receiptsLabelId}-${index}-currency`}
-                      required
-                      tone={tone}
-                    >
-                      <ChoiceInput
-                        inputId={`${receiptsLabelId}-${index}-currency`}
-                        layout="popover"
-                        value={receipt.currency}
-                        disabled={readOnly}
-                        onChange={(value) => {
-                          const next = Array.isArray(value) ? value[0] : value;
-                          updateReceipt(index, {
-                            currency: next === 'cad' || next === 'other' ? next : 'usd',
-                          });
-                        }}
-                        options={[
-                          { value: 'usd', label: 'USD' },
-                          { value: 'cad', label: 'CAD' },
-                          { value: 'other', label: 'Other' },
-                        ]}
-                      />
-                    </FormField>
-                    {receipt.currency === 'other' ? (
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[minmax(0,2fr)_minmax(9rem,1fr)_minmax(8rem,0.8fr)_minmax(8rem,0.8fr)]">
                       <FormField
-                        label="Other currency"
-                        htmlFor={`${receiptsLabelId}-${index}-currency-other`}
+                        label="Expense name"
+                        htmlFor={`${expensesLabelId}-${expenseIndex}-name`}
                         required
                         tone={tone}
-                        error={errors[`receipts.${index}.currencyOther`]}
+                        error={errors[`expenses.${expenseIndex}.name`]}
                       >
                         <input
-                          id={`${receiptsLabelId}-${index}-currency-other`}
+                          id={`${expensesLabelId}-${expenseIndex}-name`}
                           className={inputClass}
-                          value={receipt.currencyOther}
+                          value={expense.name}
                           readOnly={readOnly}
-                          onChange={(event) => updateReceipt(index, { currencyOther: event.target.value })}
+                          onChange={(event) => updateExpense(expenseIndex, { name: event.target.value })}
                         />
                       </FormField>
-                    ) : null}
-                    {!readOnly ? (
                       <FormField
-                        label="Receipt file"
-                        htmlFor={fileId}
-                        required={!receipt.id}
+                        label="Date"
+                        htmlFor={`${expensesLabelId}-${expenseIndex}-date`}
+                        required
                         tone={tone}
-                        error={errors[`receipts.${index}.file`]}
-                        helperText={
-                          receipt.existingFilename && !receipt.file
-                            ? `Current file: ${receipt.existingFilename}`
-                            : undefined
-                        }
+                        error={errors[`expenses.${expenseIndex}.expenseDate`]}
                       >
                         <input
-                          id={fileId}
-                          type="file"
+                          id={`${expensesLabelId}-${expenseIndex}-date`}
+                          type="date"
                           className={inputClass}
-                          accept="application/pdf,image/jpeg,image/png,image/webp,image/heic,image/heif,.pdf,.jpg,.jpeg,.png,.webp,.heic,.heif"
-                          onChange={(event) => updateReceipt(index, { file: event.target.files?.[0] ?? null })}
+                          value={expense.expenseDate}
+                          readOnly={readOnly}
+                          onChange={(event) =>
+                            updateExpense(expenseIndex, { expenseDate: event.target.value })
+                          }
                         />
                       </FormField>
-                    ) : null}
-                    {receipt.id && receiptFilePath && receipt.existingFilename ? (
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        onClick={() => void openExpenseReceipt(receiptFilePath(receipt.id!))}
+                      <FormField
+                        label="Amount"
+                        htmlFor={`${expensesLabelId}-${expenseIndex}-amount`}
+                        required
+                        tone={tone}
+                        error={errors[`expenses.${expenseIndex}.amountMinor`]}
                       >
-                        View receipt file
-                      </Button>
+                        <input
+                          id={`${expensesLabelId}-${expenseIndex}-amount`}
+                          inputMode="decimal"
+                          className={inputClass}
+                          value={expense.amount}
+                          readOnly={readOnly}
+                          onChange={(event) =>
+                            updateExpense(expenseIndex, { amount: event.target.value })
+                          }
+                        />
+                      </FormField>
+                      <FormField
+                        label="Currency"
+                        htmlFor={`${expensesLabelId}-${expenseIndex}-currency`}
+                        required
+                        tone={tone}
+                      >
+                        <ChoiceInput
+                          inputId={`${expensesLabelId}-${expenseIndex}-currency`}
+                          layout="popover"
+                          value={expense.currency}
+                          disabled={readOnly}
+                          onChange={(value) => {
+                            const next = Array.isArray(value) ? value[0] : value;
+                            updateExpense(expenseIndex, {
+                              currency: next === 'cad' || next === 'other' ? next : 'usd',
+                            });
+                          }}
+                          options={[
+                            { value: 'usd', label: 'USD' },
+                            { value: 'cad', label: 'CAD' },
+                            { value: 'other', label: 'Other' },
+                          ]}
+                        />
+                      </FormField>
+                    </div>
+                    {expense.currency === 'other' ? (
+                      <FormField
+                        label="Other currency"
+                        htmlFor={`${expensesLabelId}-${expenseIndex}-currency-other`}
+                        required
+                        tone={tone}
+                        error={errors[`expenses.${expenseIndex}.currencyOther`]}
+                      >
+                        <input
+                          id={`${expensesLabelId}-${expenseIndex}-currency-other`}
+                          className={inputClass}
+                          value={expense.currencyOther}
+                          readOnly={readOnly}
+                          onChange={(event) =>
+                            updateExpense(expenseIndex, { currencyOther: event.target.value })
+                          }
+                        />
+                      </FormField>
                     ) : null}
                     <div className="flex items-start gap-2">
                       <div className="flex-1">
                         <FormCheckbox
                           tone={tone}
                           disabled={durableDisabled}
-                          checked={receipt.includesDurableGood}
-                          onChange={(checked) => updateReceipt(index, { includesDurableGood: checked })}
-                          label="This receipt includes a durable good"
+                          checked={expense.includesDurableGood}
+                          onChange={(checked) =>
+                            updateExpense(expenseIndex, { includesDurableGood: checked })
+                          }
+                          label="This expense includes a durable good"
                           helperText={
                             durableDisabled && !readOnly
-                              ? 'Disabled because this receipt is under $200.'
+                              ? 'Available for expenses of $200 or more.'
                               : undefined
                           }
                         />
@@ -631,61 +859,249 @@ export default function ExpenseReportForm({
                         text="A durable good is anything over $200 that is expected to be in use for 3 or more years."
                       />
                     </div>
-                  </div>
+                    {errors[`expenses.${expenseIndex}.includesDurableGood`] ? (
+                      <FormFieldMessage tone={tone} intent="error">
+                        {errors[`expenses.${expenseIndex}.includesDurableGood`]}
+                      </FormFieldMessage>
+                    ) : null}
+
+                    <div className="space-y-4 border-l-4 border-primary-teal/30 pl-4">
+                      <FormField
+                        label="Receipt"
+                        labelId={receiptChoiceLabelId}
+                        required
+                        tone={tone}
+                        error={errors[`expenses.${expenseIndex}.documents`]}
+                      >
+                        <ChoiceInput
+                          layout="inline"
+                          ariaLabelledBy={receiptChoiceLabelId}
+                          value={expense.noReceipt ? 'missing' : 'attached'}
+                          disabled={readOnly}
+                          onChange={(value) => {
+                            const next = Array.isArray(value) ? value[0] : value;
+                            setNoReceipt(expenseIndex, next === 'missing');
+                          }}
+                          options={[
+                            { value: 'attached', label: 'I have a receipt' },
+                            { value: 'missing', label: 'I do not have a receipt' },
+                          ]}
+                        />
+                      </FormField>
+                      {expense.noReceipt ? (
+                        <FormField
+                          label="Why is there no receipt?"
+                          htmlFor={`${expensesLabelId}-${expenseIndex}-no-receipt`}
+                          required
+                          tone={tone}
+                          error={errors[`expenses.${expenseIndex}.noReceiptExplanation`]}
+                        >
+                          <textarea
+                            id={`${expensesLabelId}-${expenseIndex}-no-receipt`}
+                            className={inputClass}
+                            rows={2}
+                            value={expense.noReceiptExplanation}
+                            readOnly={readOnly}
+                            onChange={(event) =>
+                              updateExpense(expenseIndex, {
+                                noReceiptExplanation: event.target.value,
+                              })
+                            }
+                          />
+                        </FormField>
+                      ) : receipt ? (
+                        <FormField
+                          label="Receipt file"
+                          htmlFor={readOnly ? undefined : `${expensesLabelId}-${expenseIndex}-receipt-file`}
+                          required={!receipt.id && !readOnly}
+                          tone={tone}
+                          error={errors[`expenses.${expenseIndex}.documents.${receiptIndex}.file`]}
+                          helperText={
+                            receipt.existingFilename && !receipt.file
+                              ? `Current file: ${receipt.existingFilename}`
+                              : readOnly
+                                ? undefined
+                                : 'PDF, JPEG, PNG, WebP, or HEIC; up to 10 MB.'
+                          }
+                        >
+                          <div className="flex flex-wrap items-center gap-2">
+                            {!readOnly ? (
+                              <input
+                                id={`${expensesLabelId}-${expenseIndex}-receipt-file`}
+                                type="file"
+                                className={`${inputClass} min-w-0 flex-1`}
+                                accept="application/pdf,image/jpeg,image/png,image/webp,image/heic,image/heif,.pdf,.jpg,.jpeg,.png,.webp,.heic,.heif"
+                                onChange={(event) =>
+                                  updateDocument(expenseIndex, receiptIndex, {
+                                    file: event.target.files?.[0] ?? null,
+                                  })
+                                }
+                              />
+                            ) : (
+                              <p className="min-w-0 flex-1 text-sm text-gray-700 dark:text-gray-300">
+                                {receipt.existingFilename}
+                              </p>
+                            )}
+                            {showExistingReceiptActions &&
+                            receipt.id &&
+                            documentFilePath &&
+                            receipt.existingFilename ? (
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                onClick={() => void openExpenseReceipt(documentFilePath(receipt.id!))}
+                              >
+                                View receipt
+                              </Button>
+                            ) : null}
+                          </div>
+                        </FormField>
+                      ) : null}
+                    </div>
+
+                    <div className="space-y-3">
+                      <div>
+                        <h5 className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                          Other supporting documents
+                        </h5>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">
+                          Optional invoices or other supporting evidence for this expense.
+                        </p>
+                      </div>
+                      {supportingDocuments.map(({ document, documentIndex }) => (
+                        <div
+                          key={document.key}
+                          className="grid items-start gap-3 border-t border-gray-200 pt-3 sm:grid-cols-[12rem_minmax(0,1fr)] dark:border-gray-700"
+                        >
+                          <FormField
+                            label="Document type"
+                            htmlFor={`${expensesLabelId}-${expenseIndex}-document-${documentIndex}-type`}
+                            required
+                            tone={tone}
+                            error={errors[`expenses.${expenseIndex}.documents.${documentIndex}.documentType`]}
+                          >
+                            <ChoiceInput
+                              inputId={`${expensesLabelId}-${expenseIndex}-document-${documentIndex}-type`}
+                              layout="popover"
+                              value={document.documentType}
+                              disabled={readOnly}
+                              onChange={(value) => {
+                                const next = Array.isArray(value) ? value[0] : value;
+                                updateDocument(expenseIndex, documentIndex, {
+                                  documentType:
+                                    next === 'other_supporting_evidence'
+                                      ? 'other_supporting_evidence'
+                                      : 'invoice',
+                                });
+                              }}
+                              options={[
+                                { value: 'invoice', label: 'Invoice' },
+                                {
+                                  value: 'other_supporting_evidence',
+                                  label: 'Other supporting evidence',
+                                },
+                              ]}
+                            />
+                          </FormField>
+                          {!readOnly ? (
+                            <FormField
+                              label="File"
+                              htmlFor={`${expensesLabelId}-${expenseIndex}-document-${documentIndex}-file`}
+                              required={!document.id}
+                              tone={tone}
+                              error={errors[`expenses.${expenseIndex}.documents.${documentIndex}.file`]}
+                              helperText={
+                                document.existingFilename && !document.file
+                                  ? `Current file: ${document.existingFilename}`
+                                  : undefined
+                              }
+                            >
+                              <div className="flex flex-wrap items-center gap-2">
+                                <input
+                                  id={`${expensesLabelId}-${expenseIndex}-document-${documentIndex}-file`}
+                                  type="file"
+                                  className={`${inputClass} min-w-0 flex-1`}
+                                  accept="application/pdf,image/jpeg,image/png,image/webp,image/heic,image/heif,.pdf,.jpg,.jpeg,.png,.webp,.heic,.heif"
+                                  onChange={(event) =>
+                                    updateDocument(expenseIndex, documentIndex, {
+                                      file: event.target.files?.[0] ?? null,
+                                    })
+                                  }
+                                />
+                                {showExistingReceiptActions &&
+                                document.id &&
+                                documentFilePath &&
+                                document.existingFilename ? (
+                                  <Button
+                                    type="button"
+                                    variant="secondary"
+                                    onClick={() => void openExpenseReceipt(documentFilePath(document.id!))}
+                                  >
+                                    View
+                                  </Button>
+                                ) : null}
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  onClick={() => removeDocument(expenseIndex, documentIndex)}
+                                >
+                                  Remove
+                                </Button>
+                              </div>
+                            </FormField>
+                          ) : (
+                            <div className="flex flex-wrap items-center gap-2 pt-7">
+                              <p className="text-sm text-gray-700 dark:text-gray-300">
+                                {document.existingFilename}
+                              </p>
+                              {showExistingReceiptActions &&
+                              document.id &&
+                              documentFilePath &&
+                              document.existingFilename ? (
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  onClick={() => void openExpenseReceipt(documentFilePath(document.id!))}
+                                >
+                                  View
+                                </Button>
+                              ) : null}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                      {!readOnly && documentCount < MAX_EXPENSE_DOCUMENTS ? (
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={() =>
+                            updateExpense(expenseIndex, {
+                              documents: [...expense.documents, emptyDocument('invoice')],
+                            })
+                          }
+                        >
+                          Add supporting document
+                        </Button>
+                      ) : null}
+                    </div>
+                    </div>
+                    </MobileNavAccordionPanel>
+                  </section>
                 );
               })}
-              {!readOnly && receipts.length < MAX_EXPENSE_RECEIPTS ? (
-                <Button type="button" variant="secondary" onClick={() => setReceipts((current) => [...current, emptyReceipt()])}>
-                  Add another receipt
+              {!readOnly && expenses.length < MAX_EXPENSE_ITEMS ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={addExpense}
+                >
+                  Add another expense
                 </Button>
               ) : null}
             </div>
           </FormSection>
 
           <FormSection tone={tone} title="Reimbursement">
-            <FormField
-              label="Total reimbursement requested"
-              htmlFor={totalId}
-              required
-              tone={tone}
-              error={errors.requestedAmountMinor}
-              helperText={
-                mixedCurrencies
-                  ? 'Receipts use more than one currency. Enter the USD amount to reimburse and explain the difference.'
-                  : 'Defaults to the sum of the receipts. Edit if needed and explain any difference.'
-              }
-            >
-              <input
-                id={totalId}
-                inputMode="decimal"
-                className={inputClass}
-                value={requestedAmount}
-                readOnly={readOnly}
-                onChange={(event) => {
-                  const next = event.target.value;
-                  setRequestedAmount(next);
-                  setRequestedTouched(mixedCurrencies || dollarsToMinor(next) !== receiptSumMinor);
-                }}
-              />
-            </FormField>
-            {needsJustification ? (
-              <FormField
-                label="Justification for the difference"
-                htmlFor={justificationId}
-                required
-                tone={tone}
-                error={errors.amountJustification}
-              >
-                <textarea
-                  id={justificationId}
-                  className={inputClass}
-                  rows={3}
-                  value={amountJustification}
-                  readOnly={readOnly}
-                  onChange={(event) => setAmountJustification(event.target.value)}
-                />
-              </FormField>
-            ) : null}
             {askClubCard ? (
               <>
                 <FormField
@@ -754,7 +1170,57 @@ export default function ExpenseReportForm({
                     )}
                   </FormField>
                 ) : null}
+                {chargedToClubCard ? (
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    No reimbursement is requested because this was charged to a club credit card.
+                  </p>
+                ) : null}
               </>
+            ) : null}
+            {showReimbursementRequest ? (
+              <>
+            <FormField
+              label="Total reimbursement requested"
+              htmlFor={totalId}
+              required
+              tone={tone}
+              error={errors.requestedAmountMinor}
+              helperText={
+                mixedCurrencies
+                  ? 'Expenses use more than one currency. Enter the USD amount to reimburse and explain the difference.'
+                  : 'Defaults to the sum of the expenses. Edit if needed and explain any difference.'
+              }
+            >
+              <input
+                id={totalId}
+                inputMode="decimal"
+                className={inputClass}
+                value={requestedAmount}
+                readOnly={readOnly}
+                onChange={(event) => {
+                  const next = event.target.value;
+                  setRequestedAmount(next);
+                  setRequestedTouched(mixedCurrencies || dollarsToMinor(next) !== expenseSumMinor);
+                }}
+              />
+            </FormField>
+            {needsJustification ? (
+              <FormField
+                label="Justification for the difference"
+                htmlFor={justificationId}
+                required
+                tone={tone}
+                error={errors.amountJustification}
+              >
+                <textarea
+                  id={justificationId}
+                  className={inputClass}
+                  rows={3}
+                  value={amountJustification}
+                  readOnly={readOnly}
+                  onChange={(event) => setAmountJustification(event.target.value)}
+                />
+              </FormField>
             ) : null}
             {showMailingAddress ? (
               readOnly ? (
@@ -775,6 +1241,8 @@ export default function ExpenseReportForm({
             ) : null}
             {errors.mailingAddress ? (
               <p className="text-sm text-red-600">{errors.mailingAddress}</p>
+            ) : null}
+              </>
             ) : null}
           </FormSection>
         </>
@@ -926,7 +1394,7 @@ export default function ExpenseReportForm({
 
       {kind ? (
         <FormSection tone={tone} title="Additional comments">
-          <FormField label="Any additional comments about this expense?" htmlFor={commentsId} optional tone={tone}>
+          <FormField label="Any additional comments about this expense report?" htmlFor={commentsId} optional tone={tone}>
             <textarea
               id={commentsId}
               className={inputClass}
@@ -939,7 +1407,7 @@ export default function ExpenseReportForm({
         </FormSection>
       ) : null}
 
-      {!readOnly ? (
+      {!readOnly && showSubmitButton ? (
         <div className="flex justify-end">
           <Button type="submit" disabled={submitting || !kind}>
             {submitting ? 'Submitting…' : submitLabel}

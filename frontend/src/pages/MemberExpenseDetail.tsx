@@ -98,7 +98,7 @@ export default function MemberExpenseDetail() {
               fieldErrors={fieldErrors}
               submitting={submitting}
               submitLabel="Save changes"
-              receiptFilePath={(receiptId) => `/expenses/${reportId}/receipts/${receiptId}`}
+              documentFilePath={(documentId) => `/expenses/${reportId}/receipts/${documentId}`}
               onSubmit={async ({ payload, files }) => {
                 setSubmitting(true);
                 setFieldErrors([]);

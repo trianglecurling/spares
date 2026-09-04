@@ -11,9 +11,9 @@ import {
   getExpenseReportByAccessToken,
   streamExpenseReceiptFile,
   updateExpenseReportRecord,
-  type ExpenseReceiptFileUpload,
+  type ExpenseDocumentFileUpload,
 } from '../services/expenseReportService.js';
-import type { ExpenseReportPayloadInput, ExpenseReceiptInput } from '../services/expenseReportValidation.js';
+import type { ExpenseItemInput, ExpenseReportPayloadInput } from '../services/expenseReportValidation.js';
 
 const apiErrorResponseSchema = {
   type: 'object',
@@ -47,14 +47,21 @@ const mailingAddressSchema = z.object({
   postalCode: z.string(),
 });
 
-const receiptSchema = z.object({
+const expenseDocumentSchema = z.object({
+  id: z.number().int().positive().optional(),
+  documentType: z.enum(['receipt', 'invoice', 'other_supporting_evidence']),
+});
+
+const expenseItemSchema = z.object({
   id: z.number().int().positive().optional(),
   name: z.string(),
-  receiptDate: z.string(),
+  expenseDate: z.string(),
   amountMinor: z.number().int(),
   currency: z.enum(['usd', 'cad', 'other']),
   currencyOther: z.string().nullable().optional(),
   includesDurableGood: z.boolean().optional(),
+  noReceiptExplanation: z.string().nullable().optional(),
+  documents: z.array(expenseDocumentSchema),
 });
 
 export const expensePayloadSchema = z.object({
@@ -73,8 +80,9 @@ export const expensePayloadSchema = z.object({
   usedClubCreditCard: z.boolean().nullable().optional(),
   clubCreditCardOwnerName: z.string().nullable().optional(),
   clubCreditCardOwnerMemberId: z.number().int().positive().nullable().optional(),
-  receipts: z.array(receiptSchema).optional(),
-  removeReceiptIds: z.array(z.number().int().positive()).optional(),
+  expenses: z.array(expenseItemSchema).optional(),
+  removeExpenseIds: z.array(z.number().int().positive()).optional(),
+  removeDocumentIds: z.array(z.number().int().positive()).optional(),
   activityDate: z.string().nullable().optional(),
   fromKind: z.enum(['home', 'other']).nullable().optional(),
   fromOther: z.string().nullable().optional(),
@@ -87,24 +95,30 @@ export const expensePayloadSchema = z.object({
 
 export type ParsedExpenseWrite = {
   payload: ExpenseReportPayloadInput;
-  files: ExpenseReceiptFileUpload[];
-  removeReceiptIds: number[];
+  files: ExpenseDocumentFileUpload[];
+  removeExpenseIds: number[];
+  removeDocumentIds: number[];
 };
 
 export function toServicePayload(
   body: z.infer<typeof expensePayloadSchema>,
-  filesByIndex: Map<number, ExpenseReceiptFileUpload>,
+  filesByIndex: Map<string, ExpenseDocumentFileUpload>,
   options: { askClubCreditCard: boolean }
 ): ExpenseReportPayloadInput {
-  const receipts: ExpenseReceiptInput[] = (body.receipts ?? []).map((receipt, index) => ({
-    id: receipt.id,
-    name: receipt.name,
-    receiptDate: receipt.receiptDate,
-    amountMinor: receipt.amountMinor,
-    currency: receipt.currency,
-    currencyOther: receipt.currencyOther,
-    includesDurableGood: receipt.includesDurableGood === true,
-    hasFile: filesByIndex.has(index) || Boolean(receipt.id),
+  const expenses: ExpenseItemInput[] = (body.expenses ?? []).map((expense, expenseIndex) => ({
+    id: expense.id,
+    name: expense.name,
+    expenseDate: expense.expenseDate,
+    amountMinor: expense.amountMinor,
+    currency: expense.currency,
+    currencyOther: expense.currencyOther,
+    includesDurableGood: expense.includesDurableGood === true,
+    noReceiptExplanation: expense.noReceiptExplanation,
+    documents: expense.documents.map((document, documentIndex) => ({
+      id: document.id,
+      documentType: document.documentType,
+      hasFile: filesByIndex.has(`${expenseIndex}:${documentIndex}`) || Boolean(document.id),
+    })),
   }));
   return {
     kind: body.kind,
@@ -123,7 +137,7 @@ export function toServicePayload(
     clubCreditCardOwnerName: body.clubCreditCardOwnerName,
     clubCreditCardOwnerMemberId: body.clubCreditCardOwnerMemberId,
     askClubCreditCard: options.askClubCreditCard,
-    receipts,
+    expenses,
     activityDate: body.activityDate,
     fromKind: body.fromKind,
     fromOther: body.fromOther,
@@ -136,7 +150,7 @@ export function toServicePayload(
 }
 
 export async function parseExpenseWriteRequest(request: FastifyRequest): Promise<ParsedExpenseWrite> {
-  const files: ExpenseReceiptFileUpload[] = [];
+  const files: ExpenseDocumentFileUpload[] = [];
   let rawPayload = '';
 
   if (request.isMultipart()) {
@@ -147,13 +161,15 @@ export async function parseExpenseWriteRequest(request: FastifyRequest): Promise
         }
         continue;
       }
-      const match = /^receiptFile_(\d+)$/.exec(part.fieldname);
+      const match = /^expenseFile_(\d+)_(\d+)$/.exec(part.fieldname);
       if (!match) continue;
-      const index = Number.parseInt(match[1], 10);
+      const expenseIndex = Number.parseInt(match[1], 10);
+      const documentIndex = Number.parseInt(match[2], 10);
       const buffer = await part.toBuffer();
       files.push({
-        index,
-        originalFilename: part.filename || 'receipt.bin',
+        expenseIndex,
+        documentIndex,
+        originalFilename: part.filename || 'expense-document.bin',
         mimeType: part.mimetype,
         buffer,
       });
@@ -169,11 +185,12 @@ export async function parseExpenseWriteRequest(request: FastifyRequest): Promise
     throw new ExpenseReportError('Invalid expense report payload.', 400);
   }
   const body = expensePayloadSchema.parse(parsedJson);
-  const filesByIndex = new Map(files.map((file) => [file.index, file]));
+  const filesByIndex = new Map(files.map((file) => [`${file.expenseIndex}:${file.documentIndex}`, file]));
   return {
     payload: toServicePayload(body, filesByIndex, { askClubCreditCard: false }),
     files,
-    removeReceiptIds: body.removeReceiptIds ?? [],
+    removeExpenseIds: body.removeExpenseIds ?? [],
+    removeDocumentIds: body.removeDocumentIds ?? [],
   };
 }
 
@@ -187,21 +204,33 @@ export function handleExpenseError(reply: FastifyReply, err: unknown) {
   throw err;
 }
 
-const expenseReceiptSchema = {
+const expenseDocumentViewSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    id: { type: 'number' },
+    documentType: { type: 'string', enum: ['receipt', 'invoice', 'other_supporting_evidence'] },
+    originalFilename: { type: 'string' },
+    mimeType: { type: 'string' },
+    byteSize: { type: 'number' },
+    sortOrder: { type: 'number' },
+  },
+} as const;
+
+const expenseItemViewSchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
     id: { type: 'number' },
     name: { type: 'string' },
-    receiptDate: { type: 'string' },
+    expenseDate: { type: 'string' },
     amountMinor: { type: 'number' },
     currency: { type: 'string' },
     currencyOther: { type: ['string', 'null'] },
     includesDurableGood: { type: 'boolean' },
-    originalFilename: { type: 'string' },
-    mimeType: { type: 'string' },
-    byteSize: { type: 'number' },
+    noReceiptExplanation: { type: ['string', 'null'] },
     sortOrder: { type: 'number' },
+    documents: { type: 'array', items: expenseDocumentViewSchema },
   },
 } as const;
 
@@ -237,7 +266,7 @@ export const expenseReportViewSchema = {
     roundTripMiles: { type: ['number', 'null'] },
     tripPurpose: { type: ['string', 'null'] },
     tripPurposeOther: { type: ['string', 'null'] },
-    receipts: { type: 'array', items: expenseReceiptSchema },
+    expenses: { type: 'array', items: expenseItemViewSchema },
     submittedAt: { type: 'string' },
     createdAt: { type: 'string' },
     updatedAt: { type: 'string' },
@@ -443,7 +472,8 @@ export async function publicExpenseRoutes(fastify: FastifyInstance): Promise<voi
           reportId: existing.id,
           payload: parsed.payload,
           files: parsed.files,
-          removeReceiptIds: parsed.removeReceiptIds,
+          removeExpenseIds: parsed.removeExpenseIds,
+          removeDocumentIds: parsed.removeDocumentIds,
           memberId: existing.memberId,
         });
       } catch (err) {

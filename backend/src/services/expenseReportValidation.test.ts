@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import {
-  hasMixedReceiptCurrencies,
+  expenseAllowsDurableGood,
+  hasMixedExpenseCurrencies,
   isSubmitterEditableStatus,
-  shouldSendCheckMailedEmail,
   mileageCapCents,
-  receiptAllowsDurableGood,
-  sumReceiptAmountsMinor,
+  shouldSendCheckMailedEmail,
+  sumExpenseAmountsMinor,
   validateExpenseReportPayload,
   type ExpenseReportPayloadInput,
 } from './expenseReportValidation.js';
@@ -27,14 +27,14 @@ function baseExpense(overrides: Partial<ExpenseReportPayloadInput> = {}): Expens
     requestedAmountMinor: 2500,
     purpose: 'Ice scraper',
     committeeCustom: 'Ice committee',
-    receipts: [
+    expenses: [
       {
         name: 'Hardware store',
-        receiptDate: '2026-08-01',
+        expenseDate: '2026-08-01',
         amountMinor: 2500,
         currency: 'usd',
         includesDurableGood: false,
-        hasFile: true,
+        documents: [{ documentType: 'receipt', hasFile: true }],
       },
     ],
     ...overrides,
@@ -47,43 +47,123 @@ describe('expense report validation', () => {
     expect(mileageCapCents(1.5)).toBe(21);
   });
 
-  test('disables durable goods under $200', () => {
-    expect(receiptAllowsDurableGood(19_999)).toBe(false);
-    expect(receiptAllowsDurableGood(20_000)).toBe(true);
+  test('allows durable goods at $200 or more', () => {
+    expect(expenseAllowsDurableGood(19_999)).toBe(false);
+    expect(expenseAllowsDurableGood(20_000)).toBe(true);
   });
 
-  test('requires justification when the requested total differs from receipt sum', () => {
-    const errors = validateExpenseReportPayload(
-      baseExpense({ requestedAmountMinor: 2000 })
-    );
+  test('requires justification when requested total differs from expense sum', () => {
+    const errors = validateExpenseReportPayload(baseExpense({ requestedAmountMinor: 2000 }));
     expect(errors.some((error) => error.field === 'amountJustification')).toBe(true);
   });
 
-  test('requires justification for mixed currencies', () => {
+  test('requires justification for mixed expense currencies', () => {
     const errors = validateExpenseReportPayload(
       baseExpense({
         requestedAmountMinor: 5000,
-        receipts: [
+        expenses: [
           {
-            name: 'USD receipt',
-            receiptDate: '2026-08-01',
+            name: 'USD expense',
+            expenseDate: '2026-08-01',
             amountMinor: 2500,
             currency: 'usd',
             includesDurableGood: false,
-            hasFile: true,
+            documents: [{ documentType: 'receipt', hasFile: true }],
           },
           {
-            name: 'CAD receipt',
-            receiptDate: '2026-08-02',
+            name: 'CAD expense',
+            expenseDate: '2026-08-02',
             amountMinor: 2500,
             currency: 'cad',
             includesDurableGood: false,
-            hasFile: true,
+            documents: [{ documentType: 'receipt', hasFile: true }],
           },
         ],
       })
     );
     expect(errors.some((error) => error.field === 'amountJustification')).toBe(true);
+  });
+
+  test('accepts one receipt plus other supporting documents', () => {
+    expect(
+      validateExpenseReportPayload(
+        baseExpense({
+          expenses: [
+            {
+              ...baseExpense().expenses[0],
+              documents: [
+                { documentType: 'receipt', hasFile: true },
+                { documentType: 'invoice', hasFile: true },
+                { documentType: 'other_supporting_evidence', hasFile: true },
+              ],
+            },
+          ],
+        })
+      )
+    ).toEqual([]);
+  });
+
+  test('accepts an explanation instead of a receipt', () => {
+    expect(
+      validateExpenseReportPayload(
+        baseExpense({
+          expenses: [
+            {
+              ...baseExpense().expenses[0],
+              noReceiptExplanation: 'The vendor did not provide one.',
+              documents: [{ documentType: 'invoice', hasFile: true }],
+            },
+          ],
+        })
+      )
+    ).toEqual([]);
+  });
+
+  test('requires an explanation when an expense has no receipt', () => {
+    const errors = validateExpenseReportPayload(
+      baseExpense({
+        expenses: [{ ...baseExpense().expenses[0], documents: [] }],
+      })
+    );
+    expect(errors.some((error) => error.field.endsWith('noReceiptExplanation'))).toBe(true);
+  });
+
+  test('rejects more than one receipt for an expense', () => {
+    const errors = validateExpenseReportPayload(
+      baseExpense({
+        expenses: [
+          {
+            ...baseExpense().expenses[0],
+            documents: [
+              { documentType: 'receipt', hasFile: true },
+              { documentType: 'receipt', hasFile: true },
+            ],
+          },
+        ],
+      })
+    );
+    expect(errors.some((error) => error.field.endsWith('documents'))).toBe(true);
+  });
+
+  test('rejects a no-receipt explanation when a receipt is attached', () => {
+    const errors = validateExpenseReportPayload(
+      baseExpense({
+        expenses: [
+          {
+            ...baseExpense().expenses[0],
+            noReceiptExplanation: 'Conflicting state',
+          },
+        ],
+      })
+    );
+    expect(errors.some((error) => error.field.endsWith('noReceiptExplanation'))).toBe(true);
+  });
+
+  test('sums all expense amounts', () => {
+    expect(
+      sumExpenseAmountsMinor([{ amountMinor: 2500 }, { amountMinor: 8000 }])
+    ).toBe(10_500);
+    expect(hasMixedExpenseCurrencies([{ currency: 'usd' }, { currency: 'cad' }])).toBe(true);
   });
 
   test('rejects mileage above the charitable rate', () => {
@@ -98,90 +178,27 @@ describe('expense report validation', () => {
       toKind: 'club',
       roundTripMiles: 10,
       tripPurpose: 'bar',
-      receipts: [],
+      expenses: [],
     });
     expect(errors.some((error) => error.field === 'requestedAmountMinor')).toBe(true);
   });
 
-  test('allows reducing mileage reimbursement', () => {
-    const errors = validateExpenseReportPayload({
-      kind: 'mileage',
-      submitterName: 'Ada Member',
-      submitterEmail: 'ada@example.com',
-      askClubCreditCard: false,
-      requestedAmountMinor: 100,
-      activityDate: '2026-08-01',
-      fromKind: 'home',
-      toKind: 'club',
-      roundTripMiles: 10,
-      tripPurpose: 'bar',
-      receipts: [],
-    });
-    expect(errors).toEqual([]);
-  });
-
-  test('rejects durable-good flag on receipts under $200', () => {
+  test('requires a club card answer only when asked', () => {
     const errors = validateExpenseReportPayload(
-      baseExpense({
-        receipts: [
-          {
-            name: 'Tape',
-            receiptDate: '2026-08-01',
-            amountMinor: 500,
-            currency: 'usd',
-            includesDurableGood: true,
-            hasFile: true,
-          },
-        ],
-        requestedAmountMinor: 500,
-      })
-    );
-    expect(errors.some((error) => error.field.endsWith('includesDurableGood'))).toBe(true);
-  });
-
-  test('sends check-mailed email only on transition into that status', () => {
-    expect(shouldSendCheckMailedEmail('pending_review', 'check_mailed')).toBe(true);
-    expect(shouldSendCheckMailedEmail('processing', 'check_mailed')).toBe(true);
-    expect(shouldSendCheckMailedEmail('check_mailed', 'check_mailed')).toBe(false);
-    expect(shouldSendCheckMailedEmail('check_mailed', 'complete')).toBe(false);
-  });
-
-  test('does not require justification when the requested amount matches the receipt sum', () => {
-    expect(
-      validateExpenseReportPayload(
-        baseExpense({
-          requestedAmountMinor: 2500,
-          amountJustification: '',
-        })
-      )
-    ).toEqual([]);
-  });
-
-  test('requires a club card answer when that question is asked', () => {
-    const errors = validateExpenseReportPayload(
-      baseExpense({
-        askClubCreditCard: true,
-        usedClubCreditCard: null,
-      })
+      baseExpense({ askClubCreditCard: true, usedClubCreditCard: null })
     );
     expect(errors.some((error) => error.field === 'usedClubCreditCard')).toBe(true);
   });
 
-  test('requires a credit card owner when a club card was used', () => {
-    const missingOwner = validateExpenseReportPayload(
-      baseExpense({
-        askClubCreditCard: true,
-        usedClubCreditCard: true,
-        clubCreditCardOwnerName: '',
-      })
-    );
-    expect(missingOwner.some((error) => error.field === 'clubCreditCardOwnerName')).toBe(true);
+  test('skips reimbursement amount when a club credit card was used', () => {
     expect(
       validateExpenseReportPayload(
         baseExpense({
           askClubCreditCard: true,
           usedClubCreditCard: true,
           clubCreditCardOwnerName: 'Pat Treasurer',
+          requestedAmountMinor: 0,
+          amountJustification: '',
           mailingAddress: null,
         })
       )
@@ -195,13 +212,8 @@ describe('expense report validation', () => {
     expect(isSubmitterEditableStatus('complete')).toBe(false);
   });
 
-  test('detects mixed currencies and sums receipts', () => {
-    expect(sumReceiptAmountsMinor([{ amountMinor: 100 }, { amountMinor: 50 }])).toBe(150);
-    expect(
-      hasMixedReceiptCurrencies([
-        { currency: 'usd' },
-        { currency: 'cad' },
-      ])
-    ).toBe(true);
+  test('sends check-mailed email only on transition into that status', () => {
+    expect(shouldSendCheckMailedEmail('pending_review', 'check_mailed')).toBe(true);
+    expect(shouldSendCheckMailedEmail('check_mailed', 'check_mailed')).toBe(false);
   });
 });

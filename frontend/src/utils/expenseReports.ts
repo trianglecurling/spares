@@ -3,7 +3,22 @@ import { formatClubDateTime } from './clubTime';
 
 export const CHARITABLE_MILEAGE_RATE_CENTS_PER_MILE = 14;
 export const DURABLE_GOOD_THRESHOLD_MINOR = 20_000;
-export const MAX_EXPENSE_RECEIPTS = 10;
+export const MAX_EXPENSE_ITEMS = 10;
+export const MAX_EXPENSE_DOCUMENTS = 10;
+
+export const EXPENSE_DOCUMENT_TYPE_OPTIONS = [
+  { value: 'receipt', label: 'Receipt' },
+  { value: 'invoice', label: 'Invoice' },
+  { value: 'other_supporting_evidence', label: 'Other supporting evidence' },
+] as const;
+
+export type ExpenseDocumentType = (typeof EXPENSE_DOCUMENT_TYPE_OPTIONS)[number]['value'];
+
+export const EXPENSE_DOCUMENT_TYPE_LABELS: Record<ExpenseDocumentType, string> = {
+  receipt: 'Receipt',
+  invoice: 'Invoice',
+  other_supporting_evidence: 'Other supporting evidence',
+};
 
 export const EXPENSE_TRIP_PURPOSE_OPTIONS = [
   { value: 'bar', label: 'Bar' },
@@ -28,18 +43,26 @@ export const EXPENSE_STATUS_OPTIONS = [
   { value: 'complete', label: 'Complete' },
 ] as const;
 
-export type ExpenseReceiptView = {
+export type ExpenseDocumentView = {
   id: number;
-  name: string;
-  receiptDate: string;
-  amountMinor: number;
-  currency: string;
-  currencyOther: string | null;
-  includesDurableGood: boolean;
+  documentType?: ExpenseDocumentType | string;
   originalFilename: string;
   mimeType: string;
   byteSize: number;
   sortOrder: number;
+};
+
+export type ExpenseItemView = {
+  id: number;
+  name: string;
+  expenseDate: string;
+  amountMinor: number;
+  currency: string;
+  currencyOther: string | null;
+  includesDurableGood: boolean;
+  noReceiptExplanation: string | null;
+  sortOrder: number;
+  documents: ExpenseDocumentView[];
 };
 
 export type ExpenseReportNoteView = {
@@ -93,7 +116,7 @@ export type ExpenseReportView = {
   roundTripMiles: number | null;
   tripPurpose: string | null;
   tripPurposeOther: string | null;
-  receipts: ExpenseReceiptView[];
+  expenses: ExpenseItemView[];
   submittedAt: string;
   createdAt: string;
   updatedAt: string;
@@ -146,6 +169,15 @@ export function mileageCapCents(miles: number): number {
 
 export function expenseKindLabel(kind: string): string {
   return kind === 'mileage' ? 'Mileage' : 'Expense';
+}
+
+export function asExpenseDocumentType(value: string | null | undefined): ExpenseDocumentType {
+  if (value === 'invoice' || value === 'other_supporting_evidence') return value;
+  return 'receipt';
+}
+
+export function expenseDocumentTypeLabel(value: string | null | undefined): string {
+  return EXPENSE_DOCUMENT_TYPE_LABELS[asExpenseDocumentType(value)];
 }
 
 export function formatSubmittedAt(value: string): string {
