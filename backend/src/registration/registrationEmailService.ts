@@ -792,6 +792,22 @@ export async function sendRegistrationEmail(input: SendRegistrationEmailInput): 
     })
     .returning();
 
+  const { shouldHoldLeagueProcessingEmail, LEAGUE_PROCESSING_HOLD_REASON } = await import(
+    './registrationLeagueProcessing.js'
+  );
+  if (await shouldHoldLeagueProcessingEmail(input.messageType)) {
+    const [held] = await db
+      .update(schema.registrationOutboundMessages)
+      .set({
+        delivery_status: 'suppressed',
+        error_detail: LEAGUE_PROCESSING_HOLD_REASON,
+        sent_at: null,
+      })
+      .where(eq(schema.registrationOutboundMessages.id, message.id))
+      .returning();
+    return mapMessageSummary(held);
+  }
+
   const result = await sendEmail({
     to: input.recipientEmail,
     recipientName: input.recipientName,
@@ -943,6 +959,22 @@ export async function resendRegistrationOutboundMessage(messageId: number): Prom
       delivery_status: 'pending',
     })
     .returning();
+
+  const { shouldHoldLeagueProcessingEmail, LEAGUE_PROCESSING_HOLD_REASON } = await import(
+    './registrationLeagueProcessing.js'
+  );
+  if (await shouldHoldLeagueProcessingEmail(original.message_type)) {
+    const [held] = await db
+      .update(schema.registrationOutboundMessages)
+      .set({
+        delivery_status: 'suppressed',
+        error_detail: LEAGUE_PROCESSING_HOLD_REASON,
+        sent_at: null,
+      })
+      .where(eq(schema.registrationOutboundMessages.id, copy.id))
+      .returning();
+    return mapMessageSummary(held);
+  }
 
   const result = await sendEmail({
     to: original.recipient_email,

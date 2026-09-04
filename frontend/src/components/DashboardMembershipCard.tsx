@@ -18,6 +18,7 @@ type MembershipCardPayload = {
     kind: 'new' | 'years';
     years: number | null;
   } | null;
+  leagueProcessingActive?: boolean;
   leagues: Array<{
     leagueId: number;
     leagueName: string;
@@ -228,7 +229,9 @@ export default function DashboardMembershipCard({ memberId }: DashboardMembershi
             ) : null}
           </div>
 
-          {data.leagues.length > 0 ? (
+          {data.leagueProcessingActive && data.leagues.length === 0 ? (
+            <p className="text-sm text-gray-600 dark:text-gray-400">Currently processing leagues, check back later</p>
+          ) : data.leagues.length > 0 ? (
             <div>
               <h3 className="text-sm font-medium text-gray-700 dark:text-gray-300">Leagues</h3>
               <ul className="mt-2 space-y-1.5">

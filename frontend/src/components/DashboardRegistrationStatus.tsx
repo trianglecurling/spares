@@ -4,6 +4,7 @@ import { registrationWasPaymentDeferred } from './registration/registrationViewE
 import Button from './Button';
 import InlineStateMessage from './InlineStateMessage';
 import { useAuth } from '../contexts/AuthContext';
+import { useLeagueOptions } from '../contexts/LeagueOptionsContext';
 import api, { getApiErrorMessage } from '../utils/api';
 
 type RegistrationSummary = {
@@ -104,6 +105,7 @@ function shouldShowPaymentBadge(registration: RegistrationSummary) {
 
 export default function DashboardRegistrationStatus() {
   const { member } = useAuth();
+  const { leagueProcessingActive } = useLeagueOptions({ autoLoad: true });
   const [data, setData] = useState<DashboardRegistrationPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -216,7 +218,13 @@ export default function DashboardRegistrationStatus() {
                   )}
                 </div>
                 <div className="flex flex-wrap gap-2 md:shrink-0">
-                  {registration.paymentLink ? (
+                  {registration.paymentLink &&
+                  !(
+                    leagueProcessingActive &&
+                    ['awaiting_placement', 'awaiting_staff_review', 'awaiting_payment'].includes(
+                      registration.registrationStatus,
+                    )
+                  ) ? (
                     <a href={registration.paymentLink}>
                       <Button>Pay now</Button>
                     </a>

@@ -8,6 +8,8 @@ import {
   mauticMembershipSyncStatusResponseSchema,
   registrationDiscountSettingsSchema,
   registrationEarlyAccessSettingsSchema,
+  registrationLeagueProcessingBatchPaymentResponseSchema,
+  registrationLeagueProcessingSettingsSchema,
   registrationPaymentDeadlineListResponseSchema,
   registrationPaymentDeadlineSchema,
   registrationPriceSettingsSchema,
@@ -36,6 +38,7 @@ import {
   getRegistrationEarlyAccessAdminSettings,
   updateRegistrationEarlyAccessSettings,
 } from '../registration/registrationEarlyAccess.js';
+import { syncWaitlistOfferPreferencesForPriorityOpen } from '../registration/waitlistPreferenceReset.js';
 import {
   deleteRegistrationPaymentDeadline,
   listRegistrationPaymentDeadlines,
@@ -49,7 +52,13 @@ import {
   runFullSync,
 } from '../services/mauticMembershipSyncService.js';
 import { isMauticConfigured } from '../services/mauticService.js';
-import { syncWaitlistOfferPreferencesForPriorityOpen } from '../registration/waitlistPreferenceReset.js';
+import {
+  LeagueProcessingValidationError,
+  getLeagueProcessingAdminSettings,
+  sendPlacementPaymentLinksBatch,
+  updateLeagueProcessingSettings,
+} from '../registration/registrationLeagueProcessing.js';
+import { memberCanManageRegistrations } from '../utils/registrationStaffAccess.js';
 
 const SINGLETON_SCOPE = 'singleton';
 
@@ -62,6 +71,19 @@ function requireAdmin(request: FastifyRequest, reply: FastifyReply): boolean {
     return false;
   }
   if (!isAdmin(member)) {
+    reply.code(403).send({ error: 'Forbidden' });
+    return false;
+  }
+  return true;
+}
+
+function requireAdminOrRegistrationManage(request: FastifyRequest, reply: FastifyReply): boolean {
+  const member = request.member;
+  if (!member) {
+    reply.code(401).send({ error: 'Unauthorized' });
+    return false;
+  }
+  if (!isAdmin(member) && !memberCanManageRegistrations(member)) {
     reply.code(403).send({ error: 'Forbidden' });
     return false;
   }
@@ -91,6 +113,10 @@ function handleValidationError(reply: FastifyReply, error: unknown): boolean {
     return true;
   }
   if (error instanceof RegistrationEarlyAccessValidationError) {
+    sendValidationError(reply, error.message, error.details);
+    return true;
+  }
+  if (error instanceof LeagueProcessingValidationError) {
     sendValidationError(reply, error.message, error.details);
     return true;
   }
@@ -1155,6 +1181,74 @@ export async function registrationConfigRoutes(fastify: FastifyInstance) {
           sendValidationError(reply, 'Validation failed', error.flatten().fieldErrors as Record<string, string[]>);
           return;
         }
+        throw error;
+      }
+    }
+  );
+
+  fastify.get<{ Reply: ApiReply<unknown> }>(
+    '/registration-config/league-processing',
+    {
+      schema: { tags: ['registration-config'], response: { 200: registrationLeagueProcessingSettingsSchema } },
+    },
+    async (request, reply) => {
+      if (!requireAdminOrRegistrationManage(request, reply)) return;
+      return getLeagueProcessingAdminSettings();
+    }
+  );
+
+  fastify.patch<{ Reply: ApiReply<unknown> }>(
+    '/registration-config/league-processing',
+    {
+      schema: {
+        tags: ['registration-config'],
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            enabled: { type: 'boolean' },
+          },
+          required: ['enabled'],
+        },
+        response: { 200: registrationLeagueProcessingSettingsSchema },
+      },
+    },
+    async (request, reply) => {
+      if (!requireAdminOrRegistrationManage(request, reply)) return;
+      try {
+        const body = z.object({ enabled: z.boolean() }).parse(request.body);
+        return await updateLeagueProcessingSettings(body);
+      } catch (error) {
+        if (handleValidationError(reply, error)) return;
+        if (error instanceof z.ZodError) {
+          sendValidationError(reply, 'Validation failed', error.flatten().fieldErrors as Record<string, string[]>);
+          return;
+        }
+        throw error;
+      }
+    }
+  );
+
+  fastify.post<{ Reply: ApiReply<unknown> }>(
+    '/registration-config/league-processing/send-payment-links',
+    {
+      schema: {
+        tags: ['registration-config'],
+        response: { 200: registrationLeagueProcessingBatchPaymentResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      if (!requireAdminOrRegistrationManage(request, reply)) return;
+      const actorMemberId = request.member?.id;
+      if (actorMemberId == null) return;
+      try {
+        const { resolveFrontendBaseUrl } = await import('../utils/frontendUrl.js');
+        return await sendPlacementPaymentLinksBatch({
+          actorMemberId,
+          frontendBaseUrl: resolveFrontendBaseUrl(request),
+        });
+      } catch (error) {
+        if (handleValidationError(reply, error)) return;
         throw error;
       }
     }

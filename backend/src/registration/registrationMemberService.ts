@@ -198,6 +198,24 @@ export function registrationAmountPaidMinor(input: {
   return null;
 }
 
+async function resolveMemberFacingPaymentLink(input: {
+  registrationStatus: string;
+  paymentLink: string | null;
+}): Promise<string | null> {
+  if (!input.paymentLink) return null;
+  const {
+    isLeagueProcessingActive,
+    registrationStatusHidesPaymentLinkDuringProcessing,
+  } = await import('./registrationLeagueProcessing.js');
+  if (
+    registrationStatusHidesPaymentLinkDuringProcessing(input.registrationStatus) &&
+    (await isLeagueProcessingActive())
+  ) {
+    return null;
+  }
+  return input.paymentLink;
+}
+
 async function loadLatestRegistrationPaymentSnapshot(registrationId: number, registrationStatus: string) {
   const { db, schema } = getDrizzleDb();
   let [invoice] = await db
@@ -241,7 +259,10 @@ async function loadLatestRegistrationPaymentSnapshot(registrationId: number, reg
       invoiceTotalMinor: invoice?.total_minor,
       registrationStatus: repaired.registrationStatus,
     }),
-    paymentLink: order?.status === 'pending' ? hostedCheckoutUrl(order.metadata) : null,
+    paymentLink: await resolveMemberFacingPaymentLink({
+      registrationStatus: repaired.registrationStatus,
+      paymentLink: order?.status === 'pending' ? hostedCheckoutUrl(order.metadata) : null,
+    }),
   };
 }
 
@@ -763,7 +784,10 @@ export async function getMemberRegistrationDetail(registrationId: number, actor:
         invoiceStatus: invoice?.status,
         invoiceTotalMinor: invoice?.total_minor,
       }),
-      paymentLink: order?.status === 'pending' ? hostedCheckoutUrl(order.metadata) : null,
+      paymentLink: await resolveMemberFacingPaymentLink({
+        registrationStatus: registration.status,
+        paymentLink: order?.status === 'pending' ? hostedCheckoutUrl(order.metadata) : null,
+      }),
       deferredReason: invoice?.deferred_reason ?? null,
     },
     communications: await listRegistrationOutboundMessages({ registrationId, limit: 25 }),

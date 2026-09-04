@@ -59,6 +59,23 @@ describe('roster placements derived from the priority list', () => {
     expect(guaranteedPlacementsFromEvaluation(evaluateLeaguePriorities(context))).toEqual([]);
   });
 
+  test('open registration does not roster vacant leagues', () => {
+    const context = registrationContext({
+      registrationState: 'open',
+      desiredLeagueCount: 2,
+      participatedLeagueIds: [],
+      priorities: [
+        priority({ leagueId: 50, priorityRank: 1 }),
+        priority({ leagueId: 51, priorityRank: 2 }),
+      ],
+      leagues: {
+        50: league({ id: 50, predecessorLeagueId: null, openSpotCount: 8, activeWaitlistEntryCount: 0 }),
+        51: league({ id: 51, predecessorLeagueId: null, openSpotCount: 8, activeWaitlistEntryCount: 0 }),
+      },
+    });
+    expect(rosterPlacementsForRegistration(context, evaluateLeaguePriorities(context))).toEqual([]);
+  });
+
   test('an open-registration sabbatical-fill vacancy is not rostered from the priority list', () => {
     const context = registrationContext({
       registrationState: 'open',

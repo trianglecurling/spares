@@ -444,6 +444,7 @@ export const memberMembershipCardResponseSchema = {
       },
       required: ['kind', 'years'],
     },
+    leagueProcessingActive: { type: 'boolean' },
     session: {
       type: ['object', 'null'],
       additionalProperties: false,
@@ -471,7 +472,7 @@ export const memberMembershipCardResponseSchema = {
       },
     },
   },
-  required: ['name', 'membershipStatus', 'icePrivilegesValidThrough', 'pendingRegistrationPayment', 'clubTenure', 'session', 'leagues'],
+  required: ['name', 'membershipStatus', 'icePrivilegesValidThrough', 'pendingRegistrationPayment', 'clubTenure', 'session', 'leagues', 'leagueProcessingActive'],
 } as const;
 
 export const memberEmergencyContactResponseSchema = {
@@ -856,6 +857,39 @@ export const registrationEarlyAccessSettingsSchema = {
     updatedAt: { type: 'string' },
   },
   required: ['enabled', 'passwordConfigured', 'earlyAccessPath', 'createdAt', 'updatedAt'],
+} as const;
+
+export const registrationLeagueProcessingSettingsSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    enabled: { type: 'boolean' },
+    createdAt: { type: 'string' },
+    updatedAt: { type: 'string' },
+  },
+  required: ['enabled', 'createdAt', 'updatedAt'],
+} as const;
+
+export const registrationLeagueProcessingBatchPaymentResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    sent: { type: 'number' },
+    skipped: { type: 'number' },
+    errors: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          registrationId: { type: 'number' },
+          error: { type: 'string' },
+        },
+        required: ['registrationId', 'error'],
+      },
+    },
+  },
+  required: ['sent', 'skipped', 'errors'],
 } as const;
 
 export const registrationPaymentDeadlineSchema = {

@@ -87,6 +87,10 @@ interface EarlyAccessSettings {
   earlyAccessPath: string;
 }
 
+interface LeagueProcessingSettings {
+  enabled: boolean;
+}
+
 interface PaymentDeadline {
   id: number;
   seasonId: number;
@@ -228,6 +232,9 @@ export default function AdminRegistrationConfig() {
     earlyAccessPath: '/registration/start/early',
     password: '',
   });
+  const [leagueProcessingEnabled, setLeagueProcessingEnabled] = useState(false);
+  const [leagueProcessingSavedEnabled, setLeagueProcessingSavedEnabled] = useState(false);
+  const [sendingPlacementPaymentLinks, setSendingPlacementPaymentLinks] = useState(false);
   const earlyAccessPasswordId = useId();
 
   const { primaryTab, activeTab, qaTab } = useMemo(() => {
@@ -315,7 +322,16 @@ export default function AdminRegistrationConfig() {
   const loadAll = async () => {
     setLoading(true);
     try {
-      const [seasonRows, sessionRows, transitionRows, paymentDeadlineRows, priceRow, discountRow, earlyAccessResponse] =
+      const [
+        seasonRows,
+        sessionRows,
+        transitionRows,
+        paymentDeadlineRows,
+        priceRow,
+        discountRow,
+        earlyAccessResponse,
+        leagueProcessingResponse,
+      ] =
         await Promise.all([
           get('/registration-config/seasons'),
           get('/registration-config/sessions'),
@@ -324,6 +340,7 @@ export default function AdminRegistrationConfig() {
           get('/registration-config/prices'),
           get('/registration-config/discounts'),
           api.get<EarlyAccessSettings>('/registration-config/early-access'),
+          api.get<LeagueProcessingSettings>('/registration-config/league-processing'),
         ]);
       setSeasons(seasonRows as Season[]);
       setSessions(sessionRows as Session[]);
@@ -352,6 +369,8 @@ export default function AdminRegistrationConfig() {
         earlyAccessPath: earlyAccess.earlyAccessPath,
         password: '',
       });
+      setLeagueProcessingEnabled(leagueProcessingResponse.data.enabled);
+      setLeagueProcessingSavedEnabled(leagueProcessingResponse.data.enabled);
       void loadMauticSyncStatus();
     } catch (error) {
       showAlert(formatApiError(error, 'Failed to load registration configuration'), 'error');
@@ -495,6 +514,64 @@ export default function AdminRegistrationConfig() {
     }
   };
 
+  const handleSaveLeagueProcessing = async (event: FormEvent) => {
+    event.preventDefault();
+    if (leagueProcessingEnabled && !leagueProcessingSavedEnabled) {
+      const confirmed = await confirm({
+        title: 'Hold league emails?',
+        message:
+          'Turning this on hides league placement from members and holds waitlist, placement, and payment emails until you turn it off and send payment links.',
+        confirmText: 'Hold emails',
+        cancelText: 'Cancel',
+      });
+      if (!confirmed) return;
+    }
+    setSaving(true);
+    try {
+      const response = await api.patch<LeagueProcessingSettings>('/registration-config/league-processing', {
+        enabled: leagueProcessingEnabled,
+      });
+      setLeagueProcessingEnabled(response.data.enabled);
+      setLeagueProcessingSavedEnabled(response.data.enabled);
+      showAlert('League processing settings saved.', 'success');
+    } catch (error) {
+      showAlert(formatApiError(error, 'Failed to save league processing settings'), 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSendPlacementPaymentLinks = async () => {
+    if (leagueProcessingSavedEnabled) return;
+    const confirmed = await confirm({
+      title: 'Send placement payment links?',
+      message:
+        'This creates a checkout link and sends a payment-ready email to each placed registrant who still owes.',
+      confirmText: 'Send payment links',
+      cancelText: 'Cancel',
+    });
+    if (!confirmed) return;
+    setSendingPlacementPaymentLinks(true);
+    try {
+      const response = await api.post<{
+        sent: number;
+        skipped: number;
+        errors: Array<{ registrationId: number; error: string }>;
+      }>('/registration-config/league-processing/send-payment-links');
+      const errorCount = response.data.errors.length;
+      showAlert(
+        errorCount > 0
+          ? `Sent ${response.data.sent} payment link${response.data.sent === 1 ? '' : 's'}; ${errorCount} failed.`
+          : `Sent ${response.data.sent} payment link${response.data.sent === 1 ? '' : 's'}.`,
+        errorCount > 0 ? 'warning' : 'success',
+      );
+    } catch (error) {
+      showAlert(formatApiError(error, 'Failed to send placement payment links'), 'error');
+    } finally {
+      setSendingPlacementPaymentLinks(false);
+    }
+  };
+
   const handleSavePaymentDeadline = async (event: FormEvent) => {
     event.preventDefault();
     const iso = parseDateTimeLocal(paymentDeadlineForm.paymentDeadlineAt);
@@ -625,6 +702,40 @@ export default function AdminRegistrationConfig() {
       setSaving(false);
     }
   };
+
+  const leagueProcessingCard = (
+    <form className="app-card space-y-4" onSubmit={(event) => void handleSaveLeagueProcessing(event)}>
+      <h2 className="app-section-title">League processing</h2>
+      <p className="text-sm text-gray-600 dark:text-gray-400">
+        Hide league placement from members and hold waitlist, placement, and payment emails until the
+        Membership Committee is ready to notify everyone at once.
+      </p>
+      <FormCheckbox
+        label="League rosters are being processed"
+        checked={leagueProcessingEnabled}
+        onChange={setLeagueProcessingEnabled}
+        helperText="Members cannot see roster assignments. Staff can still place people and edit waitlists."
+      />
+      <div className="flex flex-wrap justify-end gap-2 pt-2">
+        <Button type="submit" disabled={saving}>
+          {saving ? 'Saving…' : 'Save league processing'}
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          disabled={leagueProcessingSavedEnabled || sendingPlacementPaymentLinks || saving}
+          onClick={() => void handleSendPlacementPaymentLinks()}
+        >
+          {sendingPlacementPaymentLinks ? 'Sending…' : 'Send placement payment links'}
+        </Button>
+      </div>
+      {leagueProcessingSavedEnabled ? (
+        <p className="text-sm text-gray-600 dark:text-gray-400">
+          Turn off processing and save before sending payment links.
+        </p>
+      ) : null}
+    </form>
+  );
 
   if (!canManageConfig && primaryTab === 'settings') {
     return <Navigate to="/admin/registrations" replace />;
@@ -1149,6 +1260,7 @@ export default function AdminRegistrationConfig() {
                       </Button>
                     </div>
                   </form>
+                  {leagueProcessingCard}
                 </div>
               </section>
             )}

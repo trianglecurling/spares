@@ -224,6 +224,7 @@ export type MemberMembershipCardResponse = {
     kind: 'new' | 'years';
     years: number | null;
   } | null;
+  leagueProcessingActive: boolean;
   session: {
     id: number;
     name: string;

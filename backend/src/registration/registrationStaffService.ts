@@ -5,6 +5,7 @@ import { memberCanManageRegistrations } from '../utils/registrationStaffAccess.j
 import { listCurlingRegistrationPaymentActivity } from '../domains/payments/queries/paymentSummaries.js';
 import { getMemberRegistrationDetail, registrationAmountDueMinor } from './registrationMemberService.js';
 import { getDefaultRegistrationWindow } from './registrationShellService.js';
+import { isLeagueProcessingActive } from './registrationLeagueProcessing.js';
 import { staffCanRecordOfflinePayment, staffCanRequestDeferredPayment } from './registrationUnpaidImmediateDeferral.js';
 import {
   LISTABLE_REGISTRATION_STATUSES,
@@ -239,7 +240,9 @@ export async function getStaffRegistrationDetail(registrationId: number, actor: 
     ...detail,
     canEdit: detail.registration.registrationStatus !== 'cancelled',
     canCancel: detail.registration.registrationStatus !== 'cancelled',
-    canRequestPayment: staffCanRequestDeferredPayment(detail.registration.registrationStatus),
+    canRequestPayment:
+      staffCanRequestDeferredPayment(detail.registration.registrationStatus) &&
+      !(await isLeagueProcessingActive()),
     canRecordOfflinePayment: staffCanRecordOfflinePayment({
       registrationStatus: detail.registration.registrationStatus,
       invoiceStatus: invoice?.status,

@@ -28,6 +28,7 @@ import { formatClubDateTime } from '../../utils/clubTime';
 import { playInEntryTeamMembersText } from '../../components/registration/RegistrationPlayInEntryPanel';
 import { useAlert } from '../../contexts/AlertContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
+import { useLeagueOptions } from '../../contexts/LeagueOptionsContext';
 import api, { getApiErrorMessage } from '../../utils/api';
 
 type InvoiceLineItem = {
@@ -311,6 +312,7 @@ export default function AdminRegistrationDetail() {
   const navigate = useNavigate();
   const { confirm } = useConfirm();
   const { showAlert } = useAlert();
+  const { leagueProcessingActive } = useLeagueOptions({ autoLoad: true });
   const [detail, setDetail] = useState<RegistrationDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -548,6 +550,15 @@ export default function AdminRegistrationDetail() {
                   </a>
                 </p>
               ) : null}
+              {leagueProcessingActive &&
+              ['awaiting_placement', 'awaiting_staff_review', 'awaiting_payment'].includes(
+                detail.registration.registrationStatus,
+              ) ? (
+                <p className="text-sm text-gray-600 dark:text-gray-300">
+                  Payment links are held while league rosters are being processed. Turn off processing, then send
+                  payment links from Registration management.
+                </p>
+              ) : null}
               {detail.invoice?.status === 'paid' &&
               (detail.invoice.offlinePaymentNote ||
                 detail.invoice.offlineRecordedBy ||
@@ -559,7 +570,12 @@ export default function AdminRegistrationDetail() {
               {detail.canRequestPayment || detail.canRecordOfflinePayment ? (
                 <div className="flex flex-wrap gap-3">
                   {detail.canRequestPayment ? (
-                    <Button type="button" variant="secondary" disabled={requestingPayment} onClick={() => void requestPayment()}>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      disabled={requestingPayment || leagueProcessingActive}
+                      onClick={() => void requestPayment()}
+                    >
                       Request payment
                     </Button>
                   ) : null}

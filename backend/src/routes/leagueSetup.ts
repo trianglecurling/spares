@@ -1,4 +1,4 @@
-import { FastifyInstance } from 'fastify';
+import { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { and, desc, eq, inArray, ne, notInArray, or, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
@@ -58,6 +58,22 @@ import {
 } from '../registration/sabbaticalStaffService.js';
 import { loadRosterRegistrationStatuses } from '../registration/rosterRegistrationStatusService.js';
 import type { Member } from '../types.js';
+import {
+  canViewLeaguePlacementDuringProcessing,
+  isLeagueProcessingActive,
+  LEAGUE_PROCESSING_HOLD_REASON,
+} from '../registration/registrationLeagueProcessing.js';
+
+async function forbidIfLeagueProcessingHidden(
+  member: Member,
+  leagueId: number,
+  reply: FastifyReply,
+): Promise<boolean> {
+  if (!(await isLeagueProcessingActive())) return false;
+  if (await canViewLeaguePlacementDuringProcessing(member, leagueId)) return false;
+  reply.code(403).send({ error: LEAGUE_PROCESSING_HOLD_REASON });
+  return true;
+}
 
 type DrizzleDb = ReturnType<typeof getDrizzleDb>['db'];
 type DrizzleSchema = ReturnType<typeof getDrizzleDb>['schema'];
@@ -788,6 +804,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       if (!member) {
         return reply.code(401).send({ error: 'Unauthorized' });
       }
+      if (await forbidIfLeagueProcessingHidden(member, leagueId, reply)) return;
 
       const { db, schema } = getDrizzleDb();
       const rosterRows = (await db
@@ -872,6 +889,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       if (Number.isNaN(leagueId)) {
         return reply.code(400).send({ error: 'Invalid league id.' });
       }
+      if (await forbidIfLeagueProcessingHidden(member, leagueId, reply)) return;
 
       const { listDeclaredByotTeamsForLeagueRoster } = await import(
         '../registration/byotDeclaredTeamService.js'
@@ -1631,9 +1649,10 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       if (!member) {
         return reply.code(401).send({ error: 'Unauthorized' });
       }
-
       const { id } = request.params as { id: string };
       const leagueId = parseInt(id, 10);
+      if (await forbidIfLeagueProcessingHidden(member, leagueId, reply)) return;
+
       const { db, schema } = getDrizzleDb();
 
       const teams = (await db
@@ -2029,6 +2048,15 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       const { teamId } = request.params as { teamId: string };
       const id = parseInt(teamId, 10);
       const { db, schema } = getDrizzleDb();
+      const [team] = await db
+        .select({ league_id: schema.leagueTeams.league_id })
+        .from(schema.leagueTeams)
+        .where(eq(schema.leagueTeams.id, id))
+        .limit(1);
+      if (!team) {
+        return reply.code(404).send({ error: 'Team not found.' });
+      }
+      if (await forbidIfLeagueProcessingHidden(member, team.league_id, reply)) return;
 
       const roster = (await db
         .select({

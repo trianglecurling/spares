@@ -2998,6 +2998,12 @@ export async function triggerDeferredRegistrationPayment(input: {
       registration: 'Payment can be requested only after registration is awaiting placement or staff review.',
     });
   }
+  const { isLeagueProcessingActive, LEAGUE_PROCESSING_HOLD_REASON } = await import('./registrationLeagueProcessing.js');
+  if (await isLeagueProcessingActive()) {
+    throw new RegistrationMembershipPaymentValidationError({
+      registration: LEAGUE_PROCESSING_HOLD_REASON,
+    });
+  }
   const paymentContext = await buildRegistrationContextForDraft(input.registrationId);
   const { db, schema } = getDrizzleDb();
   // Placement is settled, so bill for the leagues the registrant actually holds

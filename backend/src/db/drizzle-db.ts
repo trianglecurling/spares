@@ -33,6 +33,7 @@ type PgSchema = {
   registrationPriceSettings: typeof pgSchema.registrationPriceSettingsPg;
   registrationDiscountSettings: typeof pgSchema.registrationDiscountSettingsPg;
   registrationEarlyAccessSettings: typeof pgSchema.registrationEarlyAccessSettingsPg;
+  registrationLeagueProcessingSettings: typeof pgSchema.registrationLeagueProcessingSettingsPg;
   registrationPaymentDeadlines: typeof pgSchema.registrationPaymentDeadlinesPg;
   seasonMemberships: typeof pgSchema.seasonMembershipsPg;
   curlingIcePrivileges: typeof pgSchema.curlingIcePrivilegesPg;
@@ -190,6 +191,7 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       registrationPriceSettings: sqliteSchema.registrationPriceSettingsSqlite,
       registrationDiscountSettings: sqliteSchema.registrationDiscountSettingsSqlite,
       registrationEarlyAccessSettings: sqliteSchema.registrationEarlyAccessSettingsSqlite,
+      registrationLeagueProcessingSettings: sqliteSchema.registrationLeagueProcessingSettingsSqlite,
       registrationPaymentDeadlines: sqliteSchema.registrationPaymentDeadlinesSqlite,
       seasonMemberships: sqliteSchema.seasonMembershipsSqlite,
       curlingIcePrivileges: sqliteSchema.curlingIcePrivilegesSqlite,
@@ -336,6 +338,7 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       registrationPriceSettings: pgSchema.registrationPriceSettingsPg,
       registrationDiscountSettings: pgSchema.registrationDiscountSettingsPg,
       registrationEarlyAccessSettings: pgSchema.registrationEarlyAccessSettingsPg,
+      registrationLeagueProcessingSettings: pgSchema.registrationLeagueProcessingSettingsPg,
       registrationPaymentDeadlines: pgSchema.registrationPaymentDeadlinesPg,
       seasonMemberships: pgSchema.seasonMembershipsPg,
       curlingIcePrivileges: pgSchema.curlingIcePrivilegesPg,

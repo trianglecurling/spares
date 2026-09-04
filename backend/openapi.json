@@ -7174,6 +7174,9 @@
                         "years"
                       ]
                     },
+                    "leagueProcessingActive": {
+                      "type": "boolean"
+                    },
                     "session": {
                       "type": [
                         "null",
@@ -7234,7 +7237,8 @@
                     "pendingRegistrationPayment",
                     "clubTenure",
                     "session",
-                    "leagues"
+                    "leagues",
+                    "leagueProcessingActive"
                   ]
                 }
               }
@@ -8249,6 +8253,9 @@
                         "years"
                       ]
                     },
+                    "leagueProcessingActive": {
+                      "type": "boolean"
+                    },
                     "session": {
                       "type": [
                         "null",
@@ -8309,7 +8316,8 @@
                     "pendingRegistrationPayment",
                     "clubTenure",
                     "session",
-                    "leagues"
+                    "leagues",
+                    "leagueProcessingActive"
                   ]
                 }
               }
@@ -27484,6 +27492,147 @@
                     "earlyAccessPath",
                     "createdAt",
                     "updatedAt"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/registration-config/league-processing": {
+      "get": {
+        "tags": [
+          "registration-config"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "enabled",
+                    "createdAt",
+                    "updatedAt"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "registration-config"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "enabled"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "enabled",
+                    "createdAt",
+                    "updatedAt"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/registration-config/league-processing/send-payment-links": {
+      "post": {
+        "tags": [
+          "registration-config"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "sent": {
+                      "type": "number"
+                    },
+                    "skipped": {
+                      "type": "number"
+                    },
+                    "errors": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "registrationId": {
+                            "type": "number"
+                          },
+                          "error": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "registrationId",
+                          "error"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "sent",
+                    "skipped",
+                    "errors"
                   ]
                 }
               }

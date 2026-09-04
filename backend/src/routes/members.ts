@@ -622,7 +622,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
         return reply.code(401).send({ error: 'Unauthorized' });
       }
 
-      return getMemberMembershipCard(authMember);
+      return getMemberMembershipCard(authMember, authMember);
     },
   );
 
@@ -1214,6 +1214,13 @@ export async function memberRoutes(fastify: FastifyInstance) {
       }
     }
 
+    const { canBypassLeagueProcessingHold, isLeagueProcessingActive } = await import(
+      '../registration/registrationLeagueProcessing.js'
+    );
+    if ((await isLeagueProcessingActive()) && !canBypassLeagueProcessingHold(member)) {
+      return [];
+    }
+
     const { db, schema } = getDrizzleDb();
     const rosterFilters = [eq(schema.leagueRoster.member_id, targetMemberId)];
     if (filterSessionId != null) {
@@ -1340,7 +1347,7 @@ export async function memberRoutes(fastify: FastifyInstance) {
         return reply.code(404).send({ error: 'Member not found' });
       }
 
-      return getMemberMembershipCard(target);
+      return getMemberMembershipCard(target, member);
     },
   );
 

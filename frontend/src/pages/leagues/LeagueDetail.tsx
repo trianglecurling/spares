@@ -24,6 +24,10 @@ import FormCheckbox from '../../components/FormCheckbox';
 import FormField from '../../components/FormField';
 import { memberHasScope } from '../../utils/permissions';
 import {
+  LEAGUE_PROCESSING_ROSTER_MESSAGE,
+  isLeagueProcessingForbiddenError,
+} from '../../utils/leagueProcessing';
+import {
   defaultDrawDurationMinutes,
   extraDrawKey,
   type LeagueExtraDraw,
@@ -356,6 +360,7 @@ export default function LeagueDetail() {
     return 'overview';
   }, [tab]);
   const [loading, setLoading] = useState(true);
+  const [placementHidden, setPlacementHidden] = useState(false);
   const [leagueSettings, setLeagueSettings] = useState<{ collectByeRequests: boolean } | null>(
     null
   );
@@ -655,12 +660,23 @@ export default function LeagueDetail() {
 
 
   const loadRoster = async () => {
-    const [rosterResponse, declaredResponse] = await Promise.all([
-      get('/leagues/{id}/roster', undefined, { id: String(numericLeagueId) }),
-      get('/leagues/{id}/declared-teams', undefined, { id: String(numericLeagueId) }),
-    ]);
-    setRosterMembers(rosterResponse);
-    setDeclaredTeams(declaredResponse);
+    try {
+      const [rosterResponse, declaredResponse] = await Promise.all([
+        get('/leagues/{id}/roster', undefined, { id: String(numericLeagueId) }),
+        get('/leagues/{id}/declared-teams', undefined, { id: String(numericLeagueId) }),
+      ]);
+      setRosterMembers(rosterResponse);
+      setDeclaredTeams(declaredResponse);
+      setPlacementHidden(false);
+    } catch (error: unknown) {
+      if (isLeagueProcessingForbiddenError(error)) {
+        setRosterMembers([]);
+        setDeclaredTeams([]);
+        setPlacementHidden(true);
+        return;
+      }
+      throw error;
+    }
   };
 
   const loadManagers = async () => {
@@ -791,18 +807,36 @@ export default function LeagueDetail() {
       const [
         leaguesResponse,
         divisionsResponse,
-        teamsResponse,
-        rosterResponse,
-        declaredTeamsResponse,
+        teamsResult,
+        rosterResult,
+        declaredTeamsResult,
         managersResponse,
         sabbaticalsResponse,
         settingsResponse,
       ] = await Promise.all([
         get('/leagues'),
         get('/leagues/{id}/divisions', undefined, { id: String(numericLeagueId) }),
-        get('/leagues/{id}/teams', undefined, { id: String(numericLeagueId) }),
-        get('/leagues/{id}/roster', undefined, { id: String(numericLeagueId) }),
-        get('/leagues/{id}/declared-teams', undefined, { id: String(numericLeagueId) }),
+        get('/leagues/{id}/teams', undefined, { id: String(numericLeagueId) }).then(
+          (data) => ({ data, hidden: false as const }),
+          (error: unknown) => {
+            if (isLeagueProcessingForbiddenError(error)) return { data: [] as Team[], hidden: true as const };
+            throw error;
+          },
+        ),
+        get('/leagues/{id}/roster', undefined, { id: String(numericLeagueId) }).then(
+          (data) => ({ data, hidden: false as const }),
+          (error: unknown) => {
+            if (isLeagueProcessingForbiddenError(error)) return { data: [] as LeagueRosterMember[], hidden: true as const };
+            throw error;
+          },
+        ),
+        get('/leagues/{id}/declared-teams', undefined, { id: String(numericLeagueId) }).then(
+          (data) => ({ data, hidden: false as const }),
+          (error: unknown) => {
+            if (isLeagueProcessingForbiddenError(error)) return { data: [] as LeagueDeclaredTeam[], hidden: true as const };
+            throw error;
+          },
+        ),
         get('/leagues/{id}/managers', undefined, { id: String(numericLeagueId) }),
         get('/leagues/{id}/sabbaticals', undefined, { id: String(numericLeagueId) }),
         (
@@ -823,9 +857,10 @@ export default function LeagueDetail() {
       setLeague(currentLeague);
 
       setDivisions(divisionsResponse);
-      setTeams(teamsResponse);
-      setRosterMembers(rosterResponse);
-      setDeclaredTeams(declaredTeamsResponse);
+      setTeams(teamsResult.data);
+      setRosterMembers(rosterResult.data);
+      setDeclaredTeams(declaredTeamsResult.data);
+      setPlacementHidden(teamsResult.hidden || rosterResult.hidden || declaredTeamsResult.hidden);
       setManagers(managersResponse);
       setSabbaticalMembers(sabbaticalsResponse);
       setLeagueSettings(
@@ -1867,7 +1902,9 @@ export default function LeagueDetail() {
                 )}
               </div>
 
-              {leagueAllowsDropIns ? (
+              {placementHidden ? (
+                <AppStateCard compact title={LEAGUE_PROCESSING_ROSTER_MESSAGE} />
+              ) : leagueAllowsDropIns ? (
                 <p className="text-sm text-gray-600 dark:text-gray-400">
                   This drop-in league keeps permanent members on the{' '}
                   <Link to={`/leagues/${leagueId}/roster`} className="font-medium text-primary-teal-link hover:underline">
@@ -2814,6 +2851,9 @@ export default function LeagueDetail() {
         )}
 
         {normalizedTab === 'teams' && (
+          placementHidden ? (
+            <AppStateCard title={LEAGUE_PROCESSING_ROSTER_MESSAGE} />
+          ) : (
           <div className="space-y-4">
             {leagueAllowsDropIns ? (
               <InlineStateMessage
@@ -3121,6 +3161,7 @@ export default function LeagueDetail() {
               </>
             )}
           </div>
+          )
         )}
 
         {normalizedTab === 'managers' && (
@@ -3322,6 +3363,9 @@ export default function LeagueDetail() {
         )}
 
         {normalizedTab === 'roster' && (
+          placementHidden ? (
+            <AppStateCard title={LEAGUE_PROCESSING_ROSTER_MESSAGE} />
+          ) : (
           <div className="space-y-4">
             <div className="app-card space-y-2">
               <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
@@ -3499,6 +3543,7 @@ export default function LeagueDetail() {
             </div>
             )}
           </div>
+          )
         )}
       </AppPage>
 

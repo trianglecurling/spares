@@ -804,6 +804,14 @@ export const registrationEarlyAccessSettingsSqlite = sqliteTable('registration_e
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
 });
 
+/** Singleton: hide league placement and hold related emails while staff assign leagues. */
+export const registrationLeagueProcessingSettingsSqlite = sqliteTable('registration_league_processing_settings', {
+  scope: text('scope').primaryKey().notNull().default('singleton'),
+  enabled: integer('enabled').default(0).notNull(),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+});
+
 /** Per season/session deadline for voluntary "pay later" registration payment. */
 export const registrationPaymentDeadlinesSqlite = sqliteTable('registration_payment_deadlines', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -3185,6 +3193,14 @@ export const registrationEarlyAccessSettingsPg = pgTable('registration_early_acc
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
 });
 
+/** Singleton: hide league placement and hold related emails while staff assign leagues. */
+export const registrationLeagueProcessingSettingsPg = pgTable('registration_league_processing_settings', {
+  scope: textPg('scope').primaryKey().notNull().default('singleton'),
+  enabled: integerPg('enabled').default(0).notNull(),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+});
+
 /** Per season/session deadline for voluntary "pay later" registration payment. */
 export const registrationPaymentDeadlinesPg = pgTable('registration_payment_deadlines', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
@@ -4999,6 +5015,7 @@ export const sqliteSchema = {
   registrationPriceSettings: registrationPriceSettingsSqlite,
   registrationDiscountSettings: registrationDiscountSettingsSqlite,
   registrationEarlyAccessSettings: registrationEarlyAccessSettingsSqlite,
+  registrationLeagueProcessingSettings: registrationLeagueProcessingSettingsSqlite,
   registrationPaymentDeadlines: registrationPaymentDeadlinesSqlite,
   seasonMemberships: seasonMembershipsSqlite,
   curlingIcePrivileges: curlingIcePrivilegesSqlite,
@@ -5127,6 +5144,7 @@ export const pgSchema = {
   registrationPriceSettings: registrationPriceSettingsPg,
   registrationDiscountSettings: registrationDiscountSettingsPg,
   registrationEarlyAccessSettings: registrationEarlyAccessSettingsPg,
+  registrationLeagueProcessingSettings: registrationLeagueProcessingSettingsPg,
   registrationPaymentDeadlines: registrationPaymentDeadlinesPg,
   seasonMemberships: seasonMembershipsPg,
   curlingIcePrivileges: curlingIcePrivilegesPg,

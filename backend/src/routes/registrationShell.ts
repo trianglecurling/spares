@@ -441,12 +441,20 @@ export async function publicRegistrationShellRoutes(fastify: FastifyInstance) {
           ? await getEffectiveRegistrationWindow(query.seasonId, query.sessionId, { earlyAccessUnlocked })
           : await getDefaultRegistrationWindow({ earlyAccessUnlocked });
         if (!window) return sendApiError(reply, 404, 'Registration window not found');
-        const [previousRegistrationSessionDisplayName, availableDiscounts, membershipFees] = await Promise.all([
+        const [previousRegistrationSessionDisplayName, availableDiscounts, membershipFees, leagueProcessingActive] =
+          await Promise.all([
           getImmediatelyPriorRegistrationSessionDisplayName(window.session.id),
           getPublicRegistrationDiscountSettings(),
           getPublicRegistrationMembershipFees(),
+          import('../registration/registrationLeagueProcessing.js').then((mod) => mod.isLeagueProcessingActive()),
         ]);
-        return { ...window, previousRegistrationSessionDisplayName, availableDiscounts, membershipFees };
+        return {
+          ...window,
+          previousRegistrationSessionDisplayName,
+          availableDiscounts,
+          membershipFees,
+          leagueProcessingActive,
+        };
       } catch (error) {
         return handleRegistrationError(reply, error);
       }

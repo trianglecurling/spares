@@ -547,6 +547,13 @@
       "when": 1788487800000,
       "tag": "0078_one_receipt_per_expense",
       "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1788488400000,
+      "tag": "0079_add_registration_league_processing_settings",
+      "breakpoints": true
     }
   ]
 }

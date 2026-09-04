@@ -21,6 +21,7 @@ import {
 import { playInEntryTeamMembersText } from '../components/registration/RegistrationPlayInEntryPanel';
 import { useAlert } from '../contexts/AlertContext';
 import { useConfirm } from '../contexts/ConfirmContext';
+import { useLeagueOptions } from '../contexts/LeagueOptionsContext';
 import api, { getApiErrorMessage } from '../utils/api';
 
 type Selection = {
@@ -157,6 +158,7 @@ export default function RegistrationStatusDetailPage() {
   const hasValidViewSlot = Number.isInteger(viewSlot) && viewSlot > 0;
   const { confirm } = useConfirm();
   const { showAlert } = useAlert();
+  const { leagueProcessingActive } = useLeagueOptions({ autoLoad: true });
   const [detail, setDetail] = useState<RegistrationDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -305,7 +307,13 @@ export default function RegistrationStatusDetailPage() {
                   Paid registrations cannot be edited. During priority registration, you can cancel this registration to receive a full refund and register again.
                 </p>
               ) : null}
-              {detail.payment.paymentLink ? (
+              {detail.payment.paymentLink &&
+              !(
+                leagueProcessingActive &&
+                ['awaiting_placement', 'awaiting_staff_review', 'awaiting_payment'].includes(
+                  detail.registration.registrationStatus,
+                )
+              ) ? (
                 <a href={detail.payment.paymentLink}>
                   <Button>Pay now</Button>
                 </a>

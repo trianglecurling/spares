@@ -1777,24 +1777,27 @@ export async function recordLeagueEntryTeamOutcome(input: {
       .where(inArray(schema.curlingRegistrations.id, registrationIds));
     const awaiting = registrations.filter((registration) => registration.status === 'awaiting_placement');
     if (awaiting.length > 0) {
-      const { triggerDeferredRegistrationPayment } = await import('./registrationMembershipPaymentService.js');
-      for (const registration of awaiting) {
-        try {
-          const result = await triggerDeferredRegistrationPayment({
-            registrationId: registration.id,
-            actorMemberId: input.actorMemberId,
-          });
-          paymentResults.push({
-            registrationId: registration.id,
-            outcome: result.outcome,
-            checkoutUrl: 'checkoutUrl' in result ? (result as { checkoutUrl?: string }).checkoutUrl : undefined,
-          });
-        } catch (error) {
-          paymentResults.push({
-            registrationId: registration.id,
-            outcome: 'error',
-            error: error instanceof Error ? error.message : 'Payment trigger failed',
-          });
+      const { isLeagueProcessingActive } = await import('./registrationLeagueProcessing.js');
+      if (!(await isLeagueProcessingActive())) {
+        const { triggerDeferredRegistrationPayment } = await import('./registrationMembershipPaymentService.js');
+        for (const registration of awaiting) {
+          try {
+            const result = await triggerDeferredRegistrationPayment({
+              registrationId: registration.id,
+              actorMemberId: input.actorMemberId,
+            });
+            paymentResults.push({
+              registrationId: registration.id,
+              outcome: result.outcome,
+              checkoutUrl: 'checkoutUrl' in result ? (result as { checkoutUrl?: string }).checkoutUrl : undefined,
+            });
+          } catch (error) {
+            paymentResults.push({
+              registrationId: registration.id,
+              outcome: 'error',
+              error: error instanceof Error ? error.message : 'Payment trigger failed',
+            });
+          }
         }
       }
     }

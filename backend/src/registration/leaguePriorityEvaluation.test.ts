@@ -422,10 +422,10 @@ describe('guarantee labeling', () => {
   test('return rights only apply during priority registration', () => {
     const context = contextWithLeagues([standard(1)], { registrationState: 'open' });
     expect(hasReturnRight(context, context.priorities[0]!)).toBe(false);
-    expect(labelsFor(context)).toEqual(['waitlisted']);
+    expect(labelsFor(context)).toEqual(['subject_to_availability']);
   });
 
-  test('open registration labels vacant leagues available instead of guaranteed', () => {
+  test('open registration labels vacant leagues subject to availability instead of available', () => {
     const context = contextWithLeagues(
       [
         standard(1, { openSpotCount: 4, activeWaitlistEntryCount: 1 }),
@@ -433,32 +433,37 @@ describe('guarantee labeling', () => {
       ],
       { registrationState: 'open', desiredLeagueCount: 2 },
     );
-    expect(labelsFor(context)).toEqual(['available', 'available']);
+    expect(labelsFor(context)).toEqual(['subject_to_availability', 'subject_to_availability']);
     expect(evaluateLeaguePriorities(context).guaranteedCount).toBe(0);
-    expect(evaluateLeaguePriorities(context).confirmedLeagueFeeMinor).toBe(60000);
+    expect(evaluateLeaguePriorities(context).confirmedLeagueFeeMinor).toBe(0);
+    expect(validateLeaguePriorities(context).deferralReasonCodes).toContain('non_guaranteed_league_defers_payment');
   });
 
-  test('open registration waitlists a league when waitlist length meets open spots', () => {
+  test('open registration does not waitlist a league when waitlist length meets open spots', () => {
     const context = contextWithLeagues(
       [standard(1, { openSpotCount: 3, activeWaitlistEntryCount: 3 })],
       { registrationState: 'open', desiredLeagueCount: 1 },
     );
-    expect(labelsFor(context)).toEqual(['waitlisted']);
+    expect(labelsFor(context)).toEqual(['subject_to_availability']);
   });
 
-  test('open registration marks a third vacant league subject to availability', () => {
+  test('open registration marks every vacant league subject to availability', () => {
     const vacant = { openSpotCount: 5, activeWaitlistEntryCount: 0 };
     const context = contextWithLeagues(
       [standard(1, vacant), standard(2, vacant), standard(3, vacant)],
       { registrationState: 'open', desiredLeagueCount: 3 },
     );
-    expect(labelsFor(context)).toEqual(['available', 'available', 'subject_to_availability']);
-    expect(evaluateLeaguePriorities(context).confirmedLeagueFeeMinor).toBe(60000);
+    expect(labelsFor(context)).toEqual([
+      'subject_to_availability',
+      'subject_to_availability',
+      'subject_to_availability',
+    ]);
+    expect(evaluateLeaguePriorities(context).confirmedLeagueFeeMinor).toBe(0);
     expect(evaluateLeaguePriorities(context).maximumLeagueFeeMinor).toBe(90000);
     expect(validateLeaguePriorities(context).deferralReasonCodes).toContain('non_guaranteed_league_defers_payment');
   });
 
-  test('open registration labels a vacant instructional program available even as a third choice', () => {
+  test('open registration labels a vacant instructional program subject to availability even as a third choice', () => {
     const vacant = { openSpotCount: 5, activeWaitlistEntryCount: 0 };
     const context = contextWithLeagues(
       [
@@ -468,11 +473,15 @@ describe('guarantee labeling', () => {
       ],
       { registrationState: 'open', desiredLeagueCount: 3 },
     );
-    expect(labelsFor(context)).toEqual(['available', 'available', 'available']);
-    expect(evaluateLeaguePriorities(context).confirmedLeagueFeeMinor).toBe(90000);
+    expect(labelsFor(context)).toEqual([
+      'subject_to_availability',
+      'subject_to_availability',
+      'subject_to_availability',
+    ]);
+    expect(evaluateLeaguePriorities(context).confirmedLeagueFeeMinor).toBe(0);
   });
 
-  test('open registration waitlists a sabbatical-fill vacancy instead of placing it', () => {
+  test('open registration does not place a sabbatical-fill vacancy from the priority list', () => {
     const context = contextWithLeagues(
       [
         standard(1, {
@@ -483,7 +492,7 @@ describe('guarantee labeling', () => {
       ],
       { registrationState: 'open', desiredLeagueCount: 1 },
     );
-    expect(labelsFor(context)).toEqual(['waitlisted']);
+    expect(labelsFor(context)).toEqual(['subject_to_availability']);
     expect(evaluateLeaguePriorities(context).confirmedLeagueFeeMinor).toBe(0);
   });
 
@@ -505,7 +514,7 @@ describe('guarantee labeling', () => {
     expect(evaluateLeaguePriorities(context).confirmedLeagueFeeMinor).toBe(0);
   });
 
-  test('open registration prefers a permanent vacancy over a temporary fill', () => {
+  test('open registration does not treat a permanent vacancy as available', () => {
     const context = contextWithLeagues(
       [
         standard(1, {
@@ -516,16 +525,20 @@ describe('guarantee labeling', () => {
       ],
       { registrationState: 'open', desiredLeagueCount: 1 },
     );
-    expect(labelsFor(context)).toEqual(['available']);
+    expect(labelsFor(context)).toEqual(['subject_to_availability']);
   });
 
-  test('open registration keeps a third vacant league waitlisted when only two are wanted', () => {
+  test('open registration keeps extra vacant leagues as backups when only two are wanted', () => {
     const vacant = { openSpotCount: 5, activeWaitlistEntryCount: 0 };
     const context = contextWithLeagues(
       [standard(1, vacant), standard(2, vacant), standard(3, vacant)],
       { registrationState: 'open', desiredLeagueCount: 2 },
     );
-    expect(labelsFor(context)).toEqual(['available', 'available', 'superfluous']);
+    expect(labelsFor(context)).toEqual([
+      'subject_to_availability',
+      'subject_to_availability',
+      'subject_to_availability',
+    ]);
   });
 
   test('a sabbatical right substitutes for prior participation', () => {

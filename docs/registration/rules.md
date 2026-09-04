@@ -838,8 +838,9 @@ All waitlist changes, manual or automatic, must be audited.
 
 For standard leagues, after priority registration closes, placement priority is:
 
-1. Guaranteed returns, guaranteed fallbacks, sabbatical returns, and
-   available entries are resolved first. These are already rostered at submit.
+1. Guaranteed returns, guaranteed fallbacks, and sabbatical returns are
+   resolved first. These are already rostered at submit during priority
+   registration. Open registration does not roster league selections at submit.
 2. Remaining permanent spots are offered to the waitlist in queue order.
 3. Temporary sabbatical-fill spots are offered separately to the waitlist.
    Registration never places those spots.

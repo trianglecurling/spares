@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useAlert } from '../contexts/AlertContext';
 import { useConfirm } from '../contexts/ConfirmContext';
+import { useLeagueOptions } from '../contexts/LeagueOptionsContext';
 import { AppPage, AppPageHeader } from '../components/AppPage';
 import AppStateCard from '../components/AppStateCard';
 import MemberMultiSelect from '../components/MemberMultiSelect';
@@ -11,6 +12,10 @@ import FormSection from '../components/FormSection';
 import ChoiceInput, { type ChoiceOption } from '../components/ChoiceInput';
 import { get, post } from '../api/client';
 import { formatApiError } from '../utils/api';
+import {
+  LEAGUE_PROCESSING_ROSTER_MESSAGE,
+  memberCanBypassLeagueProcessingHold,
+} from '../utils/leagueProcessing';
 import Button from '../components/Button';
 import { format } from 'date-fns';
 
@@ -79,6 +84,7 @@ function rosterRoleLabel(role: string | null | undefined): string | null {
 
 export default function RequestSpare() {
   const { member } = useAuth();
+  const { leagueProcessingActive } = useLeagueOptions({ autoLoad: true });
   const { showAlert } = useAlert();
   const { confirm } = useConfirm();
   const navigate = useNavigate();
@@ -357,8 +363,16 @@ export default function RequestSpare() {
 
       {!cannotCreateSpareRequest && !loading && !loadError && leagues.length === 0 ? (
         <AppStateCard
-          title="No leagues available for spare requests"
-          description="You need an active roster spot on a team league this session. Instructional and drop-in leagues are not eligible for spare requests."
+          title={
+            leagueProcessingActive && !memberCanBypassLeagueProcessingHold(member)
+              ? 'League rosters are currently being processed'
+              : 'No leagues available for spare requests'
+          }
+          description={
+            leagueProcessingActive && !memberCanBypassLeagueProcessingHold(member)
+              ? LEAGUE_PROCESSING_ROSTER_MESSAGE
+              : 'You need an active roster spot on a team league this session. Instructional and drop-in leagues are not eligible for spare requests.'
+          }
           action={
             <Link to="/dashboard" className="text-sm font-semibold text-primary-teal-link hover:underline">
               Back to dashboard

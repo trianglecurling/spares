@@ -10,6 +10,11 @@ import { ensureRosterPlacementsForUnpaidRegistrations } from '../registration/re
 import { waitlistEntryIncludesMember } from '../registration/waitlistMemberMembership.js';
 import { normalizeHalfYearExperienceValue } from '../registration/curlingExperienceYears.js';
 import { getCurrentDateStringAsync } from '../utils/time.js';
+import type { Member } from '../types.js';
+import {
+  canBypassLeagueProcessingHold,
+  isLeagueProcessingActive,
+} from '../registration/registrationLeagueProcessing.js';
 
 const ACTIVE_SABBATICAL_STATUSES: CurlingLeagueSabbaticalStatusSqlite[] = [
   'active',
@@ -99,6 +104,7 @@ export type MemberMembershipCardData = {
   pendingRegistrationPayment: boolean;
   /** Club membership tenure for the current dashboard session, or null when unknown. */
   clubTenure: ClubTenure | null;
+  leagueProcessingActive: boolean;
   session: {
     id: number;
     name: string;
@@ -756,10 +762,13 @@ async function memberHasActiveSessionIcePrivilege(memberId: number, sessionId: n
   return Boolean(row);
 }
 
-export async function getMemberMembershipCard(member: {
-  id: number;
-  name: string;
-}): Promise<MemberMembershipCardData> {
+export async function getMemberMembershipCard(
+  member: {
+    id: number;
+    name: string;
+  },
+  viewer?: Member | null,
+): Promise<MemberMembershipCardData> {
   const today = await getCurrentDateStringAsync();
   const [
     latestPurchasedSeasonMembership,
@@ -836,12 +845,17 @@ export async function getMemberMembershipCard(member: {
     baselineClubExperienceYears,
   });
 
+  const leagueProcessingActive = await isLeagueProcessingActive();
+  const hideLeagues =
+    leagueProcessingActive && (!viewer || !canBypassLeagueProcessingHold(viewer));
+
   return {
     name: member.name,
     membershipStatus,
     icePrivilegesValidThrough,
     pendingRegistrationPayment,
     clubTenure,
+    leagueProcessingActive,
     session: session
       ? {
           id: session.id,
@@ -849,6 +863,6 @@ export async function getMemberMembershipCard(member: {
           isUpcoming: session.isUpcoming,
         }
       : null,
-    leagues,
+    leagues: hideLeagues ? [] : leagues,
   };
 }

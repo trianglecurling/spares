@@ -1,6 +1,6 @@
 const UNPAID_IMMEDIATE_REGISTRATION_STATUSES = new Set(['awaiting_payment', 'payment_started']);
 const UNPAID_INVOICE_STATUSES = new Set(['awaiting_payment', 'checkout_started']);
-const REQUEST_PAYMENT_REGISTRATION_STATUSES = new Set(['awaiting_placement', 'awaiting_staff_review']);
+const REQUEST_PAYMENT_REGISTRATION_STATUSES = new Set(['awaiting_placement', 'awaiting_staff_review', 'awaiting_payment']);
 
 export function unpaidImmediateRegistrationCanDefer(input: {
   registrationStatus: string;

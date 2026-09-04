@@ -25,11 +25,13 @@ export type SessionLeagueOption = {
 
 type RegistrationWindowPayload = {
   session?: { id?: number } | null;
+  leagueProcessingActive?: boolean;
 };
 
 type LeagueOptionsContextValue = {
   leagues: SessionLeagueOption[];
   registrationWindowSessionId: number | null;
+  leagueProcessingActive: boolean;
   loading: boolean;
   loaded: boolean;
   error: string | null;
@@ -61,6 +63,7 @@ export function LeagueOptionsProvider({ children }: { children: ReactNode }) {
   const memberId = member?.id ?? null;
   const [leagues, setLeagues] = useState<SessionLeagueOption[]>(EMPTY_LEAGUES);
   const [registrationWindowSessionId, setRegistrationWindowSessionId] = useState<number | null>(null);
+  const [leagueProcessingActive, setLeagueProcessingActive] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -97,6 +100,15 @@ export function LeagueOptionsProvider({ children }: { children: ReactNode }) {
               ? (windowRes as RegistrationWindowPayload).session!.id!
               : null;
           setRegistrationWindowSessionId(sessionId);
+          setLeagueProcessingActive(
+            Boolean(
+              windowRes &&
+                typeof windowRes === 'object' &&
+                windowRes !== null &&
+                'leagueProcessingActive' in windowRes &&
+                (windowRes as RegistrationWindowPayload).leagueProcessingActive === true,
+            ),
+          );
           return get(
             '/leagues',
             sessionId != null
@@ -134,6 +146,7 @@ export function LeagueOptionsProvider({ children }: { children: ReactNode }) {
     inFlightRef.current = null;
     setLeagues((prev) => (prev.length === 0 ? prev : EMPTY_LEAGUES));
     setRegistrationWindowSessionId(null);
+    setLeagueProcessingActive(false);
     setError(null);
     setLoading(false);
 
@@ -154,13 +167,14 @@ export function LeagueOptionsProvider({ children }: { children: ReactNode }) {
     () => ({
       leagues,
       registrationWindowSessionId,
+      leagueProcessingActive,
       loading,
       loaded,
       error,
       ensureLoaded,
       refresh,
     }),
-    [ensureLoaded, error, leagues, loaded, loading, refresh, registrationWindowSessionId],
+    [ensureLoaded, error, leagueProcessingActive, leagues, loaded, loading, refresh, registrationWindowSessionId],
   );
 
   return <LeagueOptionsContext.Provider value={value}>{children}</LeagueOptionsContext.Provider>;

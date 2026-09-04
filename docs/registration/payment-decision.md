@@ -70,13 +70,13 @@ The system should avoid multiple payments for the same registration when practic
 A deferred registration is quoted as a range, not a single total:
 
 - **Floor** — the confirmed total: sabbaticals, spare-only ice, name tags,
-  junior or social fees, and league fees for every guaranteed entry, every
-  available instructional program, and every available spot filling a remaining
-  desired-count slot. Temporary sabbatical-fill vacancies are not confirmed
-  until a waitlist offer is accepted. If the only confirmed charge would
-  be regular membership, the floor is **$0**. Membership without leagues is
-  not a meaningful minimum; it still appears in the ceiling when a placement
-  would require it.
+  junior or social fees, and league fees for every guaranteed entry and every
+  available instructional program during priority registration. Open
+  registration does not confirm league fees at submit. Temporary sabbatical-fill
+  vacancies are not confirmed until a waitlist offer is accepted. If the only
+  confirmed charge would be regular membership, the floor is **$0**. Membership
+  without leagues is not a meaningful minimum; it still appears in the ceiling
+  when a placement would require it.
 - **Ceiling** — the floor plus the remaining desired-count slots' most
   expensive unbilled entries on the priority list.
 
@@ -141,14 +141,14 @@ Pay later:
 - Creates a hosted checkout payment link via the configured payment provider and emails it immediately (`registration_submitted_immediate_payment`).
 - Does not redirect the browser to checkout; the registrant continues to the success page.
 - Warns that payment must be completed by the configured payment deadline (Registration schedule admin), or **before leagues begin** when no deadline is set, to secure league selections.
-- Guaranteed league selections and available spots are placed on the roster while payment is outstanding (same as other submitted unpaid statuses). Staff removes non-payers and may promote from the waitlist. Temporary sabbatical-fill spots are placed only after a waitlist offer is accepted.
+- Guaranteed league selections are placed on the roster while payment is outstanding (same as other submitted unpaid statuses). Staff removes non-payers and may promote from the waitlist. Open registration does not place league selections at submit. Temporary sabbatical-fill spots are placed only after a waitlist offer is accepted.
 
 ## Failed or incomplete immediate payment
 
 If immediate payment fails or is not completed:
 
 - Registration is not confirmed as paid.
-- Guaranteed and available roster placements may already exist from submission; staff handles cleanup for non-payers.
+- Guaranteed roster placements may already exist from submission; staff handles cleanup for non-payers.
 - Staff may help resolve the issue manually.
 
 ## Required payment decision output

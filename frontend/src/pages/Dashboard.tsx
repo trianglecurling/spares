@@ -29,8 +29,13 @@ import DashboardMembershipCard from '../components/DashboardMembershipCard';
 import { useAlert } from '../contexts/AlertContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useLeagueOptions } from '../contexts/LeagueOptionsContext';
 import { formatPhone } from '../utils/phone';
 import { renderMe } from '../utils/me';
+import {
+  LEAGUE_PROCESSING_ROSTER_MESSAGE,
+  memberCanBypassLeagueProcessingHold,
+} from '../utils/leagueProcessing';
 import ExpandableMarkdown from '../components/volunteering/ExpandableMarkdown';
 import VolunteerSignupDialog, {
   type VolunteerSignupTarget,
@@ -212,6 +217,9 @@ function DashboardSection({
 
 export default function Dashboard() {
   const { member } = useAuth();
+  const { leagueProcessingActive } = useLeagueOptions({ autoLoad: true });
+  const hideUpcomingGamesForProcessing =
+    leagueProcessingActive && !memberCanBypassLeagueProcessingHold(member);
   const { showAlert } = useAlert();
   const { confirm } = useConfirm();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -992,6 +1000,15 @@ export default function Dashboard() {
         );
 
       case 'upcoming_games':
+        if (hideUpcomingGamesForProcessing) {
+          return (
+            <DashboardSection title="My upcoming games">
+              <div className="app-card py-8 text-center">
+                <p className="text-gray-600 dark:text-gray-400">{LEAGUE_PROCESSING_ROSTER_MESSAGE}</p>
+              </div>
+            </DashboardSection>
+          );
+        }
         if (!shouldShowWhenEmpty('upcoming_games', upcomingGames.length)) return null;
         return (
           <DashboardSection title="My upcoming games">

@@ -14,9 +14,15 @@ import ChoiceInput, { type ChoiceOption } from '../components/ChoiceInput';
 import FormField from '../components/FormField';
 import useTableQueryState from '../hooks/useTableQueryState';
 import { useLeagueOptions } from '../contexts/LeagueOptionsContext';
+import { useAuth } from '../contexts/AuthContext';
 import { isLeagueEligibleForSpares } from '../utils/leagueSpareEligibility';
 import MemberCredentialsList, { type MemberCredentialItem } from '../components/MemberCredentialsList';
 import DashboardMembershipCard from '../components/DashboardMembershipCard';
+import {
+  LEAGUE_PROCESSING_ROSTER_MESSAGE,
+  isLeagueProcessingForbiddenError,
+  memberCanBypassLeagueProcessingHold,
+} from '../utils/leagueProcessing';
 
 const MEMBERS_PAGE_SIZE = 50;
 
@@ -83,7 +89,10 @@ const roleLabels: Record<string, string> = {
 export default function MembersDirectory() {
   const membersSearchInputId = useId();
   const spareLeagueInputId = useId();
-  const { leagues } = useLeagueOptions();
+  const { leagues, leagueProcessingActive } = useLeagueOptions();
+  const { member } = useAuth();
+  const hidePlacementForProcessing =
+    leagueProcessingActive && !memberCanBypassLeagueProcessingHold(member);
   const [pageTab, setPageTab] = useState<MembersPageTab>('directory');
   const [members, setMembers] = useState<Member[]>([]);
   const [totalMembers, setTotalMembers] = useState(0);
@@ -106,6 +115,7 @@ export default function MembersDirectory() {
   const [loadingEmergencyContact, setLoadingEmergencyContact] = useState(false);
   const [loadingExperience, setLoadingExperience] = useState(false);
   const [loadingCredentials, setLoadingCredentials] = useState(false);
+  const [teamRosterForbidden, setTeamRosterForbidden] = useState(false);
   const [teamRosterModal, setTeamRosterModal] = useState<{
     teamId: number;
     teamName: string;
@@ -193,6 +203,7 @@ export default function MembersDirectory() {
     if (!teamRosterModal) return;
     setTeamRosterLoading(true);
     setTeamRoster([]);
+    setTeamRosterForbidden(false);
     get('/teams/{teamId}/roster', undefined, { teamId: String(teamRosterModal.teamId) })
       .then((roster) =>
         setTeamRoster(
@@ -205,7 +216,10 @@ export default function MembersDirectory() {
           }>
         )
       )
-      .catch(() => setTeamRoster([]))
+      .catch((error) => {
+        setTeamRoster([]);
+        setTeamRosterForbidden(isLeagueProcessingForbiddenError(error));
+      })
       .finally(() => setTeamRosterLoading(false));
   }, [teamRosterModal]);
 
@@ -728,6 +742,8 @@ export default function MembersDirectory() {
                     </h3>
                     {loadingLeagues ? (
                       <InlineStateMessage title="Loading leagues..." />
+                    ) : hidePlacementForProcessing ? (
+                      <InlineStateMessage title={LEAGUE_PROCESSING_ROSTER_MESSAGE} />
                     ) : memberLeagues && memberLeagues.length > 0 ? (
                       <ul className="space-y-3">
                         {memberLeagues.map((entry) => (
@@ -805,6 +821,8 @@ export default function MembersDirectory() {
             <div className="space-y-4">
               {teamRosterLoading ? (
                 <div className="text-sm text-gray-500 dark:text-gray-400">Loading…</div>
+              ) : teamRosterForbidden ? (
+                <InlineStateMessage title={LEAGUE_PROCESSING_ROSTER_MESSAGE} />
               ) : teamRoster.length === 0 ? (
                 <div className="text-sm text-gray-600 dark:text-gray-400">No roster set.</div>
               ) : (

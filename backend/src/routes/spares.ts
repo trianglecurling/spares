@@ -249,6 +249,12 @@ export async function spareRoutes(fastify: FastifyInstance) {
       if (memberIsSpareOnly(member) || memberIsSocialMember(member)) {
         return { leagues: [] };
       }
+      const { canBypassLeagueProcessingHold, isLeagueProcessingActive } = await import(
+        '../registration/registrationLeagueProcessing.js'
+      );
+      if ((await isLeagueProcessingActive()) && !canBypassLeagueProcessingHold(member)) {
+        return { leagues: [] };
+      }
       return getSpareRequestContextForMember(member.id);
     }
   );

@@ -869,10 +869,12 @@ describe('guarantee labels shown while reordering', () => {
     expect(guaranteeChipLabel('guaranteed_return', playInLeague)).toBe('Guaranteed entry');
     expect(guaranteeChipLabel('awaiting_roster_entry')).toBe('Awaiting roster entry');
     expect(guaranteeChipLabel('guaranteed_fallback')).toBe('Guaranteed fallback');
-    expect(leagueCatalogAvailabilityLabel({ openSpotCount: 4, activeWaitlistEntryCount: 0 })).toBe('Available');
+    expect(leagueCatalogAvailabilityLabel({ openSpotCount: 4, activeWaitlistEntryCount: 0 })).toBe(
+      'Subject to availability',
+    );
     expect(
       leagueCatalogAvailabilityLabel({ allowsWaitlist: true, openSpotCount: 0, activeWaitlistEntryCount: 3 }),
-    ).toBe('Waitlist');
+    ).toBe('Subject to availability');
     expect(
       leagueCatalogAvailabilityLabel({ allowsWaitlist: false, openSpotCount: 0, activeWaitlistEntryCount: 0 }),
     ).toBe('Subject to availability');
@@ -950,7 +952,7 @@ describe('guarantee labels shown while reordering', () => {
     ).toEqual([]);
   });
 
-  test('open registration uses vacancy labels instead of return guarantees', () => {
+  test('open registration uses subject-to-availability labels instead of return guarantees', () => {
     const vacantLeagues = [
       catalogLeague({ id: 1, name: 'Monday', openSpotCount: 4, activeWaitlistEntryCount: 1 }),
       catalogLeague({ id: 2, name: 'Tuesday', openSpotCount: 2, activeWaitlistEntryCount: 0 }),
@@ -964,14 +966,15 @@ describe('guarantee labels shown while reordering', () => {
       leagues: vacantLeagues,
     });
     expect(result.entries.map((entry) => entry.label)).toEqual([
-      'available',
-      'available',
+      'subject_to_availability',
+      'subject_to_availability',
       'subject_to_availability',
     ]);
     expect(result.guaranteedCount).toBe(0);
+    expect(result.confirmedLeagueFeeMinor).toBe(0);
   });
 
-  test('open registration waitlists a sabbatical-fill vacancy instead of placing it', () => {
+  test('open registration does not waitlist a sabbatical-fill vacancy', () => {
     const result = evaluate({
       priorities: ranked(1),
       desiredLeagueCount: 1,
@@ -986,7 +989,7 @@ describe('guarantee labels shown while reordering', () => {
         }),
       ],
     });
-    expect(result.entries[0]?.label).toBe('waitlisted');
+    expect(result.entries[0]?.label).toBe('subject_to_availability');
   });
 });
 

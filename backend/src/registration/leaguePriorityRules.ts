@@ -54,7 +54,7 @@ export function leaguePriorityGuaranteeLabelText(
   return LEAGUE_PRIORITY_GUARANTEE_LABEL_TEXT[label];
 }
 
-/** How labels are derived. Priority uses return rights; open uses live vacancies. */
+/** How labels are derived. Priority uses return rights; open never confirms a seat. */
 export type PriorityLabelMode = 'priority' | 'open';
 
 export type PriorityLeagueShape = {
@@ -382,10 +382,11 @@ export function leagueHasTemporaryFillVacancy(league: {
 }
 
 /**
- * Leagues billed today: protected guarantees, open-registration available
- * spots, and instructional programs with remaining space. Subject-to-availability
- * entries — including no-waitlist leftovers and a third league below two
- * guarantees — stay unconfirmed until staff places them. Temporary sabbatical-fill
+ * Leagues billed today: protected guarantees and instructional programs with
+ * remaining space during priority registration. Open registration never bills
+ * a league seat. Subject-to-availability entries — including no-waitlist
+ * leftovers, a third league below two guarantees, and every Open league
+ * selection — stay unconfirmed until staff places them. Temporary sabbatical-fill
  * vacancies are never billed or placed from this list.
  */
 export function isImmediateChargeEntry(entry: LabeledPriorityEntry): boolean {
@@ -497,36 +498,19 @@ function labelInstructionalByVacancies(entry: LabeledPriorityEntry): void {
   entry.label = 'subject_to_availability';
 }
 
-function labelOpenRegistrationEntries(entries: LabeledPriorityEntry[], desiredLeagueCount: number): void {
-  const availableBudget = guaranteeBudgetFor(desiredLeagueCount);
-  let availableGranted = 0;
-
+/**
+ * Open registration never confirms a league seat. Staff place waitlists and
+ * leftover demand after the priority window; a vacant spot must not be
+ * first-come, first-served before that work is done.
+ */
+function labelOpenRegistrationEntries(entries: LabeledPriorityEntry[]): void {
   for (const entry of entries) {
     entry.guaranteed = false;
     if (entry.isPlayInBased && !entry.rosterComplete) {
       entry.label = 'awaiting_roster_entry';
       continue;
     }
-    if (entry.isPlayInBased && entry.rosterComplete && entry.playInGuaranteed !== true) {
-      entry.label = 'subject_to_availability';
-      continue;
-    }
-    if (entry.isInstructional) {
-      labelInstructionalByVacancies(entry);
-      continue;
-    }
-    if (entry.hasVacancies) {
-      if (availableGranted < availableBudget) {
-        entry.label = 'available';
-        availableGranted += 1;
-        continue;
-      }
-      if (desiredLeagueCount >= 3) {
-        entry.label = 'subject_to_availability';
-        continue;
-      }
-    }
-    entry.label = 'waitlisted';
+    entry.label = 'subject_to_availability';
   }
 }
 
@@ -544,7 +528,7 @@ export function labelPriorityEntries(input: {
   let granted = 0;
 
   if (input.mode === 'open') {
-    labelOpenRegistrationEntries(entries, desiredLeagueCount);
+    labelOpenRegistrationEntries(entries);
   } else {
     for (const entry of entries) {
       if (entry.priorityRank > MAX_PROTECTED_CLAIMS) break;

@@ -96,9 +96,9 @@ live as the registrant reorders, adds, or removes leagues.
 | Guaranteed return | The spot is held. Billed immediately. Priority registration only. |
 | Guaranteed entry | Play-in display of a held guarantee when the declared team cleared the TLINE bar. Same underlying `guaranteed_return` label. Billed immediately. Priority registration only. |
 | Guaranteed fallback | The spot is held as a backstop if higher choices do not come through. Billed immediately. Priority registration only. |
-| Available | The league currently has vacancies. Billed immediately. Open registration, or instructional programs in any registration state. |
+| Available | The league currently has vacancies. Billed immediately. Priority registration instructional programs only. |
 | Waitlisted | Queued on the league waitlist. Not billed until placed. Temporary sabbatical-fill vacancies are waitlisted here; those spots are offered only through the waitlist. |
-| Subject to availability | Wanted, not waitlisted, and not yet confirmed. Includes a third league below two guaranteed returns, a leftover with no waitlist, and a full instructional program. Not billed until placed. |
+| Subject to availability | Wanted, not waitlisted, and not yet confirmed. Includes a third league below two guaranteed returns, a leftover with no waitlist, a full instructional program, and every Open registration league selection. Not billed until placed. |
 | Superfluous | Below confirmed placements (guaranteed or available) that already fill the desired count. Not waitlisted or billed. Must be removed or moved higher before continuing. Unconfirmed subject-to-availability leftovers do not fill the count. |
 
 ### Return eligibility
@@ -115,48 +115,30 @@ entry team has a complete roster and clears the TLINE guarantee bar. See
 ### Open registration
 
 Open registration does not grant guaranteed returns or guaranteed fallbacks.
-Labels come from live vacancies instead:
-
-A league has vacancies when its active waitlist entry count is **strictly less
-than** its remaining open spots (capacity minus permanent roster placements,
-active sabbaticals, and other registrations that already listed the league
-inside their desired count and are not yet on the roster or waitlist). The
-current registration is left out of that earmark so adding a league does not
-immediately mark it full for that registrant.
+It also does not confirm vacant seats as Available. Staff process Priority
+waitlists and leftover demand first; a leftover spot must not be taken
+first-come, first-served before that work is done.
 
 ```
-availableGranted = 0
-availableBudget = min(2, desiredLeagueCount)
-
 for entry in rank order:
     if play-in and roster incomplete:
         entry.label = awaiting_roster_entry
-    else if play-in and roster complete but TLINE bar not cleared:
-        entry.label = subject_to_availability
-    else if instructional:
-        entry.label = available if vacancies else subject_to_availability
-    else if league has vacancies and availableGranted < availableBudget:
-        entry.label = available
-        availableGranted += 1
-    else if league has vacancies and desiredLeagueCount >= 3:
-        entry.label = subject_to_availability
     else:
-        entry.label = waitlisted
+        entry.label = subject_to_availability
 
 # then the same superfluous pass as priority registration
 ```
 
-The add-a-league picker shows **Available**, **Waitlist**, or **Subject to
-availability** next to each league from that vacancy check, independent of how
-many available spots the registrant has already taken. Full programs without a
-waitlist use Subject to availability so the picker does not imply a queue that
-does not exist. Temporary sabbatical-fill vacancies do not count as
-available and are not shown at a discounted price. Those spots are offered
-only through the waitlist.
+Open selections are not billed and not rostered at submit. They do not join a
+waitlist from the priority list. Payment is deferred whenever those leftover
+leagues could still change the quoted total. Social membership, spare-only, and
+other registrations with no league list can still pay immediately.
 
-When the registrant wants three or more leagues, the first two vacant selections
-are Available. Further vacant selections are Subject to availability. Leagues
-without vacancies stay Waitlisted.
+The add-a-league picker shows **Subject to availability** next to each league.
+Temporary sabbatical-fill vacancies are not shown as open seats.
+
+Because Subject to availability does not fill the desired count, extra backup
+rows stay on the list instead of becoming Superfluous.
 
 ### The guarantee budget
 
@@ -228,8 +210,8 @@ but cannot continue until those extra rows are removed or reordered.
 
 ### Instructional programs
 
-Instructional programs such as Saturday Instructional use live vacancies in
-both priority and open registration, instead of return rights or the two-spot
+Instructional programs such as Saturday Instructional use live vacancies during
+**priority** registration, instead of return rights or the two-spot
 available budget. Remaining space includes people who already listed the
 program inside their desired count, even when they are not on the official
 roster or a waitlist yet:
@@ -239,6 +221,10 @@ roster or a waitlist yet:
   the curler.
 
 They do not join a waitlist from this leftover path.
+
+During **open** registration, instructional programs follow the same
+subject-to-availability rule as every other league. Space does not make them
+Available.
 
 A bring-your-own-team entry that still has a return right but an incomplete
 all-returning declared team, or a play-in entry whose team is not yet fully
@@ -380,10 +366,11 @@ See `waitlists.md` for offer and placement behavior.
 
 ## Billing
 
-Guaranteed entries, open-registration available entries, and instructional
-programs with remaining space are billed now.
+Guaranteed entries and instructional programs with remaining space during
+priority registration are billed now.
 Waitlisted entries, incomplete rosters, play-in misses, subject-to-availability
-leftovers, full instructional programs, superfluous entries, and temporary
+leftovers (including every Open registration league selection), full
+instructional programs, superfluous entries, and temporary
 sabbatical-fill vacancies are not.
 Superfluous entries also cannot be submitted.
 
@@ -415,9 +402,10 @@ See `payment-decision.md` and `fee-calculation.md`.
 
 ## Placement
 
-Guaranteed returns, guaranteed fallbacks, and available entries are placed on
-the league roster at submit. Waitlisted entries, play-in misses,
-subject-to-availability leftovers, and temporary sabbatical-fill vacancies are
+Guaranteed returns, guaranteed fallbacks, and priority-registration available
+instructional entries are placed on the league roster at submit. Waitlisted
+entries, play-in misses, subject-to-availability leftovers (including every
+Open registration league selection), and temporary sabbatical-fill vacancies are
 resolved after priority registration closes, in the order described in
 `staff-operations.md`. Temporary sabbatical-fill spots are offered only
 through the waitlist.

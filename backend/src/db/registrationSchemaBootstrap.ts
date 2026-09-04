@@ -559,6 +559,17 @@ INSERT INTO registration_early_access_settings (scope, enabled, password_hash)
 VALUES ('singleton', 0, NULL)
 ON CONFLICT (scope) DO NOTHING`));
     await db.execute(sql.raw(`
+CREATE TABLE IF NOT EXISTS registration_league_processing_settings (
+  scope TEXT PRIMARY KEY NOT NULL DEFAULT 'singleton',
+  enabled INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+)`));
+    await db.execute(sql.raw(`
+INSERT INTO registration_league_processing_settings (scope, enabled)
+VALUES ('singleton', 0)
+ON CONFLICT (scope) DO NOTHING`));
+    await db.execute(sql.raw(`
 CREATE TABLE IF NOT EXISTS registration_payment_deadlines (
   id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   season_id INTEGER NOT NULL REFERENCES curling_seasons(id) ON DELETE CASCADE,
@@ -625,6 +636,16 @@ CREATE TABLE IF NOT EXISTS registration_early_access_settings (
   await db.execute(sql.raw(`
 INSERT OR IGNORE INTO registration_early_access_settings (scope, enabled, password_hash)
 VALUES ('singleton', 0, NULL)`));
+  await db.execute(sql.raw(`
+CREATE TABLE IF NOT EXISTS registration_league_processing_settings (
+  scope TEXT PRIMARY KEY NOT NULL DEFAULT 'singleton',
+  enabled INTEGER NOT NULL DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`));
+  await db.execute(sql.raw(`
+INSERT OR IGNORE INTO registration_league_processing_settings (scope, enabled)
+VALUES ('singleton', 0)`));
   await db.execute(sql.raw(`
 CREATE TABLE IF NOT EXISTS registration_payment_deadlines (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

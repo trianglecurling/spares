@@ -1326,6 +1326,13 @@ export async function gameRoutes(fastify: FastifyInstance) {
         return reply.code(401).send({ error: 'Unauthorized' });
       }
 
+      const { canBypassLeagueProcessingHold, isLeagueProcessingActive } = await import(
+        '../registration/registrationLeagueProcessing.js'
+      );
+      if ((await isLeagueProcessingActive()) && !canBypassLeagueProcessingHold(member)) {
+        return [];
+      }
+
       const { db, schema } = getDrizzleDb();
       const teamRows = await db
         .select({ team_id: schema.teamMembers.team_id })

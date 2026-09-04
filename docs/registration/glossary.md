@@ -285,7 +285,7 @@ cause payment to be deferred until placement is confirmed.
 
 A registration state where anyone may register.
 
-Return-to-league guarantees are not available in open registration unless otherwise handled by staff.
+Return-to-league guarantees are not available in open registration unless otherwise handled by staff. Open league selections are subject to availability: they are not billed or rostered at submit.
 
 ## Parent/guardian
 

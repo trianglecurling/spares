@@ -65,14 +65,12 @@ export {
 };
 export type { LabeledPriorityEntry, LeaguePriorityGuaranteeLabel, PriorityLabelMode, PriorityLabelResult };
 
-/** Picker status from the same vacancy check the chips use. */
-export function leagueCatalogAvailabilityLabel(league: {
+/** Open-registration picker status. Seats are not confirmed until staff place them. */
+export function leagueCatalogAvailabilityLabel(_league?: {
   allowsWaitlist?: boolean;
   activeWaitlistEntryCount?: number | null;
   openSpotCount?: number | null;
-}): 'Available' | 'Waitlist' | 'Subject to availability' {
-  if (leagueHasVacancies(league)) return 'Available';
-  if (league.allowsWaitlist) return 'Waitlist';
+}): 'Subject to availability' {
   return 'Subject to availability';
 }
 
