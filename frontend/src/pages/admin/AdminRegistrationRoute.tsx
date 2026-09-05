@@ -5,7 +5,7 @@ import AdminRegistrationCreate from './AdminRegistrationCreate';
 import AdminRegistrationDetail from './AdminRegistrationDetail';
 
 const SETTINGS_TABS = new Set(['seasons', 'sessions', 'periods', 'prices', 'discounts']);
-const QA_TABS = new Set(['returning-members', 'league-return']);
+const QA_TABS = new Set(['returning-members', 'league-return', 'sabbaticals']);
 
 function ConfigPage() {
   return (

@@ -12,8 +12,16 @@ import {
 } from '../registration/registrationMembershipPaymentService.js';
 import { resolveFrontendBaseUrl } from '../utils/frontendUrl.js';
 import { getStaffRegistrationStats } from '../registration/registrationStaffStats.js';
-import { staffReturningMembersQaResponseSchema, staffReturningPlayersQaResponseSchema } from '../api/schemas.js';
-import { getStaffReturningMembersQa, getStaffReturningPlayersQa } from '../registration/registrationStaffQa.js';
+import {
+  staffReturningMembersQaResponseSchema,
+  staffReturningPlayersQaResponseSchema,
+  staffSabbaticalsQaResponseSchema,
+} from '../api/schemas.js';
+import {
+  getStaffReturningMembersQa,
+  getStaffReturningPlayersQa,
+  getStaffSabbaticalsQa,
+} from '../registration/registrationStaffQa.js';
 import {
   getStaffRegistrationDetail,
   listStaffRegistrations,
@@ -97,6 +105,9 @@ const returningPlayersQaQuerySchema = z.object({
   leagueId: z.coerce.number().int().positive().optional(),
 });
 const returningMembersQaQuerySchema = z.object({
+  sessionId: z.coerce.number().int().positive(),
+});
+const sabbaticalsQaQuerySchema = z.object({
   sessionId: z.coerce.number().int().positive(),
 });
 const staffSubmitSchema = z.object({
@@ -283,6 +294,37 @@ export async function protectedRegistrationStaffRoutes(fastify: FastifyInstance)
           actor: (request as AuthenticatedRequest).member,
           sessionId: query.sessionId,
           leagueId: query.leagueId,
+        });
+      } catch (error) {
+        if (handleStaffRegistrationError(reply, error)) return;
+        throw error;
+      }
+    },
+  );
+
+  fastify.get(
+    '/registration/staff/qa/sabbaticals',
+    {
+      schema: {
+        tags: ['registration-staff'],
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['sessionId'],
+          properties: {
+            sessionId: { type: 'number' },
+          },
+        },
+        response: { 200: staffSabbaticalsQaResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      if (!requireRegistrationManage(request, reply)) return;
+      try {
+        const query = sabbaticalsQaQuerySchema.parse(request.query);
+        return await getStaffSabbaticalsQa({
+          actor: (request as AuthenticatedRequest).member,
+          sessionId: query.sessionId,
         });
       } catch (error) {
         if (handleStaffRegistrationError(reply, error)) return;

@@ -30171,6 +30171,103 @@
         }
       }
     },
+    "/registration/staff/qa/sabbaticals": {
+      "get": {
+        "tags": [
+          "registration-staff"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "number"
+            },
+            "in": "query",
+            "name": "sessionId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "sessionId",
+                    "sessionName",
+                    "members"
+                  ],
+                  "properties": {
+                    "sessionId": {
+                      "type": "number"
+                    },
+                    "sessionName": {
+                      "type": "string"
+                    },
+                    "members": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "memberId",
+                          "memberName",
+                          "memberEmail",
+                          "leagues",
+                          "registrationId"
+                        ],
+                        "properties": {
+                          "memberId": {
+                            "type": "number"
+                          },
+                          "memberName": {
+                            "type": "string"
+                          },
+                          "memberEmail": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "leagues": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "required": [
+                                "id",
+                                "name",
+                                "dayOfWeek"
+                              ],
+                              "properties": {
+                                "id": {
+                                  "type": "number"
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
+                                "dayOfWeek": {
+                                  "type": "number"
+                                }
+                              }
+                            }
+                          },
+                          "registrationId": {
+                            "type": "number"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/registration/staff/registrations/{id}": {
       "get": {
         "parameters": [

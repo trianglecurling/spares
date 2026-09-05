@@ -3,6 +3,7 @@ import {
   guaranteedPlacementsFromEvaluation,
   juniorRecreationalLeagueIdFromLeagues,
   registrationStatusCommitsRoster,
+  rosterLeagueIdsToKeep,
   rosterPlacementsForRegistration,
 } from './registrationRosterService.js';
 import { evaluateLeaguePriorities } from './leaguePriorityEvaluation.js';
@@ -178,5 +179,44 @@ describe('Junior Recreational roster placement', () => {
       desiredLeagueCount: null,
     });
     expect(rosterPlacementsForRegistration(context, evaluateLeaguePriorities(context))).toEqual([]);
+  });
+});
+
+describe('rosterLeagueIdsToKeep', () => {
+  test('keeps selected leagues when open evaluation grants no new placements', () => {
+    expect(
+      [...rosterLeagueIdsToKeep({
+        selectedLeagueIds: [34, 27],
+        placements: [],
+      })].sort((a, b) => a - b),
+    ).toEqual([27, 34]);
+  });
+
+  test('still drops a league that left the priority list', () => {
+    expect(
+      [...rosterLeagueIdsToKeep({
+        selectedLeagueIds: [34],
+        placements: [{ leagueId: 34 }],
+      })],
+    ).toEqual([34]);
+  });
+
+  test('keeps a newly granted placement that is not yet on the stored list', () => {
+    expect(
+      [...rosterLeagueIdsToKeep({
+        selectedLeagueIds: [34],
+        placements: [{ leagueId: 34 }, { leagueId: 200 }],
+      })].sort((a, b) => a - b),
+    ).toEqual([34, 200]);
+  });
+
+  test('honors excludeLeagueIds over both selected and granted leagues', () => {
+    expect(
+      [...rosterLeagueIdsToKeep({
+        selectedLeagueIds: [34, 27],
+        placements: [{ leagueId: 27 }],
+        excludeLeagueIds: [27],
+      })],
+    ).toEqual([34]);
   });
 });

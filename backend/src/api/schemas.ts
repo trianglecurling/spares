@@ -2134,3 +2134,40 @@ export const staffReturningMembersQaResponseSchema = {
     },
   },
 } as const;
+
+export const staffSabbaticalsQaResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['sessionId', 'sessionName', 'members'],
+  properties: {
+    sessionId: { type: 'number' },
+    sessionName: { type: 'string' },
+    members: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['memberId', 'memberName', 'memberEmail', 'leagues', 'registrationId'],
+        properties: {
+          memberId: { type: 'number' },
+          memberName: { type: 'string' },
+          memberEmail: { type: ['string', 'null'] },
+          leagues: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['id', 'name', 'dayOfWeek'],
+              properties: {
+                id: { type: 'number' },
+                name: { type: 'string' },
+                dayOfWeek: { type: 'number' },
+              },
+            },
+          },
+          registrationId: { type: 'number' },
+        },
+      },
+    },
+  },
+} as const;

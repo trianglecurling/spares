@@ -411,3 +411,10 @@ resolved after priority registration closes, in the order described in
 through the waitlist.
 Entries ranked below a registrant's desired count are only placed if room
 remains after everyone's higher-priority demand has been satisfied.
+
+Once a seat is committed, later re-evaluation must not drop it because the
+registrant has not paid, the payment deadline has passed, or the window is now
+Open (open evaluation never grants new seats). Staff removes a person from a
+league. Saving a registration only drops a roster row when that league is no
+longer on the priority list, the registration is cancelled, or staff removes
+them from the roster.

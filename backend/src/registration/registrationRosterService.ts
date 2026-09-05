@@ -29,7 +29,7 @@ export const ROSTER_COMMIT_REGISTRATION_STATUS_LIST = [
   'awaiting_placement',
   'awaiting_staff_review',
   'submitted',
-  // Assume unpaid registrants will pay; staff handles the rare non-payers later.
+  // Unpaid registrants keep committed seats; staff decides when to remove them.
   'awaiting_payment',
   'payment_started',
 ] as const satisfies readonly CurlingRegistrationStatusSqlite[];
@@ -43,9 +43,14 @@ export function registrationStatusCommitsRoster(status: string): boolean {
 const UNPAID_ROSTER_REGISTRATION_STATUSES = ['awaiting_payment', 'payment_started'] as const;
 
 /**
- * Idempotent repair: re-place guaranteed leagues for unpaid registrations that
+ * Idempotent repair: add guaranteed leagues for unpaid registrations that
  * predate roster-on-awaiting-payment, and place Junior Recreational registrants
  * who paid but were never added to that program's roster.
+ *
+ * Add only. Never remove existing placements. Unpaid people stay on the roster
+ * until staff removes them or the registrant drops the league — including after
+ * the payment deadline and after the window opens (open evaluation grants
+ * nothing, so a sync would otherwise delete committed seats).
  */
 export async function ensureRosterPlacementsForUnpaidRegistrations(memberId: number): Promise<void> {
   const { db, schema } = getDrizzleDb();
@@ -67,11 +72,10 @@ export async function ensureRosterPlacementsForUnpaidRegistrations(memberId: num
 
   for (const registration of unpaid) {
     const context = await buildRegistrationContextForDraft(registration.id);
-    await syncRegistrationRosterPlacements({
+    await persistRegistrationRosterPlacements({
       registrationId: registration.id,
       curlerMemberId: memberId,
       placements: rosterPlacementsForRegistration(context, evaluateLeaguePriorities(context)),
-      registrationStatus: registration.status,
     });
   }
 
@@ -280,6 +284,40 @@ async function removeRegistrationRosterRows(
   }
 }
 
+/**
+ * Leagues that must keep an existing roster row when a registration is saved
+ * or repaired. A later evaluation (especially open registration) may grant
+ * nothing even though the registrant still wants those leagues. Non-payment
+ * is not a reason to drop them — staff removes people from a league.
+ */
+export function rosterLeagueIdsToKeep(input: {
+  selectedLeagueIds?: Iterable<number> | null;
+  placements: Array<{ leagueId: number }>;
+  excludeLeagueIds?: Iterable<number>;
+}): Set<number> {
+  const excluded = new Set(input.excludeLeagueIds ?? []);
+  const keep = new Set<number>();
+  for (const leagueId of input.selectedLeagueIds ?? []) {
+    if (!excluded.has(leagueId)) keep.add(leagueId);
+  }
+  for (const placement of input.placements) {
+    if (!excluded.has(placement.leagueId)) keep.add(placement.leagueId);
+  }
+  return keep;
+}
+
+async function loadRegistrationPriorityLeagueIds(
+  executor: DbExecutor,
+  registrationId: number,
+): Promise<number[]> {
+  const { schema } = getDrizzleDb();
+  const rows = await executor
+    .select({ leagueId: schema.registrationLeaguePriorities.league_id })
+    .from(schema.registrationLeaguePriorities)
+    .where(eq(schema.registrationLeaguePriorities.registration_id, registrationId));
+  return rows.map((row) => row.leagueId);
+}
+
 export async function removeOrphanedRegistrationRosterPlacements(input: {
   registrationId: number;
   curlerMemberId: number;
@@ -290,10 +328,11 @@ export async function removeOrphanedRegistrationRosterPlacements(input: {
 }): Promise<void> {
   const { db, schema } = getDrizzleDb();
   const executor = input.tx ?? db;
-  const excluded = new Set(input.excludeLeagueIds ?? []);
-  const keepLeagueIds = new Set(
-    input.placements.map((placement) => placement.leagueId).filter((leagueId) => !excluded.has(leagueId)),
-  );
+  const keepLeagueIds = rosterLeagueIdsToKeep({
+    selectedLeagueIds: await loadRegistrationPriorityLeagueIds(executor, input.registrationId),
+    placements: input.placements,
+    excludeLeagueIds: input.excludeLeagueIds,
+  });
 
   const rosterRows = await executor
     .select()

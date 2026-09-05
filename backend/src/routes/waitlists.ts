@@ -28,6 +28,7 @@ import {
   joinMemberWaitlist,
 } from '../registration/memberWaitlistJoinService.js';
 import { getMemberWaitlists, saveMemberWaitlists } from '../registration/memberWaitlistPriority.js';
+import { getWaitlistEntryPriorityDetails } from '../registration/waitlistStaffPriorityDetails.js';
 import { RegistrationMemberValidationError } from '../registration/registrationMemberService.js';
 import { memberCanManageWaitlists, memberCanViewWaitlists } from '../utils/waitlistAccess.js';
 
@@ -411,6 +412,17 @@ export async function waitlistRoutes(fastify: FastifyInstance): Promise<void> {
         staffNotes: body.staffNotes,
         actorMemberId: member.id,
       });
+    } catch (error) {
+      if (handleWaitlistError(reply, error)) return;
+      throw error;
+    }
+  });
+
+  fastify.get('/waitlists/entries/:entryId/priority-details', { schema: { tags: ['waitlists'] } }, async (request, reply) => {
+    if (!requireWaitlistView(request, reply)) return;
+    try {
+      const params = entryParamsSchema.parse(request.params);
+      return await getWaitlistEntryPriorityDetails(params.entryId);
     } catch (error) {
       if (handleWaitlistError(reply, error)) return;
       throw error;

@@ -48,6 +48,11 @@ import { syncWaitlistOfferPreferencesForPriorityOpen } from './waitlistPreferenc
 import { loadEarmarkedRegistrationDemandByLeagueId } from './leagueVacancyDemand.js';
 import type { LeagueConfig } from './registrationContext.js';
 import {
+  isTopRankedWaitlist,
+  loadTuesdayEveningBadgeMemberSets,
+  resolveTuesdayEveningBadge,
+} from './waitlistTuesdayEveningBadges.js';
+import {
   assignWaitlistJoinOrder,
   freezeAllWaitlistOrders,
   freezeWaitlistOrder,
@@ -594,6 +599,10 @@ export async function getLeagueWaitlistManager(leagueId: number) {
     .map((entry) => waitlistRowById.get(entry.id))
     .filter((row): row is (typeof waitlistRows)[number] => row != null);
   const renderedById = new Map(rendered.entries.map((entry) => [entry.id, entry]));
+  const tuesdayEveningBadgeSets = await loadTuesdayEveningBadgeMemberSets({
+    sessionIds: league.session_id != null ? [league.session_id] : [],
+    memberIds: rendered.entries.flatMap((entry) => entry.rosterMemberIds),
+  });
 
   const waitlistEntryIds = orderedWaitlistRows.map((row) => row.id);
   const offers = waitlistEntryIds.length
@@ -672,6 +681,12 @@ export async function getLeagueWaitlistManager(leagueId: number) {
         position: index + 1,
         frozen: index < rendered.frozenEntryCount,
         isLifetimeMember: renderedEntry?.isLifetimeMember ?? false,
+        tuesdayEveningBadge: resolveTuesdayEveningBadge({
+          memberIds: renderedEntry?.rosterMemberIds ?? [row.memberId],
+          rosteredMemberIds: tuesdayEveningBadgeSets.rosteredMemberIds,
+          playdownMemberIds: tuesdayEveningBadgeSets.playdownMemberIds,
+          isTopRankedWaitlist: isTopRankedWaitlist(row.priorityRank),
+        }),
         clubTenureYears: renderedEntry?.clubTenureYears ?? 0,
         offerResponsePreference: (row.offerResponsePreference ?? 'ask') as WaitlistOfferResponsePreferenceSqlite,
         offerResponsePreferenceLabel:

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   buildReturningMembersQaRows,
+  buildSabbaticalQaRows,
   classifyReturningPlayerQa,
   isNotYetRegisteredForQa,
   pickStaffRegistrationForQa,
@@ -219,6 +220,62 @@ describe('buildReturningMembersQaRows', () => {
         previousLeagues: [tuesday],
         registrationId: 77,
         registrationStatus: 'demographics_incomplete',
+      },
+    ]);
+  });
+});
+
+describe('buildSabbaticalQaRows', () => {
+  const tuesday = { id: 1, name: 'Tuesday Evening', dayOfWeek: 2 };
+  const thursday = { id: 2, name: 'Thursday Doubles', dayOfWeek: 4 };
+
+  test('groups each member’s sabbatical leagues and ignores payment status', () => {
+    const rows = buildSabbaticalQaRows({
+      selections: [
+        {
+          memberId: 10,
+          memberName: 'Ada Lovelace',
+          memberEmail: 'ada@example.com',
+          registrationId: 50,
+          league: thursday,
+        },
+        {
+          memberId: 11,
+          memberName: 'Grace Hopper',
+          memberEmail: 'grace@example.com',
+          registrationId: 51,
+          league: tuesday,
+        },
+        {
+          memberId: 10,
+          memberName: 'Ada Lovelace',
+          memberEmail: 'ada@example.com',
+          registrationId: 50,
+          league: tuesday,
+        },
+        {
+          memberId: 10,
+          memberName: 'Ada Lovelace',
+          memberEmail: 'ada@example.com',
+          registrationId: 50,
+          league: tuesday,
+        },
+      ],
+    });
+    expect(rows).toEqual([
+      {
+        memberId: 10,
+        memberName: 'Ada Lovelace',
+        memberEmail: 'ada@example.com',
+        leagues: [tuesday, thursday],
+        registrationId: 50,
+      },
+      {
+        memberId: 11,
+        memberName: 'Grace Hopper',
+        memberEmail: 'grace@example.com',
+        leagues: [tuesday],
+        registrationId: 51,
       },
     ]);
   });

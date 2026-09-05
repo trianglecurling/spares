@@ -125,6 +125,19 @@ async function loadAllActiveEntriesForMember(memberId: number): Promise<ActiveEn
   return [...primary, ...teammate];
 }
 
+/** Read-only: active waitlists this member is on, including teammate roster spots. */
+export async function listActiveWaitlistEntriesForMember(memberId: number): Promise<
+  Array<{
+    id: number;
+    memberId: number;
+    waitlistId: number;
+    priorityRank: number | null;
+    joinedAt: Date | string;
+  }>
+> {
+  return loadAllActiveEntriesForMember(memberId);
+}
+
 async function persistPriorityRanks(
   updates: Array<{ id: number; priorityRank: number }>,
   actorMemberId: number,

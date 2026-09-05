@@ -23,6 +23,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useMemberOptions } from '../../contexts/MemberOptionsContext';
 import { memberHasScope } from '../../utils/permissions';
 import HelpCallout from '../../components/HelpCallout';
+import WaitlistEntryPriorityDialog from '../../components/waitlists/WaitlistEntryPriorityDialog';
 import {
   nextFrozenCountAfterMove,
   WAITLIST_POSITION_HELP,
@@ -64,6 +65,7 @@ type WaitlistOffer = {
 };
 
 type WaitlistOfferResponsePreference = 'ask' | 'auto_accept' | 'auto_decline';
+type TuesdayEveningBadge = 'backup' | 'playdown';
 
 type WaitlistEntry = {
   id: number;
@@ -76,6 +78,7 @@ type WaitlistEntry = {
   position: number;
   frozen?: boolean;
   isLifetimeMember?: boolean;
+  tuesdayEveningBadge?: TuesdayEveningBadge | null;
   clubTenureYears?: number;
   declineCount: number;
   offerResponsePreference?: WaitlistOfferResponsePreference;
@@ -264,6 +267,21 @@ function waitlistOfferPreferenceLabel(entry: WaitlistEntry): string {
     default:
       return 'Ask me';
   }
+}
+
+function tuesdayEveningBadgeCopy(badge: TuesdayEveningBadge): { label: string; title: string; className: string } {
+  if (badge === 'backup') {
+    return {
+      label: 'Tuesday back-up',
+      title: 'Rostered in Tuesday Evening as a backup',
+      className: 'bg-teal-100 text-teal-900 dark:bg-teal-900/40 dark:text-teal-100',
+    };
+  }
+  return {
+    label: 'Tuesday playdown',
+    title: 'On a Tuesday Evening playdown team',
+    className: 'bg-indigo-100 text-indigo-900 dark:bg-indigo-900/40 dark:text-indigo-100',
+  };
 }
 
 function waitlistEntryHeadline(entry: WaitlistEntry): string {
@@ -507,6 +525,7 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
   const [renameName, setRenameName] = useState('');
   const [renameSubmitting, setRenameSubmitting] = useState(false);
   const renameNameId = useId();
+  const [priorityEntry, setPriorityEntry] = useState<WaitlistEntry | null>(null);
   const [joinModalOpen, setJoinModalOpen] = useState(false);
   const [joinContext, setJoinContext] = useState<WaitlistJoinContext | null>(null);
   const [joinContextLoading, setJoinContextLoading] = useState(false);
@@ -1055,6 +1074,7 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
                     frozen={index < frozenCount}
                     dragHandle={dragHandle}
                     canManage={canManage}
+                    onViewPriorities={() => setPriorityEntry(item)}
                     onEdit={() => openEditEntryModal(item)}
                     onAction={(state) => setDialog(state)}
                     runAction={runAction}
@@ -1073,6 +1093,7 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
                       index={index}
                       frozen={index < frozenCount}
                       canManage={false}
+                      onViewPriorities={() => setPriorityEntry(entry)}
                       onAction={() => {}}
                       runAction={runAction}
                     />
@@ -1103,6 +1124,12 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
             )}
           </div>
         </section>
+
+        <WaitlistEntryPriorityDialog
+          entryId={priorityEntry?.id ?? null}
+          title={priorityEntry ? `Priorities · ${waitlistEntryHeadline(priorityEntry)}` : 'Priorities'}
+          onClose={() => setPriorityEntry(null)}
+        />
 
         <ReasonDialog
           state={dialog}
@@ -1348,6 +1375,7 @@ function WaitlistEntryRow({
   frozen = false,
   dragHandle,
   canManage,
+  onViewPriorities,
   onEdit,
   onAction,
   runAction,
@@ -1357,6 +1385,7 @@ function WaitlistEntryRow({
   frozen?: boolean;
   dragHandle?: React.ReactNode;
   canManage: boolean;
+  onViewPriorities: () => void;
   onEdit?: () => void;
   onAction: (state: ReasonDialogState) => void;
   runAction: (
@@ -1365,14 +1394,25 @@ function WaitlistEntryRow({
   ) => (reason: string, options?: { expiresAt?: string }) => Promise<void>;
 }) {
   const headline = waitlistEntryHeadline(entry);
+  const tuesdayEveningBadge = entry.tuesdayEveningBadge
+    ? tuesdayEveningBadgeCopy(entry.tuesdayEveningBadge)
+    : null;
 
   return (
     <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div className="flex min-w-0 flex-1 gap-3">
           {dragHandle}
           <div className="min-w-0">
-          <p className="font-medium text-gray-900 dark:text-white">
-            {index + 1}. {headline}
+          <p className="flex flex-wrap items-center gap-y-1 font-medium text-gray-900 dark:text-white">
+            <span className="mr-1">{index + 1}.</span>
+            <button
+              type="button"
+              className="rounded-sm text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal"
+              onClick={onViewPriorities}
+              aria-label={`View waitlist and league priorities for ${headline}`}
+            >
+              {headline}
+            </button>
             {frozen ? (
               <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-normal text-slate-700 dark:bg-slate-800 dark:text-slate-200">
                 Frozen
@@ -1381,6 +1421,14 @@ function WaitlistEntryRow({
             {entry.isLifetimeMember ? (
               <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-normal text-amber-900 dark:bg-amber-900/40 dark:text-amber-100">
                 Lifetime
+              </span>
+            ) : null}
+            {tuesdayEveningBadge ? (
+              <span
+                className={`ml-2 rounded-full px-2 py-0.5 text-xs font-normal ${tuesdayEveningBadge.className}`}
+                title={tuesdayEveningBadge.title}
+              >
+                {tuesdayEveningBadge.label}
               </span>
             ) : null}
           </p>

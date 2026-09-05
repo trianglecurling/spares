@@ -804,7 +804,7 @@ export async function getMemberMembershipCard(
   let hasActiveSessionIcePrivilege = false;
 
   if (sessionId) {
-    // Repair unpaid registrations that predate roster-on-awaiting-payment.
+    // Add missing unpaid guaranteed placements. Must not remove existing seats.
     await ensureRosterPlacementsForUnpaidRegistrations(member.id);
     const [sessionLeagues, icePrivilege] = await Promise.all([
       loadSessionLeagues(member.id, sessionId),

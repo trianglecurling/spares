@@ -18,6 +18,7 @@ import { dateTimeLocalToIso, isoToDateTimeLocal } from '../../utils/clubTime';
 import AdminRegistrationsList from './AdminRegistrationsList';
 import AdminRegistrationQa from './AdminRegistrationQa';
 import AdminRegistrationQaReturningMembers from './AdminRegistrationQaReturningMembers';
+import AdminRegistrationQaSabbaticals from './AdminRegistrationQaSabbaticals';
 import type { paths } from '../../api/generated/types';
 
 type RegistrationState = 'closed' | 'priority' | 'open';
@@ -100,10 +101,10 @@ interface PaymentDeadline {
 
 type PrimaryTab = 'summary' | 'list' | 'qa' | 'settings';
 type TabKey = 'seasons' | 'sessions' | 'periods' | 'prices' | 'discounts';
-type QaTabKey = 'returning-members' | 'league-return';
+type QaTabKey = 'returning-members' | 'league-return' | 'sabbaticals';
 
 const CONFIG_TAB_KEYS = ['seasons', 'sessions', 'periods', 'prices', 'discounts'] as const;
-const QA_TAB_KEYS = ['returning-members', 'league-return'] as const;
+const QA_TAB_KEYS = ['returning-members', 'league-return', 'sabbaticals'] as const;
 
 const SETTINGS_TAB_LABELS: Record<TabKey, string> = {
   seasons: 'Seasons',
@@ -116,7 +117,12 @@ const SETTINGS_TAB_LABELS: Record<TabKey, string> = {
 const QA_TAB_LABELS: Record<QaTabKey, string> = {
   'returning-members': 'Returning members',
   'league-return': 'League return',
+  sabbaticals: 'Sabbaticals',
 };
+
+function isQaTabKey(value: string | undefined): value is QaTabKey {
+  return value === 'returning-members' || value === 'league-return' || value === 'sabbaticals';
+}
 
 const REGISTRATION_STATE_OPTIONS: ChoiceOption<RegistrationState>[] = [
   { value: 'closed', label: 'Closed' },
@@ -252,7 +258,7 @@ export default function AdminRegistrationConfig() {
       return {
         primaryTab: 'qa' as PrimaryTab,
         activeTab: 'seasons' as TabKey,
-        qaTab: next === 'league-return' ? ('league-return' as QaTabKey) : ('returning-members' as QaTabKey),
+        qaTab: isQaTabKey(next) ? next : ('returning-members' as QaTabKey),
       };
     }
     if (after[0] === 'settings') {
@@ -800,7 +806,9 @@ export default function AdminRegistrationConfig() {
         : primaryTab === 'qa'
           ? qaTab === 'returning-members'
             ? 'Members who played last session and have not yet registered for this session.'
-            : 'Sanity checks to confirm expected returning players have registered, and registered the way we expect.'
+            : qaTab === 'sabbaticals'
+              ? 'Members who registered a sabbatical and the leagues they chose.'
+              : 'Sanity checks to confirm expected returning players have registered, and registered the way we expect.'
           : 'Configure seasons, sessions, registration schedule, and pricing.';
 
   return (
@@ -815,6 +823,7 @@ export default function AdminRegistrationConfig() {
         {primaryTab === 'qa' ? <PageTabs items={qaTabs} ariaLabel="QA sections" /> : null}
         {primaryTab === 'qa' && qaTab === 'returning-members' ? <AdminRegistrationQaReturningMembers /> : null}
         {primaryTab === 'qa' && qaTab === 'league-return' ? <AdminRegistrationQa /> : null}
+        {primaryTab === 'qa' && qaTab === 'sabbaticals' ? <AdminRegistrationQaSabbaticals /> : null}
 
         {isConfigTab ? <PageTabs items={settingsTabs} ariaLabel="Registration settings" /> : null}
 

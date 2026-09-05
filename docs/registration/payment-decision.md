@@ -141,14 +141,14 @@ Pay later:
 - Creates a hosted checkout payment link via the configured payment provider and emails it immediately (`registration_submitted_immediate_payment`).
 - Does not redirect the browser to checkout; the registrant continues to the success page.
 - Warns that payment must be completed by the configured payment deadline (Registration schedule admin), or **before leagues begin** when no deadline is set, to secure league selections.
-- Guaranteed league selections are placed on the roster while payment is outstanding (same as other submitted unpaid statuses). Staff removes non-payers and may promote from the waitlist. Open registration does not place league selections at submit. Temporary sabbatical-fill spots are placed only after a waitlist offer is accepted.
+- Guaranteed league selections are placed on the roster while payment is outstanding (same as other submitted unpaid statuses). Missing unpaid guaranteed seats may be backfilled later; existing seats are never dropped for non-payment, including after the payment deadline or after the window opens. Staff removes non-payers and may promote from the waitlist. Open registration does not place new league selections at submit. Temporary sabbatical-fill spots are placed only after a waitlist offer is accepted.
 
 ## Failed or incomplete immediate payment
 
 If immediate payment fails or is not completed:
 
 - Registration is not confirmed as paid.
-- Guaranteed roster placements may already exist from submission; staff handles cleanup for non-payers.
+- Guaranteed roster placements may already exist from submission; they stay until staff removes the person from the league. Do not automate removal for missed payment.
 - Staff may help resolve the issue manually.
 
 ## Required payment decision output
