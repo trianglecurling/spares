@@ -836,9 +836,8 @@ export async function createExpenseReport(options: {
   files: ExpenseDocumentFileUpload[];
   memberId: number | null;
 }): Promise<ExpenseReportView> {
-  const askClubCreditCard = options.memberId
-    ? await memberHoldsClubCreditCard(options.memberId)
-    : false;
+  const memberId = await resolveSubmitterMemberId(options.memberId, options.payload.submitterEmail);
+  const askClubCreditCard = memberId ? await memberHoldsClubCreditCard(memberId) : false;
   const payload = { ...options.payload, askClubCreditCard };
   throwIfInvalid(payload);
   if (payload.kind === 'expense' && options.files.length > MAX_EXPENSE_DOCUMENTS) {
@@ -858,7 +857,7 @@ export async function createExpenseReport(options: {
   const inserted = await db
     .insert(schema.expenseReports)
     .values({
-      ...reportValuesFromPayload(payload, committee, options.memberId, {
+      ...reportValuesFromPayload(payload, committee, memberId, {
         defaultCardOwnerToSubmitter: true,
       }),
       status: 'pending_review',
@@ -1091,10 +1090,35 @@ export async function updateExpenseReportRecord(options: {
 
 function memberOwnsReport(row: ReportRow, member: { id: number; email: string | null }): boolean {
   if (row.member_id != null && asInt(row.member_id) === member.id) return true;
-  if (row.member_id == null && member.email && normalizeEmail(String(row.submitter_email ?? '')) === normalizeEmail(member.email)) {
+  if (
+    row.member_id == null &&
+    member.email &&
+    normalizeEmail(String(row.submitter_email ?? '')) === normalizeEmail(member.email)
+  ) {
     return true;
   }
   return false;
+}
+
+async function resolveSubmitterMemberId(
+  explicitMemberId: number | null,
+  submitterEmail: string
+): Promise<number | null> {
+  if (explicitMemberId != null) return explicitMemberId;
+  const email = normalizeEmail(submitterEmail);
+  if (!email) return null;
+  const { db, schema } = getDrizzleDb();
+  const matches = await db
+    .select({ id: schema.members.id })
+    .from(schema.members)
+    .where(
+      and(
+        sql`lower(${schema.members.email}) = ${email}`,
+        sql`coalesce(${schema.members.account_kind}, 'person') = 'person'`
+      )
+    )
+    .limit(2);
+  return matches.length === 1 ? asInt(matches[0].id) : null;
 }
 
 export async function getExpenseReportByAccessToken(accessToken: string): Promise<ExpenseReportView> {
@@ -1149,7 +1173,10 @@ export async function listExpenseReportsForMember(
   const ownerFilter = email
     ? or(
         eq(schema.expenseReports.member_id, member.id),
-        and(isNull(schema.expenseReports.member_id), eq(schema.expenseReports.submitter_email, email))
+        and(
+          isNull(schema.expenseReports.member_id),
+          sql`lower(${schema.expenseReports.submitter_email}) = ${email}`
+        )
       )
     : eq(schema.expenseReports.member_id, member.id);
 

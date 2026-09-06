@@ -196,9 +196,9 @@ function PublicCalendarRoute() {
 }
 
 function ExpenseReportNewRoute() {
-  const { member, token, isLoading, isLikelyAuthenticated } = useAuth();
+  const { member, token, isLoading, sessionSettled } = useAuth();
 
-  if (isLoading || (isLikelyAuthenticated && !member)) {
+  if (isLoading || !sessionSettled) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-gray-500">Loading...</div>

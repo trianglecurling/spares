@@ -1,5 +1,5 @@
 import axios from 'axios';
-import api from './api';
+import api, { ensureAccessToken } from './api';
 import type { ExpenseFieldError } from './expenseReports';
 
 export function fieldErrorsFromUnknown(err: unknown): ExpenseFieldError[] {
@@ -25,11 +25,15 @@ export async function postExpenseFormData(
   for (const item of files) {
     formData.append(`expenseFile_${item.expenseIndex}_${item.documentIndex}`, item.file);
   }
+  const token = await ensureAccessToken();
   return api.request({
     url: path,
     method,
     data: formData,
-    headers: { 'Content-Type': 'multipart/form-data' },
+    headers: {
+      'Content-Type': 'multipart/form-data',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
   });
 }
 

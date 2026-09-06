@@ -5,6 +5,7 @@ import type { Member } from '../types.js';
 import { hasScope } from '../utils/rbac.js';
 import {
   addExpenseReportNote,
+  createExpenseReport,
   deleteExpenseReportForAdmin,
   getExpenseAdminSummary,
   getExpenseReceiptFileForAdmin,
@@ -20,6 +21,7 @@ import {
 import {
   EXPENSE_REPORT_STATUSES,
 } from '../services/expenseReportConstants.js';
+import { abuseRouteRateLimits } from '../plugins/abuseRateLimits.js';
 import {
   expenseListItemSchema,
   expenseReportViewSchema,
@@ -137,6 +139,35 @@ export async function protectedExpenseRoutes(fastify: FastifyInstance): Promise<
       if (!member) return;
       const query = listQuerySchema.parse(request.query);
       return listExpenseReportsForMember(member, query);
+    }
+  );
+
+  fastify.post(
+    '/expenses',
+    {
+      config: { rateLimit: abuseRouteRateLimits.expenseSubmit },
+      schema: {
+        tags: ['expenses'],
+        response: {
+          200: expenseReportViewSchema,
+          400: apiErrorResponseSchema,
+          401: apiErrorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const member = requireMember(request, reply);
+      if (!member) return;
+      try {
+        const parsed = await parseExpenseWriteRequest(request);
+        return await createExpenseReport({
+          payload: parsed.payload,
+          files: parsed.files,
+          memberId: member.id,
+        });
+      } catch (err) {
+        return handleExpenseError(reply, err);
+      }
     }
   );
 
