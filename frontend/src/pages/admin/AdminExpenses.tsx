@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useState } from 'react';
+import { HiCreditCard } from 'react-icons/hi2';
 import { Link } from 'react-router-dom';
 import { get } from '../../api/client';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
@@ -105,7 +106,28 @@ export default function AdminExpenses() {
       {
         id: 'amount',
         header: 'Amount',
-        renderCell: (row) => formatExpenseMoney(row.requestedAmountMinor, row.requestedCurrency),
+        cellClassName: 'whitespace-nowrap',
+        renderCell: (row) => (
+          <span className="inline-flex items-center gap-1.5">
+            {row.usedClubCreditCard ? (
+              <span
+                className="inline-flex text-gray-500 dark:text-gray-400"
+                title="Charged to a club credit card"
+              >
+                <HiCreditCard className="h-4 w-4 shrink-0" aria-hidden="true" />
+                <span className="sr-only">Charged to a club credit card</span>
+              </span>
+            ) : null}
+            {formatExpenseMoney(row.totalAmountMinor, row.requestedCurrency)}
+          </span>
+        ),
+      },
+      {
+        id: 'toReimburse',
+        header: 'To reimburse',
+        cellClassName: 'whitespace-nowrap',
+        renderCell: (row) =>
+          formatExpenseMoney(row.requestedAmountMinor, row.requestedCurrency),
       },
       {
         id: 'status',

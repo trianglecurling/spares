@@ -146,8 +146,10 @@ export type ExpenseReportListItem = {
   statusLabel: string;
   submitterName: string;
   submitterEmail: string;
+  totalAmountMinor: number;
   requestedAmountMinor: number;
   requestedCurrency: string;
+  usedClubCreditCard: boolean;
   submittedAt: string;
 };
 
@@ -352,8 +354,9 @@ function mapReport(
   };
 }
 
-function mapListItem(row: ReportRow): ExpenseReportListItem {
+function mapListItem(row: ReportRow, itemTotalMinor?: number): ExpenseReportListItem {
   const status = String(row.status ?? 'pending_review') as ExpenseReportStatus;
+  const requestedAmountMinor = asInt(row.requested_amount_minor);
   return {
     id: asInt(row.id),
     kind: String(row.kind) as ExpenseReportKind,
@@ -361,10 +364,35 @@ function mapListItem(row: ReportRow): ExpenseReportListItem {
     statusLabel: EXPENSE_STATUS_LABELS[status] ?? status,
     submitterName: String(row.submitter_name ?? ''),
     submitterEmail: String(row.submitter_email ?? ''),
-    requestedAmountMinor: asInt(row.requested_amount_minor),
+    totalAmountMinor: itemTotalMinor ?? requestedAmountMinor,
+    requestedAmountMinor,
     requestedCurrency: String(row.requested_currency ?? 'usd'),
+    usedClubCreditCard: asBool(row.used_club_credit_card) === true,
     submittedAt: asIso(row.submitted_at),
   };
+}
+
+async function loadItemTotalsByReportId(reportIds: number[]): Promise<Map<number, number>> {
+  const totals = new Map<number, number>();
+  if (reportIds.length === 0) return totals;
+  const { db, schema } = getDrizzleDb();
+  const rows = await db
+    .select({
+      reportId: schema.expenseReportItems.report_id,
+      total: sql<number>`coalesce(sum(${schema.expenseReportItems.amount_minor}), 0)`,
+    })
+    .from(schema.expenseReportItems)
+    .where(inArray(schema.expenseReportItems.report_id, reportIds))
+    .groupBy(schema.expenseReportItems.report_id);
+  for (const row of rows) {
+    totals.set(asInt(row.reportId), asInt(row.total));
+  }
+  return totals;
+}
+
+async function mapListItems(rows: ReportRow[]): Promise<ExpenseReportListItem[]> {
+  const totals = await loadItemTotalsByReportId(rows.map((row) => asInt(row.id)));
+  return rows.map((row) => mapListItem(row, totals.get(asInt(row.id))));
 }
 
 function throwIfInvalid(payload: ExpenseReportPayloadInput) {
@@ -1219,7 +1247,7 @@ export async function listExpenseReportsForMember(
     .limit(pageSize)
     .offset(offset);
   return {
-    items: rows.map((row) => mapListItem(row as ReportRow)),
+    items: await mapListItems(rows as ReportRow[]),
     page,
     pageSize,
     total,
@@ -1264,7 +1292,7 @@ export async function listExpenseReportsForAdmin(query: {
     .limit(pageSize)
     .offset(offset);
   return {
-    items: rows.map((row) => mapListItem(row as ReportRow)),
+    items: await mapListItems(rows as ReportRow[]),
     page,
     pageSize,
     total,
@@ -1404,9 +1432,20 @@ export async function getExpenseAdminSummary(): Promise<ExpenseAdminSummary> {
     .from(schema.expenseReports)
     .where(awaitingWhere);
 
+  // Join items instead of a correlated subquery. A single-table select strips
+  // table prefixes, so `id` would bind to expense_report_items.id and miss every total.
   const [monthRow] = await db
-    .select({ total: sql<number>`coalesce(sum(${schema.expenseReports.requested_amount_minor}), 0)` })
+    .select({
+      total: sql<number>`coalesce(sum(coalesce(
+        ${schema.expenseReportItems.amount_minor},
+        ${schema.expenseReports.requested_amount_minor}
+      )), 0)`,
+    })
     .from(schema.expenseReports)
+    .leftJoin(
+      schema.expenseReportItems,
+      eq(schema.expenseReportItems.report_id, schema.expenseReports.id)
+    )
     .where(gte(schema.expenseReports.submitted_at, monthStartUtc as any));
 
   return {

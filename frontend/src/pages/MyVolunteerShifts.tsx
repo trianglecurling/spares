@@ -15,7 +15,6 @@ import {
   formatVolunteerDuration,
   formatVolunteerHoursLabel,
   formatVolunteerRange,
-  formatVolunteerShiftCount,
   summarizePastVolunteering,
   type MyVolunteerSignup,
   type VolunteerHourLogListResponse,
@@ -52,7 +51,7 @@ export function MyVolunteerShiftsPanel() {
       setPast(data.past || []);
       setHourLogs(hourLogsResponse.data.items || []);
     } catch (err) {
-      showAlert(formatApiError(err, 'Failed to load your volunteering'), 'error');
+      showAlert(formatApiError(err, 'Failed to load your sign-ups'), 'error');
     } finally {
       setLoading(false);
     }
@@ -89,8 +88,8 @@ export function MyVolunteerShiftsPanel() {
   if (loading) {
     return (
       <AppStateCard
-        title="Loading your volunteering"
-        description="Fetching your volunteer signups and self-reported hours."
+        title="Loading your sign-ups"
+        description="Fetching your upcoming and past sign-ups."
       />
     );
   }
@@ -101,8 +100,8 @@ export function MyVolunteerShiftsPanel() {
         <h2 className="app-section-title">Upcoming</h2>
         {upcoming.length === 0 ? (
           <AppStateCard
-            title="No upcoming shifts"
-            description="You are not signed up for any upcoming volunteer shifts."
+            title="No upcoming sign-ups"
+            description="You are not signed up for any upcoming volunteering or other club sign-ups."
           />
         ) : (
           <div className="space-y-3">
@@ -129,9 +128,9 @@ export function MyVolunteerShiftsPanel() {
               aria-expanded={pastExpanded}
             >
               <span>
-                <span className="app-section-title">Past volunteering</span>
+                <span className="app-section-title">Past sign-ups</span>
                 <span className="mt-1 block text-sm font-normal text-gray-600 dark:text-gray-400">
-                  {formatVolunteerShiftCount(pastTotals.shifts)} ·{' '}
+                  {pastTotals.shifts === 1 ? '1 sign-up' : `${pastTotals.shifts} sign-ups`} ·{' '}
                   {formatVolunteerHoursLabel(pastTotals.hours)}
                 </span>
               </span>

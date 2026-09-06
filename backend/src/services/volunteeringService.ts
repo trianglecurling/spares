@@ -2656,6 +2656,7 @@ export async function signUpForShiftRole(
       programTitle: schema.volunteerPrograms.title,
       location: schema.volunteerPrograms.location,
       pointOfContact: schema.volunteerPrograms.point_of_contact,
+      signupKind: schema.volunteerPrograms.signup_kind,
       startDt: schema.volunteerShifts.start_dt,
       endDt: schema.volunteerShifts.end_dt,
       published: schema.volunteerPrograms.published,
@@ -2821,6 +2822,7 @@ export async function signUpForShiftRole(
         startDt,
         endDt,
         location: emailLocation,
+        signupKind: parseVolunteerSignupKind(target.signupKind),
       });
     } catch (err) {
       console.error('Failed to send volunteer signup confirmation:', err);
@@ -2842,6 +2844,7 @@ export async function cancelOwnSignup(member: Member, shiftRoleId: number): Prom
       programId: schema.volunteerPrograms.id,
       programTitle: schema.volunteerPrograms.title,
       location: schema.volunteerPrograms.location,
+      signupKind: schema.volunteerPrograms.signup_kind,
       startDt: schema.volunteerShifts.start_dt,
       endDt: schema.volunteerShifts.end_dt,
     })
@@ -2904,6 +2907,7 @@ export async function cancelOwnSignup(member: Member, shiftRoleId: number): Prom
       startDt,
       endDt: requireIso(row.endDt as any, 'endDt'),
       location: normalizeVolunteerLocation(row.location, clubName),
+      signupKind: parseVolunteerSignupKind(row.signupKind),
     });
   } catch (err) {
     console.error('Failed to send volunteer cancellation emails:', err);
@@ -2978,6 +2982,7 @@ export async function removeSignupAsManager(signupId: number, actor: Member): Pr
       programId: schema.volunteerPrograms.id,
       programTitle: schema.volunteerPrograms.title,
       location: schema.volunteerPrograms.location,
+      signupKind: schema.volunteerPrograms.signup_kind,
       startDt: schema.volunteerShifts.start_dt,
       endDt: schema.volunteerShifts.end_dt,
     })
@@ -3027,7 +3032,10 @@ export async function removeSignupAsManager(signupId: number, actor: Member): Pr
     const clubName = await getConfiguredClubName();
     await sendVolunteerCancellationEmails({
       memberEmail: row.memberEmail || row.guestEmail,
-      memberName: row.memberName || row.guestName || 'Volunteer',
+      memberName:
+        row.memberName ||
+        row.guestName ||
+        (parseVolunteerSignupKind(row.signupKind) === 'general' ? 'Someone' : 'Volunteer'),
       managerEmails: managerEmails
         .filter((m) => m.email)
         .map((m) => ({ email: m.email!, name: m.name })),
@@ -3036,6 +3044,7 @@ export async function removeSignupAsManager(signupId: number, actor: Member): Pr
       startDt: requireIso(row.startDt as any, 'startDt'),
       endDt: requireIso(row.endDt as any, 'endDt'),
       location: normalizeVolunteerLocation(row.location, clubName),
+      signupKind: parseVolunteerSignupKind(row.signupKind),
       cancelledByManager: true,
     });
   } catch (err) {
@@ -3185,6 +3194,7 @@ export async function signUpPublicGuest(
       programId: schema.volunteerPrograms.id,
       programTitle: schema.volunteerPrograms.title,
       location: schema.volunteerPrograms.location,
+      signupKind: schema.volunteerPrograms.signup_kind,
       startDt: schema.volunteerShifts.start_dt,
       endDt: schema.volunteerShifts.end_dt,
       published: schema.volunteerPrograms.published,
@@ -3266,6 +3276,7 @@ export async function signUpPublicGuest(
       startDt,
       endDt,
       location: normalizeVolunteerLocation(target.location, clubName),
+      signupKind: parseVolunteerSignupKind(target.signupKind),
       manageUrl,
     });
   } catch (err) {
@@ -3351,6 +3362,7 @@ export async function cancelPublicSignupByAccessToken(accessToken: string): Prom
       programId: schema.volunteerPrograms.id,
       programTitle: schema.volunteerPrograms.title,
       location: schema.volunteerPrograms.location,
+      signupKind: schema.volunteerPrograms.signup_kind,
       startDt: schema.volunteerShifts.start_dt,
       endDt: schema.volunteerShifts.end_dt,
     })
@@ -3412,6 +3424,7 @@ export async function cancelPublicSignupByAccessToken(accessToken: string): Prom
       startDt,
       endDt: requireIso(row.endDt as any, 'endDt'),
       location: normalizeVolunteerLocation(row.location, clubName),
+      signupKind: parseVolunteerSignupKind(row.signupKind),
     });
   } catch (err) {
     console.error('Failed to send public volunteer cancellation emails:', err);
@@ -3436,6 +3449,7 @@ export async function processVolunteerReminders(): Promise<number> {
       roleName: schema.volunteerRoles.name,
       programTitle: schema.volunteerPrograms.title,
       location: schema.volunteerPrograms.location,
+      signupKind: schema.volunteerPrograms.signup_kind,
       startDt: schema.volunteerShifts.start_dt,
       endDt: schema.volunteerShifts.end_dt,
       signedUpAt: schema.volunteerSignups.created_at,
@@ -3486,6 +3500,7 @@ export async function processVolunteerReminders(): Promise<number> {
         startDt: requireIso(row.startDt as any, 'startDt'),
         endDt: requireIso(row.endDt as any, 'endDt'),
         location: normalizeVolunteerLocation(row.location, clubName),
+        signupKind: parseVolunteerSignupKind(row.signupKind),
         manageUrl: row.accessToken ? volunteerSignupManageUrl(row.accessToken) : null,
       });
       await db

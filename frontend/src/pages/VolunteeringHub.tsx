@@ -87,7 +87,7 @@ export default function VolunteeringHub() {
 
   useEffect(() => {
     // Always load hub data so credential-tab visibility is known on every tab,
-    // including a direct land on My volunteering.
+    // including a direct land on My sign-ups.
     void load();
   }, [load]);
 
@@ -155,7 +155,7 @@ export default function VolunteeringHub() {
           },
           {
             key: 'shifts',
-            label: 'My volunteering',
+            label: 'My sign-ups',
             isActive: activeTab === 'shifts',
             onClick: () => setTab('shifts'),
           },

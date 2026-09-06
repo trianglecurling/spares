@@ -15,6 +15,7 @@ import {
   EXPENSE_TRIP_PURPOSE_LABELS,
   FINANCE_CONTACT_EMAIL,
 } from './expenseReportConstants.js';
+import { parseVolunteerSignupKind, type VolunteerSignupKind } from '../utils/volunteerStats.js';
 
 let emailClient: EmailClient | null = null;
 let smtpTransporter: Transporter | null = null;
@@ -2088,6 +2089,65 @@ export async function sendEventReminderEmail(
   );
 }
 
+function volunteerSignupEmailCopy(signupKind: VolunteerSignupKind) {
+  const isGeneral = parseVolunteerSignupKind(signupKind) === 'general';
+  const memberSignupsHref = `${config.frontendUrl}/volunteering?tab=shifts`;
+  if (isGeneral) {
+    return {
+      roleLabel: 'List',
+      memberSignupsHref,
+      memberSignupsLabel: 'View your sign-ups',
+      confirmationHeading: 'Sign-up confirmed',
+      confirmationIntroHtml: (programTitle: string) =>
+        `You are signed up for <strong>${escapeHtmlEmail(programTitle)}</strong>.`,
+      confirmationSubject: (programTitle: string, roleName: string) =>
+        `Sign-up: ${programTitle} – ${roleName}`,
+      cancellationHeading: 'Sign-up cancelled',
+      cancellationSubject: (programTitle: string, roleName: string) =>
+        `Sign-up cancellation: ${programTitle} – ${roleName}`,
+      cancellationSelfNote: 'Your sign-up has been cancelled.',
+      cancellationByOwnerNote: 'A program owner has cancelled your signup.',
+      browseLabel: 'Browse other sign-ups',
+      browseHref: `${config.frontendUrl}/volunteering?tab=other`,
+      managerCancellationSubject: (programTitle: string, roleName: string) =>
+        `Sign-up cancelled: ${programTitle} – ${roleName}`,
+      managerCancellationHeading: 'Sign-up cancellation notice',
+      managerCancellationBodyHtml: (memberName: string) =>
+        `<strong>${escapeHtmlEmail(memberName)}</strong> is no longer signed up.`,
+      managerManageHref: `${config.frontendUrl}/admin/volunteering/general`,
+      reminderHeading: 'Sign-up reminder',
+      reminderIntro: 'This is a reminder that you have an upcoming sign-up.',
+      reminderSubject: (programTitle: string) => `Reminder: sign-up for ${programTitle}`,
+    };
+  }
+  return {
+    roleLabel: 'Role',
+    memberSignupsHref,
+    memberSignupsLabel: 'View your volunteer shifts',
+    confirmationHeading: 'Volunteer signup confirmed',
+    confirmationIntroHtml: (programTitle: string) =>
+      `You are signed up to volunteer for <strong>${escapeHtmlEmail(programTitle)}</strong>.`,
+    confirmationSubject: (programTitle: string, roleName: string) =>
+      `Volunteer signup: ${programTitle} – ${roleName}`,
+    cancellationHeading: 'Volunteer signup cancelled',
+    cancellationSubject: (programTitle: string, roleName: string) =>
+      `Volunteer cancellation: ${programTitle} – ${roleName}`,
+    cancellationSelfNote: 'Your volunteer signup has been cancelled.',
+    cancellationByOwnerNote: 'A volunteer manager has cancelled your signup.',
+    browseLabel: 'Browse volunteering opportunities',
+    browseHref: `${config.frontendUrl}/volunteering`,
+    managerCancellationSubject: (programTitle: string, roleName: string) =>
+      `Volunteer cancelled: ${programTitle} – ${roleName}`,
+    managerCancellationHeading: 'Volunteer cancellation notice',
+    managerCancellationBodyHtml: (memberName: string) =>
+      `<strong>${escapeHtmlEmail(memberName)}</strong> is no longer signed up for a volunteer shift.`,
+    managerManageHref: `${config.frontendUrl}/admin/volunteering`,
+    reminderHeading: 'Volunteer shift reminder',
+    reminderIntro: 'This is a reminder that you are signed up to volunteer soon.',
+    reminderSubject: (programTitle: string) => `Reminder: volunteering for ${programTitle}`,
+  };
+}
+
 /** Format volunteer shift range in club/venue local time (config.timeZone), not server local/UTC. */
 function formatVolunteerWhen(startDt: string, endDt: string): string {
   const start = new Date(startDt);
@@ -2119,20 +2179,22 @@ export async function sendVolunteerSignupConfirmationEmail(input: {
   startDt: string;
   endDt: string;
   location: string | null;
+  signupKind: VolunteerSignupKind;
   /** When set, used instead of the member hub shifts link (public guest manage URL). */
   manageUrl?: string | null;
 }): Promise<void> {
+  const copy = volunteerSignupEmailCopy(input.signupKind);
   const when = formatVolunteerWhen(input.startDt, input.endDt);
   const locationLine = input.location
     ? `<p><strong>Where:</strong> ${escapeHtmlEmail(input.location)}</p>`
     : '';
-  const actionHref = input.manageUrl || `${config.frontendUrl}/volunteering?tab=shifts`;
-  const actionLabel = input.manageUrl ? 'Manage your signup' : 'View your volunteer shifts';
+  const actionHref = input.manageUrl || copy.memberSignupsHref;
+  const actionLabel = input.manageUrl ? 'Manage your signup' : copy.memberSignupsLabel;
   const htmlContent = `
-    <h2>Volunteer signup confirmed</h2>
+    <h2>${copy.confirmationHeading}</h2>
     <p>Hi ${escapeHtmlEmail(input.recipientName)},</p>
-    <p>You are signed up to volunteer for <strong>${escapeHtmlEmail(input.programTitle)}</strong>.</p>
-    <p><strong>Role:</strong> ${escapeHtmlEmail(input.roleName)}</p>
+    <p>${copy.confirmationIntroHtml(input.programTitle)}</p>
+    <p><strong>${copy.roleLabel}:</strong> ${escapeHtmlEmail(input.roleName)}</p>
     <p><strong>When:</strong> ${escapeHtmlEmail(when)}</p>
     ${locationLine}
     <p><a href="${escapeHtmlEmail(actionHref)}">${escapeHtmlEmail(actionLabel)}</a></p>
@@ -2140,7 +2202,7 @@ export async function sendVolunteerSignupConfirmationEmail(input: {
 
   await sendEmail({
     to: input.to,
-    subject: `Volunteer signup: ${input.programTitle} – ${input.roleName}`,
+    subject: copy.confirmationSubject(input.programTitle, input.roleName),
     htmlContent,
     recipientName: input.recipientName,
   });
@@ -2155,8 +2217,10 @@ export async function sendVolunteerCancellationEmails(input: {
   startDt: string;
   endDt: string;
   location: string | null;
+  signupKind: VolunteerSignupKind;
   cancelledByManager?: boolean;
 }): Promise<void> {
+  const copy = volunteerSignupEmailCopy(input.signupKind);
   const when = formatVolunteerWhen(input.startDt, input.endDt);
   const locationLine = input.location
     ? `<p><strong>Where:</strong> ${escapeHtmlEmail(input.location)}</p>`
@@ -2164,20 +2228,20 @@ export async function sendVolunteerCancellationEmails(input: {
 
   if (input.memberEmail) {
     const memberNote = input.cancelledByManager
-      ? 'A volunteer manager has cancelled your signup.'
-      : 'Your volunteer signup has been cancelled.';
+      ? copy.cancellationByOwnerNote
+      : copy.cancellationSelfNote;
     await sendEmail({
       to: input.memberEmail,
-      subject: `Volunteer cancellation: ${input.programTitle} – ${input.roleName}`,
+      subject: copy.cancellationSubject(input.programTitle, input.roleName),
       htmlContent: `
-        <h2>Volunteer signup cancelled</h2>
+        <h2>${copy.cancellationHeading}</h2>
         <p>Hi ${escapeHtmlEmail(input.memberName)},</p>
         <p>${memberNote}</p>
         <p><strong>Program:</strong> ${escapeHtmlEmail(input.programTitle)}</p>
-        <p><strong>Role:</strong> ${escapeHtmlEmail(input.roleName)}</p>
+        <p><strong>${copy.roleLabel}:</strong> ${escapeHtmlEmail(input.roleName)}</p>
         <p><strong>When:</strong> ${escapeHtmlEmail(when)}</p>
         ${locationLine}
-        <p><a href="${config.frontendUrl}/volunteering">Browse volunteering opportunities</a></p>
+        <p><a href="${escapeHtmlEmail(copy.browseHref)}">${escapeHtmlEmail(copy.browseLabel)}</a></p>
       `,
       recipientName: input.memberName,
     });
@@ -2190,16 +2254,16 @@ export async function sendVolunteerCancellationEmails(input: {
     seen.add(key);
     await sendEmail({
       to: manager.email,
-      subject: `Volunteer cancelled: ${input.programTitle} – ${input.roleName}`,
+      subject: copy.managerCancellationSubject(input.programTitle, input.roleName),
       htmlContent: `
-        <h2>Volunteer cancellation notice</h2>
+        <h2>${copy.managerCancellationHeading}</h2>
         <p>Hi ${escapeHtmlEmail(manager.name)},</p>
-        <p><strong>${escapeHtmlEmail(input.memberName)}</strong> is no longer signed up for a volunteer shift.</p>
+        <p>${copy.managerCancellationBodyHtml(input.memberName)}</p>
         <p><strong>Program:</strong> ${escapeHtmlEmail(input.programTitle)}</p>
-        <p><strong>Role:</strong> ${escapeHtmlEmail(input.roleName)}</p>
+        <p><strong>${copy.roleLabel}:</strong> ${escapeHtmlEmail(input.roleName)}</p>
         <p><strong>When:</strong> ${escapeHtmlEmail(when)}</p>
         ${locationLine}
-        <p><a href="${config.frontendUrl}/admin/volunteering">Manage sign-ups</a></p>
+        <p><a href="${escapeHtmlEmail(copy.managerManageHref)}">Manage sign-ups</a></p>
       `,
       recipientName: manager.name,
     });
@@ -2214,20 +2278,22 @@ export async function sendVolunteerReminderEmail(input: {
   startDt: string;
   endDt: string;
   location: string | null;
+  signupKind: VolunteerSignupKind;
   manageUrl?: string | null;
 }): Promise<void> {
+  const copy = volunteerSignupEmailCopy(input.signupKind);
   const when = formatVolunteerWhen(input.startDt, input.endDt);
   const locationLine = input.location
     ? `<p><strong>Where:</strong> ${escapeHtmlEmail(input.location)}</p>`
     : '';
-  const actionHref = input.manageUrl || `${config.frontendUrl}/volunteering?tab=shifts`;
-  const actionLabel = input.manageUrl ? 'Manage your signup' : 'View your volunteer shifts';
+  const actionHref = input.manageUrl || copy.memberSignupsHref;
+  const actionLabel = input.manageUrl ? 'Manage your signup' : copy.memberSignupsLabel;
   const htmlContent = `
-    <h2>Volunteer shift reminder</h2>
+    <h2>${copy.reminderHeading}</h2>
     <p>Hi ${escapeHtmlEmail(input.recipientName)},</p>
-    <p>This is a reminder that you are signed up to volunteer soon.</p>
+    <p>${copy.reminderIntro}</p>
     <p><strong>Program:</strong> ${escapeHtmlEmail(input.programTitle)}</p>
-    <p><strong>Role:</strong> ${escapeHtmlEmail(input.roleName)}</p>
+    <p><strong>${copy.roleLabel}:</strong> ${escapeHtmlEmail(input.roleName)}</p>
     <p><strong>When:</strong> ${escapeHtmlEmail(when)}</p>
     ${locationLine}
     <p><a href="${escapeHtmlEmail(actionHref)}">${escapeHtmlEmail(actionLabel)}</a></p>
@@ -2235,7 +2301,7 @@ export async function sendVolunteerReminderEmail(input: {
 
   await sendEmail({
     to: input.to,
-    subject: `Reminder: volunteering for ${input.programTitle}`,
+    subject: copy.reminderSubject(input.programTitle),
     htmlContent,
     recipientName: input.recipientName,
   });

@@ -31032,6 +31032,28 @@
         }
       }
     },
+    "/waitlists/entries/{entryId}/priority-details": {
+      "get": {
+        "tags": [
+          "waitlists"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "entryId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/waitlists/entries/{entryId}": {
       "patch": {
         "tags": [
@@ -32501,11 +32523,17 @@
                           "submitterEmail": {
                             "type": "string"
                           },
+                          "totalAmountMinor": {
+                            "type": "number"
+                          },
                           "requestedAmountMinor": {
                             "type": "number"
                           },
                           "requestedCurrency": {
                             "type": "string"
+                          },
+                          "usedClubCreditCard": {
+                            "type": "boolean"
                           },
                           "submittedAt": {
                             "type": "string"
@@ -32518,8 +32546,10 @@
                           "statusLabel",
                           "submitterName",
                           "submitterEmail",
+                          "totalAmountMinor",
                           "requestedAmountMinor",
                           "requestedCurrency",
+                          "usedClubCreditCard",
                           "submittedAt"
                         ]
                       }
@@ -34000,11 +34030,17 @@
                           "submitterEmail": {
                             "type": "string"
                           },
+                          "totalAmountMinor": {
+                            "type": "number"
+                          },
                           "requestedAmountMinor": {
                             "type": "number"
                           },
                           "requestedCurrency": {
                             "type": "string"
+                          },
+                          "usedClubCreditCard": {
+                            "type": "boolean"
                           },
                           "submittedAt": {
                             "type": "string"
@@ -34017,8 +34053,10 @@
                           "statusLabel",
                           "submitterName",
                           "submitterEmail",
+                          "totalAmountMinor",
                           "requestedAmountMinor",
                           "requestedCurrency",
+                          "usedClubCreditCard",
                           "submittedAt"
                         ]
                       }

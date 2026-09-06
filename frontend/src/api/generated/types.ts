@@ -21177,6 +21177,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/waitlists/entries/{entryId}/priority-details": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    entryId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/waitlists/entries/{entryId}": {
         parameters: {
             query?: never;
@@ -23148,8 +23183,10 @@ export interface paths {
                                 statusLabel: string;
                                 submitterName: string;
                                 submitterEmail: string;
+                                totalAmountMinor: number;
                                 requestedAmountMinor: number;
                                 requestedCurrency: string;
+                                usedClubCreditCard: boolean;
                                 submittedAt: string;
                             }[];
                             page: number;
@@ -23694,8 +23731,10 @@ export interface paths {
                                 statusLabel: string;
                                 submitterName: string;
                                 submitterEmail: string;
+                                totalAmountMinor: number;
                                 requestedAmountMinor: number;
                                 requestedCurrency: string;
+                                usedClubCreditCard: boolean;
                                 submittedAt: string;
                             }[];
                             page: number;
