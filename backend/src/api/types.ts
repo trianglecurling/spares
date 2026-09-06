@@ -293,6 +293,7 @@ export type MemberSummaryResponse = {
   emailVisible: boolean;
   phoneVisible: boolean;
   email?: string | null;
+  parentEmail?: string | null;
   phone?: string | null;
   createdAt?: string | null;
   lifetimeMember?: boolean;
@@ -585,6 +586,7 @@ export type SpareCcResponse = Array<{
   id: number;
   requesterName: string;
   requesterEmail: string | null;
+  requesterParentEmail?: string | null;
   requesterPhone: string | null;
   requestedForName: string;
   gameDate: string;
@@ -602,6 +604,8 @@ export type SpareCcResponse = Array<{
 export type SpareListResponse = Array<{
   id: number;
   requesterName: string;
+  requesterEmail?: string | null;
+  requesterParentEmail?: string | null;
   requestedForName: string;
   gameDate: string;
   gameTime: string;
@@ -617,6 +621,7 @@ export type SpareInvitationResponse = Array<{
   memberId: number;
   name: string;
   email: string;
+  parentEmail?: string | null;
   status: string;
   declinedAt: string | null;
   declineComment: string | null;
@@ -656,6 +661,7 @@ export type SpareMyRequestsResponse = Array<{
   cancelledByName: string | null;
   filledByName: string | null;
   filledByEmail: string | null;
+  filledByParentEmail?: string | null;
   filledByPhone: string | null;
   filledAt: string | null;
   sparerComment: string | null;
@@ -681,6 +687,7 @@ export type SpareMyRequestsPastResponse = Array<{
   cancelledByName: string | null;
   filledByName: string | null;
   filledByEmail: string | null;
+  filledByParentEmail?: string | null;
   filledByPhone: string | null;
   filledAt: string | null;
   sparerComment: string | null;
@@ -693,6 +700,7 @@ export type SpareMySparingResponse = Array<{
   id: number;
   requesterName: string;
   requesterEmail: string | null;
+  requesterParentEmail?: string | null;
   requesterPhone: string | null;
   requestedForName: string;
   gameDate: string;

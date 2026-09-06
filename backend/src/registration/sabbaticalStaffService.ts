@@ -1,5 +1,6 @@
 import { and, asc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
+import { memberContactEmails } from '../utils/memberParentEmail.js';
 import type { CurlingLeagueSabbaticalStatusSqlite } from '../db/drizzle-schema.js';
 
 export class SabbaticalStaffValidationError extends Error {
@@ -52,6 +53,8 @@ export async function listLeagueSabbaticals(leagueId: number) {
       memberId: schema.curlingLeagueSabbaticals.member_id,
       name: schema.members.name,
       email: schema.members.email,
+      guardian_email: schema.members.guardian_email,
+      date_of_birth: schema.members.date_of_birth,
       status: schema.curlingLeagueSabbaticals.status,
       firstSabbaticalStartDate: schema.curlingLeagueSabbaticals.first_sabbatical_start_date,
       staffOverride: schema.curlingLeagueSabbaticals.staff_override,
@@ -73,7 +76,7 @@ export async function listLeagueSabbaticals(leagueId: number) {
     id: row.id,
     memberId: row.memberId,
     name: row.name,
-    email: row.email,
+    ...memberContactEmails(row),
     status: row.status,
     firstSabbaticalStartDate: normalizeDateString(row.firstSabbaticalStartDate),
     staffOverride: Boolean(row.staffOverride),

@@ -89,6 +89,7 @@ import {
   MemberGuardianValidationError,
 } from '../services/memberGuardian.js';
 import { dateOfBirthValidationMessage, isMemberMinor } from '../utils/memberAge.js';
+import { parentEmailForMinor } from '../utils/memberParentEmail.js';
 import { sendValidationError } from '../api/errors.js';
 import { normalizeOptionalPersonName, normalizePersonName, resolveMemberNameFields, splitMemberDisplayName } from '../utils/memberName.js';
 import {
@@ -1005,6 +1006,14 @@ export async function memberRoutes(fastify: FastifyInstance) {
         response.phone = m.phone_visible === 1 ? m.phone : null;
       }
 
+      response.parentEmail = response.email
+        ? parentEmailForMinor({
+            email: m.email,
+            guardianEmail: m.guardian_email,
+            dateOfBirth: m.date_of_birth,
+          })
+        : null;
+
       return response;
     });
     }
@@ -1062,6 +1071,8 @@ export async function memberRoutes(fastify: FastifyInstance) {
       name: schema.members.name,
       email: schema.members.email,
       phone: schema.members.phone,
+      date_of_birth: schema.members.date_of_birth,
+      guardian_email: schema.members.guardian_email,
       is_server_admin: schema.members.is_server_admin,
       is_calendar_admin: schema.members.is_calendar_admin,
       is_content_admin: schema.members.is_content_admin,
@@ -1158,6 +1169,13 @@ export async function memberRoutes(fastify: FastifyInstance) {
 
         response.email = m.email_visible === 1 ? m.email : null;
         response.phone = m.phone_visible === 1 ? m.phone : null;
+        response.parentEmail = response.email
+          ? parentEmailForMinor({
+              email: m.email,
+              guardianEmail: m.guardian_email,
+              dateOfBirth: m.date_of_birth,
+            })
+          : null;
 
         return response;
       }),

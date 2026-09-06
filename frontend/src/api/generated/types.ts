@@ -4945,6 +4945,7 @@ export interface paths {
                             firstName?: null | string;
                             lastName?: null | string;
                             email?: null | string;
+                            parentEmail?: null | string;
                             phone?: null | string;
                             createdAt?: null | string;
                             lifetimeMember?: boolean;
@@ -5049,6 +5050,7 @@ export interface paths {
                                 firstName?: null | string;
                                 lastName?: null | string;
                                 email?: null | string;
+                                parentEmail?: null | string;
                                 phone?: null | string;
                                 createdAt?: null | string;
                                 lifetimeMember?: boolean;
@@ -7229,6 +7231,7 @@ export interface paths {
                             memberId: number;
                             name: string;
                             email: null | string;
+                            parentEmail: null | string;
                             assignedTeamId: null | number;
                             assignedTeamName: null | string;
                             guaranteeLabel: null | ("guaranteed_return" | "awaiting_roster_entry" | "guaranteed_fallback" | "available" | "temporary_spot_available" | "waitlisted" | "subject_to_availability" | "superfluous");
@@ -7352,6 +7355,7 @@ export interface paths {
                             memberId: number;
                             name: string;
                             email: null | string;
+                            parentEmail: null | string;
                         }[];
                     };
                 };
@@ -7396,6 +7400,7 @@ export interface paths {
                             id: number;
                             name: string;
                             email: null | string;
+                            parentEmail: null | string;
                         }[];
                     };
                 };
@@ -7452,6 +7457,7 @@ export interface paths {
                                     id: number;
                                     name: string;
                                     email: null | string;
+                                    parentEmail: null | string;
                                 }[];
                             }[];
                         };
@@ -7533,6 +7539,7 @@ export interface paths {
                             memberId: number;
                             name: string;
                             email: null | string;
+                            parentEmail: null | string;
                         }[];
                     };
                 };
@@ -7608,6 +7615,7 @@ export interface paths {
                             id: number;
                             name: string;
                             email: null | string;
+                            parentEmail: null | string;
                         }[];
                     };
                 };
@@ -7690,6 +7698,7 @@ export interface paths {
                             memberId: number;
                             name: string;
                             email: null | string;
+                            parentEmail: null | string;
                             /** @enum {string} */
                             status: "active" | "returning" | "staff_overridden";
                             firstSabbaticalStartDate: string;
@@ -8059,6 +8068,7 @@ export interface paths {
                             id: number;
                             name: string;
                             email: null | string;
+                            parentEmail: null | string;
                         }[];
                     };
                 };
@@ -9915,6 +9925,7 @@ export interface paths {
                             id: number;
                             name: string;
                             email: null | string;
+                            parentEmail: null | string;
                         }[];
                     };
                 };
@@ -10011,6 +10022,7 @@ export interface paths {
                             id: number;
                             requesterName: string;
                             requesterEmail: null | string;
+                            requesterParentEmail: null | string;
                             requesterPhone: null | string;
                             requestedForName: string;
                             gameDate: string;
@@ -10061,6 +10073,8 @@ export interface paths {
                         "application/json": {
                             id: number;
                             requesterName: string;
+                            requesterEmail: null | string;
+                            requesterParentEmail: null | string;
                             requestedForName: string;
                             gameDate: string;
                             gameTime: string;
@@ -10214,6 +10228,7 @@ export interface paths {
                             memberId: number;
                             name: string;
                             email: string;
+                            parentEmail: null | string;
                             status: string;
                             declinedAt: null | string;
                             declineComment: null | string;
@@ -10397,6 +10412,7 @@ export interface paths {
                             cancelledByName: null | string;
                             filledByName: null | string;
                             filledByEmail: null | string;
+                            filledByParentEmail: null | string;
                             filledByPhone: null | string;
                             filledAt: null | string;
                             sparerComment: null | string;
@@ -10462,6 +10478,7 @@ export interface paths {
                             cancelledByName: null | string;
                             filledByName: null | string;
                             filledByEmail: null | string;
+                            filledByParentEmail: null | string;
                             filledByPhone: null | string;
                             filledAt: null | string;
                             sparerComment: null | string;
@@ -10507,6 +10524,7 @@ export interface paths {
                             id: number;
                             requesterName: string;
                             requesterEmail: null | string;
+                            requesterParentEmail: null | string;
                             requesterPhone: null | string;
                             requestedForName: string;
                             gameDate: string;
@@ -19672,6 +19690,7 @@ export interface paths {
                                 memberId: number;
                                 memberName: string;
                                 memberEmail: null | string;
+                                parentEmail: null | string;
                                 previousLeagues: {
                                     id: number;
                                     name: string;
@@ -19743,6 +19762,7 @@ export interface paths {
                                 memberId: number;
                                 memberName: string;
                                 memberEmail: null | string;
+                                parentEmail: null | string;
                                 isTemporarySabbaticalFill: boolean;
                                 /** @enum {string} */
                                 status: "not_yet_registered" | "guaranteed_return" | "guaranteed_fallback" | "dropped" | "third_or_higher" | "sabbatical";
@@ -21171,41 +21191,6 @@ export interface paths {
                 };
             };
         };
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/waitlists/entries/{entryId}/priority-details": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: {
-            parameters: {
-                query?: never;
-                header?: never;
-                path: {
-                    entryId: string;
-                };
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description Default Response */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content?: never;
-                };
-            };
-        };
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;

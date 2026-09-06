@@ -13,6 +13,7 @@ import InlineStateMessage from '../../components/InlineStateMessage';
 import MarkdownDescriptionEditor, {
   type MarkdownDescriptionEditorRef,
 } from '../../components/MarkdownDescriptionEditor';
+import MemberEmail from '../../components/MemberEmail';
 import MemberMultiSelect from '../../components/MemberMultiSelect';
 import Modal from '../../components/Modal';
 import PageTabs from '../../components/PageTabs';
@@ -34,6 +35,7 @@ import { memberCanManageCredentials } from '../../utils/credentialAccess';
 import { memberHasScope } from '../../utils/permissions';
 import { getWeekdayFromDate } from '../calendarEventFormShared';
 import { formatPhone } from '../../utils/phone';
+import { namedCopyEmailEntries } from '../../utils/memberParentEmail';
 import {
   addMinutesToDateTimeLocal,
   formatDurationMinutes,
@@ -103,13 +105,6 @@ type NewShiftTimeRow = {
 
 type UploadedFile = { id: number; publicUrl: string };
 
-/** Skip values that would break mailto/BCC lists. */
-const EMAIL_ADDRESS_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-function isValidEmailAddress(email: string): boolean {
-  return EMAIL_ADDRESS_RE.test(email);
-}
-
 function volunteerSignupContactEmail(signup: VolunteerSignupView): string {
   return (signup.memberEmail || signup.guestEmail || '').trim();
 }
@@ -119,23 +114,20 @@ function buildVolunteerSignupEmailEntries(
   roleIds: number[]
 ): string[] {
   const roleSet = new Set(roleIds);
-  const entries: string[] = [];
-  const seenEmails = new Set<string>();
+  const recipients: Array<{ name: string; email: string; parentEmail?: string | null }> = [];
   for (const shift of shifts) {
     for (const role of shift.roles) {
       if (!roleSet.has(role.roleId)) continue;
       for (const signup of role.signups) {
-        const email = volunteerSignupContactEmail(signup);
-        if (!email || !isValidEmailAddress(email)) continue;
-        const emailKey = email.toLowerCase();
-        if (seenEmails.has(emailKey)) continue;
-        seenEmails.add(emailKey);
-        const displayName = signup.memberName.trim() || email;
-        entries.push(`"${displayName}" <${email}>`);
+        recipients.push({
+          name: signup.memberName,
+          email: volunteerSignupContactEmail(signup),
+          parentEmail: signup.parentEmail,
+        });
       }
     }
   }
-  return entries;
+  return namedCopyEmailEntries(recipients);
 }
 
 function extensionFromMimeType(mimeType: string): string {
@@ -2223,7 +2215,11 @@ export default function AdminVolunteerProgramEditor() {
                                         <span className="text-gray-400 dark:text-gray-500" aria-hidden="true">
                                           {' · '}
                                         </span>
-                                        <span className="text-gray-600 dark:text-gray-400">{email}</span>
+                                        <MemberEmail
+                                          className="text-gray-600 dark:text-gray-400"
+                                          email={email}
+                                          parentEmail={signup.parentEmail}
+                                        />
                                       </>
                                     ) : null}
                                     {phone ? (

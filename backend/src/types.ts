@@ -315,6 +315,7 @@ export interface MemberSummary {
   firstName?: string | null;
   lastName?: string | null;
   email: string | null;
+  parentEmail?: string | null;
   phone: string | null;
   lifetimeMember?: boolean;
   isAdmin: boolean;

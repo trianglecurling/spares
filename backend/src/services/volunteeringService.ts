@@ -32,6 +32,7 @@ import { DEFAULT_SITE_NAME } from './spaDocumentMeta.js';
 import { VolunteeringServiceError } from './volunteeringServiceError.js';
 import { isUniqueConstraintViolation } from '../api/errors.js';
 import { normalizePersonName } from '../utils/memberName.js';
+import { parentEmailForMinor } from '../utils/memberParentEmail.js';
 import {
   sendVolunteerSignupConfirmationEmail,
   sendVolunteerCancellationEmails,
@@ -422,6 +423,7 @@ export type VolunteerSignupView = {
   guestName: string | null;
   guestEmail: string | null;
   memberEmail: string | null;
+  parentEmail: string | null;
   memberPhone: string | null;
   comments: string | null;
   signedUpByMemberId: number | null;
@@ -1749,6 +1751,8 @@ async function buildProgramViews(options: {
             memberId: schema.volunteerSignups.member_id,
             memberName: schema.members.name,
             memberEmail: schema.members.email,
+            memberGuardianEmail: schema.members.guardian_email,
+            memberDateOfBirth: schema.members.date_of_birth,
             memberPhone: schema.members.phone,
             guestName: schema.volunteerSignups.guest_name,
             guestEmail: schema.volunteerSignups.guest_email,
@@ -1807,6 +1811,13 @@ async function buildProgramViews(options: {
                   guestName: su.guestName ?? null,
                   guestEmail: su.guestEmail ?? null,
                   memberEmail: options.forHub ? null : su.memberEmail ?? null,
+                  parentEmail: options.forHub
+                    ? null
+                    : parentEmailForMinor({
+                        email: su.memberEmail,
+                        guardianEmail: su.memberGuardianEmail,
+                        dateOfBirth: su.memberDateOfBirth,
+                      }),
                   memberPhone: options.forHub ? null : su.memberPhone ?? null,
                   comments: su.comments ?? null,
                   signedUpByMemberId: su.signedUpByMemberId ?? null,

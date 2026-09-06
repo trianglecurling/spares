@@ -13,6 +13,7 @@ import type { ApiReply } from '../api/types.js';
 import { memberIsSocialMember } from '../utils/memberMembershipHelpers.js';
 import { memberIsNotSocialCondition } from '../services/memberMembershipStatusService.js';
 import { getCurrentDateStringAsync } from '../utils/time.js';
+import { memberContactEmails } from '../utils/memberParentEmail.js';
 import { isLeagueEligibleForSpares } from '../utils/leagueSpareEligibility.js';
 import {
   ackAvailabilityReminderForRelevantSession,
@@ -425,6 +426,8 @@ export async function availabilityRoutes(fastify: FastifyInstance) {
         id: schema.members.id,
         name: schema.members.name,
         email: schema.members.email,
+        guardian_email: schema.members.guardian_email,
+        date_of_birth: schema.members.date_of_birth,
       })
       .from(schema.members)
       .innerJoin(
@@ -437,7 +440,7 @@ export async function availabilityRoutes(fastify: FastifyInstance) {
     return availableMembers.map((m) => ({
       id: m.id,
       name: m.name,
-      email: m.email,
+      ...memberContactEmails(m),
     }));
     }
   );

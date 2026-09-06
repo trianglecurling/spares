@@ -12,6 +12,7 @@ import BackButton from '../../components/BackButton';
 import Button from '../../components/Button';
 import LeagueTabs from '../../components/LeagueTabs';
 import MemberAutocomplete from '../../components/MemberAutocomplete';
+import MemberEmail from '../../components/MemberEmail';
 import LeagueSchedule from './LeagueSchedule';
 import LeagueScheduleGeneration from './LeagueScheduleGeneration';
 import LeagueStandings from './LeagueStandings';
@@ -33,6 +34,7 @@ import {
   type LeagueExtraDraw,
   type LeaguePlayFormat,
 } from '../../utils/leagueSchedule';
+import { namedCopyEmailEntries } from '../../utils/memberParentEmail';
 import {
   declaredTeamMemberLabel,
   rosterMembersNotOnDeclaredTeams,
@@ -196,6 +198,7 @@ interface MemberSearchResult {
   id: number;
   name: string;
   email?: string | null;
+  parentEmail?: string | null;
 }
 
 type TeamRole = 'lead' | 'second' | 'third' | 'fourth';
@@ -205,6 +208,7 @@ interface LeagueManager {
   memberId: number;
   name: string;
   email: string | null;
+  parentEmail?: string | null;
 }
 
 interface LeagueSabbaticalMember {
@@ -212,6 +216,7 @@ interface LeagueSabbaticalMember {
   memberId: number;
   name: string;
   email: string | null;
+  parentEmail?: string | null;
   status: 'active' | 'returning' | 'staff_overridden';
   firstSabbaticalStartDate: string;
   staffOverride: boolean;
@@ -224,6 +229,7 @@ interface LeagueRosterMember {
   memberId: number;
   name: string;
   email: string | null;
+  parentEmail?: string | null;
   assignedTeamId: number | null;
   assignedTeamName: string | null;
   guaranteeLabel?:
@@ -237,6 +243,16 @@ interface LeagueRosterMember {
     | 'superfluous'
     | null;
   priorityRank?: number | null;
+}
+
+function emailEntriesForRosterMembers(members: LeagueRosterMember[]): string[] {
+  return namedCopyEmailEntries(
+    members.map((member) => ({
+      name: member.name,
+      email: member.email,
+      parentEmail: member.parentEmail,
+    })),
+  );
 }
 
 const roleLabels: Record<RosterMember['role'], string> = {
@@ -1331,6 +1347,20 @@ export default function LeagueDetail() {
     } catch (error: unknown) {
       console.error('Failed to remove roster member:', error);
       showAlert(formatApiError(error, 'Failed to remove roster member'), 'error');
+    }
+  };
+
+  const handleCopyEmails = async () => {
+    const entries = emailEntriesForRosterMembers(rosterMembers);
+    if (entries.length === 0) {
+      showAlert('No emails to copy', 'warning');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(entries.join(', '));
+      showAlert('Roster emails copied', 'success');
+    } catch {
+      showAlert('Failed to copy emails', 'error');
     }
   };
 
@@ -3200,7 +3230,7 @@ export default function LeagueDetail() {
                         </div>
                         {entry.email && (
                           <div className="text-xs text-gray-500 dark:text-gray-400">
-                            {entry.email}
+                            <MemberEmail email={entry.email} parentEmail={entry.parentEmail} />
                           </div>
                         )}
                       </div>
@@ -3323,7 +3353,9 @@ export default function LeagueDetail() {
                           {entry.name}
                         </div>
                         {entry.email && (
-                          <div className="text-xs text-gray-500 dark:text-gray-400">{entry.email}</div>
+                          <div className="text-xs text-gray-500 dark:text-gray-400">
+                            <MemberEmail email={entry.email} parentEmail={entry.parentEmail} />
+                          </div>
                         )}
                         <div className="text-xs text-gray-500 dark:text-gray-400">
                           Sabbatical since {formatDateDisplay(entry.firstSabbaticalStartDate)}
@@ -3377,9 +3409,14 @@ export default function LeagueDetail() {
                     Members eligible for team assignments.
                   </p>
                 </div>
-                <div className="text-sm text-gray-600 dark:text-gray-400">
-                  Total: <span className="font-medium">{rosterMembers.length}</span> · Unassigned:{' '}
-                  <span className="font-medium">{unassignedRosterMembers.length}</span>
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="text-sm text-gray-600 dark:text-gray-400">
+                    Total: <span className="font-medium">{rosterMembers.length}</span> · Unassigned:{' '}
+                    <span className="font-medium">{unassignedRosterMembers.length}</span>
+                  </div>
+                  <Button type="button" variant="secondary" onClick={() => void handleCopyEmails()}>
+                    Copy emails
+                  </Button>
                 </div>
               </div>
             </div>
@@ -3512,7 +3549,7 @@ export default function LeagueDetail() {
                         </div>
                         {entry.email && (
                           <div className="text-xs text-gray-500 dark:text-gray-400">
-                            {entry.email}
+                            <MemberEmail email={entry.email} parentEmail={entry.parentEmail} />
                           </div>
                         )}
                       </div>

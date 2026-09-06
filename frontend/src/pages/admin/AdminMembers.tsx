@@ -21,6 +21,8 @@ import Modal from '../../components/Modal';
 import DataTable from '../../components/table/DataTable';
 import type { DataTableColumn } from '../../components/table/tableTypes';
 import { formatPhone } from '../../utils/phone';
+import { formatEmailWithParent } from '../../utils/memberParentEmail';
+import MemberEmail from '../../components/MemberEmail';
 import { getApiErrorMessage } from '../../utils/api';
 import { HiEllipsisVertical } from 'react-icons/hi2';
 import type { MemberSummary as Member } from '../../../../backend/src/types.ts';
@@ -43,6 +45,7 @@ function memberHaystack(member: Member): string {
   return [
     member.name ?? '',
     member.email ?? '',
+    member.parentEmail ?? '',
     member.phone ?? '',
     member.phone ? formatPhone(member.phone) : '',
     String(member.id),
@@ -88,7 +91,9 @@ const memberColumns: Array<DataTableColumn<Member>> = [
   {
     id: 'email',
     header: 'Email',
-    renderCell: (member) => member.email || '-',
+    renderCell: (member) => (
+      <MemberEmail email={member.email} parentEmail={member.parentEmail} empty="-" />
+    ),
   },
   {
     id: 'phone',
@@ -318,7 +323,7 @@ export default function AdminMembers() {
       return [
         m.id,
         m.name,
-        m.email || '',
+        formatEmailWithParent(m.email, m.parentEmail),
         m.phone || '',
         role,
         Boolean(m.emailSubscribed),

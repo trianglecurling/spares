@@ -1,10 +1,12 @@
 import { volunteerCredentialIsValidOn } from '../../utils/volunteering';
+import { namedCopyEmailEntries } from '../../utils/memberParentEmail';
 
 export type CredentialGrant = {
   id: number;
   memberId: number;
   memberName: string;
   memberEmail: string | null;
+  parentEmail?: string | null;
   grantedAt: string;
   grantedByMemberId: number | null;
   expiresAt: string | null;
@@ -22,28 +24,18 @@ export type CredentialAdmin = {
   grants: CredentialGrant[];
 };
 
-const EMAIL_ADDRESS_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-function isValidEmailAddress(email: string): boolean {
-  return EMAIL_ADDRESS_RE.test(email);
-}
-
 export function expiredGrantCount(grants: CredentialGrant[], today: string): number {
   return grants.filter((grant) => !volunteerCredentialIsValidOn(grant.expiresAt, today)).length;
 }
 
 export function credentialHolderEmailEntries(grants: CredentialGrant[], today: string): string[] {
-  const entries: string[] = [];
-  const seenEmails = new Set<string>();
-  for (const grant of grants) {
-    if (!volunteerCredentialIsValidOn(grant.expiresAt, today)) continue;
-    const email = grant.memberEmail?.trim() ?? '';
-    if (!email || !isValidEmailAddress(email)) continue;
-    const emailKey = email.toLowerCase();
-    if (seenEmails.has(emailKey)) continue;
-    seenEmails.add(emailKey);
-    const displayName = grant.memberName.trim() || email;
-    entries.push(`"${displayName}" <${email}>`);
-  }
-  return entries;
+  return namedCopyEmailEntries(
+    grants
+      .filter((grant) => volunteerCredentialIsValidOn(grant.expiresAt, today))
+      .map((grant) => ({
+        name: grant.memberName,
+        email: grant.memberEmail,
+        parentEmail: grant.parentEmail,
+      })),
+  );
 }

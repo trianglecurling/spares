@@ -15,6 +15,7 @@ import {
   evaluateGuaranteeLabels,
 } from './registrationPriorityLabels.js';
 import { RegistrationStaffValidationError } from './registrationStaffService.js';
+import { memberContactEmails } from '../utils/memberParentEmail.js';
 import { getScheduleRegistrationWindow } from './registrationShellService.js';
 import { parseTeamRosterPlacements } from './waitlistTeamRoster.js';
 
@@ -54,6 +55,7 @@ export type ReturningMemberQaRow = {
   memberId: number;
   memberName: string;
   memberEmail: string | null;
+  parentEmail: string | null;
   previousLeagues: ReturningMemberQaLeague[];
   registrationId: number | null;
   registrationStatus: string | null;
@@ -140,6 +142,7 @@ export function buildReturningMembersQaRows(input: {
     memberId: number;
     memberName: string;
     memberEmail: string | null;
+    parentEmail?: string | null;
     league: ReturningMemberQaLeague;
   }>;
   registrationsByMemberId: ReadonlyMap<number, RegistrationPickRow>;
@@ -149,6 +152,7 @@ export function buildReturningMembersQaRows(input: {
     {
       memberName: string;
       memberEmail: string | null;
+      parentEmail: string | null;
       leaguesById: Map<number, ReturningMemberQaLeague>;
     }
   >();
@@ -158,6 +162,7 @@ export function buildReturningMembersQaRows(input: {
       byMemberId.set(row.memberId, {
         memberName: row.memberName,
         memberEmail: row.memberEmail,
+        parentEmail: row.parentEmail ?? null,
         leaguesById: new Map([[row.league.id, row.league]]),
       });
       continue;
@@ -173,6 +178,7 @@ export function buildReturningMembersQaRows(input: {
       memberId,
       memberName: row.memberName,
       memberEmail: row.memberEmail,
+      parentEmail: row.parentEmail,
       previousLeagues: sortPreviousLeagues([...row.leaguesById.values()]),
       registrationId: registration?.id ?? null,
       registrationStatus: registration?.status ?? null,
@@ -350,6 +356,7 @@ export async function getStaffReturningPlayersQa(input: {
       memberId: number;
       memberName: string;
       memberEmail: string | null;
+      parentEmail: string | null;
       isTemporarySabbaticalFill: boolean;
       status: ReturningPlayerQaStatus;
       priorityRank: number | null;
@@ -403,6 +410,8 @@ export async function getStaffReturningPlayersQa(input: {
       firstName: schema.members.first_name,
       lastName: schema.members.last_name,
       email: schema.members.email,
+      guardian_email: schema.members.guardian_email,
+      date_of_birth: schema.members.date_of_birth,
     })
     .from(schema.leagueRoster)
     .innerJoin(schema.members, eq(schema.leagueRoster.member_id, schema.members.id))
@@ -596,6 +605,7 @@ export async function getStaffReturningPlayersQa(input: {
           email: row.email,
         }),
         memberEmail: row.email,
+        parentEmail: memberContactEmails(row).parentEmail,
         isTemporarySabbaticalFill: row.isTemporarySabbaticalFill === 1,
         status: classified.status,
         priorityRank: classified.priorityRank,
@@ -693,6 +703,8 @@ export async function getStaffReturningMembersQa(input: { actor: Member; session
       firstName: schema.members.first_name,
       lastName: schema.members.last_name,
       email: schema.members.email,
+      guardian_email: schema.members.guardian_email,
+      date_of_birth: schema.members.date_of_birth,
     })
     .from(schema.leagueRoster)
     .innerJoin(schema.members, eq(schema.leagueRoster.member_id, schema.members.id))
@@ -722,6 +734,7 @@ export async function getStaffReturningMembersQa(input: { actor: Member; session
             email: row.email,
           }),
           memberEmail: row.email,
+          parentEmail: memberContactEmails(row).parentEmail,
           league,
         },
       ];

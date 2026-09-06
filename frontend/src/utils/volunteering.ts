@@ -35,6 +35,7 @@ export type VolunteerSignupView = {
   guestName: string | null;
   guestEmail: string | null;
   memberEmail: string | null;
+  parentEmail?: string | null;
   memberPhone: string | null;
   comments: string | null;
   signedUpByMemberId: number | null;
