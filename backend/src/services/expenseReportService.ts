@@ -1303,6 +1303,24 @@ export async function addExpenseReportNote(
   return getExpenseReportForAdmin(reportId);
 }
 
+export async function deleteExpenseReportForAdmin(reportId: number): Promise<void> {
+  const existing = await loadReportRow(reportId);
+  if (!existing) throw new ExpenseReportError('Expense report not found.', 404);
+
+  const expenseData = await loadExpenseData(reportId);
+  const storage = getFileStorageAdapter();
+  for (const document of expenseData.documents) {
+    try {
+      await storage.delete(String(document.storage_key));
+    } catch {
+      // continue even if the file is already gone
+    }
+  }
+
+  const { db, schema } = getDrizzleDb();
+  await db.delete(schema.expenseReports).where(eq(schema.expenseReports.id, reportId));
+}
+
 export type ExpenseAdminSummary = {
   unprocessedCount: number;
   awaitingReimbursementCount: number;

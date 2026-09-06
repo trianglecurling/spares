@@ -13,8 +13,8 @@ import {
   HiArrowTopRightOnSquare,
   HiChevronDown,
 } from 'react-icons/hi2';
-import { Link, Navigate, useParams } from 'react-router-dom';
-import { get, patch, post } from '../../api/client';
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
+import { del, get, patch, post } from '../../api/client';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
 import AppStateCard from '../../components/AppStateCard';
 import BackButton from '../../components/BackButton';
@@ -28,6 +28,7 @@ import FormField from '../../components/FormField';
 import InlineStateMessage from '../../components/InlineStateMessage';
 import { useAlert } from '../../contexts/AlertContext';
 import { useAuth } from '../../contexts/AuthContext';
+import { useConfirm } from '../../contexts/ConfirmContext';
 import api, { formatApiError } from '../../utils/api';
 import {
   downloadExpenseReceipt,
@@ -101,8 +102,10 @@ function DetailItem({
 export default function AdminExpenseDetail() {
   const { id } = useParams<{ id: string }>();
   const reportId = Number.parseInt(id ?? '', 10);
+  const navigate = useNavigate();
   const { member } = useAuth();
   const { showAlert } = useAlert();
+  const { confirm } = useConfirm();
   const statusId = useId();
   const noteId = useId();
   const reviewFormId = useId();
@@ -116,6 +119,7 @@ export default function AdminExpenseDetail() {
   const [error, setError] = useState<string | null>(null);
   const [savingNote, setSavingNote] = useState(false);
   const [savingReport, setSavingReport] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [documentAction, setDocumentAction] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<ExpenseFieldError[]>([]);
 
@@ -223,6 +227,28 @@ export default function AdminExpenseDetail() {
     }
   };
 
+  const handleDelete = async () => {
+    if (!canManage || !report) return;
+    const confirmed = await confirm({
+      title: 'Delete expense report',
+      message:
+        'Are you sure you want to delete this expense report? Only use this for duplicate or erroneous reports.',
+      confirmText: 'Delete',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+    setDeleting(true);
+    try {
+      await del('/admin/expenses/{id}', undefined, { id: String(reportId) });
+      showAlert('Expense report deleted.', 'success');
+      navigate('/admin/expenses', { replace: true });
+    } catch (err) {
+      showAlert(formatApiError(err, 'Could not delete this expense report.'), 'error');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const handleDocumentAction = async (
     document: ExpenseDocumentView,
     action: 'view' | 'download',
@@ -271,6 +297,18 @@ export default function AdminExpenseDetail() {
           report
             ? `Submitted ${formatSubmittedAt(report.submittedAt)} by ${report.submitterName}`
             : undefined
+        }
+        actions={
+          canManage && report && !loading && !error ? (
+            <Button
+              type="button"
+              variant="outline-danger"
+              disabled={deleting || savingReport}
+              onClick={() => void handleDelete()}
+            >
+              {deleting ? 'Deleting…' : 'Delete expense report'}
+            </Button>
+          ) : undefined
         }
       />
 
@@ -550,7 +588,7 @@ export default function AdminExpenseDetail() {
                   }}
                   initialReport={report}
                   fieldErrors={fieldErrors}
-                  submitting={savingReport}
+                  submitting={savingReport || deleting}
                   documentFilePath={(documentId) =>
                     `/admin/expenses/${reportId}/receipts/${documentId}`
                   }
@@ -627,7 +665,7 @@ export default function AdminExpenseDetail() {
                   inputId={statusId}
                   layout="popover"
                   value={status}
-                  disabled={!canManage || savingReport}
+                  disabled={!canManage || savingReport || deleting}
                   onChange={(value) => {
                     const next = Array.isArray(value) ? value[0] : value;
                     if (
@@ -665,7 +703,7 @@ export default function AdminExpenseDetail() {
                   type="submit"
                   form={reviewFormId}
                   className="w-full"
-                  disabled={savingReport}
+                  disabled={savingReport || deleting}
                 >
                   {savingReport ? 'Saving changes…' : 'Save changes'}
                 </Button>
@@ -718,7 +756,7 @@ export default function AdminExpenseDetail() {
                     <Button
                       type="submit"
                       variant="secondary"
-                      disabled={savingNote || !noteBody.trim()}
+                      disabled={savingNote || deleting || !noteBody.trim()}
                     >
                       {savingNote ? 'Adding…' : 'Add note'}
                     </Button>

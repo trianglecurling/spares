@@ -5,6 +5,7 @@ import type { Member } from '../types.js';
 import { hasScope } from '../utils/rbac.js';
 import {
   addExpenseReportNote,
+  deleteExpenseReportForAdmin,
   getExpenseAdminSummary,
   getExpenseReceiptFileForAdmin,
   getExpenseReceiptFileForMember,
@@ -345,6 +346,36 @@ export async function protectedExpenseRoutes(fastify: FastifyInstance): Promise<
         const params = idParamSchema.parse(request.params);
         const body = adminPatchSchema.parse(request.body);
         return await updateExpenseReportAdmin(params.id, body, staffActorFromMember(member));
+      } catch (err) {
+        return handleExpenseError(reply, err);
+      }
+    }
+  );
+
+  fastify.delete<{ Params: { id: string } }>(
+    '/admin/expenses/:id',
+    {
+      schema: {
+        tags: ['expenses'],
+        params: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { id: { type: 'string' } },
+          required: ['id'],
+        },
+        response: {
+          204: { type: 'null' },
+          403: apiErrorResponseSchema,
+          404: apiErrorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      if (!requireExpensesManage(request, reply)) return;
+      try {
+        const params = idParamSchema.parse(request.params);
+        await deleteExpenseReportForAdmin(params.id);
+        return reply.code(204).send();
       } catch (err) {
         return handleExpenseError(reply, err);
       }
