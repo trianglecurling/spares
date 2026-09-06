@@ -385,6 +385,9 @@ const FIELD_CHANGE_LABELS: Record<string, string> = {
   comments: 'Comments',
   usedClubCreditCard: 'Club credit card',
   clubCreditCardOwner: 'Credit card owner',
+  submitterName: 'Submitter name',
+  submitterEmail: 'Submitter email',
+  submitterPhone: 'Submitter phone',
   activityDate: 'Activity date',
   from: 'Starting location',
   to: 'Destination',
@@ -433,6 +436,9 @@ function snapshotReportFields(row: ReportRow, expenseData: ExpenseData): FieldSn
         ? ''
         : String(row.club_credit_card_owner_name)
       : '',
+    submitterName: String(row.submitter_name ?? ''),
+    submitterEmail: String(row.submitter_email ?? ''),
+    submitterPhone: row.submitter_phone == null ? '' : String(row.submitter_phone),
     activityDate: asDateOnly(row.activity_date) ?? '',
     from: fromKind === 'other' ? fromOther : fromKind,
     to: toKind === 'other' ? toOther : toKind,
@@ -615,6 +621,20 @@ async function loadReportRow(id: number): Promise<ReportRow | null> {
   const { db, schema } = getDrizzleDb();
   const [row] = await db.select().from(schema.expenseReports).where(eq(schema.expenseReports.id, id)).limit(1);
   return (row as ReportRow | undefined) ?? null;
+}
+
+async function assertMemberExists(memberId: number): Promise<void> {
+  const { db, schema } = getDrizzleDb();
+  const [row] = await db
+    .select({ id: schema.members.id })
+    .from(schema.members)
+    .where(eq(schema.members.id, memberId))
+    .limit(1);
+  if (!row) {
+    throw new ExpenseReportError('Select a valid member.', 400, [
+      { field: 'submitterMemberId', message: 'Select a valid member.' },
+    ]);
+  }
 }
 
 export async function memberHoldsClubCreditCard(memberId: number): Promise<boolean> {
@@ -836,9 +856,8 @@ export async function createExpenseReport(options: {
   files: ExpenseDocumentFileUpload[];
   memberId: number | null;
 }): Promise<ExpenseReportView> {
-  const askClubCreditCard = options.memberId
-    ? await memberHoldsClubCreditCard(options.memberId)
-    : false;
+  const memberId = await resolveSubmitterMemberId(options.memberId, options.payload.submitterEmail);
+  const askClubCreditCard = memberId ? await memberHoldsClubCreditCard(memberId) : false;
   const payload = { ...options.payload, askClubCreditCard };
   throwIfInvalid(payload);
   if (payload.kind === 'expense' && options.files.length > MAX_EXPENSE_DOCUMENTS) {
@@ -858,7 +877,7 @@ export async function createExpenseReport(options: {
   const inserted = await db
     .insert(schema.expenseReports)
     .values({
-      ...reportValuesFromPayload(payload, committee, options.memberId, {
+      ...reportValuesFromPayload(payload, committee, memberId, {
         defaultCardOwnerToSubmitter: true,
       }),
       status: 'pending_review',
@@ -914,8 +933,14 @@ export async function updateExpenseReportRecord(options: {
     ? snapshotReportFields(existing, existingExpenseData)
     : null;
 
-  const ownerMemberId =
+  let ownerMemberId =
     existing.member_id == null ? options.memberId : asInt(existing.member_id);
+  if (options.staffActor && options.payload.submitterMemberId !== undefined) {
+    ownerMemberId = options.payload.submitterMemberId;
+    if (ownerMemberId != null) {
+      await assertMemberExists(ownerMemberId);
+    }
+  }
   const askClubCreditCard = options.staffActor
     ? options.payload.kind === 'expense'
     : existing.used_club_credit_card != null ||
@@ -1091,10 +1116,35 @@ export async function updateExpenseReportRecord(options: {
 
 function memberOwnsReport(row: ReportRow, member: { id: number; email: string | null }): boolean {
   if (row.member_id != null && asInt(row.member_id) === member.id) return true;
-  if (row.member_id == null && member.email && normalizeEmail(String(row.submitter_email ?? '')) === normalizeEmail(member.email)) {
+  if (
+    row.member_id == null &&
+    member.email &&
+    normalizeEmail(String(row.submitter_email ?? '')) === normalizeEmail(member.email)
+  ) {
     return true;
   }
   return false;
+}
+
+async function resolveSubmitterMemberId(
+  explicitMemberId: number | null,
+  submitterEmail: string
+): Promise<number | null> {
+  if (explicitMemberId != null) return explicitMemberId;
+  const email = normalizeEmail(submitterEmail);
+  if (!email) return null;
+  const { db, schema } = getDrizzleDb();
+  const matches = await db
+    .select({ id: schema.members.id })
+    .from(schema.members)
+    .where(
+      and(
+        sql`lower(${schema.members.email}) = ${email}`,
+        sql`coalesce(${schema.members.account_kind}, 'person') = 'person'`
+      )
+    )
+    .limit(2);
+  return matches.length === 1 ? asInt(matches[0].id) : null;
 }
 
 export async function getExpenseReportByAccessToken(accessToken: string): Promise<ExpenseReportView> {
@@ -1149,7 +1199,10 @@ export async function listExpenseReportsForMember(
   const ownerFilter = email
     ? or(
         eq(schema.expenseReports.member_id, member.id),
-        and(isNull(schema.expenseReports.member_id), eq(schema.expenseReports.submitter_email, email))
+        and(
+          isNull(schema.expenseReports.member_id),
+          sql`lower(${schema.expenseReports.submitter_email}) = ${email}`
+        )
       )
     : eq(schema.expenseReports.member_id, member.id);
 
@@ -1301,6 +1354,24 @@ export async function addExpenseReportNote(
     created_at: new Date() as any,
   });
   return getExpenseReportForAdmin(reportId);
+}
+
+export async function deleteExpenseReportForAdmin(reportId: number): Promise<void> {
+  const existing = await loadReportRow(reportId);
+  if (!existing) throw new ExpenseReportError('Expense report not found.', 404);
+
+  const expenseData = await loadExpenseData(reportId);
+  const storage = getFileStorageAdapter();
+  for (const document of expenseData.documents) {
+    try {
+      await storage.delete(String(document.storage_key));
+    } catch {
+      // continue even if the file is already gone
+    }
+  }
+
+  const { db, schema } = getDrizzleDb();
+  await db.delete(schema.expenseReports).where(eq(schema.expenseReports.id, reportId));
 }
 
 export type ExpenseAdminSummary = {

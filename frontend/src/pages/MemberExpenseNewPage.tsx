@@ -89,7 +89,7 @@ export default function MemberExpenseNewPage() {
               setSubmitting(true);
               setFieldErrors([]);
               try {
-                await postExpenseFormData('/public/expenses', payload, files);
+                await postExpenseFormData('/expenses', payload, files);
                 setSubmitted(true);
               } catch (err) {
                 setFieldErrors(fieldErrorsFromUnknown(err));

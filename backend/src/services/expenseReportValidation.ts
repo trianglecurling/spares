@@ -50,6 +50,7 @@ export type ExpenseReportPayloadInput = {
   usedClubCreditCard?: boolean | null;
   clubCreditCardOwnerName?: string | null;
   clubCreditCardOwnerMemberId?: number | null;
+  submitterMemberId?: number | null;
   askClubCreditCard: boolean;
   expenses: ExpenseItemInput[];
   activityDate?: string | null;

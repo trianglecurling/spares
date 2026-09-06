@@ -5,6 +5,8 @@ import type { Member } from '../types.js';
 import { hasScope } from '../utils/rbac.js';
 import {
   addExpenseReportNote,
+  createExpenseReport,
+  deleteExpenseReportForAdmin,
   getExpenseAdminSummary,
   getExpenseReceiptFileForAdmin,
   getExpenseReceiptFileForMember,
@@ -19,6 +21,7 @@ import {
 import {
   EXPENSE_REPORT_STATUSES,
 } from '../services/expenseReportConstants.js';
+import { abuseRouteRateLimits } from '../plugins/abuseRateLimits.js';
 import {
   expenseListItemSchema,
   expenseReportViewSchema,
@@ -136,6 +139,35 @@ export async function protectedExpenseRoutes(fastify: FastifyInstance): Promise<
       if (!member) return;
       const query = listQuerySchema.parse(request.query);
       return listExpenseReportsForMember(member, query);
+    }
+  );
+
+  fastify.post(
+    '/expenses',
+    {
+      config: { rateLimit: abuseRouteRateLimits.expenseSubmit },
+      schema: {
+        tags: ['expenses'],
+        response: {
+          200: expenseReportViewSchema,
+          400: apiErrorResponseSchema,
+          401: apiErrorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const member = requireMember(request, reply);
+      if (!member) return;
+      try {
+        const parsed = await parseExpenseWriteRequest(request);
+        return await createExpenseReport({
+          payload: parsed.payload,
+          files: parsed.files,
+          memberId: member.id,
+        });
+      } catch (err) {
+        return handleExpenseError(reply, err);
+      }
     }
   );
 
@@ -345,6 +377,36 @@ export async function protectedExpenseRoutes(fastify: FastifyInstance): Promise<
         const params = idParamSchema.parse(request.params);
         const body = adminPatchSchema.parse(request.body);
         return await updateExpenseReportAdmin(params.id, body, staffActorFromMember(member));
+      } catch (err) {
+        return handleExpenseError(reply, err);
+      }
+    }
+  );
+
+  fastify.delete<{ Params: { id: string } }>(
+    '/admin/expenses/:id',
+    {
+      schema: {
+        tags: ['expenses'],
+        params: {
+          type: 'object',
+          additionalProperties: false,
+          properties: { id: { type: 'string' } },
+          required: ['id'],
+        },
+        response: {
+          204: { type: 'null' },
+          403: apiErrorResponseSchema,
+          404: apiErrorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      if (!requireExpensesManage(request, reply)) return;
+      try {
+        const params = idParamSchema.parse(request.params);
+        await deleteExpenseReportForAdmin(params.id);
+        return reply.code(204).send();
       } catch (err) {
         return handleExpenseError(reply, err);
       }
