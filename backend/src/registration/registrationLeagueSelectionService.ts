@@ -20,7 +20,6 @@ import {
 import { getRegistrationById } from './registrationShellService.js';
 import { rosterPlacementsForRegistration, removeOrphanedRegistrationRosterPlacements } from './registrationRosterService.js';
 import {
-  applyRegistrationWaitlistOfferPreferences,
   removeOrphanedRegistrationWaitlistEntries,
 } from './registrationWaitlistCleanup.js';
 import type {
@@ -469,12 +468,6 @@ export async function putRegistrationLeaguePriorities(
     const waitlistedLeagueIds = evaluation.entries
       .filter((entry) => entry.label === 'waitlisted')
       .map((entry) => entry.leagueId);
-    await applyRegistrationWaitlistOfferPreferences({
-      curlerMemberId: registration.curler_member_id,
-      actorMemberId: actor.id,
-      sessionId: registration.session_id,
-      priorityLeagueIds: priorities.map((priority) => priority.leagueId),
-    });
     await removeOrphanedRegistrationWaitlistEntries({
       registrationId,
       curlerMemberId: registration.curler_member_id,

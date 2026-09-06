@@ -2,7 +2,7 @@ import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import type { Member } from '../types.js';
 import { RegistrationMemberValidationError, removeMemberWaitlistEntry } from './registrationMemberService.js';
-import { timestampToMillis, WAITLIST_OFFER_RESPONSE_PREFERENCE_LABELS } from './waitlistOfferPreference.js';
+import { timestampToMillis, WAITLIST_OFFER_RESPONSE_PREFERENCE_LABELS, loadPriorityLeagueIdsByMember, waitlistOfferPreferenceForLeagues } from './waitlistOfferPreference.js';
 import { insertWaitlistAuditEvent } from './waitlistAudit.js';
 import { isPrimaryWaitlistEntryMember, waitlistEntryIncludesMember } from './waitlistMemberMembership.js';
 import { getMemberWaitlistJoinContext, joinMemberWaitlist } from './memberWaitlistJoinService.js';
@@ -69,7 +69,6 @@ type ActiveEntryRow = {
   waitlistId: number;
   priorityRank: number | null;
   desiredLeagueCount: number | null;
-  offerResponsePreference: string;
   teamRosterText: string | null;
   teamRosterPlacements: string | null;
   joinedAt: Date | string;
@@ -84,7 +83,6 @@ const activeEntrySelect = () => {
     waitlistId: schema.waitlistEntries.waitlist_id,
     priorityRank: schema.waitlistEntries.priority_rank,
     desiredLeagueCount: schema.waitlistEntries.desired_league_count,
-    offerResponsePreference: schema.waitlistEntries.offer_response_preference,
     teamRosterText: schema.waitlistEntries.team_roster_text,
     teamRosterPlacements: schema.waitlistEntries.team_roster_placements,
     joinedAt: schema.waitlistEntries.joined_at,
@@ -284,13 +282,41 @@ export async function getMemberWaitlists(member: Member) {
   const sorted = clampWaitlistPreferenceOrder(
     sortMemberWaitlistPriorityEntries(withRosterFlag(entries, waitlistById)),
   );
+  const sessionIds = [
+    ...new Set(
+      sorted.flatMap((entry) =>
+        attachedLeagueSummaries(waitlistById.get(entry.waitlistId))
+          .map((league) => league.sessionId)
+          .filter((sessionId): sessionId is number => sessionId != null),
+      ),
+    ),
+  ];
+  const memberIds = [...new Set(sorted.map((entry) => entry.memberId))];
+  const priorityLeagueIdsBySession = new Map<number, Map<number, Set<number>>>();
+  for (const sessionId of sessionIds) {
+    priorityLeagueIdsBySession.set(
+      sessionId,
+      await loadPriorityLeagueIdsByMember({ sessionId, memberIds }),
+    );
+  }
 
   const mappedEntries = await Promise.all(
     sorted.map(async (entry, index) => {
       const waitlist = waitlistById.get(entry.waitlistId);
+      const attachedLeagues = attachedLeagueSummaries(waitlist);
       const rostered = requiresByotRoster(waitlist);
       const { position, total } = await getActiveWaitlistEntryPosition(entry.waitlistId, entry.id);
-      const preference = (entry.offerResponsePreference || 'ask') as keyof typeof WAITLIST_OFFER_RESPONSE_PREFERENCE_LABELS;
+      const rankedLeagueIds = new Set<number>();
+      for (const league of attachedLeagues) {
+        if (league.sessionId == null) continue;
+        for (const leagueId of priorityLeagueIdsBySession.get(league.sessionId)?.get(entry.memberId) ?? []) {
+          rankedLeagueIds.add(leagueId);
+        }
+      }
+      const preference = waitlistOfferPreferenceForLeagues({
+        leagueIds: attachedLeagues.map((league) => league.id),
+        priorityLeagueIds: rankedLeagueIds,
+      });
       const pendingOffer = pendingByEntryId.get(entry.id) ?? null;
       const hydratedRoster = rostered
         ? await hydrateTeamRosterPlacementsForEntry({
@@ -312,10 +338,10 @@ export async function getMemberWaitlists(member: Member) {
         queueTotal: total,
         desiredLeagueCount: entry.desiredLeagueCount,
         offerResponsePreference: preference,
-        offerResponsePreferenceLabel: WAITLIST_OFFER_RESPONSE_PREFERENCE_LABELS[preference] ?? 'Ask me',
+        offerResponsePreferenceLabel: WAITLIST_OFFER_RESPONSE_PREFERENCE_LABELS[preference],
         pendingOffer,
         requiresByotRoster: rostered,
-        attachedLeagues: attachedLeagueSummaries(waitlist),
+        attachedLeagues,
         canLeave: true,
         isPrimaryMember,
         addedByMemberName,

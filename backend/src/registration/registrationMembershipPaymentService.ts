@@ -59,7 +59,6 @@ import {
 } from './registrationSabbaticalContinuity.js';
 import {
   removeOrphanedRegistrationWaitlistEntries,
-  applyRegistrationWaitlistOfferPreferences,
 } from './registrationWaitlistCleanup.js';
 import { getWaitlistQueuePosition, insertWaitlistAuditEvent } from './waitlistAudit.js';
 import { assignWaitlistJoinOrder, isLifetimeWaitlistMember } from './waitlistQueueService.js';
@@ -1864,7 +1863,6 @@ async function persistRegistrationWaitlists(input: {
       team_roster_placements: teamRosterPlacements,
       priority_rank: priority.priorityRank,
       desired_league_count: input.evaluation.desiredLeagueCount,
-      offer_response_preference: 'auto_accept' as const,
       status: 'active',
       updated_at: sql`CURRENT_TIMESTAMP`,
     };
@@ -1881,7 +1879,6 @@ async function persistRegistrationWaitlists(input: {
         teamRosterText: existing.team_roster_text,
         teamRosterPlacements: existing.team_roster_placements,
         sourceRegistrationId: existing.source_registration_id,
-        offerResponsePreference: existing.offer_response_preference,
         status: existing.status,
       };
       const unchanged =
@@ -1889,8 +1886,7 @@ async function persistRegistrationWaitlists(input: {
         existing.desired_league_count === nextEntry.desired_league_count &&
         existing.team_roster_text === nextEntry.team_roster_text &&
         existing.team_roster_placements === nextEntry.team_roster_placements &&
-        existing.source_registration_id === input.registrationId &&
-        existing.offer_response_preference === nextEntry.offer_response_preference;
+        existing.source_registration_id === input.registrationId;
       if (unchanged) continue;
       action = 'staff_correction';
       await input.tx.update(schema.waitlistEntries).set(nextEntry).where(eq(schema.waitlistEntries.id, entryId));
@@ -2487,13 +2483,6 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
     if (!registration.curler_member_id) {
       throw new RegistrationMembershipPaymentValidationError({ curler: 'The curler is required.' });
     }
-    await applyRegistrationWaitlistOfferPreferences({
-      tx,
-      curlerMemberId: registration.curler_member_id,
-      actorMemberId: input.actor.id,
-      sessionId: context.session.id,
-      priorityLeagueIds: context.priorities.map((priority) => priority.leagueId),
-    });
     await removeOrphanedRegistrationWaitlistEntries({
       tx,
       registrationId: input.registrationId,

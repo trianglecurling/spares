@@ -52,8 +52,8 @@ type MemberWaitlistEntry = {
   queuePosition: number | null;
   queueTotal: number | null;
   desiredLeagueCount: number | null;
-  offerResponsePreference: string;
-  offerResponsePreferenceLabel: string;
+  offerResponsePreference?: string;
+  offerResponsePreferenceLabel?: string;
   pendingOffer: { id: number; offerType: string; expiresAt: string } | null;
   requiresByotRoster: boolean;
   attachedLeagues: AttachedLeague[];
@@ -400,8 +400,6 @@ function MyWaitlistsPanel({
         queuePosition: null,
         queueTotal: null,
         desiredLeagueCount: null,
-        offerResponsePreference: 'ask',
-        offerResponsePreferenceLabel: 'Ask me',
         pendingOffer: null,
         requiresByotRoster: waitlist.requiresByotRoster,
         attachedLeagues: waitlist.attachedLeagues,

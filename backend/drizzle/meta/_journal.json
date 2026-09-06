@@ -554,6 +554,13 @@
       "when": 1788488400000,
       "tag": "0079_add_registration_league_processing_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1788489000000,
+      "tag": "0080_remove_waitlist_offer_response_preference",
+      "breakpoints": true
     }
   ]
 }

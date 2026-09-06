@@ -64,7 +64,7 @@ type WaitlistOffer = {
   expires_at: string;
 };
 
-type WaitlistOfferResponsePreference = 'ask' | 'auto_accept' | 'auto_decline';
+type WaitlistOfferResponsePreference = 'auto_accept' | 'auto_decline';
 type TuesdayEveningBadge = 'backup' | 'playdown';
 
 type WaitlistEntry = {
@@ -265,7 +265,7 @@ function waitlistOfferPreferenceLabel(entry: WaitlistEntry): string {
     case 'auto_decline':
       return 'Decline automatically';
     default:
-      return 'Ask me';
+      return 'Decline automatically';
   }
 }
 

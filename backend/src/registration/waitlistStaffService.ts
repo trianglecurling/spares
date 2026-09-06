@@ -1,6 +1,5 @@
 import { randomBytes } from 'node:crypto';
 import { and, asc, desc, eq, inArray, lt, sql } from 'drizzle-orm';
-import { config } from '../config.js';
 import { getDatabaseConfig } from '../db/config.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { canActorImpersonateTarget } from '../services/accountAccess.js';
@@ -9,10 +8,14 @@ import type {
   WaitlistAuditActionSqlite,
   WaitlistAuditSourceSqlite,
   WaitlistOfferKindSqlite,
-  WaitlistOfferResponsePreferenceSqlite,
   WaitlistOfferStatusSqlite,
 } from '../db/drizzle-schema.js';
-import { WAITLIST_OFFER_RESPONSE_PREFERENCE_LABELS } from './waitlistOfferPreference.js';
+import {
+  WAITLIST_OFFER_RESPONSE_PREFERENCE_LABELS,
+  loadPriorityLeagueIdsByMember,
+  waitlistOfferPreferenceFromPriorityList,
+  type WaitlistOfferResponsePreference,
+} from './waitlistOfferPreference.js';
 import { validateWaitlistEligibility } from './registrationEligibility.js';
 import { buildRegistrationContextForDraft, triggerDeferredRegistrationPayment } from './registrationMembershipPaymentService.js';
 import { sendRegistrationEmailForDashboard, type RegistrationEmailPayload, type RegistrationMessageType } from './registrationEmailService.js';
@@ -39,12 +42,9 @@ import {
   type WaitlistTeamMemberPlacementInput,
 } from './waitlistTeamRoster.js';
 
-import { getScheduleRegistrationWindow } from './registrationShellService.js';
-import { isPriorityEditableRegistrationStatus } from './registrationPriorityEdit.js';
 import { sendWaitlistEntryJoinedNotifications } from './waitlistJoinedNotificationService.js';
 import { assertMembersAvailableForWaitlist } from './waitlistMemberMembership.js';
 import { WaitlistStaffValidationError } from './waitlistErrors.js';
-import { syncWaitlistOfferPreferencesForPriorityOpen } from './waitlistPreferenceReset.js';
 import { loadEarmarkedRegistrationDemandByLeagueId } from './leagueVacancyDemand.js';
 import type { LeagueConfig } from './registrationContext.js';
 import {
@@ -472,30 +472,17 @@ async function warningCodesForLeague(league: any, now = new Date()): Promise<str
   return warnings;
 }
 
-/** Resolve expired Ask offers and priority-open preference resets during staff waitlist work. Offers themselves stay staff-triggered. */
-async function runDueWaitlistOfferMaintenance(sessionId?: number | null): Promise<void> {
+/** Resolve expired Ask offers during staff waitlist work. Offers themselves stay staff-triggered. */
+async function runDueWaitlistOfferMaintenance(): Promise<void> {
   try {
     await autoDeclineExpiredWaitlistOffers();
   } catch (error) {
     console.error('Failed to decline expired waitlist offers:', error);
   }
-  if (sessionId == null) return;
-  try {
-    const { db, schema } = getDrizzleDb();
-    const [session] = await db
-      .select({ seasonId: schema.curlingSessions.season_id })
-      .from(schema.curlingSessions)
-      .where(eq(schema.curlingSessions.id, sessionId))
-      .limit(1);
-    if (!session) return;
-    await syncWaitlistOfferPreferencesForPriorityOpen({ seasonId: session.seasonId, sessionId });
-  } catch (error) {
-    console.error('Failed to reset waitlist offer preferences for priority registration:', error);
-  }
 }
 
 export async function getWaitlistDashboard(input: { sessionId?: number | null } = {}) {
-  await runDueWaitlistOfferMaintenance(input.sessionId ?? null);
+  await runDueWaitlistOfferMaintenance();
   const { db, schema } = getDrizzleDb();
   const sessionId = input.sessionId ?? null;
   const leagues = await db
@@ -544,7 +531,7 @@ export async function getWaitlistDashboard(input: { sessionId?: number | null } 
 export async function getLeagueWaitlistManager(leagueId: number) {
   const { db, schema } = getDrizzleDb();
   const { league, waitlistId } = await requireLeagueWaitlist(leagueId);
-  await runDueWaitlistOfferMaintenance(league.session_id ?? null);
+  await runDueWaitlistOfferMaintenance();
   const rosterCounts = await activeRosterCountByLeague([leagueId]);
   const sabbaticalCounts = await activeSabbaticalCountByLeague([leagueId]);
   const roster = rosterCounts.get(leagueId) ?? { permanent: 0, temporary: 0 };
@@ -583,7 +570,6 @@ export async function getLeagueWaitlistManager(leagueId: number) {
       positionSortKey: schema.waitlistEntries.position_sort_key,
       joinedAt: schema.waitlistEntries.joined_at,
       declineCount: schema.waitlistEntries.decline_count,
-      offerResponsePreference: schema.waitlistEntries.offer_response_preference,
       desiredLeagueCount: schema.waitlistEntries.desired_league_count,
       priorityRank: schema.waitlistEntries.priority_rank,
       status: schema.waitlistEntries.status,
@@ -603,6 +589,13 @@ export async function getLeagueWaitlistManager(leagueId: number) {
     sessionIds: league.session_id != null ? [league.session_id] : [],
     memberIds: rendered.entries.flatMap((entry) => entry.rosterMemberIds),
   });
+  const priorityLeagueIdsByMember =
+    league.session_id != null
+      ? await loadPriorityLeagueIdsByMember({
+          sessionId: league.session_id,
+          memberIds: orderedWaitlistRows.map((row) => row.memberId),
+        })
+      : new Map<number, Set<number>>();
 
   const waitlistEntryIds = orderedWaitlistRows.map((row) => row.id);
   const offers = waitlistEntryIds.length
@@ -668,6 +661,10 @@ export async function getLeagueWaitlistManager(leagueId: number) {
         teamRosterText: row.teamRosterText,
       });
       const renderedEntry = renderedById.get(row.id);
+      const preference = waitlistOfferPreferenceFromPriorityList({
+        leagueId,
+        priorityLeagueIds: priorityLeagueIdsByMember.get(row.memberId) ?? [],
+      });
       return {
         ...row,
         teamRosterText: row.teamRosterText ?? null,
@@ -688,11 +685,8 @@ export async function getLeagueWaitlistManager(leagueId: number) {
           isTopRankedWaitlist: isTopRankedWaitlist(row.priorityRank),
         }),
         clubTenureYears: renderedEntry?.clubTenureYears ?? 0,
-        offerResponsePreference: (row.offerResponsePreference ?? 'ask') as WaitlistOfferResponsePreferenceSqlite,
-        offerResponsePreferenceLabel:
-          WAITLIST_OFFER_RESPONSE_PREFERENCE_LABELS[
-            (row.offerResponsePreference ?? 'ask') as WaitlistOfferResponsePreferenceSqlite
-          ],
+        offerResponsePreference: preference,
+        offerResponsePreferenceLabel: WAITLIST_OFFER_RESPONSE_PREFERENCE_LABELS[preference],
         pendingOffer: (offersByEntry.get(row.id) ?? []).find((offer) => offer.status === 'pending') ?? null,
         acceptedOffer:
           (offersByEntry.get(row.id) ?? []).find((offer) => offer.status === 'accepted' || offer.status === 'expired_accepted') ??
@@ -1155,19 +1149,29 @@ export async function sendWaitlistOffers(input: {
   const expiresAt = parseOfferExpiresAt(input.expiresAt);
   const { db, schema } = getDrizzleDb();
   const league = await loadLeague(input.leagueId);
-  await runDueWaitlistOfferMaintenance(league.session_id ?? null);
+  await runDueWaitlistOfferMaintenance();
   const entries = await selectOfferEntries({
     ...input,
     sessionId: league.session_id ?? null,
     alreadySelectedEntryIds: input.alreadySelectedEntryIds,
   });
   const offeredAt = new Date();
-  const createdOffers: Array<{ offer: any; preference: WaitlistOfferResponsePreferenceSqlite; entry: WaitlistEntryRow }> = [];
+  const priorityLeagueIdsByMember =
+    league.session_id != null
+      ? await loadPriorityLeagueIdsByMember({
+          sessionId: league.session_id,
+          memberIds: entries.map((entry) => entry.member_id),
+        })
+      : new Map<number, Set<number>>();
+  const createdOffers: Array<{ offer: any; preference: WaitlistOfferResponsePreference; entry: WaitlistEntryRow }> = [];
 
   await db.transaction(async (tx) => {
     for (const entry of entries) {
       const token = generateResponseToken();
-      const preference = (entry.offer_response_preference ?? 'ask') as WaitlistOfferResponsePreferenceSqlite;
+      const preference = waitlistOfferPreferenceFromPriorityList({
+        leagueId: input.leagueId,
+        priorityLeagueIds: priorityLeagueIdsByMember.get(entry.member_id) ?? [],
+      });
       const [offer] = await tx
         .insert(schema.waitlistOffers)
         .values({
@@ -1214,46 +1218,12 @@ export async function sendWaitlistOffers(input: {
       input.alreadySelectedEntryIds?.add(entry.id);
       continue;
     }
-    if (preference === 'auto_decline') {
-      await respondToOffer({
-        offerId: offer.id,
-        status: 'declined',
-        source: 'placement_process',
-        actorMemberId: input.actorMemberId,
-        reason: 'waitlist-offer-auto-declined-from-registration-preference',
-      });
-      continue;
-    }
-    input.alreadySelectedEntryIds?.add(entry.id);
-  }
-
-  for (const { offer, preference } of createdOffers) {
-    if (preference !== 'ask') continue;
-    const [member] = await db.select().from(schema.members).where(eq(schema.members.id, offer.member_id)).limit(1);
-    if (!member?.email) continue;
-    const deadline = asDate(offer.expires_at) ?? expiresAt;
-    const deadlineText = deadline.toLocaleString('en-US', {
-      weekday: 'short',
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-      timeZone: config.timeZone,
-      timeZoneName: 'short',
-    });
-    await safeSendWaitlistCommunication({
-      messageType: offer.offer_type === 'temporary_sabbatical_fill' ? 'waitlist_offer_temporary_sabbatical_fill' : 'waitlist_offer_permanent',
-      member,
-      registrationId: offer.source_registration_id ?? null,
-      waitlistOfferId: offer.id,
-      waitlistEntryId: offer.waitlist_entry_id,
-      payload: {
-      leagueName: league.name,
-        isTemporarySabbaticalFill: offer.offer_type === 'temporary_sabbatical_fill',
-        deadlineText,
-        acceptUrl: `${config.frontendUrl.replace(/\/+$/, '')}/login?redirect=${encodeURIComponent(`/registration/waitlist-offers/${offer.id}/accept`)}`,
-        declineUrl: `${config.frontendUrl.replace(/\/+$/, '')}/login?redirect=${encodeURIComponent(`/registration/waitlist-offers/${offer.id}/decline`)}`,
-      },
+    await respondToOffer({
+      offerId: offer.id,
+      status: 'declined',
+      source: 'placement_process',
+      actorMemberId: input.actorMemberId,
+      reason: 'waitlist-offer-auto-declined-from-registration-preference',
     });
   }
 
@@ -1705,31 +1675,6 @@ export async function cancelWaitlistOffer(input: { offerId: number; actorMemberI
   return { offerId: offer.id, status: 'cancelled' };
 }
 
-async function waitlistJoinOfferPreference(
-  memberId: number,
-  sessionId: number | null,
-): Promise<WaitlistOfferResponsePreferenceSqlite> {
-  if (sessionId == null) return 'auto_accept';
-  const { db, schema } = getDrizzleDb();
-  const [session] = await db
-    .select({ seasonId: schema.curlingSessions.season_id })
-    .from(schema.curlingSessions)
-    .where(eq(schema.curlingSessions.id, sessionId))
-    .limit(1);
-  if (!session) return 'auto_accept';
-  const window = await getScheduleRegistrationWindow(session.seasonId, sessionId);
-  if (window?.state !== 'priority') return 'auto_accept';
-  const registrationId = await getLatestRegistrationForMember(memberId, sessionId);
-  if (registrationId == null) return 'ask';
-  const [registration] = await db
-    .select({ status: schema.curlingRegistrations.status })
-    .from(schema.curlingRegistrations)
-    .where(eq(schema.curlingRegistrations.id, registrationId))
-    .limit(1);
-  if (!registration || !isPriorityEditableRegistrationStatus(registration.status)) return 'ask';
-  return 'auto_accept';
-}
-
 export async function addWaitlistEntry(input: {
   leagueId: number;
   memberId: number;
@@ -1756,7 +1701,6 @@ export async function addWaitlistEntry(input: {
   await assertMembersAvailableForWaitlist({ waitlistId, memberIds: rosterMemberIds });
   const registrationId = await getLatestRegistrationForMember(input.memberId, league.session_id);
   const priority = await waitlistPrioritySnapshot(input.memberId, input.leagueId, registrationId);
-  const offerResponsePreference = await waitlistJoinOfferPreference(input.memberId, league.session_id);
   const [entry] = await db
     .insert(schema.waitlistEntries)
     .values({
@@ -1767,7 +1711,6 @@ export async function addWaitlistEntry(input: {
       team_roster_placements: roster.teamRosterPlacements,
       priority_rank: priority.priorityRank,
       desired_league_count: priority.desiredLeagueCount,
-      offer_response_preference: offerResponsePreference,
       position_sort_key: nextPositionSortKey(),
       joined_at: dbNow(),
       decline_count: 0,

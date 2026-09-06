@@ -287,8 +287,6 @@ export type CurlingLeagueSabbaticalStatusSqlite =
   | 'staff_overridden'
   | 'cancelled';
 
-export type WaitlistOfferResponsePreferenceSqlite = 'ask' | 'auto_accept' | 'auto_decline';
-
 export type WaitlistEntryStatusSqlite =
   | 'active'
   | 'offered'
@@ -914,10 +912,6 @@ export const waitlistEntriesSqlite = sqliteTable('waitlist_entries', {
   position_sort_key: text('position_sort_key').notNull(),
   joined_at: text('joined_at').notNull(),
   decline_count: integer('decline_count').default(0).notNull(),
-  offer_response_preference: text('offer_response_preference')
-    .notNull()
-    .default('auto_accept')
-    .$type<WaitlistOfferResponsePreferenceSqlite>(),
   /** Rank of this league on the registrant's priority list at submit. */
   priority_rank: integer('priority_rank'),
   /** How many leagues the registrant wants in total, snapshotted at submit. */
@@ -3303,10 +3297,6 @@ export const waitlistEntriesPg = pgTable('waitlist_entries', {
   position_sort_key: textPg('position_sort_key').notNull(),
   joined_at: timestamp('joined_at', { withTimezone: false }).notNull(),
   decline_count: integerPg('decline_count').default(0).notNull(),
-  offer_response_preference: textPg('offer_response_preference')
-    .notNull()
-    .default('auto_accept')
-    .$type<WaitlistOfferResponsePreferenceSqlite>(),
   /** Rank of this league on the registrant's priority list at submit. */
   priority_rank: integerPg('priority_rank'),
   /** How many leagues the registrant wants in total, snapshotted at submit. */

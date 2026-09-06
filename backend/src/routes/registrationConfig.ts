@@ -38,7 +38,6 @@ import {
   getRegistrationEarlyAccessAdminSettings,
   updateRegistrationEarlyAccessSettings,
 } from '../registration/registrationEarlyAccess.js';
-import { syncWaitlistOfferPreferencesForPriorityOpen } from '../registration/waitlistPreferenceReset.js';
 import {
   deleteRegistrationPaymentDeadline,
   listRegistrationPaymentDeadlines,
@@ -176,14 +175,6 @@ function mapStateTransition(row: any) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
-}
-
-async function syncWaitlistPreferencesAfterStateChange(seasonId: number, sessionId: number): Promise<void> {
-  try {
-    await syncWaitlistOfferPreferencesForPriorityOpen({ seasonId, sessionId });
-  } catch (error) {
-    console.error('Failed to reset waitlist offer preferences after registration state change:', error);
-  }
 }
 
 /** Converts UI/API dollar amounts to integer cents (minor units). */
@@ -825,7 +816,6 @@ export async function registrationConfigRoutes(fastify: FastifyInstance) {
           state: body.state,
         })
         .returning();
-      await syncWaitlistPreferencesAfterStateChange(body.seasonId, body.sessionId);
       return mapStateTransition(inserted[0]);
     }
   );
@@ -870,7 +860,6 @@ export async function registrationConfigRoutes(fastify: FastifyInstance) {
           state: body.state,
         })
         .returning();
-      await syncWaitlistPreferencesAfterStateChange(body.seasonId, body.sessionId);
       return mapStateTransition(inserted[0]);
     }
   );
@@ -929,7 +918,6 @@ export async function registrationConfigRoutes(fastify: FastifyInstance) {
         .set(updateData)
         .where(eq(schema.registrationStateTransitions.id, id))
         .returning();
-      await syncWaitlistPreferencesAfterStateChange(rows[0].season_id, rows[0].session_id);
       return mapStateTransition(rows[0]);
     }
   );

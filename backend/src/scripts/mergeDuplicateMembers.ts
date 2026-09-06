@@ -180,7 +180,7 @@ export function uniqueConflictFromIndex(input: {
       extraPredicates.push(`${quoteIdent('k')}.${quoteIdent('status')} = 'active'`);
     } else {
       throw new Error(
-        `Unsupported partial unique index on ${input.table}(${input.columns.join(', ')}): ${input.predicate}`,
+        `Unsupported partial unique index on ${input.table}(${columns.join(', ')}): ${input.predicate}`,
       );
     }
   }

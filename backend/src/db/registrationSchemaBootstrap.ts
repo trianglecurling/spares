@@ -825,10 +825,6 @@ const waitlistEntryColumnsSQLite: { name: string; ddl: string }[] = [
   { name: 'team_roster_text', ddl: 'team_roster_text TEXT' },
   { name: 'team_roster_placements', ddl: 'team_roster_placements TEXT' },
   { name: 'waitlist_id', ddl: 'waitlist_id INTEGER REFERENCES league_waitlists(id) ON DELETE CASCADE' },
-  {
-    name: 'offer_response_preference',
-    ddl: "offer_response_preference TEXT NOT NULL DEFAULT 'auto_accept'",
-  },
   { name: 'priority_rank', ddl: 'priority_rank INTEGER' },
   { name: 'desired_league_count', ddl: 'desired_league_count INTEGER' },
 ];
@@ -1005,7 +1001,6 @@ const waitlistEntryColumnsPg: string[] = [
   'ALTER TABLE waitlist_entries ADD COLUMN IF NOT EXISTS team_roster_text TEXT',
   'ALTER TABLE waitlist_entries ADD COLUMN IF NOT EXISTS team_roster_placements TEXT',
   'ALTER TABLE waitlist_entries ADD COLUMN IF NOT EXISTS waitlist_id INTEGER REFERENCES league_waitlists(id) ON DELETE CASCADE',
-  "ALTER TABLE waitlist_entries ADD COLUMN IF NOT EXISTS offer_response_preference TEXT NOT NULL DEFAULT 'auto_accept'",
   'ALTER TABLE waitlist_entries ADD COLUMN IF NOT EXISTS priority_rank INTEGER',
   'ALTER TABLE waitlist_entries ADD COLUMN IF NOT EXISTS desired_league_count INTEGER',
   // Indexed here rather than in the CREATE TABLE block, which is skipped for an
@@ -1031,6 +1026,7 @@ const retiredColumns: Array<{ table: string; column: string; indexes?: string[] 
   { table: 'waitlist_entries', column: 'original_replaces_league_id' },
   { table: 'waitlist_entries', column: 'desired_add_waitlist_league_count' },
   { table: 'waitlist_entries', column: 'add_waitlist_priority_rank' },
+  { table: 'waitlist_entries', column: 'offer_response_preference' },
   { table: 'curling_registrations', column: 'desired_add_waitlist_league_count' },
   { table: 'league_entry_team_members', column: 'entry_type' },
   { table: 'league_entry_team_members', column: 'replaces_league_id' },

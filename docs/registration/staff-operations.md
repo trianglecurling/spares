@@ -40,9 +40,9 @@ During priority registration:
 - New members may register and join waitlists.
 - Waitlist order is by club tenure until staff freeze the list. Frozen rows
   keep their places; later joiners line up below them by tenure.
-- Opening the priority window resets waitlist offer preferences to Ask. A
-  submitted priority list then auto-accepts waitlisted leagues on the list and
-  auto-declines waitlists left off the list.
+- Waitlist offer response is derived from the submitted priority list:
+  waitlisted leagues on the list auto-accept, and waitlists left off the list
+  auto-decline. There is no Ask-me state.
 - Payment may be immediate or deferred depending on registration contents.
 
 After priority registration:

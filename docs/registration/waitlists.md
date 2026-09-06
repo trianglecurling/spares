@@ -189,26 +189,18 @@ everyone's first and second choices have been considered.
 
 ## Offer response rule
 
-Year-round waitlist joins default to auto-accept. When priority registration
-opens, those entries flip to Ask until the curler registers.
+Whether a waitlist entry auto-accepts or auto-declines is derived from the
+member's current registration priority list. It is not stored on the waitlist
+entry.
 
-Submitting registration confirms waitlist intent from the priority list:
-
-- Waitlisted leagues on the list auto-accept when a spot opens.
+- Waitlisted leagues that are still on the list auto-accept when a spot opens.
 - Waitlists for leagues left off the list stay queued and auto-decline.
-- Curlers who do not register stay at Ask.
+- Members who have not registered have an empty list, so their waitlists
+  auto-decline.
 
-When an entry's preference is `ask`, the offer includes a response deadline
-chosen by staff. If the curler does not accept by that deadline, the offer is
-treated as declined.
-
-Suggested user-facing wording:
-
-"If you do not accept this offer by the response deadline, we will treat it as
-declined. If payment is required after acceptance, staff will follow up with
-you."
-
-Payment issues after acceptance are handled manually by staff.
+Staff-triggered offers follow the same rule: a derived auto-accept is accepted
+immediately, and a derived auto-decline is declined immediately. There is no
+Ask-me response deadline for league waitlists.
 
 ---
 

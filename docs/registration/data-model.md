@@ -724,7 +724,6 @@ Recommended fields:
 - Position sort key
 - Joined at
 - Decline count
-- Offer response preference
 - Status
 - Rolled over from waitlist entry ID, nullable
 - Created at
@@ -735,15 +734,8 @@ Recommended fields:
 - `add`
 - `replace`
 
-### Offer response preference enum
-
-- `ask`
-- `auto_accept`
-- `auto_decline`
-
-Year-round joins default to `auto_accept`. Priority registration opening resets
-active session entries to `ask`. Submitting a priority list then sets
-`auto_accept` or `auto_decline` from whether the league is on the list.
+Offer accept vs decline is not stored on the waitlist entry. It is derived from
+whether the league is on the member's current registration priority list.
 
 ### Status enum
 

@@ -770,47 +770,29 @@ placements can be displaced.
 
 ### Waitlist offer response preferences
 
-Each active waitlist entry has an offer response preference for the current
-session:
+Whether a waitlist entry auto-accepts or auto-declines is derived from the
+member's current registration priority list. It is not stored on the waitlist
+entry.
 
-- `ask` — reach out when a spot opens and wait for a response
-- `auto_accept` — accept automatically when a spot opens
-- `auto_decline` — decline automatically when a spot opens
-
-Year-round waitlist joins default to `auto_accept`. When priority registration
-opens, every active waitlist entry for that session flips to `ask`. Members who
-never register stay at Ask. When a member submits registration:
-
-- A waitlisted league on their priority list is confirmed as `auto_accept`
+- A waitlisted league on their priority list auto-accepts when a spot opens
 - A waitlist they hold for a league left off the priority list stays in the
-  queue as `auto_decline`
+  queue and auto-declines
+- Members who have not registered have an empty list, so their waitlists
+  auto-decline
 
-Those registration-time preferences already state the curler's intent, so
-asking again after priority registration closes only delays placement.
+For BYOT waitlist entries the derived preference uses the primary member's
+registration list and applies to the whole entry.
 
-The preference is stored on the waitlist entry itself, not on individual team
-members. For BYOT waitlist entries the preference applies to the whole entry.
-
-Staff can see and change each entry's preference while processing waitlists.
+Staff can see the derived preference while processing waitlists. Changing the
+registration priority list is how a member changes accept vs decline.
 
 ### Waitlist offers
 
 When a spot becomes available, staff may send offers to waitlisted users.
 
-If the entry preference is `auto_accept` or `auto_decline`, the system resolves
-the offer immediately using that preference instead of waiting for a member
-response.
-
-If the entry preference is `ask`, a waitlist offer includes a response deadline
-chosen by staff.
-
-If the user does not accept by that deadline, the offer is treated as declined.
-
-User-facing offer language should clearly state:
-
-> If you do not accept this offer by the response deadline, we will treat it as
-> declined. If payment is required after acceptance, staff will follow up with
-> you.
+The system resolves each offer immediately from the derived preference:
+auto-accept or auto-decline. There is no Ask-me response deadline for league
+waitlists.
 
 Payment issues after acceptance are handled manually by staff.
 
