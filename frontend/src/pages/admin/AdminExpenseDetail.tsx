@@ -579,6 +579,7 @@ export default function AdminExpenseDetail() {
                   readOnly={!canManage}
                   formOptions={options}
                   clubCardMode="staff"
+                  identityEditable
                   identity={{
                     name: report.submitterName,
                     email: report.submitterEmail,

@@ -385,6 +385,9 @@ const FIELD_CHANGE_LABELS: Record<string, string> = {
   comments: 'Comments',
   usedClubCreditCard: 'Club credit card',
   clubCreditCardOwner: 'Credit card owner',
+  submitterName: 'Submitter name',
+  submitterEmail: 'Submitter email',
+  submitterPhone: 'Submitter phone',
   activityDate: 'Activity date',
   from: 'Starting location',
   to: 'Destination',
@@ -433,6 +436,9 @@ function snapshotReportFields(row: ReportRow, expenseData: ExpenseData): FieldSn
         ? ''
         : String(row.club_credit_card_owner_name)
       : '',
+    submitterName: String(row.submitter_name ?? ''),
+    submitterEmail: String(row.submitter_email ?? ''),
+    submitterPhone: row.submitter_phone == null ? '' : String(row.submitter_phone),
     activityDate: asDateOnly(row.activity_date) ?? '',
     from: fromKind === 'other' ? fromOther : fromKind,
     to: toKind === 'other' ? toOther : toKind,
@@ -615,6 +621,20 @@ async function loadReportRow(id: number): Promise<ReportRow | null> {
   const { db, schema } = getDrizzleDb();
   const [row] = await db.select().from(schema.expenseReports).where(eq(schema.expenseReports.id, id)).limit(1);
   return (row as ReportRow | undefined) ?? null;
+}
+
+async function assertMemberExists(memberId: number): Promise<void> {
+  const { db, schema } = getDrizzleDb();
+  const [row] = await db
+    .select({ id: schema.members.id })
+    .from(schema.members)
+    .where(eq(schema.members.id, memberId))
+    .limit(1);
+  if (!row) {
+    throw new ExpenseReportError('Select a valid member.', 400, [
+      { field: 'submitterMemberId', message: 'Select a valid member.' },
+    ]);
+  }
 }
 
 export async function memberHoldsClubCreditCard(memberId: number): Promise<boolean> {
@@ -913,8 +933,14 @@ export async function updateExpenseReportRecord(options: {
     ? snapshotReportFields(existing, existingExpenseData)
     : null;
 
-  const ownerMemberId =
+  let ownerMemberId =
     existing.member_id == null ? options.memberId : asInt(existing.member_id);
+  if (options.staffActor && options.payload.submitterMemberId !== undefined) {
+    ownerMemberId = options.payload.submitterMemberId;
+    if (ownerMemberId != null) {
+      await assertMemberExists(ownerMemberId);
+    }
+  }
   const askClubCreditCard = options.staffActor
     ? options.payload.kind === 'expense'
     : existing.used_club_credit_card != null ||

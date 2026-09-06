@@ -87,6 +87,8 @@ type ExpenseReportFormProps = {
   documentFilePath?: (documentId: number) => string;
   /** Staff review always asks about club cards and who holds the card. */
   clubCardMode?: 'submitter' | 'staff';
+  /** Staff can attach a member account and edit submitter contact details. */
+  identityEditable?: boolean;
   onSubmit: (input: {
     payload: Record<string, unknown>;
     files: Array<{ expenseIndex: number; documentIndex: number; file: File }>;
@@ -188,6 +190,7 @@ export default function ExpenseReportForm({
   submitLabel = 'Submit report',
   documentFilePath,
   clubCardMode = 'submitter',
+  identityEditable = false,
   onSubmit,
 }: ExpenseReportFormProps) {
   const errors = errorMap(fieldErrors);
@@ -210,6 +213,10 @@ export default function ExpenseReportForm({
   const mileageAmountId = useId();
   const expensesLabelId = useId();
   const cardOwnerId = useId();
+  const submitterMemberInputId = useId();
+  const submitterNameId = useId();
+  const submitterEmailId = useId();
+  const submitterPhoneId = useId();
 
   const [kind, setKind] = useState<ExpenseReportKind | ''>(
     initialReport?.kind === 'mileage' ? 'mileage' : initialReport ? 'expense' : ''
@@ -255,6 +262,13 @@ export default function ExpenseReportForm({
     initialReport?.clubCreditCardOwnerMemberId ?? ''
   );
   const [cardOwnerQuery, setCardOwnerQuery] = useState(initialReport?.clubCreditCardOwnerName ?? '');
+  const [submitterMemberId, setSubmitterMemberId] = useState<number | ''>(
+    initialReport?.memberId ?? ''
+  );
+  const [submitterQuery, setSubmitterQuery] = useState(identity.name);
+  const [submitterName, setSubmitterName] = useState(identity.name);
+  const [submitterEmail, setSubmitterEmail] = useState(identity.email);
+  const [submitterPhone, setSubmitterPhone] = useState(identity.phone);
   const [mailingAddress, setMailingAddress] = useState<StructuredPostalAddress>(
     initialReport?.mailingAddress ?? identity.mailingAddress ?? emptyStructuredPostalAddress()
   );
@@ -435,14 +449,19 @@ export default function ExpenseReportForm({
     });
     const payload: Record<string, unknown> = {
       kind,
-      submitterName: identity.name,
-      submitterEmail: identity.email,
-      submitterPhone: identity.phone || null,
+      submitterName: identityEditable ? submitterName : identity.name,
+      submitterEmail: identityEditable ? submitterEmail : identity.email,
+      submitterPhone: identityEditable
+        ? submitterPhone.trim() || null
+        : identity.phone || null,
       mailingAddress: showMailingAddress ? mailingAddress : identity.mailingAddress,
       comments: comments.trim() || null,
       requestedAmountMinor: chargedToClubCard ? 0 : dollarsToMinor(requestedAmount),
       requestedCurrency: 'usd',
     };
+    if (identityEditable) {
+      payload.submitterMemberId = submitterMemberId === '' ? null : submitterMemberId;
+    }
     if (kind === 'expense') {
       payload.committeeId = committeeChoice && committeeChoice !== 'custom' ? Number(committeeChoice) : null;
       payload.committeeCustom = committeeChoice === 'custom' ? committeeCustom : null;
@@ -519,6 +538,12 @@ export default function ExpenseReportForm({
     'tripPurposeOther',
     'expenses',
   ]);
+  if (identityEditable) {
+    visibleErrorKeys.add('submitterName');
+    visibleErrorKeys.add('submitterEmail');
+    visibleErrorKeys.add('submitterPhone');
+    visibleErrorKeys.add('submitterMemberId');
+  }
   if (askClubCard) visibleErrorKeys.add('usedClubCreditCard');
   if (askClubCard && clubCardMode === 'staff' && usedClubCreditCard === 'yes') {
     visibleErrorKeys.add('clubCreditCardOwnerName');
@@ -538,6 +563,102 @@ export default function ExpenseReportForm({
         <FormFieldMessage tone={tone} intent="error">
           {leftoverErrors.map((error) => error.message).join(' ')}
         </FormFieldMessage>
+      ) : null}
+      {identityEditable ? (
+        <FormSection
+          tone={tone}
+          title="Submitter"
+          description="Attach this report to a member account and update the contact details used on the report."
+        >
+          <FormField
+            label="Member"
+            htmlFor={readOnly ? undefined : submitterMemberInputId}
+            tone={tone}
+            helperText={
+              readOnly
+                ? undefined
+                : 'Optional. Select a member to attach this report to their account, or leave blank for a guest submitter.'
+            }
+            error={errors.submitterMemberId}
+          >
+            {readOnly ? (
+              <p className="text-sm text-gray-800 dark:text-gray-200">
+                {submitterQuery || identity.name || 'Guest submitter'}
+              </p>
+            ) : (
+              <MemberAutocomplete
+                inputId={submitterMemberInputId}
+                value={submitterMemberId}
+                onChange={setSubmitterMemberId}
+                inputValue={submitterQuery}
+                onInputValueChange={setSubmitterQuery}
+                onSelectOption={(option) => {
+                  setSubmitterMemberId(option.id);
+                  setSubmitterQuery(option.name);
+                  setSubmitterName(option.name);
+                  if (option.email) setSubmitterEmail(option.email);
+                }}
+                selectedOption={
+                  submitterMemberId
+                    ? undefined
+                    : submitterQuery
+                      ? { id: -1, name: submitterQuery }
+                      : null
+                }
+                placeholder="Search members"
+              />
+            )}
+          </FormField>
+          <FormField
+            label="Name"
+            htmlFor={submitterNameId}
+            required
+            tone={tone}
+            error={errors.submitterName}
+          >
+            <input
+              id={submitterNameId}
+              className={inputClass}
+              value={submitterName}
+              readOnly={readOnly}
+              onChange={(event) => setSubmitterName(event.target.value)}
+              autoComplete="name"
+            />
+          </FormField>
+          <FormField
+            label="Email"
+            htmlFor={submitterEmailId}
+            required
+            tone={tone}
+            error={errors.submitterEmail}
+          >
+            <input
+              id={submitterEmailId}
+              type="email"
+              className={inputClass}
+              value={submitterEmail}
+              readOnly={readOnly}
+              onChange={(event) => setSubmitterEmail(event.target.value)}
+              autoComplete="email"
+            />
+          </FormField>
+          <FormField
+            label="Phone"
+            htmlFor={submitterPhoneId}
+            tone={tone}
+            error={errors.submitterPhone}
+          >
+            <input
+              id={submitterPhoneId}
+              type="tel"
+              className={inputClass}
+              value={submitterPhone}
+              readOnly={readOnly}
+              onChange={(event) => setSubmitterPhone(event.target.value)}
+              autoComplete="tel"
+            />
+          </FormField>
+        </FormSection>
       ) : null}
       <FormSection
         tone={tone}
