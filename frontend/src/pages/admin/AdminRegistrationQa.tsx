@@ -8,6 +8,7 @@ import Button from '../../components/Button';
 import ChoiceInput from '../../components/ChoiceInput';
 import FormField from '../../components/FormField';
 import InlineStateMessage from '../../components/InlineStateMessage';
+import MemberEmail from '../../components/MemberEmail';
 import DataTable from '../../components/table/DataTable';
 import type { DataTableColumn, TableSort } from '../../components/table/tableTypes';
 import api, { getApiErrorMessage } from '../../utils/api';
@@ -209,7 +210,9 @@ export default function AdminRegistrationQa() {
       if (returnStatus && player.status !== returnStatus) return false;
       if (!needle) return true;
       return (
-        player.memberName.toLowerCase().includes(needle) || (player.memberEmail ?? '').toLowerCase().includes(needle)
+        player.memberName.toLowerCase().includes(needle) ||
+        (player.memberEmail ?? '').toLowerCase().includes(needle) ||
+        (player.parentEmail ?? '').toLowerCase().includes(needle)
       );
     });
     const direction = sort.direction === 'asc' ? 1 : -1;
@@ -247,7 +250,11 @@ export default function AdminRegistrationQa() {
           ) : (
             <div className="font-medium text-gray-900 dark:text-gray-100">{row.memberName}</div>
           )}
-          {row.memberEmail ? <div className="text-xs text-gray-500 dark:text-gray-400">{row.memberEmail}</div> : null}
+          {row.memberEmail ? (
+            <div className="text-xs text-gray-500 dark:text-gray-400">
+              <MemberEmail email={row.memberEmail} parentEmail={row.parentEmail} />
+            </div>
+          ) : null}
           {row.isTemporarySabbaticalFill ? (
             <div className="text-xs text-gray-500 dark:text-gray-400">Temporary sabbatical fill last session</div>
           ) : null}

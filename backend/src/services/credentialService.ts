@@ -14,6 +14,7 @@ import {
   type SystemCredentialKey,
 } from '../utils/systemCredentials.js';
 import { volunteerCredentialIsValidOn } from '../utils/volunteerCredentials.js';
+import { memberContactEmails } from '../utils/memberParentEmail.js';
 import { normalizeMemberDateOfBirth } from './memberDemographics.js';
 import {
   getMemberMembershipStatus,
@@ -63,6 +64,7 @@ export type CredentialAdminView = CredentialSummary & {
     memberId: number;
     memberName: string;
     memberEmail: string | null;
+    parentEmail: string | null;
     grantedAt: string;
     grantedByMemberId: number | null;
     expiresAt: string | null;
@@ -443,6 +445,8 @@ export async function listCredentialsAdmin(
       memberId: schema.members.id,
       memberName: schema.members.name,
       memberEmail: schema.members.email,
+      guardian_email: schema.members.guardian_email,
+      date_of_birth: schema.members.date_of_birth,
       grantedAt: schema.memberVolunteerCredentials.granted_at,
       grantedByMemberId: schema.memberVolunteerCredentials.granted_by_member_id,
       expiresAt: schema.memberVolunteerCredentials.expires_at,
@@ -473,6 +477,11 @@ export async function listCredentialsAdmin(
               memberId: g.memberId,
               memberName: g.memberName,
               memberEmail: g.memberEmail,
+              parentEmail: memberContactEmails({
+                email: g.memberEmail,
+                guardian_email: g.guardian_email,
+                date_of_birth: g.date_of_birth,
+              }).parentEmail,
               grantedAt: requireIso(g.grantedAt as any, 'grantedAt'),
               grantedByMemberId: g.grantedByMemberId,
               expiresAt: normalizeDateOnly(g.expiresAt),

@@ -207,7 +207,7 @@ export function buildMemberNavMenuItemsFallback({
     ]),
     section(7, 'Volunteering', [
       internalLink(71, 'Volunteering & sign-ups', '/volunteering'),
-      internalLink(72, 'My volunteering', '/volunteering?tab=shifts'),
+      internalLink(72, 'My sign-ups', '/volunteering?tab=shifts'),
       internalLink(73, 'Expense reports', '/expenses'),
     ]),
   ];

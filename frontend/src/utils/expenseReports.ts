@@ -137,8 +137,10 @@ export type ExpenseReportListItem = {
   statusLabel: string;
   submitterName: string;
   submitterEmail: string;
+  totalAmountMinor: number;
   requestedAmountMinor: number;
   requestedCurrency: string;
+  usedClubCreditCard: boolean;
   submittedAt: string;
 };
 

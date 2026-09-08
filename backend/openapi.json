@@ -7706,6 +7706,12 @@
                           "string"
                         ]
                       },
+                      "parentEmail": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      },
                       "phone": {
                         "type": [
                           "null",
@@ -7956,6 +7962,12 @@
                             ]
                           },
                           "email": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "parentEmail": {
                             "type": [
                               "null",
                               "string"
@@ -12365,6 +12377,12 @@
                           "string"
                         ]
                       },
+                      "parentEmail": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      },
                       "assignedTeamId": {
                         "type": [
                           "null",
@@ -12408,6 +12426,7 @@
                       "memberId",
                       "name",
                       "email",
+                      "parentEmail",
                       "assignedTeamId",
                       "assignedTeamName",
                       "guaranteeLabel",
@@ -12610,12 +12629,19 @@
                           "null",
                           "string"
                         ]
+                      },
+                      "parentEmail": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
                       }
                     },
                     "required": [
                       "memberId",
                       "name",
-                      "email"
+                      "email",
+                      "parentEmail"
                     ]
                   }
                 }
@@ -12678,12 +12704,19 @@
                           "null",
                           "string"
                         ]
+                      },
+                      "parentEmail": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
                       }
                     },
                     "required": [
                       "id",
                       "name",
-                      "email"
+                      "email",
+                      "parentEmail"
                     ]
                   }
                 }
@@ -12782,12 +12815,19 @@
                                     "null",
                                     "string"
                                   ]
+                                },
+                                "parentEmail": {
+                                  "type": [
+                                    "null",
+                                    "string"
+                                  ]
                                 }
                               },
                               "required": [
                                 "id",
                                 "name",
-                                "email"
+                                "email",
+                                "parentEmail"
                               ]
                             }
                           }
@@ -12896,12 +12936,19 @@
                           "null",
                           "string"
                         ]
+                      },
+                      "parentEmail": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
                       }
                     },
                     "required": [
                       "memberId",
                       "name",
-                      "email"
+                      "email",
+                      "parentEmail"
                     ]
                   }
                 }
@@ -13029,12 +13076,19 @@
                           "null",
                           "string"
                         ]
+                      },
+                      "parentEmail": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
                       }
                     },
                     "required": [
                       "id",
                       "name",
-                      "email"
+                      "email",
+                      "parentEmail"
                     ]
                   }
                 }
@@ -13131,6 +13185,12 @@
                           "string"
                         ]
                       },
+                      "parentEmail": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      },
                       "status": {
                         "type": "string",
                         "enum": [
@@ -13169,6 +13229,7 @@
                       "memberId",
                       "name",
                       "email",
+                      "parentEmail",
                       "status",
                       "firstSabbaticalStartDate",
                       "staffOverride",
@@ -13824,12 +13885,19 @@
                           "null",
                           "string"
                         ]
+                      },
+                      "parentEmail": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
                       }
                     },
                     "required": [
                       "id",
                       "name",
-                      "email"
+                      "email",
+                      "parentEmail"
                     ]
                   }
                 }
@@ -17261,12 +17329,19 @@
                           "null",
                           "string"
                         ]
+                      },
+                      "parentEmail": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
                       }
                     },
                     "required": [
                       "id",
                       "name",
-                      "email"
+                      "email",
+                      "parentEmail"
                     ]
                   }
                 }
@@ -17449,6 +17524,12 @@
                           "string"
                         ]
                       },
+                      "requesterParentEmail": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      },
                       "requesterPhone": {
                         "type": [
                           "null",
@@ -17508,6 +17589,7 @@
                       "id",
                       "requesterName",
                       "requesterEmail",
+                      "requesterParentEmail",
                       "requesterPhone",
                       "requestedForName",
                       "gameDate",
@@ -17551,6 +17633,18 @@
                       "requesterName": {
                         "type": "string"
                       },
+                      "requesterEmail": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      },
+                      "requesterParentEmail": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      },
                       "requestedForName": {
                         "type": "string"
                       },
@@ -17591,6 +17685,8 @@
                     "required": [
                       "id",
                       "requesterName",
+                      "requesterEmail",
+                      "requesterParentEmail",
                       "requestedForName",
                       "gameDate",
                       "gameTime",
@@ -17883,6 +17979,12 @@
                       "email": {
                         "type": "string"
                       },
+                      "parentEmail": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      },
                       "status": {
                         "type": "string"
                       },
@@ -17906,6 +18008,7 @@
                       "memberId",
                       "name",
                       "email",
+                      "parentEmail",
                       "status",
                       "declinedAt",
                       "declineComment",
@@ -18158,6 +18261,12 @@
                           "string"
                         ]
                       },
+                      "filledByParentEmail": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      },
                       "filledByPhone": {
                         "type": [
                           "null",
@@ -18244,6 +18353,7 @@
                       "cancelledByName",
                       "filledByName",
                       "filledByEmail",
+                      "filledByParentEmail",
                       "filledByPhone",
                       "filledAt",
                       "sparerComment",
@@ -18338,6 +18448,12 @@
                           "string"
                         ]
                       },
+                      "filledByParentEmail": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      },
                       "filledByPhone": {
                         "type": [
                           "null",
@@ -18384,6 +18500,7 @@
                       "cancelledByName",
                       "filledByName",
                       "filledByEmail",
+                      "filledByParentEmail",
                       "filledByPhone",
                       "filledAt",
                       "sparerComment",
@@ -18422,6 +18539,12 @@
                         "type": "string"
                       },
                       "requesterEmail": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      },
+                      "requesterParentEmail": {
                         "type": [
                           "null",
                           "string"
@@ -18471,6 +18594,7 @@
                       "id",
                       "requesterName",
                       "requesterEmail",
+                      "requesterParentEmail",
                       "requesterPhone",
                       "requestedForName",
                       "gameDate",
@@ -29841,6 +29965,7 @@
                           "memberId",
                           "memberName",
                           "memberEmail",
+                          "parentEmail",
                           "previousLeagues",
                           "registrationId",
                           "registrationStatus"
@@ -29853,6 +29978,12 @@
                             "type": "string"
                           },
                           "memberEmail": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "parentEmail": {
                             "type": [
                               "null",
                               "string"
@@ -30056,6 +30187,7 @@
                           "memberId",
                           "memberName",
                           "memberEmail",
+                          "parentEmail",
                           "isTemporarySabbaticalFill",
                           "status",
                           "priorityRank",
@@ -30071,6 +30203,12 @@
                             "type": "string"
                           },
                           "memberEmail": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "parentEmail": {
                             "type": [
                               "null",
                               "string"
@@ -32598,11 +32736,17 @@
                           "submitterEmail": {
                             "type": "string"
                           },
+                          "totalAmountMinor": {
+                            "type": "number"
+                          },
                           "requestedAmountMinor": {
                             "type": "number"
                           },
                           "requestedCurrency": {
                             "type": "string"
+                          },
+                          "usedClubCreditCard": {
+                            "type": "boolean"
                           },
                           "submittedAt": {
                             "type": "string"
@@ -32615,8 +32759,10 @@
                           "statusLabel",
                           "submitterName",
                           "submitterEmail",
+                          "totalAmountMinor",
                           "requestedAmountMinor",
                           "requestedCurrency",
+                          "usedClubCreditCard",
                           "submittedAt"
                         ]
                       }
@@ -34097,11 +34243,17 @@
                           "submitterEmail": {
                             "type": "string"
                           },
+                          "totalAmountMinor": {
+                            "type": "number"
+                          },
                           "requestedAmountMinor": {
                             "type": "number"
                           },
                           "requestedCurrency": {
                             "type": "string"
+                          },
+                          "usedClubCreditCard": {
+                            "type": "boolean"
                           },
                           "submittedAt": {
                             "type": "string"
@@ -34114,8 +34266,10 @@
                           "statusLabel",
                           "submitterName",
                           "submitterEmail",
+                          "totalAmountMinor",
                           "requestedAmountMinor",
                           "requestedCurrency",
+                          "usedClubCreditCard",
                           "submittedAt"
                         ]
                       }

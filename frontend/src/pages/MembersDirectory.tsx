@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { AppPage, AppPageHeader } from '../components/AppPage';
 import { get } from '../api/client';
 import { formatPhone } from '../utils/phone';
+import MemberEmail from '../components/MemberEmail';
 import AppPageControlsRow from '../components/AppPageControlsRow';
 import InlineStateMessage from '../components/InlineStateMessage';
 import Modal from '../components/Modal';
@@ -33,6 +34,7 @@ interface Member {
   id: number;
   name: string;
   email?: string | null;
+  parentEmail?: string | null;
   phone?: string | null;
   isAdmin: boolean;
   isServerAdmin: boolean;
@@ -357,12 +359,14 @@ export default function MembersDirectory() {
       {
         id: 'email',
         header: 'Email',
-        cellClassName: 'whitespace-nowrap',
         renderCell: (member) =>
           member.email ? (
-            <a href={`mailto:${member.email}`} className="text-primary-teal-link hover:underline">
-              {member.email}
-            </a>
+            <MemberEmail
+              email={member.email}
+              parentEmail={member.parentEmail}
+              mailto
+              className="text-primary-teal-link hover:underline"
+            />
           ) : (
             <span className="text-gray-400 dark:text-gray-500">—</span>
           ),
@@ -578,12 +582,12 @@ export default function MembersDirectory() {
                           <span className="font-medium text-gray-700 dark:text-gray-300">
                             Email:
                           </span>{' '}
-                          <a
-                            href={`mailto:${selectedMember.email}`}
+                          <MemberEmail
+                            email={selectedMember.email}
+                            parentEmail={selectedMember.parentEmail}
+                            mailto
                             className="text-primary-teal-link hover:underline"
-                          >
-                            {selectedMember.email}
-                          </a>
+                          />
                         </div>
                       )}
                       {selectedMember.phone && (

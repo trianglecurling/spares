@@ -8,6 +8,7 @@ import Button from '../../components/Button';
 import FormField from '../../components/FormField';
 import FormSection from '../../components/FormSection';
 import InlineStateMessage from '../../components/InlineStateMessage';
+import MemberEmail from '../../components/MemberEmail';
 import MemberMultiSelect from '../../components/MemberMultiSelect';
 import DataTable from '../../components/table/DataTable';
 import type { DataTableColumn, TableSort } from '../../components/table/tableTypes';
@@ -113,6 +114,7 @@ export default function AdminMemberCredentialDetail() {
             memberId,
             memberName: option?.name || `Member ${memberId}`,
             memberEmail: option?.email ?? null,
+            parentEmail: option?.parentEmail ?? null,
             grantedAt: new Date().toISOString(),
             grantedByMemberId: member?.id ?? null,
             expiresAt: (res.data.expiresAt as string | null | undefined) ?? (grantExpiresAt.trim() || null),
@@ -233,7 +235,9 @@ export default function AdminMemberCredentialDetail() {
           <div>
             <div className="font-medium text-gray-900 dark:text-gray-100">{row.memberName}</div>
             {row.memberEmail ? (
-              <div className="text-sm text-gray-600 dark:text-gray-400">{row.memberEmail}</div>
+              <div className="text-sm text-gray-600 dark:text-gray-400">
+                <MemberEmail email={row.memberEmail} parentEmail={row.parentEmail} />
+              </div>
             ) : null}
           </div>
         ),

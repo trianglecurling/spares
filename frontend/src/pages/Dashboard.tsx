@@ -22,6 +22,7 @@ import { formatApiError } from '../utils/api';
 import InlineStateMessage from '../components/InlineStateMessage';
 import Modal from '../components/Modal';
 import Button from '../components/Button';
+import MemberEmail from '../components/MemberEmail';
 import AppStateCard from '../components/AppStateCard';
 import DashboardRegistrationStatus from '../components/DashboardRegistrationStatus';
 import DashboardAvailabilityReminder from '../components/DashboardAvailabilityReminder';
@@ -50,6 +51,7 @@ interface SpareRequest {
   id: number;
   requesterName: string;
   requesterEmail?: string | null;
+  requesterParentEmail?: string | null;
   requesterPhone?: string | null;
   requestedForName: string;
   gameDate: string;
@@ -80,6 +82,7 @@ interface MySpareRequest {
   status: string;
   filledByName?: string | null;
   filledByEmail?: string | null;
+  filledByParentEmail?: string | null;
   filledByPhone?: string | null;
   filledAt?: string | null;
   sparerComment?: string | null;
@@ -778,12 +781,12 @@ export default function Dashboard() {
               </p>
               {request.requesterEmail && (
                 <p className="text-sm ml-4">
-                  <a
-                    href={`mailto:${request.requesterEmail}`}
+                  <MemberEmail
+                    email={request.requesterEmail}
+                    parentEmail={request.requesterParentEmail}
+                    mailto
                     className="text-primary-teal-link hover:underline"
-                  >
-                    {request.requesterEmail}
-                  </a>
+                  />
                 </p>
               )}
               {request.requesterPhone && (
@@ -1361,12 +1364,12 @@ export default function Dashboard() {
                               </p>
                               {request.filledByEmail && (
                                 <p className="text-sm ml-4 mt-1">
-                                  <a
-                                    href={`mailto:${request.filledByEmail}`}
+                                  <MemberEmail
+                                    email={request.filledByEmail}
+                                    parentEmail={request.filledByParentEmail}
+                                    mailto
                                     className="text-primary-teal-link hover:underline"
-                                  >
-                                    {request.filledByEmail}
-                                  </a>
+                                  />
                                 </p>
                               )}
                               {request.filledByPhone && (

@@ -17,6 +17,7 @@ import {
   memberCanBypassLeagueProcessingHold,
 } from '../utils/leagueProcessing';
 import Button from '../components/Button';
+import MemberEmail from '../components/MemberEmail';
 import { format } from 'date-fns';
 
 type SparePosition = 'lead' | 'second' | 'vice' | 'skip';
@@ -51,6 +52,7 @@ type AvailableMember = {
   id: number;
   name: string;
   email?: string | null;
+  parentEmail?: string | null;
 };
 
 const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -600,7 +602,7 @@ export default function RequestSpare() {
                                           </div>
                                           {m.email ? (
                                             <div className="text-xs text-gray-500 dark:text-gray-400">
-                                              {m.email}
+                                              <MemberEmail email={m.email} parentEmail={m.parentEmail} />
                                             </div>
                                           ) : null}
                                         </div>

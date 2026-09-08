@@ -123,6 +123,7 @@ export const rosterMemberSchema = {
     memberId: { type: 'number' },
     name: { type: 'string' },
     email: { type: ['string', 'null'] },
+    parentEmail: { type: ['string', 'null'] },
     assignedTeamId: { type: ['number', 'null'] },
     assignedTeamName: { type: ['string', 'null'] },
     guaranteeLabel: {
@@ -134,6 +135,7 @@ export const rosterMemberSchema = {
     'memberId',
     'name',
     'email',
+    'parentEmail',
     'assignedTeamId',
     'assignedTeamName',
     'guaranteeLabel',
@@ -184,8 +186,9 @@ export const rosterUnassignedResponseSchema = {
       memberId: { type: 'number' },
       name: { type: 'string' },
       email: { type: ['string', 'null'] },
+      parentEmail: { type: ['string', 'null'] },
     },
-    required: ['memberId', 'name', 'email'],
+    required: ['memberId', 'name', 'email', 'parentEmail'],
   },
 } as const;
 
@@ -198,8 +201,9 @@ export const rosterSearchResponseSchema = {
       id: { type: 'number' },
       name: { type: 'string' },
       email: { type: ['string', 'null'] },
+      parentEmail: { type: ['string', 'null'] },
     },
-    required: ['id', 'name', 'email'],
+    required: ['id', 'name', 'email', 'parentEmail'],
   },
 } as const;
 
@@ -256,8 +260,9 @@ export const rosterBulkResponseSchema = {
                 id: { type: 'number' },
                 name: { type: 'string' },
                 email: { type: ['string', 'null'] },
+                parentEmail: { type: ['string', 'null'] },
               },
-              required: ['id', 'name', 'email'],
+              required: ['id', 'name', 'email', 'parentEmail'],
             },
           },
         },
@@ -277,8 +282,9 @@ export const managerListResponseSchema = {
       memberId: { type: 'number' },
       name: { type: 'string' },
       email: { type: ['string', 'null'] },
+      parentEmail: { type: ['string', 'null'] },
     },
-    required: ['memberId', 'name', 'email'],
+    required: ['memberId', 'name', 'email', 'parentEmail'],
   },
 } as const;
 
@@ -396,6 +402,7 @@ export const sabbaticalMemberSchema = {
     memberId: { type: 'number' },
     name: { type: 'string' },
     email: { type: ['string', 'null'] },
+    parentEmail: { type: ['string', 'null'] },
     status: {
       type: 'string',
       enum: ['active', 'returning', 'staff_overridden'],
@@ -411,6 +418,7 @@ export const sabbaticalMemberSchema = {
     'memberId',
     'name',
     'email',
+    'parentEmail',
     'status',
     'firstSabbaticalStartDate',
     'staffOverride',

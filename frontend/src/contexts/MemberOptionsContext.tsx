@@ -26,12 +26,13 @@ const MemberOptionsContext = createContext<MemberOptionsContextValue | undefined
 const EMPTY_OPTIONS: MemberPickerOption[] = [];
 
 function mapMemberOptions(
-  members: Array<{ id: number; name: string; email?: string | null }>
+  members: Array<{ id: number; name: string; email?: string | null; parentEmail?: string | null }>
 ): MemberPickerOption[] {
   return members.map((member) => ({
     id: member.id,
     name: member.name,
     email: member.email ?? null,
+    parentEmail: member.parentEmail ?? null,
   }));
 }
 

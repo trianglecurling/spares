@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import AutocompleteInput from './AutocompleteInput';
+import MemberEmail from './MemberEmail';
 import { useMemberOptions } from '../contexts/MemberOptionsContext';
 import type { MemberPickerOption } from '../types/memberPicker';
 
@@ -71,7 +72,7 @@ export default function MemberAutocomplete({
       : sourceOptions;
     if (!needle) return minQueryLength === 0 ? visibleOptions : [];
     return visibleOptions.filter((option) => {
-      const haystacks = [option.name, option.email ?? ''];
+      const haystacks = [option.name, option.email ?? '', option.parentEmail ?? ''];
       return haystacks.some((part) => part.toLowerCase().includes(needle));
     });
   }, [filterOption, minQueryLength, query, sourceOptions]);
@@ -101,7 +102,9 @@ export default function MemberAutocomplete({
         <>
           <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{option.name}</div>
           {option.email ? (
-            <div className="text-xs text-gray-500 dark:text-gray-400">{option.email}</div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">
+              <MemberEmail email={option.email} parentEmail={option.parentEmail} />
+            </div>
           ) : null}
         </>
       )}

@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { getDrizzleDb } from '../../db/drizzle-db.js';
 
 /** Menu type for authenticated / members-area navigation. */
@@ -65,7 +65,7 @@ export const DEFAULT_MEMBER_MENU: MemberMenuSeedNode[] = [
     url: null,
     children: [
       { label: 'Volunteering & sign-ups', linkType: 'external', url: '/volunteering' },
-      { label: 'My volunteering', linkType: 'external', url: '/volunteering?tab=shifts' },
+      { label: 'My sign-ups', linkType: 'external', url: '/volunteering?tab=shifts' },
       { label: 'Expense reports', linkType: 'external', url: '/expenses' },
     ],
   },
@@ -112,9 +112,20 @@ export async function seedMemberMenuIfNeeded(): Promise<void> {
     .from(schema.menuItems)
     .where(eq(schema.menuItems.menu_type, MEMBER_MENU_TYPE))
     .limit(1);
-  if (existing.length > 0) return;
-
-  for (let i = 0; i < DEFAULT_MEMBER_MENU.length; i++) {
-    await insertMemberMenuNode(DEFAULT_MEMBER_MENU[i]!, null, i);
+  if (existing.length === 0) {
+    for (let i = 0; i < DEFAULT_MEMBER_MENU.length; i++) {
+      await insertMemberMenuNode(DEFAULT_MEMBER_MENU[i]!, null, i);
+    }
   }
+
+  await db
+    .update(schema.menuItems)
+    .set({ label: 'My sign-ups' })
+    .where(
+      and(
+        eq(schema.menuItems.menu_type, MEMBER_MENU_TYPE),
+        eq(schema.menuItems.label, 'My volunteering'),
+        eq(schema.menuItems.url, '/volunteering?tab=shifts')
+      )
+    );
 }

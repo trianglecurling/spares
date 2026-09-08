@@ -37,6 +37,7 @@ import {
   teamUpdateBodySchema,
 } from '../api/leagueSetupSchemas.js';
 import type { ApiReply } from '../api/types.js';
+import { memberContactEmails } from '../utils/memberParentEmail.js';
 import {
   hasClubLeagueAdministratorAccess,
   hasLeagueAdministratorAccess,
@@ -812,6 +813,8 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
           member_id: schema.leagueRoster.member_id,
           name: schema.members.name,
           email: schema.members.email,
+          guardian_email: schema.members.guardian_email,
+          date_of_birth: schema.members.date_of_birth,
         })
         .from(schema.leagueRoster)
         .innerJoin(schema.members, eq(schema.leagueRoster.member_id, schema.members.id))
@@ -857,7 +860,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
         return {
           memberId: row.member_id,
           name: row.name,
-          email: row.email,
+          ...memberContactEmails(row),
           assignedTeamId: assignment?.teamId ?? null,
           assignedTeamName: assignment?.teamName ?? null,
           guaranteeLabel: status?.guaranteeLabel ?? null,
@@ -935,6 +938,8 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
           member_id: schema.leagueRoster.member_id,
           name: schema.members.name,
           email: schema.members.email,
+          guardian_email: schema.members.guardian_email,
+          date_of_birth: schema.members.date_of_birth,
         })
         .from(schema.leagueRoster)
         .innerJoin(schema.members, eq(schema.leagueRoster.member_id, schema.members.id))
@@ -955,7 +960,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       return rosterRows.map((row) => ({
         memberId: row.member_id,
         name: row.name,
-        email: row.email,
+        ...memberContactEmails(row),
       }));
     }
   );
@@ -996,7 +1001,13 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
 
       if (rosterOnly) {
         const rows = (await db
-          .select({ id: schema.members.id, name: schema.members.name, email: schema.members.email })
+          .select({
+            id: schema.members.id,
+            name: schema.members.name,
+            email: schema.members.email,
+            guardian_email: schema.members.guardian_email,
+            date_of_birth: schema.members.date_of_birth,
+          })
           .from(schema.leagueRoster)
           .innerJoin(schema.members, eq(schema.leagueRoster.member_id, schema.members.id))
           .where(
@@ -1016,7 +1027,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
         return rows.map((row) => ({
           id: row.id,
           name: row.name,
-          email: row.email,
+          ...memberContactEmails(row),
         }));
       }
 
@@ -1027,7 +1038,13 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
 
       const rosterIdSet = rosterIds.map((row) => row.member_id);
       const rows = (await db
-        .select({ id: schema.members.id, name: schema.members.name, email: schema.members.email })
+        .select({
+          id: schema.members.id,
+          name: schema.members.name,
+          email: schema.members.email,
+          guardian_email: schema.members.guardian_email,
+          date_of_birth: schema.members.date_of_birth,
+        })
         .from(schema.members)
         .where(
           and(
@@ -1046,7 +1063,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       return rows.map((row) => ({
         id: row.id,
         name: row.name,
-        email: row.email,
+        ...memberContactEmails(row),
       }));
     }
   );
@@ -1160,6 +1177,8 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
           id: schema.members.id,
           name: schema.members.name,
           email: schema.members.email,
+          guardian_email: schema.members.guardian_email,
+          date_of_birth: schema.members.date_of_birth,
           lowerName,
         })
         .from(schema.members)
@@ -1180,7 +1199,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       const exactMap = new Map<string, { id: number; name: string; email: string | null }[]>();
       for (const row of exactRows) {
         const list = exactMap.get(row.lowerName) ?? [];
-        list.push({ id: row.id, name: row.name, email: row.email });
+        list.push({ id: row.id, name: row.name, ...memberContactEmails(row) });
         exactMap.set(row.lowerName, list);
       }
 
@@ -1239,7 +1258,13 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
         if (entry.candidates.length > 0) continue;
         const search = `%${entry.name.toLowerCase()}%`;
         const suggestions = (await db
-          .select({ id: schema.members.id, name: schema.members.name, email: schema.members.email })
+          .select({
+            id: schema.members.id,
+            name: schema.members.name,
+            email: schema.members.email,
+            guardian_email: schema.members.guardian_email,
+            date_of_birth: schema.members.date_of_birth,
+          })
           .from(schema.members)
           .where(
             and(
@@ -1348,6 +1373,8 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
           member_id: schema.leagueMemberRoles.member_id,
           name: schema.members.name,
           email: schema.members.email,
+          guardian_email: schema.members.guardian_email,
+          date_of_birth: schema.members.date_of_birth,
         })
         .from(schema.leagueMemberRoles)
         .innerJoin(schema.members, eq(schema.leagueMemberRoles.member_id, schema.members.id))
@@ -1366,7 +1393,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       return rows.map((row: { member_id: number; name: string; email: string | null }) => ({
         memberId: row.member_id,
         name: row.name,
-        email: row.email,
+        ...memberContactEmails(row),
       }));
     }
   );
@@ -1408,7 +1435,13 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
 
       const existingIds = existingManagerRows.map((row) => row.member_id);
       const rows = (await db
-        .select({ id: schema.members.id, name: schema.members.name, email: schema.members.email })
+        .select({
+          id: schema.members.id,
+          name: schema.members.name,
+          email: schema.members.email,
+          guardian_email: schema.members.guardian_email,
+          date_of_birth: schema.members.date_of_birth,
+        })
         .from(schema.members)
         .where(
           and(
@@ -1426,7 +1459,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       return rows.map((row: { id: number; name: string; email: string | null }) => ({
         id: row.id,
         name: row.name,
-        email: row.email,
+        ...memberContactEmails(row),
       }));
     }
   );
@@ -2246,7 +2279,13 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       const today = todayDateString();
 
       const rows = (await db
-        .select({ id: schema.members.id, name: schema.members.name, email: schema.members.email })
+        .select({
+          id: schema.members.id,
+          name: schema.members.name,
+          email: schema.members.email,
+          guardian_email: schema.members.guardian_email,
+          date_of_birth: schema.members.date_of_birth,
+        })
         .from(schema.members)
         .where(
           and(
@@ -2263,7 +2302,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       return rows.map((row) => ({
         id: row.id,
         name: row.name,
-        email: row.email,
+        ...memberContactEmails(row),
       }));
     }
   );

@@ -8,10 +8,12 @@ import Button from '../../components/Button';
 import ChoiceInput from '../../components/ChoiceInput';
 import FormField from '../../components/FormField';
 import InlineStateMessage from '../../components/InlineStateMessage';
+import MemberEmail from '../../components/MemberEmail';
 import DataTable from '../../components/table/DataTable';
 import type { DataTableColumn, TableSort } from '../../components/table/tableTypes';
 import { useAlert } from '../../contexts/AlertContext';
 import api, { getApiErrorMessage } from '../../utils/api';
+import { namedCopyEmailEntries } from '../../utils/memberParentEmail';
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -39,21 +41,14 @@ function sessionLabel(session: { seasonName: string | null; name: string } | nul
   return session.seasonName ? `${session.seasonName} / ${session.name}` : session.name;
 }
 
-const EMAIL_ADDRESS_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
 function emailEntriesForReturningMembers(members: ReturningMemberQaRow[]): string[] {
-  const entries: string[] = [];
-  const seenEmails = new Set<string>();
-  for (const member of members) {
-    const email = member.memberEmail?.trim() ?? '';
-    if (!email || !EMAIL_ADDRESS_RE.test(email)) continue;
-    const emailKey = email.toLowerCase();
-    if (seenEmails.has(emailKey)) continue;
-    seenEmails.add(emailKey);
-    const displayName = member.memberName.trim() || email;
-    entries.push(`"${displayName}" <${email}>`);
-  }
-  return entries;
+  return namedCopyEmailEntries(
+    members.map((member) => ({
+      name: member.memberName,
+      email: member.memberEmail,
+      parentEmail: member.parentEmail,
+    })),
+  );
 }
 
 function registrationStatusLabel(status: string | null): string {
@@ -152,6 +147,7 @@ export default function AdminRegistrationQaReturningMembers() {
       return (
         member.memberName.toLowerCase().includes(needle) ||
         (member.memberEmail ?? '').toLowerCase().includes(needle) ||
+        (member.parentEmail ?? '').toLowerCase().includes(needle) ||
         leagueText.includes(needle)
       );
     });
@@ -201,7 +197,11 @@ export default function AdminRegistrationQaReturningMembers() {
           ) : (
             <div className="font-medium text-gray-900 dark:text-gray-100">{row.memberName}</div>
           )}
-          {row.memberEmail ? <div className="text-xs text-gray-500 dark:text-gray-400">{row.memberEmail}</div> : null}
+          {row.memberEmail ? (
+            <div className="text-xs text-gray-500 dark:text-gray-400">
+              <MemberEmail email={row.memberEmail} parentEmail={row.parentEmail} />
+            </div>
+          ) : null}
         </div>
       ),
     },

@@ -333,8 +333,10 @@ export const expenseListItemSchema = {
     statusLabel: { type: 'string' },
     submitterName: { type: 'string' },
     submitterEmail: { type: 'string' },
+    totalAmountMinor: { type: 'number' },
     requestedAmountMinor: { type: 'number' },
     requestedCurrency: { type: 'string' },
+    usedClubCreditCard: { type: 'boolean' },
     submittedAt: { type: 'string' },
   },
   required: [
@@ -344,8 +346,10 @@ export const expenseListItemSchema = {
     'statusLabel',
     'submitterName',
     'submitterEmail',
+    'totalAmountMinor',
     'requestedAmountMinor',
     'requestedCurrency',
+    'usedClubCreditCard',
     'submittedAt',
   ],
 } as const;

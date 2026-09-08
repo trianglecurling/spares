@@ -15,6 +15,7 @@ import ClubTimeHint from '../../components/ClubTimeHint';
 import InlineStateMessage from '../../components/InlineStateMessage';
 import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
 import MemberAutocomplete from '../../components/MemberAutocomplete';
+import MemberEmail from '../../components/MemberEmail';
 import Modal from '../../components/Modal';
 import PageTabs from '../../components/PageTabs';
 import AdminEventDetailsArticlePanel from './AdminEventDetailsArticlePanel';
@@ -36,6 +37,8 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useAlert } from '../../contexts/AlertContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { useMemberOptions } from '../../contexts/MemberOptionsContext';
+import { useParentEmailLookup } from '../../hooks/useParentEmailLookup';
+import { formatEmailWithParent, namedCopyEmailEntries } from '../../utils/memberParentEmail';
 import { LOCATION_OPTIONS } from '../calendarEventFormShared';
 import {
   dateTimeLocalToIso,
@@ -78,13 +81,6 @@ import {
   DEFAULT_CONTACT_LAST_NAME_LABEL,
   normalizeContactFieldLabelOverride,
 } from '../../utils/eventRegistrationContactLabels';
-
-/** Skip values that would break mailto/BCC lists. */
-const EMAIL_ADDRESS_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-function isValidEmailAddress(email: string): boolean {
-  return EMAIL_ADDRESS_RE.test(email);
-}
 
 interface Timespan {
   startDt: string;
@@ -384,6 +380,7 @@ export default function AdminEventEditor() {
   // Owner picker
   const [addingOwner, setAddingOwner] = useState<number | ''>('');
   const { options: memberOptions } = useMemberOptions();
+  const { parentEmailFor } = useParentEmailLookup();
 
   const presetMenuItems: PresetFieldType[] = [
     'preset_address',
@@ -1057,7 +1054,9 @@ export default function AdminEventEditor() {
         id: 'email',
         header: 'Email',
         cellClassName: 'text-sm text-gray-600 dark:text-gray-400',
-        renderCell: (registration) => registration.contact_email,
+        renderCell: (registration) => (
+          <MemberEmail email={registration.contact_email} parentEmail={parentEmailFor(registration.contact_email)} />
+        ),
       },
       {
         id: 'status',
@@ -1120,7 +1119,7 @@ export default function AdminEventEditor() {
         };
       }),
     ];
-  }, [allowGroupRegistration, id, registrationFieldsForData]);
+  }, [allowGroupRegistration, id, parentEmailFor, registrationFieldsForData]);
 
   const specialLinkColumns: Array<DataTableColumn<SpecialLink>> = useMemo(
     () => [
@@ -1191,18 +1190,15 @@ export default function AdminEventEditor() {
   );
 
   const appendEmailRecipient = (
-    entries: string[],
-    seenEmails: Set<string>,
+    recipients: Array<{ name: string; email: string | null | undefined; parentEmail?: string | null }>,
     name: string,
     emailRaw: string | null | undefined,
   ) => {
-    const email = emailRaw?.trim() ?? '';
-    if (!email || !isValidEmailAddress(email)) return;
-    const emailKey = email.toLowerCase();
-    if (seenEmails.has(emailKey)) return;
-    seenEmails.add(emailKey);
-    const displayName = name.trim() || email;
-    entries.push(`"${displayName}" <${email}>`);
+    recipients.push({
+      name,
+      email: emailRaw,
+      parentEmail: parentEmailFor(emailRaw),
+    });
   };
 
   const teamFieldsForCopyEmails = useMemo(
@@ -1233,24 +1229,22 @@ export default function AdminEventEditor() {
   ): string[] => {
     const statusSet = new Set(statuses);
     const selected = registrations.filter((registration) => statusSet.has(registration.status));
-    const entries: string[] = [];
-    const seenEmails = new Set<string>();
+    const recipients: Array<{ name: string; email: string | null | undefined; parentEmail?: string | null }> = [];
 
     if (recipientMode === 'registrants' || recipientMode === 'registrants_and_group_members') {
       selected.forEach((registration) => {
-        appendEmailRecipient(entries, seenEmails, registration.contact_name, registration.contact_email);
+        appendEmailRecipient(recipients, registration.contact_name, registration.contact_email);
         if (recipientMode === 'registrants_and_group_members') {
           registration.groupMembers.forEach((member, index) => {
             appendEmailRecipient(
-              entries,
-              seenEmails,
+              recipients,
               member.name?.trim() || `Registrant ${index + 2}`,
               member.email,
             );
           });
         }
       });
-      return entries;
+      return namedCopyEmailEntries(recipients);
     }
 
     const preferDoubles = tournamentFormat === 'doubles';
@@ -1271,8 +1265,7 @@ export default function AdminEventEditor() {
           const player = players[fourthIndex];
           if (player) {
             appendEmailRecipient(
-              entries,
-              seenEmails,
+              recipients,
               player.name?.trim() || (isDoublesField ? 'Player 2' : 'Fourth'),
               player.email,
             );
@@ -1281,12 +1274,12 @@ export default function AdminEventEditor() {
           players.forEach((player, index) => {
             const fallback =
               (isDoublesField ? TEAM_POSITIONS_DOUBLES[index] : TEAM_POSITIONS_FOUR[index]) ?? `Player ${index + 1}`;
-            appendEmailRecipient(entries, seenEmails, player.name?.trim() || fallback, player.email);
+            appendEmailRecipient(recipients, player.name?.trim() || fallback, player.email);
           });
         }
       }
     });
-    return entries;
+    return namedCopyEmailEntries(recipients);
   };
 
   const openCopyEmailsDialog = () => {
@@ -1364,12 +1357,15 @@ export default function AdminEventEditor() {
       const baseValues = [
         registration.id,
         registration.contact_name,
-        registration.contact_email,
+        formatEmailWithParent(registration.contact_email, parentEmailFor(registration.contact_email)),
         registration.status,
         ...(allowGroupRegistration ? [registration.group_size] : []),
         formatDateTime24(registration.registered_at),
         registration.groupMembers.map((member) => member.name).join(' | '),
-        registration.groupMembers.map((member) => member.email || '').filter(Boolean).join(' | '),
+        registration.groupMembers
+          .map((member) => formatEmailWithParent(member.email, parentEmailFor(member.email)))
+          .filter(Boolean)
+          .join(' | '),
       ];
       const customValues = registrationFieldsForData.flatMap((field) =>
         isTeamPresetFieldType(field.fieldType)
