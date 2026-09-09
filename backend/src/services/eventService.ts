@@ -1291,30 +1291,11 @@ export async function confirmRegistrationPayment(
     };
   }
 
-
-  let refundIssued = false;
   if (outcome === 'waitlisted_with_refund' || outcome === 'cancelled_with_refund') {
-    const { claimEventRegistrationRaceRefund, issueEventRegistrationRefund } = await import('./eventRegistrationRefundService.js');
     const { getDatabaseConfig } = await import('../db/config.js');
+    const { logEvent } = await import('./observability.js');
     const isPostgres = getDatabaseConfig()?.type === 'postgres';
     const metadataColumn = schema.paymentOrders.metadata;
-    const claimed = await claimEventRegistrationRaceRefund(paymentOrderId);
-    if (claimed) {
-      const refundResult = await issueEventRegistrationRefund({
-        paymentOrderId,
-        reason: 'Event filled before payment completed',
-        bypassEligibility: true,
-      });
-      refundIssued = refundResult.refundIssued;
-    } else {
-      const [order] = await db
-        .select({ status: schema.paymentOrders.status })
-        .from(schema.paymentOrders)
-        .where(eq(schema.paymentOrders.id, paymentOrderId))
-        .limit(1);
-      refundIssued = order?.status === 'refunded' || order?.status === 'pending_refund';
-    }
-
     const outcomeKey = outcome;
     await db
       .update(schema.paymentOrders)
@@ -1325,6 +1306,12 @@ export async function confirmRegistrationPayment(
         updated_at: sql`CURRENT_TIMESTAMP`,
       })
       .where(eq(schema.paymentOrders.id, paymentOrderId));
+
+    await logEvent({
+      eventType: 'event.registration.payment_needs_staff_refund',
+      relatedId: registrationId,
+      meta: { paymentOrderId, outcome, eventId: reg.event_id },
+    });
   }
 
   const waitlistLength =
@@ -1342,7 +1329,7 @@ export async function confirmRegistrationPayment(
   return {
     outcome,
     registrationStatus: nextStatus,
-    refundIssued,
+    refundIssued: false,
     waitlistPosition,
     waitlistLength,
   };

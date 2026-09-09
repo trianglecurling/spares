@@ -71,6 +71,26 @@ export type SabbaticalQaRow = {
   registrationId: number;
 };
 
+export type RequestedLeaguesQaLeague = ReturningMemberQaLeague;
+
+export type RequestedLeaguesQaRequestedLeague = RequestedLeaguesQaLeague & {
+  priorityRank: number;
+};
+
+export type RequestedLeaguesQaRow = {
+  memberId: number;
+  memberName: string;
+  memberFirstName: string;
+  memberEmail: string | null;
+  parentEmail: string | null;
+  registrationId: number;
+  registrationStatus: string;
+  requestedLeagueCount: number;
+  rosteredLeagueCount: number;
+  requestedLeagues: RequestedLeaguesQaRequestedLeague[];
+  rosteredLeagues: RequestedLeaguesQaLeague[];
+};
+
 export type ReturningPlayerQaClassification = {
   status: ReturningPlayerQaStatus;
   priorityRank: number | null;
@@ -238,6 +258,60 @@ export function buildSabbaticalQaRows(input: {
       registrationId: row.registrationId,
     }))
     .sort((a, b) => a.memberName.localeCompare(b.memberName) || a.memberId - b.memberId);
+}
+
+function firstNameSortKey(firstName: string, memberName: string): string {
+  return firstName.trim() || memberName.trim();
+}
+
+export function buildRequestedLeaguesQaRows(input: {
+  members: Array<{
+    memberId: number;
+    memberName: string;
+    memberFirstName: string;
+    memberEmail: string | null;
+    parentEmail: string | null;
+    registrationId: number;
+    registrationStatus: string;
+    requestedLeagueCount: number | null;
+    requestedLeagues: RequestedLeaguesQaRequestedLeague[];
+    rosteredLeagues: RequestedLeaguesQaLeague[];
+  }>;
+}): RequestedLeaguesQaRow[] {
+  const rows: RequestedLeaguesQaRow[] = [];
+  for (const member of input.members) {
+    if (member.requestedLeagueCount == null || member.requestedLeagueCount <= 0) continue;
+    const rosteredLeagues = sortPreviousLeagues(
+      [...new Map(member.rosteredLeagues.map((league) => [league.id, league])).values()],
+    );
+    if (rosteredLeagues.length >= member.requestedLeagueCount) continue;
+    const requestedLeagues = [...member.requestedLeagues]
+      .sort((a, b) => a.priorityRank - b.priorityRank || a.id - b.id)
+      .filter((league, index, list) => list.findIndex((entry) => entry.id === league.id) === index);
+    rows.push({
+      memberId: member.memberId,
+      memberName: member.memberName,
+      memberFirstName: member.memberFirstName,
+      memberEmail: member.memberEmail,
+      parentEmail: member.parentEmail,
+      registrationId: member.registrationId,
+      registrationStatus: member.registrationStatus,
+      requestedLeagueCount: member.requestedLeagueCount,
+      rosteredLeagueCount: rosteredLeagues.length,
+      requestedLeagues,
+      rosteredLeagues,
+    });
+  }
+  return rows.sort((a, b) => {
+    if (a.rosteredLeagueCount !== b.rosteredLeagueCount) return a.rosteredLeagueCount - b.rosteredLeagueCount;
+    const firstNameDiff = firstNameSortKey(a.memberFirstName, a.memberName).localeCompare(
+      firstNameSortKey(b.memberFirstName, b.memberName),
+    );
+    if (firstNameDiff !== 0) return firstNameDiff;
+    const nameDiff = a.memberName.localeCompare(b.memberName);
+    if (nameDiff !== 0) return nameDiff;
+    return a.memberId - b.memberId;
+  });
 }
 
 async function loadPickedRegistrationsByMemberId(
@@ -941,6 +1015,181 @@ export async function getStaffSabbaticalsQa(input: { actor: Member; sessionId: n
           memberEmail: member?.email ?? null,
           registrationId: registration.id,
           league,
+        },
+      ];
+    }),
+  });
+
+  return {
+    ...empty,
+    members,
+  };
+}
+
+export async function getStaffRequestedLeaguesQa(input: { actor: Member; sessionId: number }) {
+  assertStaffAccess(input.actor);
+  const { db, schema } = getDrizzleDb();
+
+  const [session] = await db
+    .select({
+      id: schema.curlingSessions.id,
+      name: schema.curlingSessions.name,
+    })
+    .from(schema.curlingSessions)
+    .where(eq(schema.curlingSessions.id, input.sessionId))
+    .limit(1);
+  if (!session) {
+    throw new RegistrationStaffValidationError({ sessionId: 'Session was not found.' });
+  }
+
+  const empty = {
+    sessionId: session.id,
+    sessionName: session.name,
+    members: [] as RequestedLeaguesQaRow[],
+  };
+
+  const registrationRows = await db
+    .select({
+      id: schema.curlingRegistrations.id,
+      curlerMemberId: schema.curlingRegistrations.curler_member_id,
+      status: schema.curlingRegistrations.status,
+      submittedAt: schema.curlingRegistrations.submitted_at,
+      updatedAt: schema.curlingRegistrations.updated_at,
+      desiredLeagueCount: schema.curlingRegistrations.desired_league_count,
+      returningMemberAnswer: schema.curlingRegistrations.returning_member_answer,
+    })
+    .from(schema.curlingRegistrations)
+    .where(
+      and(
+        eq(schema.curlingRegistrations.session_id, session.id),
+        inArray(schema.curlingRegistrations.status, [...SUBMITTED_CURLER_REGISTRATION_STATUSES]),
+      ),
+    )
+    .orderBy(desc(schema.curlingRegistrations.updated_at));
+
+  const grouped = new Map<number, PickedRegistrationRow[]>();
+  for (const row of registrationRows) {
+    if (row.curlerMemberId == null) continue;
+    const list = grouped.get(row.curlerMemberId) ?? [];
+    list.push({
+      id: row.id,
+      curlerMemberId: row.curlerMemberId,
+      status: row.status,
+      submittedAt: timestampToStringOrNull(row.submittedAt),
+      updatedAt: timestampToString(row.updatedAt),
+      desiredLeagueCount: row.desiredLeagueCount,
+      returningMemberAnswer: row.returningMemberAnswer,
+    });
+    grouped.set(row.curlerMemberId, list);
+  }
+
+  const registrationsByMemberId = new Map<number, PickedRegistrationRow>();
+  for (const [memberId, rows] of grouped) {
+    const picked = pickStaffRegistrationForQa(rows);
+    if (picked) registrationsByMemberId.set(memberId, picked);
+  }
+
+  const memberIds = [...registrationsByMemberId.keys()];
+  if (memberIds.length === 0) {
+    return empty;
+  }
+
+  const sessionLeaguesUnsorted = await db
+    .select({
+      id: schema.leagues.id,
+      name: schema.leagues.name,
+      day_of_week: schema.leagues.day_of_week,
+    })
+    .from(schema.leagues)
+    .where(eq(schema.leagues.session_id, session.id));
+  const sessionLeagues = await sortLeaguesByDayOfWeekThenFirstDrawTime(db, schema, sessionLeaguesUnsorted);
+  const leaguesById = new Map(
+    sessionLeagues.map((league) => [league.id, { id: league.id, name: league.name, dayOfWeek: league.day_of_week }]),
+  );
+
+  const registrationIds = [...registrationsByMemberId.values()].map((row) => row.id);
+  const requestedByRegistrationId = new Map<number, RequestedLeaguesQaRequestedLeague[]>();
+  if (registrationIds.length > 0) {
+    const priorityRows = await db
+      .select({
+        registrationId: schema.registrationLeaguePriorities.registration_id,
+        leagueId: schema.registrationLeaguePriorities.league_id,
+        priorityRank: schema.registrationLeaguePriorities.priority_rank,
+      })
+      .from(schema.registrationLeaguePriorities)
+      .where(inArray(schema.registrationLeaguePriorities.registration_id, registrationIds));
+    for (const row of priorityRows) {
+      const league = leaguesById.get(row.leagueId);
+      if (!league) continue;
+      const list = requestedByRegistrationId.get(row.registrationId) ?? [];
+      list.push({ ...league, priorityRank: row.priorityRank });
+      requestedByRegistrationId.set(row.registrationId, list);
+    }
+  }
+
+  const rosteredByMemberId = new Map<number, RequestedLeaguesQaLeague[]>();
+  if (sessionLeagues.length > 0) {
+    const rosterRows = await db
+      .select({
+        memberId: schema.leagueRoster.member_id,
+        leagueId: schema.leagueRoster.league_id,
+      })
+      .from(schema.leagueRoster)
+      .where(
+        and(
+          inArray(
+            schema.leagueRoster.league_id,
+            sessionLeagues.map((league) => league.id),
+          ),
+          inArray(schema.leagueRoster.member_id, memberIds),
+          eq(schema.leagueRoster.status, 'active'),
+        ),
+      );
+    for (const row of rosterRows) {
+      const league = leaguesById.get(row.leagueId);
+      if (!league) continue;
+      const list = rosteredByMemberId.get(row.memberId) ?? [];
+      list.push(league);
+      rosteredByMemberId.set(row.memberId, list);
+    }
+  }
+
+  const memberRows = await db
+    .select({
+      id: schema.members.id,
+      name: schema.members.name,
+      firstName: schema.members.first_name,
+      lastName: schema.members.last_name,
+      email: schema.members.email,
+      guardian_email: schema.members.guardian_email,
+      date_of_birth: schema.members.date_of_birth,
+    })
+    .from(schema.members)
+    .where(inArray(schema.members.id, memberIds));
+  const membersById = new Map(memberRows.map((row) => [row.id, row]));
+
+  const members = buildRequestedLeaguesQaRows({
+    members: [...registrationsByMemberId.entries()].flatMap(([memberId, registration]) => {
+      const member = membersById.get(memberId);
+      if (!member) return [];
+      const contacts = memberContactEmails(member);
+      return [
+        {
+          memberId,
+          memberName: memberName({
+            name: member.name,
+            first_name: member.firstName,
+            last_name: member.lastName,
+            email: member.email,
+          }),
+          memberFirstName: member.firstName?.trim() ?? '',
+          memberEmail: contacts.email,
+          parentEmail: contacts.parentEmail,
+          registrationId: registration.id,
+          registrationStatus: registration.status,
+          requestedLeagueCount: registration.desiredLeagueCount,
+          requestedLeagues: requestedByRegistrationId.get(registration.id) ?? [],
+          rosteredLeagues: rosteredByMemberId.get(memberId) ?? [],
         },
       ];
     }),

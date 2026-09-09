@@ -2189,3 +2189,139 @@ export const staffSabbaticalsQaResponseSchema = {
     },
   },
 } as const;
+
+export const staffRequestedLeaguesQaResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['sessionId', 'sessionName', 'members'],
+  properties: {
+    sessionId: { type: 'number' },
+    sessionName: { type: 'string' },
+    members: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: [
+          'memberId',
+          'memberName',
+          'memberFirstName',
+          'memberEmail',
+          'parentEmail',
+          'registrationId',
+          'registrationStatus',
+          'requestedLeagueCount',
+          'rosteredLeagueCount',
+          'requestedLeagues',
+          'rosteredLeagues',
+        ],
+        properties: {
+          memberId: { type: 'number' },
+          memberName: { type: 'string' },
+          memberFirstName: { type: 'string' },
+          memberEmail: { type: ['string', 'null'] },
+          parentEmail: { type: ['string', 'null'] },
+          registrationId: { type: 'number' },
+          registrationStatus: { type: 'string' },
+          requestedLeagueCount: { type: 'number' },
+          rosteredLeagueCount: { type: 'number' },
+          requestedLeagues: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['id', 'name', 'dayOfWeek', 'priorityRank'],
+              properties: {
+                id: { type: 'number' },
+                name: { type: 'string' },
+                dayOfWeek: { type: 'number' },
+                priorityRank: { type: 'number' },
+              },
+            },
+          },
+          rosteredLeagues: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['id', 'name', 'dayOfWeek'],
+              properties: {
+                id: { type: 'number' },
+                name: { type: 'string' },
+                dayOfWeek: { type: 'number' },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+} as const;
+
+export const staffRegistrationBillingResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['sessionId', 'sessionName', 'leagueProcessingActive', 'registrations'],
+  properties: {
+    sessionId: { type: 'number' },
+    sessionName: { type: 'string' },
+    leagueProcessingActive: { type: 'boolean' },
+    registrations: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: [
+          'registrationId',
+          'curlerId',
+          'curlerName',
+          'curlerEmail',
+          'registrationStatus',
+          'owedMinor',
+          'paidMinor',
+          'balanceMinor',
+          'canRequestPayment',
+          'canIssueRefund',
+        ],
+        properties: {
+          registrationId: { type: 'number' },
+          curlerId: { type: ['number', 'null'] },
+          curlerName: { type: 'string' },
+          curlerEmail: { type: ['string', 'null'] },
+          registrationStatus: { type: 'string' },
+          owedMinor: { type: 'number' },
+          paidMinor: { type: 'number' },
+          balanceMinor: { type: 'number' },
+          canRequestPayment: { type: 'boolean' },
+          canIssueRefund: { type: 'boolean' },
+        },
+      },
+    },
+  },
+} as const;
+
+export const staffRegistrationRefundResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['registrationId', 'amountRefundedMinor', 'refundIds'],
+  properties: {
+    registrationId: { type: 'number' },
+    amountRefundedMinor: { type: 'number' },
+    refundIds: { type: 'array', items: { type: 'number' } },
+  },
+} as const;
+
+export const staffRequestPaymentResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['outcome', 'registrationId', 'totalDueMinor'],
+  properties: {
+    outcome: { type: 'string' },
+    registrationId: { type: 'number' },
+    invoiceId: { type: 'number' },
+    checkoutUrl: { type: 'string' },
+    orderToken: { type: 'string' },
+    totalDueMinor: { type: 'number' },
+    deferralReasons: { type: 'array', items: { type: 'string' } },
+  },
+} as const;

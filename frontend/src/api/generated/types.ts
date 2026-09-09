@@ -15966,6 +15966,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/events/{id}/registrations/{registrationId}/refund": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    registrationId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/events/{id}/special-links": {
         parameters: {
             query?: never;
@@ -19653,6 +19689,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/registration/staff/billing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query: {
+                    sessionId: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            sessionId: number;
+                            sessionName: string;
+                            leagueProcessingActive: boolean;
+                            registrations: {
+                                registrationId: number;
+                                curlerId: null | number;
+                                curlerName: string;
+                                curlerEmail: null | string;
+                                registrationStatus: string;
+                                owedMinor: number;
+                                paidMinor: number;
+                                balanceMinor: number;
+                                canRequestPayment: boolean;
+                                canIssueRefund: boolean;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/registration/staff/qa/returning-members": {
         parameters: {
             query?: never;
@@ -19843,6 +19932,68 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/registration/staff/qa/requested-leagues": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query: {
+                    sessionId: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            sessionId: number;
+                            sessionName: string;
+                            members: {
+                                memberId: number;
+                                memberName: string;
+                                memberFirstName: string;
+                                memberEmail: null | string;
+                                parentEmail: null | string;
+                                registrationId: number;
+                                registrationStatus: string;
+                                requestedLeagueCount: number;
+                                rosteredLeagueCount: number;
+                                requestedLeagues: {
+                                    id: number;
+                                    name: string;
+                                    dayOfWeek: number;
+                                    priorityRank: number;
+                                }[];
+                                rosteredLeagues: {
+                                    id: number;
+                                    name: string;
+                                    dayOfWeek: number;
+                                }[];
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/registration/staff/registrations/{id}": {
         parameters: {
             query?: never;
@@ -19966,14 +20117,77 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody?: never;
+            requestBody: {
+                content: {
+                    "application/json": {
+                        collectBalance?: boolean;
+                    };
+                };
+            };
             responses: {
                 /** @description Default Response */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": {
+                            outcome: string;
+                            registrationId: number;
+                            invoiceId?: number;
+                            checkoutUrl?: string;
+                            orderToken?: string;
+                            totalDueMinor: number;
+                            deferralReasons?: string[];
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/registration/staff/registrations/{id}/issue-refund": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        note: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            registrationId: number;
+                            amountRefundedMinor: number;
+                            refundIds: number[];
+                        };
+                    };
                 };
             };
         };
@@ -21242,6 +21456,41 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/waitlists/entries/{entryId}/priority-details": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    entryId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;

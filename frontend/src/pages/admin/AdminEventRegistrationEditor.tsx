@@ -167,6 +167,8 @@ export default function AdminEventRegistrationEditor() {
   const [saving, setSaving] = useState(false);
   const [cancelBusy, setCancelBusy] = useState(false);
   const [showCancelModal, setShowCancelModal] = useState(false);
+  const [refundBusy, setRefundBusy] = useState(false);
+  const [showRefundModal, setShowRefundModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [transferOptions, setTransferOptions] = useState<TransferSessionOption[]>([]);
   const [transferOptionsLoading, setTransferOptionsLoading] = useState(false);
@@ -449,6 +451,39 @@ export default function AdminEventRegistrationEditor() {
     }
   };
 
+  const handleIssueRefund = async () => {
+    if (isNew || !registration || refundBusy) return;
+    setRefundBusy(true);
+    try {
+      const response = await api.post<{
+        success: boolean;
+        refundIssued?: boolean;
+        refundError?: string | null;
+        refundAmountMinor?: number;
+      }>(`/events/${eventId}/registrations/${registration.id}/refund`, {});
+      if (response.data?.refundError) {
+        showAlert(`Refund failed: ${response.data.refundError}`, 'error');
+      } else if (response.data?.refundIssued) {
+        const amountLabel =
+          response.data.refundAmountMinor != null && registration.payment
+            ? ` of ${formatMinorCurrency(response.data.refundAmountMinor, registration.payment.currency)}`
+            : '';
+        showAlert(`Refund initiated${amountLabel}`, 'success');
+      } else {
+        showAlert('No refundable payment found', 'warning');
+      }
+      const refreshed = await api.get<RegistrationDetail>(
+        `/events/${eventId}/registrations/${registration.id}`,
+      );
+      setRegistration(refreshed.data);
+    } catch (error) {
+      showAlert(formatApiError(error, 'Failed to issue refund'), 'error');
+    } finally {
+      setRefundBusy(false);
+      setShowRefundModal(false);
+    }
+  };
+
   const copyRegistrationManagementLink = async () => {
     if (!registration) return;
 
@@ -508,8 +543,12 @@ export default function AdminEventRegistrationEditor() {
         : 'View and edit full registration details.'}
     </>
   );
-  const showRefundWarning = event.feeMinor > 0 && registration?.status !== 'waitlisted';
+  const showRefundWarning = event.feeMinor > 0 && registration?.status !== 'cancelled';
   const payment = registration?.payment ?? null;
+  const canIssueStaffRefund =
+    payment != null &&
+    (payment.status === 'succeeded' || payment.status === 'partially_refunded') &&
+    (payment.paid_minor ?? payment.amount_minor) - payment.refunded_minor > 0;
   const primaryTransactionId = payment?.latest_transaction?.provider_transaction_id ?? null;
   const checkoutSessionId = payment?.provider_order_id ?? null;
   const primaryStripeUrl = payment?.provider === 'stripe'
@@ -854,6 +893,11 @@ export default function AdminEventRegistrationEditor() {
                     Cancel registration
                   </Button>
                 )}
+                {!isNew && registration && canIssueStaffRefund && (
+                  <Button type="button" variant="secondary" onClick={() => setShowRefundModal(true)}>
+                    Issue refund
+                  </Button>
+                )}
                 <Button type="submit" disabled={saving}>
                   {saving ? 'Saving...' : isNew ? 'Create registration' : 'Save changes'}
                 </Button>
@@ -945,6 +989,49 @@ export default function AdminEventRegistrationEditor() {
                     : transferCapacityOverrideWarning
                       ? 'Move and override capacity'
                       : 'Move registration'}
+                </Button>
+              </div>
+            </div>
+          </Modal>
+        )}
+
+        {!isNew && registration && (
+          <Modal
+            isOpen={showRefundModal}
+            onClose={() => {
+              if (!refundBusy) setShowRefundModal(false);
+            }}
+            title="Issue refund?"
+            size="md"
+          >
+            <div className="space-y-4">
+              <p className="text-sm text-gray-700 dark:text-gray-300">
+                This refunds the paid balance for {registration.contact_name} without changing their
+                registration status.
+                {registration.payment
+                  ? ` Amount: ${formatMinorCurrency(
+                      (registration.payment.paid_minor ?? registration.payment.amount_minor) -
+                        registration.payment.refunded_minor,
+                      registration.payment.currency,
+                    )}.`
+                  : ''}
+              </p>
+              <div className="flex flex-wrap justify-end gap-2 pt-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => setShowRefundModal(false)}
+                  disabled={refundBusy}
+                >
+                  Keep payment
+                </Button>
+                <Button
+                  type="button"
+                  variant="danger"
+                  onClick={() => void handleIssueRefund()}
+                  disabled={refundBusy}
+                >
+                  {refundBusy ? 'Refunding...' : 'Issue refund'}
                 </Button>
               </div>
             </div>

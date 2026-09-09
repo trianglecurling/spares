@@ -7,6 +7,7 @@
  *   bun run src/scripts/rebuild-league-rosters.ts --session "Fall 2026" --clear --apply
  *   bun run src/scripts/rebuild-league-rosters.ts --session "Fall 2026" --stage returning [--apply]
  *   bun run src/scripts/rebuild-league-rosters.ts --session "Fall 2026" --stage waitlists [--apply]
+ *   bun run src/scripts/rebuild-league-rosters.ts --session "Fall 2026" --stage open-registration [--apply]
  *   bun run src/scripts/rebuild-league-rosters.ts --session "Fall 2026" --stage third-leagues [--apply]
  *   bun run src/scripts/rebuild-league-rosters.ts --session "Fall 2026" --compare path/to/rosters-export.csv
  *
@@ -53,7 +54,7 @@ const __dirname = path.dirname(__filename);
 const BACKEND_ROOT = path.resolve(__dirname, '../..');
 const DEFAULT_RUN_ROOT = path.join(BACKEND_ROOT, 'data/roster-rebuild');
 
-const STAGES: RosterRebuildStage[] = ['returning', 'waitlists', 'third-leagues'];
+const STAGES: RosterRebuildStage[] = ['returning', 'waitlists', 'open-registration', 'third-leagues'];
 
 function argvFlag(name: string): boolean {
   return process.argv.includes(name);
@@ -70,7 +71,7 @@ function usage(): string {
   bun run src/scripts/rebuild-league-rosters.ts --session "Fall 2026" --list-leagues
   bun run src/scripts/rebuild-league-rosters.ts --session "Fall 2026" --export
   bun run src/scripts/rebuild-league-rosters.ts --session "Fall 2026" --clear --apply
-  bun run src/scripts/rebuild-league-rosters.ts --session "Fall 2026" --stage returning|waitlists|third-leagues [--apply]
+  bun run src/scripts/rebuild-league-rosters.ts --session "Fall 2026" --stage returning|waitlists|open-registration|third-leagues [--apply]
   bun run src/scripts/rebuild-league-rosters.ts --session "Fall 2026" --compare <rosters-export.csv>
 
 Options: --league-map <file.json>  --force  --seed <number>  --output-dir <dir>
@@ -340,6 +341,10 @@ async function main(): Promise<void> {
   }
   if (stage === 'waitlists' && snapshot.guaranteedReturnPlacementCount === 0 && !force) {
     console.error('No guaranteed_return roster rows in this session. Run --stage returning first, or pass --force.');
+    process.exit(1);
+  }
+  if (stage === 'open-registration' && snapshot.waitlistPlacementCount === 0 && !force) {
+    console.error('No waitlist roster rows in this session. Run --stage waitlists first, or pass --force.');
     process.exit(1);
   }
   if (stage === 'third-leagues' && snapshot.waitlistPlacementCount === 0 && !force) {

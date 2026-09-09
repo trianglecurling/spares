@@ -14,6 +14,7 @@ import {
   loadRegistrationPaymentItemNameMap,
   resolveRegistrationCheckoutItemDescription,
 } from './registrationPaymentItemNamesService.js';
+import { curlingRegistrationCheckoutLineItems } from '../registration/registrationBillingMath.js';
 
 export type PaymentProvider = 'stripe' | 'paypal' | 'square';
 export type PaymentSubjectType = 'donation' | 'membership' | 'event_registration' | 'curling_registration';
@@ -952,15 +953,6 @@ export class PaymentService {
     metadata: Record<string, unknown>;
   }): Promise<CheckoutLineItem[] | undefined> {
     if (input.subjectType === 'curling_registration') {
-      if (asString(input.metadata.paymentKind) === 'registration_balance') {
-        return [
-          {
-            description: 'Registration balance payment',
-            amountMinor: input.amountMinor,
-          },
-        ];
-      }
-
       const invoiceIdFromMetadata = asNumber(input.metadata.invoiceId);
       const [invoice] = await this.db
         .select({ id: this.schema.registrationInvoices.id })
@@ -973,39 +965,41 @@ export class PaymentService {
         .orderBy(desc(this.schema.registrationInvoices.updated_at), desc(this.schema.registrationInvoices.id))
         .limit(1);
 
-      if (!invoice) return undefined;
+      const configuredRegistrationItemNames = invoice
+        ? await loadRegistrationPaymentItemNameMap()
+        : new Map();
+      const lineRows = invoice
+        ? await this.db
+            .select({
+              lineType: this.schema.registrationInvoiceLineItems.line_type,
+              description: this.schema.registrationInvoiceLineItems.description,
+              amountMinor: this.schema.registrationInvoiceLineItems.amount_minor,
+            })
+            .from(this.schema.registrationInvoiceLineItems)
+            .where(eq(this.schema.registrationInvoiceLineItems.invoice_id, invoice.id))
+            .orderBy(
+              asc(this.schema.registrationInvoiceLineItems.sort_order),
+              asc(this.schema.registrationInvoiceLineItems.id)
+            )
+        : [];
 
-      const configuredRegistrationItemNames = await loadRegistrationPaymentItemNameMap();
-
-      const lineRows = await this.db
-        .select({
-          lineType: this.schema.registrationInvoiceLineItems.line_type,
-          description: this.schema.registrationInvoiceLineItems.description,
-          amountMinor: this.schema.registrationInvoiceLineItems.amount_minor,
-        })
-        .from(this.schema.registrationInvoiceLineItems)
-        .where(eq(this.schema.registrationInvoiceLineItems.invoice_id, invoice.id))
-        .orderBy(
-          asc(this.schema.registrationInvoiceLineItems.sort_order),
-          asc(this.schema.registrationInvoiceLineItems.id)
-        );
-
-      const lineItems = lineRows
-        .map((line) => ({
-          description: resolveRegistrationCheckoutItemDescription({
-            lineType: line.lineType,
-            invoiceDescription: line.description.trim(),
-            configuredNames: configuredRegistrationItemNames,
-          }),
-          amountMinor: line.amountMinor,
-        }))
-        .filter((line) => line.description.length > 0 && line.amountMinor !== 0);
-
-      if (lineItems.length === 0 || checkoutLineItemsTotalMinor(lineItems) !== input.amountMinor) {
-        return undefined;
-      }
-
-      return lineItems;
+      const invoiceLines = lineRows.map((line) => ({
+        description: resolveRegistrationCheckoutItemDescription({
+          lineType: line.lineType,
+          invoiceDescription: line.description.trim(),
+          configuredNames: configuredRegistrationItemNames,
+        }),
+        amountMinor: line.amountMinor,
+      }));
+      const priorPaidMinor = asNumber(input.metadata.priorPaidMinor) ?? 0;
+      const allowBalanceFallback =
+        asString(input.metadata.paymentKind) === 'registration_balance' || priorPaidMinor > 0;
+      return curlingRegistrationCheckoutLineItems({
+        invoiceLines,
+        orderAmountMinor: input.amountMinor,
+        priorPaidMinor,
+        allowBalanceFallback,
+      });
     }
 
     if (input.subjectType === 'event_registration') {
@@ -2463,6 +2457,38 @@ export class PaymentService {
     }
   }
 
+  private async notifyPointOfContactOfRaceRefundNeeded(
+    order: { id: number; subject_id: number | null; amount_minor: number; currency: string },
+    registration: { contactName: string; contactEmail: string; eventId: number },
+    event: { title: string; point_of_contact: string },
+    placement: 'waitlisted' | 'cancelled',
+  ): Promise<void> {
+    const pointOfContact = event.point_of_contact?.trim();
+    if (!pointOfContact || order.subject_id == null) return;
+
+    const amount = (Math.abs(order.amount_minor) / 100).toFixed(2);
+    const amountLabel =
+      order.currency.trim().toLowerCase() === 'usd'
+        ? `$${amount}`
+        : `${amount} ${order.currency.trim().toUpperCase() || 'USD'}`;
+    const adminUrl = `${config.frontendUrl.replace(/\/+$/, '')}/admin/events/${registration.eventId}/registrations/${order.subject_id}`;
+
+    try {
+      const { sendEventPointOfContactPaymentRaceNeedsRefundEmail } = await import('./email.js');
+      await sendEventPointOfContactPaymentRaceNeedsRefundEmail(
+        pointOfContact,
+        event.title,
+        registration.contactName,
+        registration.contactEmail,
+        amountLabel,
+        placement,
+        adminUrl,
+      );
+    } catch (error) {
+      console.error('[Payment Service] Failed to notify point of contact about race refund:', error);
+    }
+  }
+
   async sendEventRegistrationCompletionEmailsForOrder(orderId: number): Promise<void> {
     const [order] = await this.db
       .select({
@@ -2471,6 +2497,8 @@ export class PaymentService {
         subject_type: this.schema.paymentOrders.subject_type,
         subject_id: this.schema.paymentOrders.subject_id,
         status: this.schema.paymentOrders.status,
+        amount_minor: this.schema.paymentOrders.amount_minor,
+        currency: this.schema.paymentOrders.currency,
         metadata: this.schema.paymentOrders.metadata,
       })
       .from(this.schema.paymentOrders)
@@ -2546,6 +2574,12 @@ export class PaymentService {
               pointOfContact: event.point_of_contact,
             },
           );
+          await this.notifyPointOfContactOfRaceRefundNeeded(
+            order,
+            registration,
+            event,
+            'waitlisted',
+          );
         } else if (paymentOutcome === 'cancelled_with_refund') {
           const { sendEventRegistrationPaymentRaceCancelledEmail } = await import('./email.js');
           await sendEventRegistrationPaymentRaceCancelledEmail(
@@ -2556,6 +2590,12 @@ export class PaymentService {
             {
               pointOfContact: event.point_of_contact,
             },
+          );
+          await this.notifyPointOfContactOfRaceRefundNeeded(
+            order,
+            registration,
+            event,
+            'cancelled',
           );
         } else if (registration.status === 'confirmed') {
           await sendEventRegistrationPaymentConfirmationEmail(

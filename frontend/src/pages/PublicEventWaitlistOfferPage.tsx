@@ -103,6 +103,12 @@ function formatRespondByDate(iso: string): string {
   });
 }
 
+function unavailableSpotDescription(hasFee: boolean): string {
+  const base = 'This spot has since been offered to another registrant. We apologize for the inconvenience.';
+  if (!hasFee) return base;
+  return `${base} If you completed a payment for this offer, the club will follow up to issue a refund.`;
+}
+
 function getApiErrorCode(error: unknown): string | null {
   if (axios.isAxiosError(error)) {
     const details = error.response?.data?.details;
@@ -339,11 +345,7 @@ export default function PublicEventWaitlistOfferPage() {
           <PublicStateCard
             tone="warning"
             title="We're sorry — this spot is no longer available"
-            description={`This spot has since been offered to another registrant. We apologize for the inconvenience.${
-              event.totalFeeMinor > 0
-                ? ' If you completed a payment for this offer, a full refund will be issued and should appear on your statement within the next few business days.'
-                : ''
-            }`}
+            description={unavailableSpotDescription(event.totalFeeMinor > 0)}
             action={
               <Link to={`/events/${event.slug}`} className="text-primary-teal-link hover:underline">
                 Back to event
@@ -434,11 +436,7 @@ export default function PublicEventWaitlistOfferPage() {
           <PublicStateCard
             tone="warning"
             title="We're sorry — this spot is no longer available"
-            description={`This spot has since been offered to another registrant. We apologize for the inconvenience.${
-              event.totalFeeMinor > 0
-                ? ' If you completed a payment for this offer, a full refund will be issued and should appear on your statement within the next few business days.'
-                : ''
-            }`}
+            description={unavailableSpotDescription(event.totalFeeMinor > 0)}
             action={
               <Link to={`/events/${event.slug}`} className="text-primary-teal-link hover:underline">
                 Back to event
@@ -537,11 +535,7 @@ export default function PublicEventWaitlistOfferPage() {
         <PublicStateCard
           tone="warning"
           title="We're sorry — this spot is no longer available"
-          description={`This spot has since been offered to another registrant. We apologize for the inconvenience.${
-            event.totalFeeMinor > 0
-              ? ' If you completed a payment for this offer, a full refund will be issued and should appear on your statement within the next few business days.'
-              : ''
-          }`}
+          description={unavailableSpotDescription(event.totalFeeMinor > 0)}
           action={
             <Link to={`/events/${event.slug}`} className="text-primary-teal-link hover:underline">
               Back to event

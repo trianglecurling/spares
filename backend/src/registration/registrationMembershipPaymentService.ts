@@ -74,6 +74,8 @@ import {
   staffCanRequestDeferredPayment,
   unpaidImmediateRegistrationCanDefer,
 } from './registrationUnpaidImmediateDeferral.js';
+import { computeRegistrationNetPaidMinor, loadPlacedRosterChargeSet } from './registrationBillingService.js';
+import { remainingDueMinor } from './registrationBillingMath.js';
 
 export const REGISTRATION_IMMEDIATE_PAYMENT_CONFIRMATION_MESSAGE =
   'After making these changes to your registration, your league placements are now confirmed, so payment can be taken immediately. Click continue to proceed to checkout. Your registration updates will be confirmed after payment is received.';
@@ -2977,12 +2979,22 @@ export async function triggerDeferredRegistrationPayment(input: {
   registrationId: number;
   actorMemberId: number;
   frontendBaseUrl?: string;
+  /**
+   * Billing tab: collect a remaining balance on any non-canceled registration.
+   * Checkout line items stay the current roster bill, with credit for amounts already paid.
+   */
+  collectBalance?: boolean;
 }): Promise<SubmitRegistrationResult> {
   const registration = await loadFullRegistration(input.registrationId);
   if (!registration.curler_member_id) {
     throw new RegistrationMembershipPaymentValidationError({ curler: 'The curler is required.' });
   }
-  if (!staffCanRequestDeferredPayment(registration.status)) {
+  if (registration.status === 'cancelled') {
+    throw new RegistrationMembershipPaymentValidationError({
+      registration: 'Canceled registrations cannot request payment.',
+    });
+  }
+  if (!input.collectBalance && !staffCanRequestDeferredPayment(registration.status)) {
     throw new RegistrationMembershipPaymentValidationError({
       registration: 'Payment can be requested only after registration is awaiting placement or staff review.',
     });
@@ -2994,36 +3006,28 @@ export async function triggerDeferredRegistrationPayment(input: {
     });
   }
   const paymentContext = await buildRegistrationContextForDraft(input.registrationId);
-  const { db, schema } = getDrizzleDb();
-  // Placement is settled, so bill for the leagues the registrant actually holds
-  // rather than the guarantees their priority list promised.
-  const placedRows = await db
-    .select({
-      leagueId: schema.leagueRoster.league_id,
-      temporaryFill: schema.leagueRoster.is_temporary_sabbatical_fill,
-    })
-    .from(schema.leagueRoster)
-    .where(
-      and(
-        eq(schema.leagueRoster.member_id, registration.curler_member_id),
-        eq(schema.leagueRoster.source_registration_id, input.registrationId),
-        eq(schema.leagueRoster.status, 'active'),
-      ),
-    );
-  const placedLeagueIds = [...new Set(placedRows.map((row) => row.leagueId))];
-  const temporaryFillLeagueIds = [
-    ...new Set(placedRows.filter((row) => row.temporaryFill === 1).map((row) => row.leagueId)),
-  ];
+  const { chargedLeagueIds: placedLeagueIds, temporaryFillLeagueIds } = await loadPlacedRosterChargeSet({
+    registrationId: input.registrationId,
+    curlerMemberId: registration.curler_member_id,
+  });
   const feePreview = calculateRegistrationFees(paymentContext, {
     chargedLeagueIds: placedLeagueIds,
     temporaryFillLeagueIds,
   });
+  const paidMinor = await computeRegistrationNetPaidMinor(input.registrationId);
+  const remainingMinor = remainingDueMinor(feePreview.totalDueMinor, paidMinor);
   const paymentDecision = decideRegistrationPayment({
     context: paymentContext,
     feePreview,
     placementSettled: true,
   });
-  if (paymentDecision.outcome !== 'immediate_payment') {
+  if (input.collectBalance && remainingMinor <= 0) {
+    throw new RegistrationMembershipPaymentValidationError({
+      payment: 'This registration does not have a remaining balance to collect.',
+    });
+  }
+  const shouldCollectNow = remainingMinor > 0 && (input.collectBalance || paymentDecision.outcome === 'immediate_payment');
+  if (!shouldCollectNow) {
     const existingInvoice = await loadLatestRegistrationInvoice(input.registrationId);
     const invoiceId = await createInvoiceSnapshot({
       registrationId: input.registrationId,
@@ -3036,39 +3040,55 @@ export async function triggerDeferredRegistrationPayment(input: {
       outcome: paymentDecision.outcome,
       registrationId: input.registrationId,
       invoiceId,
-      totalDueMinor: feePreview.totalDueMinor,
+      totalDueMinor: remainingMinor,
       deferralReasons: paymentDecision.deferralReasons,
-    };
+    } as SubmitRegistrationResult;
   }
 
   const reusableInvoice = await loadLatestRegistrationInvoice(input.registrationId);
+  if (reusableInvoice?.payment_order_id) {
+    const existingOrder = await createPaymentService().getPaymentOrderById(reusableInvoice.payment_order_id);
+    if (existingOrder && (existingOrder.status === 'pending' || existingOrder.status === 'created')) {
+      await expireOutstandingRegistrationCheckout(reusableInvoice.payment_order_id);
+    }
+  }
   const invoiceId = await createInvoiceSnapshot({
     registrationId: input.registrationId,
     payerMemberId: registration.submitted_by_member_id ?? input.actorMemberId,
     feePreview,
-    paymentDecision,
+    paymentDecision: {
+      ...paymentDecision,
+      outcome: 'immediate_payment',
+    },
     existingInvoiceId: reusableInvoice && !['failed', 'cancelled', 'refunded'].includes(reusableInvoice.status) ? reusableInvoice.id : null,
   });
+  const { db, schema } = getDrizzleDb();
   try {
     const paymentService = createPaymentService();
+    const orderMetadata: Record<string, unknown> = {
+      registrationId: input.registrationId,
+      invoiceId,
+      seasonId: registration.season_id,
+      sessionId: registration.session_id,
+      curlerUserId: registration.curler_member_id,
+      curlerMemberId: registration.curler_member_id,
+      submittedByUserId: registration.submitted_by_member_id,
+      submittedByMemberId: registration.submitted_by_member_id,
+      triggeredByStaffMemberId: input.actorMemberId,
+    };
+    if (paidMinor > 0) {
+      orderMetadata.paymentKind = 'registration_balance';
+      orderMetadata.priorPaidMinor = paidMinor;
+      orderMetadata.newTotalMinor = feePreview.totalDueMinor;
+    }
     const order = await paymentService.createPaymentOrder({
       provider: getDefaultPaymentProvider(),
       subjectType: 'curling_registration',
       subjectId: input.registrationId,
-      amountMinor: feePreview.totalDueMinor,
+      amountMinor: remainingMinor,
       currency: 'usd',
       createdByMemberId: registration.submitted_by_member_id ?? input.actorMemberId,
-      metadata: {
-        registrationId: input.registrationId,
-        invoiceId,
-        seasonId: registration.season_id,
-        sessionId: registration.session_id,
-        curlerUserId: registration.curler_member_id,
-        curlerMemberId: registration.curler_member_id,
-        submittedByUserId: registration.submitted_by_member_id,
-        submittedByMemberId: registration.submitted_by_member_id,
-        triggeredByStaffMemberId: input.actorMemberId,
-      },
+      metadata: orderMetadata,
     });
     const checkout = await paymentService.createHostedCheckoutForOrder({
       orderId: order.id,
@@ -3097,7 +3117,7 @@ export async function triggerDeferredRegistrationPayment(input: {
       registrationId: input.registrationId,
       messageType: 'deferred_registration_payment_link',
       payload: {
-        amountDueMinor: feePreview.totalDueMinor,
+        amountDueMinor: remainingMinor,
         paymentUrl: checkout.checkoutUrl,
         summaryLines: await registrationSummaryLines(paymentContext),
       },
@@ -3108,7 +3128,7 @@ export async function triggerDeferredRegistrationPayment(input: {
       invoiceId,
       checkoutUrl: checkout.checkoutUrl,
       orderToken: order.orderToken,
-      totalDueMinor: feePreview.totalDueMinor,
+      totalDueMinor: remainingMinor,
     };
   } catch (error) {
     if (error instanceof PaymentServiceError) {
@@ -3262,9 +3282,9 @@ export async function confirmCurlingRegistrationForPaymentOrder(orderId: number)
           }
         })()
       : (order.metadata && typeof order.metadata === 'object' ? (order.metadata as Record<string, unknown>) : {});
-  const isBalancePayment = orderMetadata.paymentKind === 'registration_balance';
   const priorPaidMinor =
     typeof orderMetadata.priorPaidMinor === 'number' ? orderMetadata.priorPaidMinor : 0;
+  const isBalancePayment = orderMetadata.paymentKind === 'registration_balance' || priorPaidMinor > 0;
   if (!isBalancePayment && (invoice.total_minor !== order.amount_minor || invoice.currency.toLowerCase() !== order.currency.toLowerCase())) {
     throw new RegistrationMembershipPaymentValidationError({ payment: 'Payment amount did not match the registration invoice.' });
   }

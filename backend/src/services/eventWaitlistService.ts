@@ -9,7 +9,9 @@ import {
   getEventById,
   resolveEventRegistrationFeeMinor,
 } from './eventService.js';
-import { issueEventRegistrationRefund } from './eventRegistrationRefundService.js';
+import { config } from '../config.js';
+import { logEvent } from './observability.js';
+import { dispositionForWaitlistOfferPayment } from './eventWaitlistOfferPayment.js';
 
 export class EventWaitlistServiceError extends Error {
   constructor(
@@ -874,27 +876,155 @@ async function createCheckoutForWaitlistOffer(input: {
   return { checkoutUrl: checkout.checkoutUrl, orderToken: order.orderToken };
 }
 
+async function attachPaymentOrderToRegistration(registrationId: number, paymentOrderId: number): Promise<void> {
+  const { db, schema } = getDrizzleDb();
+  await db
+    .update(schema.eventRegistrations)
+    .set({ payment_order_id: paymentOrderId })
+    .where(eq(schema.eventRegistrations.id, registrationId));
+}
+
+async function claimWaitlistOfferPaidUnavailableNotification(paymentOrderId: number): Promise<boolean> {
+  const { db, schema } = getDrizzleDb();
+  const claimedAt = new Date().toISOString();
+  const isPostgres = getDatabaseConfig()?.type === 'postgres';
+  const metadataColumn = schema.paymentOrders.metadata;
+  const notClaimedCondition = isPostgres
+    ? sql`COALESCE(${metadataColumn}::jsonb->>'eventWaitlistOfferPaidUnavailableNotifiedAt', '') = ''`
+    : sql`COALESCE(json_extract(COALESCE(${metadataColumn}, '{}'), '$.eventWaitlistOfferPaidUnavailableNotifiedAt'), '') = ''`;
+
+  const claimed = await db
+    .update(schema.paymentOrders)
+    .set({
+      metadata: isPostgres
+        ? sql`(COALESCE(${metadataColumn}::jsonb, '{}'::jsonb) || jsonb_build_object('eventWaitlistOfferPaidUnavailableNotifiedAt', cast(${claimedAt} as text)))::text`
+        : sql`json_set(COALESCE(${metadataColumn}, '{}'), '$.eventWaitlistOfferPaidUnavailableNotifiedAt', ${claimedAt})`,
+      updated_at: sql`CURRENT_TIMESTAMP`,
+    })
+    .where(and(eq(schema.paymentOrders.id, paymentOrderId), notClaimedCondition))
+    .returning({ id: schema.paymentOrders.id });
+
+  return claimed.length > 0;
+}
+
+function formatUsdFromMinor(amountMinor: number, currency: string): string {
+  const amount = (Math.abs(amountMinor) / 100).toFixed(2);
+  if (currency.trim().toLowerCase() === 'usd') return `$${amount}`;
+  return `${amount} ${currency.trim().toUpperCase() || 'USD'}`;
+}
+
+async function notifyWaitlistOfferPaidUnavailable(input: {
+  offerId: number;
+  eventId: number;
+  registrationId: number;
+  paymentOrderId: number;
+  offerStatus: string;
+}): Promise<void> {
+  const claimed = await claimWaitlistOfferPaidUnavailableNotification(input.paymentOrderId);
+  if (!claimed) return;
+
+  await logEvent({
+    eventType: 'event.waitlist_offer.payment_needs_staff_refund',
+    relatedId: input.offerId,
+    meta: {
+      eventId: input.eventId,
+      registrationId: input.registrationId,
+      paymentOrderId: input.paymentOrderId,
+      offerStatus: input.offerStatus,
+    },
+  });
+
+  const { db, schema } = getDrizzleDb();
+  const [[registration], [order]] = await Promise.all([
+    db
+      .select({
+        contact_name: schema.eventRegistrations.contact_name,
+        contact_email: schema.eventRegistrations.contact_email,
+      })
+      .from(schema.eventRegistrations)
+      .where(eq(schema.eventRegistrations.id, input.registrationId))
+      .limit(1),
+    db
+      .select({
+        amount_minor: schema.paymentOrders.amount_minor,
+        currency: schema.paymentOrders.currency,
+      })
+      .from(schema.paymentOrders)
+      .where(eq(schema.paymentOrders.id, input.paymentOrderId))
+      .limit(1),
+  ]);
+
+  const event = await getEventById(input.eventId);
+  if (!event || !registration?.contact_email) return;
+
+  const amountLabel = order
+    ? formatUsdFromMinor(order.amount_minor, order.currency || event.currency || 'usd')
+    : null;
+  const adminUrl = `${config.frontendUrl.replace(/\/+$/, '')}/admin/events/${input.eventId}/registrations/${input.registrationId}`;
+
+  const {
+    sendEventWaitlistOfferPaidUnavailableEmail,
+    sendEventPointOfContactWaitlistOfferPaidUnavailableEmail,
+  } = await import('./email.js');
+
+  try {
+    await sendEventWaitlistOfferPaidUnavailableEmail(
+      registration.contact_email,
+      registration.contact_name,
+      event.title,
+      event.point_of_contact,
+    );
+  } catch (error) {
+    console.error('[Event waitlist] Failed to email registrant about paid unavailable offer:', error);
+  }
+
+  const pointOfContact = event.point_of_contact?.trim();
+  if (pointOfContact) {
+    try {
+      await sendEventPointOfContactWaitlistOfferPaidUnavailableEmail(
+        pointOfContact,
+        event.title,
+        registration.contact_name,
+        registration.contact_email,
+        amountLabel,
+        input.offerStatus,
+        adminUrl,
+      );
+    } catch (error) {
+      console.error('[Event waitlist] Failed to email point of contact about paid unavailable offer:', error);
+    }
+  }
+}
+
 export async function confirmWaitlistOfferAcceptance(offerId: number, paymentOrderId: number | null): Promise<void> {
   const { db, schema } = getDrizzleDb();
-  const [offer] = await db
-    .select()
-    .from(schema.eventWaitlistOffers)
-    .where(eq(schema.eventWaitlistOffers.id, offerId))
-    .limit(1);
-  if (!offer) return;
+  const now = dbValue(new Date());
+  const offerUpdate: Record<string, unknown> = {
+    status: 'accepted' as any,
+    resolved_at: now as any,
+  };
+  if (paymentOrderId != null) {
+    offerUpdate.payment_order_id = paymentOrderId;
+  }
 
-  if (offer.status !== 'pending') {
-    if (paymentOrderId) {
-      await issueEventRegistrationRefund({
-        paymentOrderId,
-        reason: 'Event waitlist offer no longer available after payment',
-        bypassEligibility: true,
-      });
-    }
+  const claimed = await db
+    .update(schema.eventWaitlistOffers)
+    .set(offerUpdate as any)
+    .where(
+      and(
+        eq(schema.eventWaitlistOffers.id, offerId),
+        eq(schema.eventWaitlistOffers.status, 'pending' as any),
+      ),
+    )
+    .returning({
+      id: schema.eventWaitlistOffers.id,
+      registration_id: schema.eventWaitlistOffers.registration_id,
+    });
+
+  if (claimed.length === 0) {
     return;
   }
 
-  const now = dbValue(new Date());
   const registrationUpdate: Record<string, unknown> = {
     status: 'confirmed' as any,
     waitlist_position: null,
@@ -906,22 +1036,7 @@ export async function confirmWaitlistOfferAcceptance(offerId: number, paymentOrd
   await db
     .update(schema.eventRegistrations)
     .set(registrationUpdate as any)
-    .where(eq(schema.eventRegistrations.id, offer.registration_id));
-
-  await db
-    .update(schema.eventWaitlistOffers)
-    .set({
-      status: 'accepted' as any,
-      resolved_at: now as any,
-      payment_order_id: paymentOrderId ?? offer.payment_order_id,
-    })
-    .where(
-      and(
-        eq(schema.eventWaitlistOffers.id, offerId),
-        eq(schema.eventWaitlistOffers.status, 'pending' as any),
-      ),
-    );
-
+    .where(eq(schema.eventRegistrations.id, claimed[0].registration_id));
 }
 
 export async function confirmWaitlistOfferPayment(orderId: number, offerId: number): Promise<void> {
@@ -934,19 +1049,33 @@ export async function confirmWaitlistOfferPayment(orderId: number, offerId: numb
 
   if (!offer) return;
 
-  if (offer.status === 'pending') {
+  const disposition = dispositionForWaitlistOfferPayment(offer.status);
+  if (disposition === 'accept') {
     await confirmWaitlistOfferAcceptance(offerId, orderId);
     const { createPaymentService } = await import('./paymentService.js');
     await createPaymentService().sendEventRegistrationCompletionEmailsForOrder(orderId);
     return;
   }
 
-  if (offer.status === 'superseded' || offer.status === 'declined') {
-    await issueEventRegistrationRefund({
-      paymentOrderId: orderId,
-      reason: 'Event waitlist offer superseded or declined after payment',
-      bypassEligibility: true,
-    });
+  if (disposition === 'already_accepted') {
+    const { createPaymentService } = await import('./paymentService.js');
+    await createPaymentService().sendEventRegistrationCompletionEmailsForOrder(orderId);
+    return;
+  }
+
+  if (disposition === 'needs_staff_refund') {
+    await attachPaymentOrderToRegistration(offer.registration_id, orderId);
+    try {
+      await notifyWaitlistOfferPaidUnavailable({
+        offerId: offer.id,
+        eventId: offer.event_id,
+        registrationId: offer.registration_id,
+        paymentOrderId: orderId,
+        offerStatus: offer.status,
+      });
+    } catch (error) {
+      console.error('[Event waitlist] Failed to record paid unavailable offer:', error);
+    }
   }
 }
 

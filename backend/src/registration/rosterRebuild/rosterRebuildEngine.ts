@@ -1,4 +1,5 @@
 import { leaguesInCategory } from './rosterRebuildLeagues.js';
+import { isPriorityPeriodRegistration } from './rosterRebuildPriorityPeriod.js';
 import { waitlistOfferPreferenceFromPriorityList, type WaitlistOfferResponsePreference } from '../waitlistOfferPreference.js';
 import type {
   LeagueVacancySnapshot,
@@ -34,6 +35,19 @@ export function resolveDesiredLeagueCount(value: number | null | undefined): num
 
 export function protectedLeagueBudget(desiredLeagueCount: number): number {
   return Math.min(2, Math.max(0, desiredLeagueCount));
+}
+
+/** Matches registration: a free league has an effective registration fee of 0. */
+export function isFreeRebuildLeague(league: Pick<RosterRebuildLeague, 'registrationFeeMinor'>): boolean {
+  return league.registrationFeeMinor === 0;
+}
+
+/** Paid leagues require ice privileges "League play or instructional programs". Free leagues do not. */
+export function registrationMayJoinLeague(
+  registration: Pick<RosterRebuildRegistration, 'icePrivilegesChoice'>,
+  league: Pick<RosterRebuildLeague, 'registrationFeeMinor'>,
+): boolean {
+  return isFreeRebuildLeague(league) || registration.icePrivilegesChoice === 'league_play';
 }
 
 export function mulberry32(seed: number): () => number {
@@ -84,7 +98,8 @@ export function runRosterRebuildStage(
 ): RosterRebuildResult {
   if (stage === 'returning') return runReturningStage(snapshot);
   if (stage === 'waitlists') return runWaitlistStage(snapshot);
-  return runThirdLeaguesStage(snapshot, options);
+  if (stage === 'open-registration') return runLotteryFillStage(snapshot, 'open-registration', options);
+  return runLotteryFillStage(snapshot, 'third-leagues', options);
 }
 
 type WorkingRoster = Map<string, { leagueId: number; memberId: number; isTemporary: boolean }>;
@@ -135,7 +150,7 @@ function runReturningStage(snapshot: RosterRebuildSnapshot): RosterRebuildResult
   const registrationByMember = registrationMap(snapshot);
 
   result.notes.push(...snapshotPreflightNotes(snapshot));
-  placeJuniorPrograms(snapshot, leagues, roster, result);
+  placeJuniorPrograms(snapshot, leagues, roster, result, { stage: 'returning', receivedDuringPriorityPeriod: true });
   placeDoublesReturns(snapshot, leagues, roster, predecessorMembers, registrationByMember, result);
   placeNormalReturns(snapshot, leagues, roster, predecessorMembers, result);
   result.leagueVacancies = vacancySnapshots(snapshot, roster, new Map());
@@ -147,11 +162,13 @@ function placeJuniorPrograms(
   leagues: Map<number, RosterRebuildLeague>,
   roster: WorkingRoster,
   result: RosterRebuildResult,
+  filter: { stage: RosterRebuildStage; receivedDuringPriorityPeriod: boolean },
 ): void {
   const juniorRecLeagues = leaguesInCategory(snapshot.leagues, 'junior_rec');
   const juniorAdvLeagues = leaguesInCategory(snapshot.leagues, 'junior_adv');
 
   for (const registration of snapshot.registrations) {
+    if (isPriorityPeriodRegistration(registration) !== filter.receivedDuringPriorityPeriod) continue;
     const listedJuniorRec = registration.priorities.some((priority) => leagues.get(priority.leagueId)?.category === 'junior_rec');
     const wantsJuniorRec =
       registration.membershipOption === 'junior_recreational' ||
@@ -166,8 +183,12 @@ function placeJuniorPrograms(
         });
       }
       for (const league of juniorRecLeagues) {
+        if (!registrationMayJoinLeague(registration, league)) {
+          noteIcePrivilegesBlock(result, snapshot, registration, league);
+          continue;
+        }
         addPlacement(result, roster, {
-          stage: 'returning',
+          stage: filter.stage,
           pass: null,
           leagueId: league.id,
           memberId: registration.memberId,
@@ -194,8 +215,12 @@ function placeJuniorPrograms(
     }
     for (const league of juniorAdvLeagues) {
       if (!listedAdvIds.has(league.id)) continue;
+      if (!registrationMayJoinLeague(registration, league)) {
+        noteIcePrivilegesBlock(result, snapshot, registration, league);
+        continue;
+      }
       addPlacement(result, roster, {
-        stage: 'returning',
+        stage: filter.stage,
         pass: null,
         leagueId: league.id,
         memberId: registration.memberId,
@@ -233,8 +258,13 @@ function placeDoublesReturns(
       : new Set<number>();
 
     for (const registration of snapshot.registrations) {
+      if (!isPriorityPeriodRegistration(registration)) continue;
       const priority = registration.priorities.find((row) => row.leagueId === league.id);
       if (!priority) continue;
+      if (!registrationMayJoinLeague(registration, league)) {
+        noteIcePrivilegesBlock(result, snapshot, registration, league);
+        continue;
+      }
       if (priority.rank > 2) {
         result.notes.push({
           code: 'doubles_rank_too_low',
@@ -277,6 +307,19 @@ function placeDoublesReturns(
           memberId: registration.memberId,
           detail: `Partner ${memberLabel(snapshot, partnerId)} does not have a committed registration listing ${league.name}.`,
         });
+        continue;
+      }
+      if (!isPriorityPeriodRegistration(partnerReg)) {
+        result.notes.push({
+          code: 'doubles_partner_open_period',
+          leagueId: league.id,
+          memberId: registration.memberId,
+          detail: `Partner ${memberLabel(snapshot, partnerId)} registered after the priority period; doubles return is not applied.`,
+        });
+        continue;
+      }
+      if (!registrationMayJoinLeague(partnerReg, league)) {
+        noteIcePrivilegesBlock(result, snapshot, partnerReg, league);
         continue;
       }
       if (partnerPriority.rank > 2) {
@@ -347,6 +390,7 @@ function placeNormalReturns(
   result: RosterRebuildResult,
 ): void {
   for (const registration of snapshot.registrations) {
+    if (!isPriorityPeriodRegistration(registration)) continue;
     const desired = resolveDesiredLeagueCount(registration.desiredLeagueCount);
     const existingCount = rosteredLeagueCount(roster, registration.memberId);
     const budget = Math.max(0, protectedLeagueBudget(desired) - existingCount);
@@ -359,6 +403,10 @@ function placeNormalReturns(
       const predId = league.predecessorLeagueId;
       if (predId == null) continue;
       if (!(predecessorMembers.get(predId)?.has(registration.memberId) ?? false)) continue;
+      if (!registrationMayJoinLeague(registration, league)) {
+        noteIcePrivilegesBlock(result, snapshot, registration, league);
+        continue;
+      }
       if (memberHasSabbatical(snapshot, registration.memberId, league.id)) {
         result.notes.push({
           code: 'returner_on_sabbatical',
@@ -488,6 +536,7 @@ function seedRank3PlusHolds(
   result: RosterRebuildResult,
 ): void {
   for (const registration of snapshot.registrations) {
+    if (!isPriorityPeriodRegistration(registration)) continue;
     const desired = resolveDesiredLeagueCount(registration.desiredLeagueCount);
     const committed = rosteredLeagueCount(roster, registration.memberId);
     let remaining = Math.max(0, protectedLeagueBudget(desired) - committed);
@@ -500,6 +549,10 @@ function seedRank3PlusHolds(
       if (predId == null) continue;
       if (!(predecessorMembers.get(predId)?.has(registration.memberId) ?? false)) continue;
       if (rosterHas(roster, league.id, registration.memberId)) continue;
+      if (!registrationMayJoinLeague(registration, league)) {
+        noteIcePrivilegesBlock(result, snapshot, registration, league);
+        continue;
+      }
       if (memberHasSabbatical(snapshot, registration.memberId, league.id)) {
         result.notes.push({
           code: 'returner_on_sabbatical',
@@ -646,6 +699,43 @@ function runWaitlistPass(input: {
         continue;
       }
 
+      const registration = input.registrationByMember.get(entry.memberId);
+      if (registration && !isPriorityPeriodRegistration(registration)) {
+        input.reached.add(reachedKey);
+        emitWaitlistEvent(input.result, {
+          pass: input.pass,
+          leagueId: league.id,
+          position: entry.position,
+          entryId: entry.id,
+          memberId: entry.memberId,
+          preference,
+          outcome: 'skipped_open_registration',
+          declineCountBefore: entry.declineCount,
+          declineCountAfter: entry.declineCount,
+          immune: false,
+          reason: `Registered after the priority period; deferred ${league.name} to the open-registration stage.`,
+        });
+        continue;
+      }
+
+      if (registration && !registrationMayJoinLeague(registration, league)) {
+        input.reached.add(reachedKey);
+        emitWaitlistEvent(input.result, {
+          pass: input.pass,
+          leagueId: league.id,
+          position: entry.position,
+          entryId: entry.id,
+          memberId: entry.memberId,
+          preference,
+          outcome: 'skipped_ice_privileges',
+          declineCountBefore: entry.declineCount,
+          declineCountAfter: entry.declineCount,
+          immune: false,
+          reason: `Ice privileges are not league play; deferred paid league ${league.name}.`,
+        });
+        continue;
+      }
+
       if (preference === 'auto_decline') {
         input.reached.add(reachedKey);
         recordDecline({
@@ -699,7 +789,6 @@ function runWaitlistPass(input: {
       } else if (decision.kind === 'swap') {
         releaseHold(input.holds, decision.release, input.snapshot, input.result, input.pass, input.declinedEntries);
       }
-      const registration = input.registrationByMember.get(entry.memberId);
       // Waitlist priority_rank is often compacted among leagues the member actually joined
       // (returns and fallbacks typically have no waitlist entry). Registration rank is the
       // source of truth; snapshot rank is only a fallback when the registration list has no rank.
@@ -1003,12 +1092,13 @@ function recordDecline(input: {
   }
 }
 
-function runThirdLeaguesStage(
+function runLotteryFillStage(
   snapshot: RosterRebuildSnapshot,
+  stage: 'open-registration' | 'third-leagues',
   options: RosterRebuildEngineOptions,
 ): RosterRebuildResult {
   const seed = options.randomSeed ?? 1;
-  const result = emptyResult('third-leagues', seed);
+  const result = emptyResult(stage, seed);
   const roster = workingRosterFrom(snapshot.currentRosters);
   const leagues = byId(snapshot.leagues);
   const registrationByMember = registrationMap(snapshot);
@@ -1017,6 +1107,12 @@ function runThirdLeaguesStage(
   for (const member of snapshot.members.values()) randomKey.set(member.memberId, rng());
 
   result.notes.push(...snapshotPreflightNotes(snapshot));
+  if (stage === 'open-registration') {
+    placeJuniorPrograms(snapshot, leagues, roster, result, {
+      stage: 'open-registration',
+      receivedDuringPriorityPeriod: false,
+    });
+  }
 
   const normalLeagues = leaguesInCategory(snapshot.leagues, 'normal').sort((a, b) => a.id - b.id);
   const eligibility = new Map<number, 'eligible' | 'not_exhausted' | 'no_vacancy'>();
@@ -1029,7 +1125,7 @@ function runThirdLeaguesStage(
         eligibility.set(league.id, 'no_vacancy');
         continue;
       }
-      eligibility.set(league.id, waitlistThirdLeagueEligibility(snapshot, league, roster, registrationByMember));
+      eligibility.set(league.id, waitlistFirstSecondEligibility(snapshot, league, roster, registrationByMember));
     }
   };
 
@@ -1040,8 +1136,26 @@ function runThirdLeaguesStage(
       result.notes.push({
         code: 'waitlist_not_exhausted',
         leagueId: league.id,
-        detail: `${league.name} waitlist still has auto-accept entries who could take a 1st/2nd league; 3rd+ assignment skipped.`,
+        detail:
+          stage === 'open-registration'
+            ? `${league.name} waitlist still has priority-period auto-accept entries who could take a 1st/2nd league; open-registration assignment skipped.`
+            : `${league.name} waitlist still has priority-period auto-accept entries who could take a 1st/2nd league; 3rd+ assignment skipped.`,
       });
+    }
+  }
+
+  if (stage === 'third-leagues') {
+    for (const registration of snapshot.registrations) {
+      if (isPriorityPeriodRegistration(registration)) continue;
+      const desired = resolveDesiredLeagueCount(registration.desiredLeagueCount);
+      const count = rosteredLeagueCount(roster, registration.memberId);
+      if (count < protectedLeagueBudget(desired)) {
+        result.notes.push({
+          code: 'open_period_unfilled_allowance',
+          memberId: registration.memberId,
+          detail: `${memberLabel(snapshot, registration.memberId)} registered after the priority period and still has ${protectedLeagueBudget(desired) - count} of min(2, desired=${desired}) unfilled. Open registration does not jump leftover priority waitlist demand, and 3rd+ assignment does not fill 1st/2nd leagues.`,
+        });
+      }
     }
   }
 
@@ -1053,6 +1167,14 @@ function runThirdLeaguesStage(
     experience: number;
     random: number;
     registration: RosterRebuildRegistration;
+  };
+
+  const eligibleForFill = (registration: RosterRebuildRegistration, count: number, desired: number): boolean => {
+    if (stage === 'open-registration') {
+      if (isPriorityPeriodRegistration(registration)) return false;
+      return count < protectedLeagueBudget(desired);
+    }
+    return count >= 2 && desired > count;
   };
 
   const fillUntilSettled = (mode: WaitlistFillMode): void => {
@@ -1069,7 +1191,7 @@ function runThirdLeaguesStage(
           if (rosterHas(roster, league.id, registration.memberId)) continue;
           const desired = resolveDesiredLeagueCount(registration.desiredLeagueCount);
           const count = rosteredLeagueCount(roster, registration.memberId);
-          if (count < 2 || desired <= count) continue;
+          if (!eligibleForFill(registration, count, desired)) continue;
           const next = nextUnfilledPriority(registration, leagues, roster, registration.memberId, ['normal']);
           if (next?.leagueId !== league.id) continue;
           const member = snapshot.members.get(registration.memberId);
@@ -1096,15 +1218,16 @@ function runThirdLeaguesStage(
       const relatedSabbaticalId =
         mode === 'temporary' ? nextRelatedSabbaticalId(snapshot, winner.league.id, usedSabbaticalIds) : null;
       const isTemporary = mode === 'temporary';
+      const stageLabel = stage === 'open-registration' ? 'Open-registration' : '3rd+';
       addPlacement(result, roster, {
-        stage: 'third-leagues',
+        stage,
         pass: fillPass,
         leagueId: winner.league.id,
         memberId: winner.memberId,
         placementType: isTemporary ? 'temporary_sabbatical_fill' : 'new_placement',
         reason: isTemporary
-          ? `3rd+ temporary sabbatical-fill on ${winner.league.name} (next on priority list at #${winner.rank}; tenure ${winner.tenure}, experience ${winner.experience}).`
-          : `3rd+ league assignment to ${winner.league.name} (next on priority list at #${winner.rank}; tenure ${winner.tenure}, experience ${winner.experience}).`,
+          ? `${stageLabel} temporary sabbatical-fill on ${winner.league.name} (next on priority list at #${winner.rank}; tenure ${winner.tenure}, experience ${winner.experience}).`
+          : `${stageLabel} assignment to ${winner.league.name} (next on priority list at #${winner.rank}; tenure ${winner.tenure}, experience ${winner.experience}).`,
         sourceRegistrationId: winner.registration.id,
         waitlistEntryId: waitlistEntryFor(snapshot, winner.league, winner.memberId)?.id ?? null,
         isRank3PlusReturner: false,
@@ -1147,13 +1270,13 @@ function runThirdLeaguesStage(
       if (rosterHas(roster, league.id, registration.memberId)) continue;
       const desired = resolveDesiredLeagueCount(registration.desiredLeagueCount);
       const count = rosteredLeagueCount(roster, registration.memberId);
-      if (desired <= count || count < 2) continue;
+      if (!eligibleForFill(registration, count, desired)) continue;
       const priority = registration.priorities.find((row) => row.leagueId === league.id);
       if (!priority) continue;
       const next = nextUnfilledPriority(registration, leagues, roster, registration.memberId, ['normal']);
       if (next != null && next.leagueId !== league.id) {
         result.notes.push({
-          code: 'third_league_not_next',
+          code: stage === 'open-registration' ? 'open_registration_not_next' : 'third_league_not_next',
           leagueId: league.id,
           memberId: registration.memberId,
           detail: `${memberLabel(snapshot, registration.memberId)} still wants another league and listed ${league.name} at #${priority.rank}, but it is not their next unfilled priority.`,
@@ -1162,16 +1285,19 @@ function runThirdLeaguesStage(
     }
   }
 
-  placeDayLeagues(snapshot, leagues, roster, result);
+  if (stage === 'third-leagues') placeDayLeagues(snapshot, leagues, roster, result);
   result.leagueVacancies = vacancySnapshots(snapshot, roster, new Map());
   result.notes.push({
     code: 'random_seed',
-    detail: `3rd-league tie-break random seed is ${seed}.`,
+    detail:
+      stage === 'open-registration'
+        ? `Open-registration tie-break random seed is ${seed}.`
+        : `3rd-league tie-break random seed is ${seed}.`,
   });
   return result;
 }
 
-function waitlistThirdLeagueEligibility(
+function waitlistFirstSecondEligibility(
   snapshot: RosterRebuildSnapshot,
   league: RosterRebuildLeague,
   roster: WorkingRoster,
@@ -1186,7 +1312,9 @@ function waitlistThirdLeagueEligibility(
     const preference = waitlistPreference(snapshot, entry.memberId, league.id);
     if (preference === 'auto_decline') continue;
     const registration = registrationByMember.get(entry.memberId);
-    const desired = resolveDesiredLeagueCount(registration?.desiredLeagueCount);
+    if (!registration || !isPriorityPeriodRegistration(registration)) continue;
+    if (!registrationMayJoinLeague(registration, league)) continue;
+    const desired = resolveDesiredLeagueCount(registration.desiredLeagueCount);
     const count = rosteredLeagueCount(roster, entry.memberId);
     const hasFirstSecondRoom = count < protectedLeagueBudget(desired);
     if (preference === 'auto_accept' && hasFirstSecondRoom) return 'not_exhausted';
@@ -1208,6 +1336,10 @@ function placeDayLeagues(
     for (const priority of [...registration.priorities].sort((a, b) => a.rank - b.rank)) {
       const league = leagues.get(priority.leagueId);
       if (!league || league.category !== 'day_league') continue;
+      if (!registrationMayJoinLeague(registration, league)) {
+        noteIcePrivilegesBlock(result, snapshot, registration, league);
+        continue;
+      }
       const count = rosteredLeagueCount(roster, registration.memberId);
       if (count >= desired) break;
       addPlacement(result, roster, {
@@ -1236,6 +1368,7 @@ function nextUnfilledPriority(
   for (const priority of [...registration.priorities].sort((a, b) => a.rank - b.rank)) {
     const league = leagues.get(priority.leagueId);
     if (!league || !allowed.has(league.category)) continue;
+    if (!registrationMayJoinLeague(registration, league)) continue;
     if (!rosterHas(roster, league.id, memberId)) return priority;
   }
   return null;
@@ -1278,6 +1411,19 @@ function emitWaitlistEvent(result: RosterRebuildResult, event: RosterRebuildWait
 
 function snapshotPreflightNotes(snapshot: RosterRebuildSnapshot): RosterRebuildNote[] {
   const notes: RosterRebuildNote[] = [];
+  notes.push({
+    code: 'priority_period_cutoff',
+    detail:
+      snapshot.priorityPeriodEndSource === 'open_transition'
+        ? `Priority registration ended at ${snapshot.priorityPeriodEndAt} (session open transition). Returning and waitlist stages apply only to registrations received before that instant.`
+        : `No open-registration transition found; using fallback cutoff ${snapshot.priorityPeriodEndAt} (12:01am September 4, 2026 EDT). Returning and waitlist stages apply only to registrations received before that instant.`,
+  });
+  const priorityCount = snapshot.registrations.filter((row) => isPriorityPeriodRegistration(row)).length;
+  const openCount = snapshot.registrations.length - priorityCount;
+  notes.push({
+    code: 'priority_period_counts',
+    detail: `${priorityCount} committed registration(s) during the priority period; ${openCount} after it.`,
+  });
   const sabbaticalKeys = new Set(
     snapshot.activeSabbaticals.map((row) => rosterKey(row.leagueId, row.memberId)),
   );
@@ -1428,6 +1574,26 @@ function byId(leagues: RosterRebuildLeague[]): Map<number, RosterRebuildLeague> 
 function memberLabel(snapshot: RosterRebuildSnapshot, memberId: number): string {
   const member: RosterRebuildMember | undefined = snapshot.members.get(memberId);
   return member ? `${member.name} (#${memberId})` : `#${memberId}`;
+}
+
+function noteIcePrivilegesBlock(
+  result: RosterRebuildResult,
+  snapshot: RosterRebuildSnapshot,
+  registration: RosterRebuildRegistration,
+  league: RosterRebuildLeague,
+): void {
+  const choice =
+    registration.icePrivilegesChoice === 'basic_ice'
+      ? 'basic ice privileges'
+      : registration.icePrivilegesChoice === 'none'
+        ? 'no ice privileges'
+        : `ice privileges "${registration.icePrivilegesChoice}"`;
+  result.notes.push({
+    code: 'ice_privileges_blocks_paid_league',
+    leagueId: league.id,
+    memberId: registration.memberId,
+    detail: `${memberLabel(snapshot, registration.memberId)} selected ${choice}; paid league ${league.name} requires League play or instructional programs.`,
+  });
 }
 
 function memberHasSabbatical(

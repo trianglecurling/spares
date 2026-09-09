@@ -5,7 +5,7 @@ import AdminRegistrationCreate from './AdminRegistrationCreate';
 import AdminRegistrationDetail from './AdminRegistrationDetail';
 
 const SETTINGS_TABS = new Set(['seasons', 'sessions', 'periods', 'prices', 'discounts']);
-const QA_TABS = new Set(['returning-members', 'league-return', 'sabbaticals']);
+const QA_TABS = new Set(['returning-members', 'league-return', 'requested-leagues', 'sabbaticals']);
 
 function ConfigPage() {
   return (
@@ -52,6 +52,13 @@ export default function AdminRegistrationRoute() {
   if (segment === 'list') {
     if (subsegment) {
       return <Navigate to={`/admin/registrations/list${location.search}`} replace />;
+    }
+    return <ConfigPage />;
+  }
+
+  if (segment === 'billing') {
+    if (subsegment) {
+      return <Navigate to={`/admin/registrations/billing${location.search}`} replace />;
     }
     return <ConfigPage />;
   }

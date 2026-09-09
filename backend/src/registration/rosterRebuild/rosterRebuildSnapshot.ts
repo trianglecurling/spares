@@ -4,7 +4,13 @@ import { ROSTER_COMMIT_REGISTRATION_STATUS_LIST } from '../registrationRosterSer
 import { loadWaitlistQueueMemberStats } from '../waitlistQueueMemberStats.js';
 import { loadRenderedWaitlistOrder } from '../waitlistQueueService.js';
 import { parseTeamRosterPlacements } from '../waitlistTeamRoster.js';
+import { timestampToMillis } from '../waitlistOfferPreference.js';
+import { effectiveLeagueRegistrationFeeMinor } from '../registrationConfigValidation.js';
 import { applyLeagueCategoryOverrides, resolveLeagueCategoryFromName, type LeagueCategoryOverrideMap } from './rosterRebuildLeagues.js';
+import {
+  receivedDuringPriorityPeriod,
+  resolvePriorityPeriodEnd,
+} from './rosterRebuildPriorityPeriod.js';
 import type {
   RosterRebuildLeague,
   RosterRebuildMember,
@@ -56,9 +62,16 @@ export async function loadSessionLeagues(
       predecessorLeagueId: schema.leagues.predecessor_league_id,
       isPlayInBased: schema.leagues.is_play_in_based,
       isJuniorRecreational: schema.leagues.is_junior_recreational,
+      registrationFeeOverrideMinor: schema.leagues.registration_fee_override_minor,
     })
     .from(schema.leagues)
     .where(eq(schema.leagues.session_id, sessionId));
+
+  const [price] = await db
+    .select({ defaultLeagueFeeMinor: schema.registrationPriceSettings.default_league_fee_minor })
+    .from(schema.registrationPriceSettings)
+    .limit(1);
+  const defaultLeagueFeeMinor = Number(price?.defaultLeagueFeeMinor ?? 0);
 
   const predecessorIds = [...new Set(rows.map((row) => row.predecessorLeagueId).filter((id): id is number => id != null))];
   const predecessorNames = new Map<number, string>();
@@ -82,6 +95,7 @@ export async function loadSessionLeagues(
     predecessorName: row.predecessorLeagueId != null ? (predecessorNames.get(row.predecessorLeagueId) ?? null) : null,
     isPlayInBased: Number(row.isPlayInBased) === 1,
     isJuniorRecreational: Number(row.isJuniorRecreational) === 1,
+    registrationFeeMinor: effectiveLeagueRegistrationFeeMinor(row.registrationFeeOverrideMinor, defaultLeagueFeeMinor),
     category: resolveLeagueCategoryFromName({
       name: row.name,
       isPlayInBased: row.isPlayInBased,
@@ -115,11 +129,15 @@ export async function loadRosterRebuildSnapshot(input: {
             status: schema.curlingRegistrations.status,
             desiredLeagueCount: schema.curlingRegistrations.desired_league_count,
             membershipOption: schema.curlingRegistrations.membership_option,
+            icePrivilegesChoice: schema.curlingRegistrations.ice_privileges_choice,
+            submittedAt: schema.curlingRegistrations.submitted_at,
+            createdAt: schema.curlingRegistrations.created_at,
           })
           .from(schema.curlingRegistrations)
           .where(
             and(
               eq(schema.curlingRegistrations.session_id, input.sessionId),
+              // Excludes cancelled, drafts, and other non-commit statuses.
               inArray(schema.curlingRegistrations.status, [...ROSTER_COMMIT_REGISTRATION_STATUS_LIST]),
             ),
           );
@@ -191,16 +209,35 @@ export async function loadRosterRebuildSnapshot(input: {
     prioritiesByRegistration.set(row.registrationId, list);
   }
 
-  const registrations: RosterRebuildRegistration[] = chosenRegistrations.map((row) => ({
-    id: row.id,
-    memberId: row.memberId!,
-    status: row.status,
-    desiredLeagueCount: row.desiredLeagueCount,
-    membershipOption: row.membershipOption,
-    priorities: (prioritiesByRegistration.get(row.id) ?? []).sort((a, b) => a.rank - b.rank),
-    juniorRecreationalSelection: juniorRecByRegistration.has(row.id),
-    sabbaticalLeagueIds: sabbaticalLeagueIdsByRegistration.get(row.id) ?? [],
-  }));
+  const transitionRows = await db
+    .select({
+      id: schema.registrationStateTransitions.id,
+      state: schema.registrationStateTransitions.state,
+      effectiveAt: schema.registrationStateTransitions.effective_at,
+    })
+    .from(schema.registrationStateTransitions)
+    .where(eq(schema.registrationStateTransitions.session_id, input.sessionId));
+  const priorityPeriod = resolvePriorityPeriodEnd(
+    transitionRows.map((row) => ({ id: row.id, state: row.state, effectiveAt: row.effectiveAt })),
+  );
+
+  const registrations: RosterRebuildRegistration[] = chosenRegistrations.map((row) => {
+    const submittedAt = timestampToString(row.submittedAt);
+    const receivedAt = timestampToMillis(row.submittedAt) ?? timestampToMillis(row.createdAt);
+    return {
+      id: row.id,
+      memberId: row.memberId!,
+      status: row.status,
+      desiredLeagueCount: row.desiredLeagueCount,
+      membershipOption: row.membershipOption,
+      priorities: (prioritiesByRegistration.get(row.id) ?? []).sort((a, b) => a.rank - b.rank),
+      juniorRecreationalSelection: juniorRecByRegistration.has(row.id),
+      sabbaticalLeagueIds: sabbaticalLeagueIdsByRegistration.get(row.id) ?? [],
+      submittedAt,
+      receivedDuringPriorityPeriod: receivedDuringPriorityPeriod(receivedAt, priorityPeriod.endMs),
+      icePrivilegesChoice: row.icePrivilegesChoice ?? 'none',
+    };
+  });
 
   const waitlistIds = [...new Set(leagues.map((league) => league.waitlistId).filter((id): id is number => id != null))];
   const waitlistEntriesByWaitlistId = new Map<number, RosterRebuildWaitlistEntry[]>();
@@ -350,6 +387,8 @@ export async function loadRosterRebuildSnapshot(input: {
     duplicateRegistrationMemberIds,
     guaranteedReturnPlacementCount,
     waitlistPlacementCount,
+    priorityPeriodEndAt: priorityPeriod.endIso,
+    priorityPeriodEndSource: priorityPeriod.source,
   };
 }
 

@@ -349,6 +349,10 @@ const adminCancelRegistrationSchema = z.object({
   refund: z.boolean().optional(),
 });
 
+const adminRefundRegistrationSchema = z.object({
+  reason: z.string().trim().min(1).max(500).optional(),
+});
+
 const transferRegistrationSchema = z.object({
   targetEventId: z.number().int().positive(),
 });
@@ -2588,7 +2592,7 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
         let refundStatus: string | null = null;
         let refundError: string | null = null;
         let refundAmountMinor = 0;
-        if (shouldRefund && !wasWaitlisted) {
+        if (shouldRefund) {
           const refundResult = await issueEventRegistrationFullRefund({
             registrationId,
             reason: 'Event registration canceled by admin',
@@ -2599,6 +2603,9 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
           refundStatus = refundResult.refundStatus;
           refundError = refundResult.refundError;
           refundAmountMinor = refundResult.refundAmountMinor;
+          if (!refundIssued && refundError === 'No refundable payment found') {
+            refundError = null;
+          }
           if (refundError) {
             request.log.error({ refundError }, 'Failed to create refund for event registration cancellation');
           }
@@ -2615,6 +2622,45 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
         throw err;
       }
     }
+  );
+
+  fastify.post<{ Params: { id: string; registrationId: string }; Body: unknown }>(
+    '/events/:id/registrations/:registrationId/refund',
+    { schema: { tags: ['events'] } },
+    async (request, reply) => {
+      const eventId = parseInt(request.params.id, 10);
+      const registrationId = parseInt(request.params.registrationId, 10);
+      if (isNaN(eventId) || isNaN(registrationId)) return sendApiError(reply, 400, 'Invalid id');
+
+      const member = (request as AuthenticatedRequest).member as Member;
+      if (!(await canManageEvent(member, eventId))) {
+        return sendApiError(reply, 403, 'Forbidden');
+      }
+
+      const parsed = adminRefundRegistrationSchema.safeParse(request.body ?? {});
+      if (!parsed.success) return sendValidationError(reply, 'Invalid request body', parsed.error.flatten());
+
+      const reg = await getRegistrationById(registrationId);
+      if (!reg || reg.event_id !== eventId) return sendApiError(reply, 404, 'Registration not found');
+
+      const refundResult = await issueEventRegistrationFullRefund({
+        registrationId,
+        reason: parsed.data.reason || 'Event registration refunded by staff',
+        requestedByMemberId: member.id,
+        surfaceIneligibleError: true,
+      });
+      if (refundResult.refundError) {
+        request.log.error({ refundError: refundResult.refundError }, 'Failed to create staff refund for event registration');
+      }
+
+      return {
+        success: refundResult.refundIssued,
+        refundIssued: refundResult.refundIssued,
+        refundStatus: refundResult.refundStatus,
+        refundError: refundResult.refundError,
+        refundAmountMinor: refundResult.refundAmountMinor,
+      };
+    },
   );
 
   // Special links CRUD

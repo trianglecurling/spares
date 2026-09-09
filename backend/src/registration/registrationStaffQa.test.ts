@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  buildRequestedLeaguesQaRows,
   buildReturningMembersQaRows,
   buildSabbaticalQaRows,
   classifyReturningPlayerQa,
@@ -280,5 +281,123 @@ describe('buildSabbaticalQaRows', () => {
         registrationId: 51,
       },
     ]);
+  });
+});
+
+describe('buildRequestedLeaguesQaRows', () => {
+  const tuesday = { id: 1, name: 'Tuesday Evening', dayOfWeek: 2 };
+  const thursday = { id: 2, name: 'Thursday Doubles', dayOfWeek: 4 };
+
+  function member(input: {
+    memberId: number;
+    memberName: string;
+    memberFirstName: string;
+    requestedLeagueCount: number | null;
+    requestedLeagues?: Array<{ id: number; name: string; dayOfWeek: number; priorityRank: number }>;
+    rosteredLeagues?: Array<{ id: number; name: string; dayOfWeek: number }>;
+  }) {
+    return {
+      memberId: input.memberId,
+      memberName: input.memberName,
+      memberFirstName: input.memberFirstName,
+      memberEmail: `${input.memberFirstName.toLowerCase()}@example.com`,
+      parentEmail: null,
+      registrationId: input.memberId + 100,
+      registrationStatus: 'submitted',
+      requestedLeagueCount: input.requestedLeagueCount,
+      requestedLeagues: input.requestedLeagues ?? [],
+      rosteredLeagues: input.rosteredLeagues ?? [],
+    };
+  }
+
+  test('keeps members below their requested count and drops those who already have it', () => {
+    const rows = buildRequestedLeaguesQaRows({
+      members: [
+        member({
+          memberId: 10,
+          memberName: 'Ada Lovelace',
+          memberFirstName: 'Ada',
+          requestedLeagueCount: 2,
+          requestedLeagues: [
+            { ...thursday, priorityRank: 2 },
+            { ...tuesday, priorityRank: 1 },
+          ],
+          rosteredLeagues: [tuesday],
+        }),
+        member({
+          memberId: 11,
+          memberName: 'Grace Hopper',
+          memberFirstName: 'Grace',
+          requestedLeagueCount: 1,
+          rosteredLeagues: [tuesday],
+        }),
+        member({
+          memberId: 12,
+          memberName: 'Alan Turing',
+          memberFirstName: 'Alan',
+          requestedLeagueCount: null,
+        }),
+        member({
+          memberId: 13,
+          memberName: 'Barbara Liskov',
+          memberFirstName: 'Barbara',
+          requestedLeagueCount: 0,
+        }),
+      ],
+    });
+    expect(rows).toEqual([
+      {
+        memberId: 10,
+        memberName: 'Ada Lovelace',
+        memberFirstName: 'Ada',
+        memberEmail: 'ada@example.com',
+        parentEmail: null,
+        registrationId: 110,
+        registrationStatus: 'submitted',
+        requestedLeagueCount: 2,
+        rosteredLeagueCount: 1,
+        requestedLeagues: [
+          { ...tuesday, priorityRank: 1 },
+          { ...thursday, priorityRank: 2 },
+        ],
+        rosteredLeagues: [tuesday],
+      },
+    ]);
+  });
+
+  test('orders by current roster count then first name', () => {
+    const rows = buildRequestedLeaguesQaRows({
+      members: [
+        member({
+          memberId: 20,
+          memberName: 'Zoe Quinn',
+          memberFirstName: 'Zoe',
+          requestedLeagueCount: 2,
+          rosteredLeagues: [tuesday],
+        }),
+        member({
+          memberId: 21,
+          memberName: 'Maya Patel',
+          memberFirstName: 'Maya',
+          requestedLeagueCount: 2,
+        }),
+        member({
+          memberId: 22,
+          memberName: 'Alex Rivera',
+          memberFirstName: 'Alex',
+          requestedLeagueCount: 3,
+          rosteredLeagues: [tuesday, thursday],
+        }),
+        member({
+          memberId: 23,
+          memberName: 'Alex Kim',
+          memberFirstName: 'Alex',
+          requestedLeagueCount: 2,
+          rosteredLeagues: [tuesday],
+        }),
+      ],
+    });
+    expect(rows.map((row) => row.memberName)).toEqual(['Maya Patel', 'Alex Kim', 'Zoe Quinn', 'Alex Rivera']);
+    expect(rows.map((row) => row.rosteredLeagueCount)).toEqual([0, 1, 1, 2]);
   });
 });

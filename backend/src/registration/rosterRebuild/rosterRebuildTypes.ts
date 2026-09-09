@@ -1,5 +1,6 @@
 import type { LeagueRosterPlacementTypeSqlite } from '../../db/drizzle-schema.js';
 import type { WaitlistOfferResponsePreference } from '../waitlistOfferPreference.js';
+import type { PriorityPeriodEndSource } from './rosterRebuildPriorityPeriod.js';
 
 export type LeagueCategory =
   | 'normal'
@@ -11,7 +12,7 @@ export type LeagueCategory =
   | 'instructional'
   | 'unresolved';
 
-export type RosterRebuildStage = 'returning' | 'waitlists' | 'third-leagues';
+export type RosterRebuildStage = 'returning' | 'waitlists' | 'open-registration' | 'third-leagues';
 
 export type RosterRebuildLeague = {
   id: number;
@@ -26,6 +27,8 @@ export type RosterRebuildLeague = {
   isPlayInBased: boolean;
   isJuniorRecreational: boolean;
   category: LeagueCategory;
+  /** Effective registration fee in cents; 0 is a free (typically daytime) league. */
+  registrationFeeMinor: number;
 };
 
 export type RosterRebuildRosterRow = {
@@ -55,6 +58,9 @@ export type RosterRebuildRegistration = {
   priorities: RosterRebuildPriority[];
   juniorRecreationalSelection: boolean;
   sabbaticalLeagueIds: number[];
+  submittedAt: string | null;
+  receivedDuringPriorityPeriod: boolean;
+  icePrivilegesChoice: string;
 };
 
 export type RosterRebuildWaitlistEntry = {
@@ -106,6 +112,8 @@ export type RosterRebuildSnapshot = {
   duplicateRegistrationMemberIds: number[];
   guaranteedReturnPlacementCount: number;
   waitlistPlacementCount: number;
+  priorityPeriodEndAt: string;
+  priorityPeriodEndSource: PriorityPeriodEndSource;
 };
 
 export type RosterRebuildPlacementType = Extract<
@@ -140,7 +148,9 @@ export type WaitlistEventOutcome =
   | 'skipped_allowance'
   | 'already_rostered'
   | 'placed_temporary'
-  | 'sabbatical_fallback';
+  | 'sabbatical_fallback'
+  | 'skipped_open_registration'
+  | 'skipped_ice_privileges';
 
 export type RosterRebuildWaitlistEvent = {
   pass: number;

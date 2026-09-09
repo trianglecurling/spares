@@ -21,8 +21,8 @@ type ResolveResponse = {
 const POLL_INTERVAL_MS = 2000;
 const MAX_POLL_ATTEMPTS = 15;
 
-const REFUND_SENTENCE =
-  'A full refund has been issued, and it should appear on your statement within the next few business days.';
+const STAFF_REFUND_SENTENCE =
+  'The club will follow up to issue a refund.';
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
@@ -57,7 +57,6 @@ export default function PublicEventRegisterSuccessPage() {
     'resolving' | 'confirmed' | 'waitlisted' | 'cancelled' | 'processing' | 'error'
   >('resolving');
   const [error, setError] = useState<string | null>(null);
-  const [refundIssued, setRefundIssued] = useState(false);
   const [waitlistPosition, setWaitlistPosition] = useState<number | null>(null);
   const [waitlistLength, setWaitlistLength] = useState<number | null>(null);
   const [manageAccessToken, setManageAccessToken] = useState<string | null>(null);
@@ -90,9 +89,6 @@ export default function PublicEventRegisterSuccessPage() {
           const data = await resolveOnce();
           if (canceled) return;
 
-          if (data.refundIssued) {
-            setRefundIssued(true);
-          }
           if (data.waitlistPosition != null) {
             setWaitlistPosition(data.waitlistPosition);
           }
@@ -126,7 +122,7 @@ export default function PublicEventRegisterSuccessPage() {
             setStatus('waitlisted');
             return;
           }
-          if (data.registrationStatus === 'cancelled' && data.refundIssued) {
+          if (data.registrationStatus === 'cancelled') {
             setStatus('cancelled');
             return;
           }
@@ -258,12 +254,8 @@ export default function PublicEventRegisterSuccessPage() {
         {status === 'waitlisted' && (
           <PublicStateCard
             tone="neutral"
-            title={refundIssued ? 'Placed on waitlist' : 'Payment received'}
-            description={
-              refundIssued
-                ? `The event filled before your payment completed. ${formatWaitlistPosition(waitlistPosition, waitlistLength)} ${REFUND_SENTENCE}`
-                : `Your payment was processed, but the event filled before confirmation completed. ${formatWaitlistPosition(waitlistPosition, waitlistLength)} We will contact you if a spot opens.`
-            }
+            title="Placed on waitlist"
+            description={`The event filled before your payment completed. ${formatWaitlistPosition(waitlistPosition, waitlistLength)} ${STAFF_REFUND_SENTENCE} We will contact you if a spot opens.`}
             action={
               <Link to={`/events/${slug}`} className="text-primary-teal-link hover:underline">
                 Back to event
@@ -276,7 +268,7 @@ export default function PublicEventRegisterSuccessPage() {
           <PublicStateCard
             tone="warning"
             title="Registration could not be completed"
-            description={`The event filled before your payment completed, and your registration could not be completed. ${REFUND_SENTENCE}`}
+            description={`The event filled before your payment completed, and your registration could not be completed. ${STAFF_REFUND_SENTENCE}`}
             action={
               <Link to={`/events/${slug}`} className="text-primary-teal-link hover:underline">
                 Back to event

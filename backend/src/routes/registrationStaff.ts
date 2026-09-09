@@ -10,14 +10,20 @@ import {
   submitStaffRegistrationEdits,
   triggerDeferredRegistrationPayment,
 } from '../registration/registrationMembershipPaymentService.js';
+import { issueStaffRegistrationRefund, listStaffRegistrationBilling, RegistrationBillingValidationError } from '../registration/registrationBillingService.js';
 import { resolveFrontendBaseUrl } from '../utils/frontendUrl.js';
 import { getStaffRegistrationStats } from '../registration/registrationStaffStats.js';
 import {
+  staffRegistrationBillingResponseSchema,
+  staffRegistrationRefundResponseSchema,
+  staffRequestPaymentResponseSchema,
+  staffRequestedLeaguesQaResponseSchema,
   staffReturningMembersQaResponseSchema,
   staffReturningPlayersQaResponseSchema,
   staffSabbaticalsQaResponseSchema,
 } from '../api/schemas.js';
 import {
+  getStaffRequestedLeaguesQa,
   getStaffReturningMembersQa,
   getStaffReturningPlayersQa,
   getStaffSabbaticalsQa,
@@ -59,6 +65,10 @@ function requireRegistrationManage(request: FastifyRequest, reply: FastifyReply)
 
 function handleStaffRegistrationError(reply: FastifyReply, error: unknown): boolean {
   if (error instanceof RegistrationStaffValidationError) {
+    sendValidationError(reply, error.message, error.details);
+    return true;
+  }
+  if (error instanceof RegistrationBillingValidationError) {
     sendValidationError(reply, error.message, error.details);
     return true;
   }
@@ -110,6 +120,9 @@ const returningMembersQaQuerySchema = z.object({
 const sabbaticalsQaQuerySchema = z.object({
   sessionId: z.coerce.number().int().positive(),
 });
+const requestedLeaguesQaQuerySchema = z.object({
+  sessionId: z.coerce.number().int().positive(),
+});
 const staffSubmitSchema = z.object({
   changedSummary: z.string().min(1).optional(),
   confirmImmediatePayment: z.boolean().optional(),
@@ -137,6 +150,12 @@ const staffCreateSchema = z
   });
 const staffOfflinePaymentSchema = z.object({
   note: z.string().trim().min(1, 'Enter a check number or other explanation.').max(500),
+});
+const staffRequestPaymentSchema = z.object({
+  collectBalance: z.boolean().optional(),
+});
+const staffIssueRefundSchema = z.object({
+  note: z.string().trim().min(1, 'Enter a refund note.').max(160),
 });
 const exportRegistrationsSchema = listQuerySchema
   .omit({ page: true, pageSize: true })
@@ -239,6 +258,37 @@ export async function protectedRegistrationStaffRoutes(fastify: FastifyInstance)
   });
 
   fastify.get(
+    '/registration/staff/billing',
+    {
+      schema: {
+        tags: ['registration-staff'],
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['sessionId'],
+          properties: {
+            sessionId: { type: 'number' },
+          },
+        },
+        response: { 200: staffRegistrationBillingResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      if (!requireRegistrationManage(request, reply)) return;
+      try {
+        const query = statsQuerySchema.parse(request.query);
+        return await listStaffRegistrationBilling({
+          actor: (request as AuthenticatedRequest).member,
+          sessionId: query.sessionId,
+        });
+      } catch (error) {
+        if (handleStaffRegistrationError(reply, error)) return;
+        throw error;
+      }
+    },
+  );
+
+  fastify.get(
     '/registration/staff/qa/returning-members',
     {
       schema: {
@@ -333,6 +383,37 @@ export async function protectedRegistrationStaffRoutes(fastify: FastifyInstance)
     },
   );
 
+  fastify.get(
+    '/registration/staff/qa/requested-leagues',
+    {
+      schema: {
+        tags: ['registration-staff'],
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['sessionId'],
+          properties: {
+            sessionId: { type: 'number' },
+          },
+        },
+        response: { 200: staffRequestedLeaguesQaResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      if (!requireRegistrationManage(request, reply)) return;
+      try {
+        const query = requestedLeaguesQaQuerySchema.parse(request.query);
+        return await getStaffRequestedLeaguesQa({
+          actor: (request as AuthenticatedRequest).member,
+          sessionId: query.sessionId,
+        });
+      } catch (error) {
+        if (handleStaffRegistrationError(reply, error)) return;
+        throw error;
+      }
+    },
+  );
+
   fastify.get('/registration/staff/registrations/:id', async (request, reply) => {
     if (!requireRegistrationManage(request, reply)) return;
     try {
@@ -378,20 +459,81 @@ export async function protectedRegistrationStaffRoutes(fastify: FastifyInstance)
     }
   });
 
-  fastify.post('/registration/staff/registrations/:id/request-payment', async (request, reply) => {
-    if (!requireRegistrationManage(request, reply)) return;
-    try {
-      const params = idParamsSchema.parse(request.params);
-      return await triggerDeferredRegistrationPayment({
-        registrationId: params.id,
-        actorMemberId: (request as AuthenticatedRequest).member.id,
-        frontendBaseUrl: resolveFrontendBaseUrl(request),
-      });
-    } catch (error) {
-      if (handleStaffRegistrationError(reply, error)) return;
-      throw error;
-    }
-  });
+  fastify.post(
+    '/registration/staff/registrations/:id/request-payment',
+    {
+      schema: {
+        tags: ['registration-staff'],
+        params: {
+          type: 'object',
+          properties: { id: { type: 'string' } },
+          required: ['id'],
+        },
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            collectBalance: { type: 'boolean' },
+          },
+        },
+        response: { 200: staffRequestPaymentResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      if (!requireRegistrationManage(request, reply)) return;
+      try {
+        const params = idParamsSchema.parse(request.params);
+        const body = staffRequestPaymentSchema.parse(request.body ?? {});
+        return await triggerDeferredRegistrationPayment({
+          registrationId: params.id,
+          actorMemberId: (request as AuthenticatedRequest).member.id,
+          frontendBaseUrl: resolveFrontendBaseUrl(request),
+          collectBalance: body.collectBalance,
+        });
+      } catch (error) {
+        if (handleStaffRegistrationError(reply, error)) return;
+        throw error;
+      }
+    },
+  );
+
+  fastify.post(
+    '/registration/staff/registrations/:id/issue-refund',
+    {
+      schema: {
+        tags: ['registration-staff'],
+        params: {
+          type: 'object',
+          properties: { id: { type: 'string' } },
+          required: ['id'],
+        },
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['note'],
+          properties: {
+            note: { type: 'string' },
+          },
+        },
+        response: { 200: staffRegistrationRefundResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      if (!requireRegistrationManage(request, reply)) return;
+      try {
+        const params = idParamsSchema.parse(request.params);
+        const body = staffIssueRefundSchema.parse(request.body ?? {});
+        return await issueStaffRegistrationRefund({
+          actor: (request as AuthenticatedRequest).member,
+          registrationId: params.id,
+          note: body.note,
+        });
+      } catch (error) {
+        if (handleStaffRegistrationError(reply, error)) return;
+        throw error;
+      }
+    },
+  );
 
   fastify.post('/registration/staff/registrations/:id/cancel', {
     schema: {
