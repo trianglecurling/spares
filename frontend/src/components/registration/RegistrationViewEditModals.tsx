@@ -645,10 +645,10 @@ export default function RegistrationViewEditModals({
         }
         setStaffEmailOptions(null);
         setStaffSavePrompt(null);
+        await input.onSaved();
         if (result.paymentAdjustment) {
           onStaffPaymentAdjustment?.(result);
         }
-        await input.onSaved();
       } catch (err) {
         setStaffSavePromptError(editValidationErrorMessage(err, 'Unable to save registration changes.'));
       } finally {
@@ -733,9 +733,6 @@ export default function RegistrationViewEditModals({
             changedSummary: staffEmailOptions?.sendEmail ? staffEmailOptions.changeSummary : undefined,
           })
         : await submitRegistrationEdits(registrationId, { confirmImmediatePayment: true });
-      if (result.paymentAdjustment) {
-        onStaffPaymentAdjustment?.(result);
-      }
       if (result.checkoutUrl && !staffMode) {
         window.location.assign(result.checkoutUrl);
         return;
@@ -743,6 +740,9 @@ export default function RegistrationViewEditModals({
       setStaffEmailOptions(null);
       setCheckoutConfirmation(null);
       await onSaved();
+      if (result.paymentAdjustment) {
+        onStaffPaymentAdjustment?.(result);
+      }
     } catch (err) {
       setCheckoutError(editValidationErrorMessage(err, 'Unable to start checkout.'));
     } finally {

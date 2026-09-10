@@ -332,6 +332,11 @@ export interface MemberSummary {
   phoneVisible: boolean;
   baselineOtherClubExperienceYears?: number;
   baselineClubExperienceYears?: number;
+  leagues?: Array<{
+    id: number;
+    name: string;
+    teamName: string | null;
+  }>;
 }
 
 export interface SponsorshipLevel {

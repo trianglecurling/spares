@@ -48,6 +48,28 @@ export function registrationBalanceMinor(owedMinor: number, paidMinor: number): 
   return Math.round(owedMinor) - Math.round(paidMinor);
 }
 
+export type StaffPaidRegistrationAdjustmentKind = 'none' | 'refund' | 'balance_due';
+
+/**
+ * Compare a paid registration's new bill to what is already on file.
+ * Refunds from this comparison must be staff-approved; callers should not
+ * issue them automatically.
+ */
+export function staffPaidRegistrationAdjustment(
+  owedMinor: number,
+  paidMinor: number,
+): { kind: StaffPaidRegistrationAdjustmentKind; adjustmentMinor: number } {
+  const paid = Math.max(0, Math.round(paidMinor));
+  const adjustmentMinor = registrationBalanceMinor(owedMinor, paid);
+  if (paid <= 0 || adjustmentMinor === 0) {
+    return { kind: 'none', adjustmentMinor: 0 };
+  }
+  if (adjustmentMinor < 0) {
+    return { kind: 'refund', adjustmentMinor };
+  }
+  return { kind: 'balance_due', adjustmentMinor };
+}
+
 export function remainingDueMinor(owedMinor: number, paidMinor: number): number {
   return Math.max(0, registrationBalanceMinor(owedMinor, paidMinor));
 }

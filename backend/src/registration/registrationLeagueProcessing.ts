@@ -3,6 +3,7 @@ import { getDrizzleDb } from '../db/drizzle-db.js';
 import type { RegistrationCommunicationMessageTypeSqlite } from '../db/drizzle-schema.js';
 import type { Member } from '../types.js';
 import { memberCanManageRegistrations } from '../utils/registrationStaffAccess.js';
+import { memberCanManageMembers } from '../utils/memberStaffAccess.js';
 import { hasLeagueSetupAccess } from '../utils/leagueAccess.js';
 import { hasScope } from '../utils/rbac.js';
 import { isAdmin, isServerAdmin } from '../utils/auth.js';
@@ -54,6 +55,7 @@ export function isHeldLeagueProcessingMessageType(
 export function canBypassLeagueProcessingHold(member: Member): boolean {
   if (isAdmin(member) || isServerAdmin(member)) return true;
   if (memberCanManageRegistrations(member)) return true;
+  if (memberCanManageMembers(member)) return true;
   if (hasScope(member.authz, 'leagues.manage')) return true;
   for (const rule of member.authz?.scopeRules ?? []) {
     if (rule.effect !== 'allow') continue;
@@ -69,6 +71,7 @@ export async function canViewLeaguePlacementDuringProcessing(
 ): Promise<boolean> {
   if (isAdmin(member) || isServerAdmin(member)) return true;
   if (memberCanManageRegistrations(member)) return true;
+  if (memberCanManageMembers(member)) return true;
   if (hasScope(member.authz, 'leagues.manage')) return true;
   if (leagueId == null) return false;
   return hasLeagueSetupAccess(member, leagueId);

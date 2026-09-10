@@ -14,6 +14,7 @@ export function memberCanBypassLeagueProcessingHold(
   if (member.isAdmin || member.isServerAdmin) return true;
   if (memberHasScope(member, 'admin.manage')) return true;
   if (memberHasScope(member, 'registrations.manage')) return true;
+  if (memberHasScope(member, 'members.manage')) return true;
   if (memberHasScope(member, 'leagues.manage')) return true;
   return false;
 }

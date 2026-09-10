@@ -7756,6 +7756,32 @@
                       },
                       "baselineClubExperienceYears": {
                         "type": "number"
+                      },
+                      "leagues": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "id": {
+                              "type": "number"
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "teamName": {
+                              "type": [
+                                "null",
+                                "string"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "name",
+                            "teamName"
+                          ]
+                        }
                       }
                     },
                     "required": [
@@ -8017,6 +8043,32 @@
                           },
                           "baselineClubExperienceYears": {
                             "type": "number"
+                          },
+                          "leagues": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "properties": {
+                                "id": {
+                                  "type": "number"
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
+                                "teamName": {
+                                  "type": [
+                                    "null",
+                                    "string"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "name",
+                                "teamName"
+                              ]
+                            }
                           }
                         },
                         "required": [
@@ -12420,6 +12472,24 @@
                           "null",
                           "number"
                         ]
+                      },
+                      "placementSource": {
+                        "anyOf": [
+                          {
+                            "type": "null"
+                          },
+                          {
+                            "type": "string",
+                            "enum": [
+                              "league_returner",
+                              "waitlist_add",
+                              "third_league"
+                            ]
+                          }
+                        ]
+                      },
+                      "isTemporarySabbaticalFill": {
+                        "type": "boolean"
                       }
                     },
                     "required": [
@@ -12430,7 +12500,9 @@
                       "assignedTeamId",
                       "assignedTeamName",
                       "guaranteeLabel",
-                      "priorityRank"
+                      "priorityRank",
+                      "placementSource",
+                      "isTemporarySabbaticalFill"
                     ]
                   }
                 }

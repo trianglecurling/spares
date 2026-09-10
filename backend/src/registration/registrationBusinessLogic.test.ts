@@ -1,10 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import { ageOnLeagueStart, calculateClubExperienceYears, totalExperienceYears } from './registrationAgeExperience.js';
 import { evaluateRegistrationDraft } from './evaluateRegistrationDraft.js';
-import { calculateRegistrationFees } from './registrationFeeCalculator.js';
+import { calculateRegistrationFees, staffEditRegistrationFeePreview } from './registrationFeeCalculator.js';
 import { validateLeagueEligibility, validateSpareOnlyEligibility, validateWaitlistEligibility } from './registrationEligibility.js';
 import { validateLeaguePriorities } from './leaguePriorityEvaluation.js';
 import { decideRegistrationPayment } from './registrationPaymentDecision.js';
+import { staffPaidRegistrationAdjustment } from './registrationBillingMath.js';
 import { evaluateGuaranteedReturnEligibility, evaluateSabbaticalEligibility } from './registrationReturningRights.js';
 import { league, priority, registrationContext, selection } from './registrationTestFixtures.js';
 
@@ -651,6 +652,46 @@ describe('registration business logic', () => {
     expect(draft.feePreview.totalDueMinor).toBe(0);
     expect(draft.feePreview.estimatedMaximumTotalDueMinor).toBe(40000);
     expect(draft.paymentDecision.estimatedMinimumDueMinor).toBe(0);
+  });
+
+  test('staff edits of a paid registration bill placed leagues instead of the unconfirmed $0 floor', () => {
+    const context = registrationContext({
+      leagues: { 100: league({ id: 100, predecessorLeagueId: null, allowsWaitlist: false }) },
+      participatedLeagueIds: [],
+      priorities: [priority({ leagueId: 100 })],
+      desiredLeagueCount: 1,
+    });
+    const draftPreview = calculateRegistrationFees(context);
+    expect(draftPreview.totalDueMinor).toBe(0);
+
+    const staffPreview = staffEditRegistrationFeePreview({
+      context,
+      draftPreview,
+      chargedLeagueIds: [100],
+    });
+    expect(staffPreview.totalDueMinor).toBe(40000);
+    expect(staffPreview.lineItems.map((item) => item.lineType)).toEqual(['regular_membership_fee', 'league_fee']);
+    expect(staffPaidRegistrationAdjustment(staffPreview.totalDueMinor, 40000)).toEqual({
+      kind: 'none',
+      adjustmentMinor: 0,
+    });
+  });
+
+  test('staff edits without roster placements keep the draft quote', () => {
+    const context = registrationContext({
+      leagues: { 100: league({ id: 100, predecessorLeagueId: null, allowsWaitlist: false }) },
+      participatedLeagueIds: [],
+      priorities: [priority({ leagueId: 100 })],
+      desiredLeagueCount: 1,
+    });
+    const draftPreview = calculateRegistrationFees(context);
+    expect(
+      staffEditRegistrationFeePreview({
+        context,
+        draftPreview,
+        chargedLeagueIds: [],
+      }),
+    ).toBe(draftPreview);
   });
 
   test('unresolved leftover leagues do not defer payment when they cannot change the amount due', () => {

@@ -327,6 +327,13 @@ export async function loadRosterRebuildSnapshot(input: {
   const tuesdayEveningRosterMemberIds = new Set(
     currentRosters.filter((row) => tuesdayEveningIds.includes(row.leagueId) && row.status === 'active').map((row) => row.memberId),
   );
+  const unmanagedPlayInLeagueIds = leagues
+    .filter((league) => league.category === 'tuesday_evening' || league.isPlayInBased)
+    .map((league) => league.id);
+  const unmanagedOccupiedKeys = await loadUnmanagedOccupiedKeys({
+    leagueIds: unmanagedPlayInLeagueIds,
+    memberIds,
+  });
 
   const activeSabbaticals =
     leagueIds.length === 0
@@ -382,6 +389,7 @@ export async function loadRosterRebuildSnapshot(input: {
     waitlistEntriesByWaitlistId,
     members,
     tuesdayEveningRosterMemberIds,
+    unmanagedOccupiedKeys,
     activeSabbaticals,
     pendingOffers,
     duplicateRegistrationMemberIds,
@@ -390,6 +398,45 @@ export async function loadRosterRebuildSnapshot(input: {
     priorityPeriodEndAt: priorityPeriod.endIso,
     priorityPeriodEndSource: priorityPeriod.source,
   };
+}
+
+/** Entry-team statuses that still occupy a play-in / Tuesday desired-count slot. */
+const PLAY_IN_OCCUPYING_ENTRY_STATUSES = ['pending', 'guaranteed', 'playdown', 'entered'] as const;
+
+async function loadUnmanagedOccupiedKeys(input: {
+  leagueIds: number[];
+  memberIds: number[];
+}): Promise<Set<string>> {
+  const keys = new Set<string>();
+  if (input.leagueIds.length === 0 || input.memberIds.length === 0) return keys;
+  const { db, schema } = getDrizzleDb();
+
+  const entryRows = await db
+    .select({
+      leagueId: schema.leagueEntryTeams.league_id,
+      memberId: schema.leagueEntryTeamMembers.member_id,
+    })
+    .from(schema.leagueEntryTeamMembers)
+    .innerJoin(schema.leagueEntryTeams, eq(schema.leagueEntryTeamMembers.entry_team_id, schema.leagueEntryTeams.id))
+    .where(
+      and(
+        inArray(schema.leagueEntryTeams.league_id, input.leagueIds),
+        inArray(schema.leagueEntryTeams.status, [...PLAY_IN_OCCUPYING_ENTRY_STATUSES]),
+        inArray(schema.leagueEntryTeamMembers.member_id, input.memberIds),
+      ),
+    );
+  for (const row of entryRows) {
+    if (row.memberId == null) continue;
+    keys.add(`${row.leagueId}:${row.memberId}`);
+  }
+
+  const teamRows = await findTeamMemberAssignments(input.leagueIds);
+  const memberIdSet = new Set(input.memberIds);
+  for (const row of teamRows) {
+    if (!memberIdSet.has(row.memberId)) continue;
+    keys.add(`${row.leagueId}:${row.memberId}`);
+  }
+  return keys;
 }
 
 export async function loadRosterRows(leagueIds: number[]): Promise<RosterRebuildRosterRow[]> {

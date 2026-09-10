@@ -226,6 +226,19 @@ export const memberSummarySchema = {
     phoneVisible: { type: 'boolean' },
     baselineOtherClubExperienceYears: { type: 'number' },
     baselineClubExperienceYears: { type: 'number' },
+    leagues: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          id: { type: 'number' },
+          name: { type: 'string' },
+          teamName: { type: ['string', 'null'] },
+        },
+        required: ['id', 'name', 'teamName'],
+      },
+    },
   },
   required: [
     'id',

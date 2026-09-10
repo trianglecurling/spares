@@ -12,6 +12,7 @@
  *   bun run src/scripts/rebuild-league-rosters.ts --session "Fall 2026" --compare path/to/rosters-export.csv
  *
  * Dry-run is the default. Pass --apply to write. --force skips ordering and unresolved-league guards.
+ * All committed registrations are treated the same (priority and open period).
  */
 
 import fs from 'node:fs';
@@ -75,7 +76,8 @@ function usage(): string {
   bun run src/scripts/rebuild-league-rosters.ts --session "Fall 2026" --compare <rosters-export.csv>
 
 Options: --league-map <file.json>  --force  --seed <number>  --output-dir <dir>
-Dry-run is the default. Pass --apply to write roster and waitlist changes.`;
+Dry-run is the default. Pass --apply to write roster and waitlist changes.
+All committed registrations are treated the same (priority and open period).`;
 }
 
 function timestampStamp(): string {
@@ -352,7 +354,9 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const result = runRosterRebuildStage(snapshot, stage, { randomSeed: seed });
+  const result = runRosterRebuildStage(snapshot, stage, {
+    randomSeed: seed,
+  });
   const outDir = createRunDir(runRoot, `stage-${stage}`);
   writeTextFile(path.join(outDir, 'placements.csv'), placementsToCsv(result.placements, snapshot.leagues, snapshot.members));
   writeTextFile(path.join(outDir, 'waitlist-events.csv'), waitlistEventsToCsv(result.waitlistEvents, snapshot.leagues, snapshot.members));
@@ -369,7 +373,7 @@ async function main(): Promise<void> {
       applied: apply,
       leagues: snapshot.leagues,
       result,
-      extraLines: apply ? ['Database writes applied.'] : ['Dry run; pass --apply to write.'],
+      extraLines: [apply ? 'Database writes applied.' : 'Dry run; pass --apply to write.'],
     }),
   );
 

@@ -58,7 +58,9 @@ import {
   SabbaticalStaffValidationError,
 } from '../registration/sabbaticalStaffService.js';
 import { loadRosterRegistrationStatuses } from '../registration/rosterRegistrationStatusService.js';
+import { deriveRosterPlacementSource } from '../registration/rosterPlacementSource.js';
 import type { Member } from '../types.js';
+import { memberCanViewRosterPlacement } from '../utils/memberStaffAccess.js';
 import {
   canViewLeaguePlacementDuringProcessing,
   isLeagueProcessingActive,
@@ -815,6 +817,8 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
           email: schema.members.email,
           guardian_email: schema.members.guardian_email,
           date_of_birth: schema.members.date_of_birth,
+          placement_type: schema.leagueRoster.placement_type,
+          is_temporary_sabbatical_fill: schema.leagueRoster.is_temporary_sabbatical_fill,
         })
         .from(schema.leagueRoster)
         .innerJoin(schema.members, eq(schema.leagueRoster.member_id, schema.members.id))
@@ -823,6 +827,8 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
         member_id: number;
         name: string;
         email: string | null;
+        placement_type: string | null;
+        is_temporary_sabbatical_fill: number | boolean | null;
       }[];
 
       const rosterMemberIds = rosterRows.map((row) => row.member_id);
@@ -854,6 +860,35 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
         ? await loadRosterRegistrationStatuses(leagueId, rosterMemberIds)
         : new Map();
 
+      const includePlacement = memberCanViewRosterPlacement(member);
+      const sessionLeagueCountByMemberId = new Map<number, number>();
+      if (includePlacement && rosterMemberIds.length > 0) {
+        const [leagueRow] = (await db
+          .select({ sessionId: schema.leagues.session_id })
+          .from(schema.leagues)
+          .where(eq(schema.leagues.id, leagueId))
+          .limit(1)) as { sessionId: number | null }[];
+        if (leagueRow?.sessionId != null) {
+          const countRows = (await db
+            .select({
+              memberId: schema.leagueRoster.member_id,
+              count: sql<number>`count(*)`,
+            })
+            .from(schema.leagueRoster)
+            .innerJoin(schema.leagues, eq(schema.leagueRoster.league_id, schema.leagues.id))
+            .where(
+              and(
+                eq(schema.leagues.session_id, leagueRow.sessionId),
+                inArray(schema.leagueRoster.member_id, rosterMemberIds),
+              ),
+            )
+            .groupBy(schema.leagueRoster.member_id)) as { memberId: number; count: number }[];
+          for (const row of countRows) {
+            sessionLeagueCountByMemberId.set(row.memberId, Number(row.count) || 0);
+          }
+        }
+      }
+
       return rosterRows.map((row) => {
         const assignment = assignmentMap.get(row.member_id);
         const status = statusByMemberId.get(row.member_id);
@@ -865,6 +900,15 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
           assignedTeamName: assignment?.teamName ?? null,
           guaranteeLabel: status?.guaranteeLabel ?? null,
           priorityRank: status?.priorityRank ?? null,
+          placementSource: includePlacement
+            ? deriveRosterPlacementSource({
+                placementType: row.placement_type,
+                sessionLeagueCount: sessionLeagueCountByMemberId.get(row.member_id) ?? 1,
+              })
+            : null,
+          isTemporarySabbaticalFill: includePlacement
+            ? Number(row.is_temporary_sabbatical_fill) === 1
+            : false,
         };
       });
     }

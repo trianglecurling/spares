@@ -7,6 +7,7 @@ import Button from '../../components/Button';
 import FormCheckbox from '../../components/FormCheckbox';
 import Modal from '../../components/Modal';
 import RecordOfflinePaymentModal from '../../components/registration/RecordOfflinePaymentModal';
+import IssueRegistrationRefundModal from '../../components/registration/IssueRegistrationRefundModal';
 import RegistrationViewEditModals, {
   type RegistrationEditModalKind,
 } from '../../components/registration/RegistrationViewEditModals';
@@ -324,6 +325,9 @@ export default function AdminRegistrationDetail() {
   const [offlinePaymentOpen, setOfflinePaymentOpen] = useState(false);
   const [offlinePaymentError, setOfflinePaymentError] = useState<string | null>(null);
   const [activeEditModal, setActiveEditModal] = useState<RegistrationEditModalKind>(null);
+  const [refundPrompt, setRefundPrompt] = useState<{ amountMinor: number } | null>(null);
+  const [refundSaving, setRefundSaving] = useState(false);
+  const [refundError, setRefundError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!Number.isFinite(numericId)) return;
@@ -384,10 +388,21 @@ export default function AdminRegistrationDetail() {
     const adjustment = result.paymentAdjustment;
     if (!adjustment) return;
     if (adjustment.kind === 'refund') {
+      const amountMinor = Math.abs(adjustment.adjustmentMinor);
+      if (adjustment.refundRequiresApproval) {
+        showAlert(
+          `This change created an overpayment of ${formatCurrency(amountMinor)}. Issue a refund only if that credit should go back to the curler.`,
+          'warning',
+          'Refund needs approval',
+        );
+        setRefundError(null);
+        setRefundPrompt({ amountMinor });
+        return;
+      }
       showAlert(
         adjustment.refundIssued
-          ? `A refund of ${formatCurrency(Math.abs(adjustment.adjustmentMinor))} was issued.`
-          : adjustment.refundError ?? 'Refund could not be issued automatically.',
+          ? `A refund of ${formatCurrency(amountMinor)} was issued.`
+          : adjustment.refundError ?? 'Refund could not be issued.',
         adjustment.refundIssued ? 'success' : 'warning',
         'Payment adjusted',
       );
@@ -401,6 +416,29 @@ export default function AdminRegistrationDetail() {
         'warning',
         'Balance due',
       );
+    }
+  }
+
+  async function issueApprovedRefund(note: string) {
+    if (!refundPrompt) return;
+    setRefundSaving(true);
+    setRefundError(null);
+    try {
+      const response = await api.post<{ amountRefundedMinor: number }>(
+        `/registration/staff/registrations/${numericId}/issue-refund`,
+        { note },
+      );
+      setRefundPrompt(null);
+      showAlert(
+        `Refund of ${formatCurrency(response.data.amountRefundedMinor)} issued.`,
+        'success',
+        'Refund issued',
+      );
+      await load();
+    } catch (err) {
+      setRefundError(getApiErrorMessage(err, 'Unable to issue refund.'));
+    } finally {
+      setRefundSaving(false);
     }
   }
 
@@ -927,6 +965,23 @@ export default function AdminRegistrationDetail() {
           setOfflinePaymentError(null);
         }}
         onSubmit={(note) => void recordOfflinePayment(note)}
+      />
+      <IssueRegistrationRefundModal
+        isOpen={refundPrompt != null}
+        saving={refundSaving}
+        description={
+          refundPrompt
+            ? `This change created an overpayment of ${formatCurrency(refundPrompt.amountMinor)}. Refunds are not issued automatically. Submit a refund note only if this credit should go back to the curler.`
+            : ''
+        }
+        defaultNote="Registration overpayment refund"
+        error={refundError}
+        onClose={() => {
+          if (refundSaving) return;
+          setRefundPrompt(null);
+          setRefundError(null);
+        }}
+        onSubmit={(note) => void issueApprovedRefund(note)}
       />
     </>
   );

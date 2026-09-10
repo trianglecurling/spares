@@ -25,7 +25,12 @@ import { defaultSabbaticalDurationLimitYears } from './sabbaticalDurationLimit.j
 import { effectiveExperienceYears, isJuniorRecreationalEligible } from './registrationAgeExperience.js';
 import { memberExperienceBaselinesFromRow, type MemberExperienceBaselines } from './curlingExperienceYears.js';
 import { effectiveLeagueRegistrationFeeMinor } from './registrationConfigValidation.js';
-import { calculateRegistrationFees, type RegistrationFeeLineItem, type RegistrationFeePreview } from './registrationFeeCalculator.js';
+import {
+  calculateRegistrationFees,
+  staffEditRegistrationFeePreview,
+  type RegistrationFeeLineItem,
+  type RegistrationFeePreview,
+} from './registrationFeeCalculator.js';
 import { decideRegistrationPayment, type RegistrationPaymentDecision } from './registrationPaymentDecision.js';
 import {
   getRegistrationPaymentDeadline,
@@ -75,7 +80,7 @@ import {
   unpaidImmediateRegistrationCanDefer,
 } from './registrationUnpaidImmediateDeferral.js';
 import { computeRegistrationNetPaidMinor, loadPlacedRosterChargeSet } from './registrationBillingService.js';
-import { remainingDueMinor } from './registrationBillingMath.js';
+import { remainingDueMinor, staffPaidRegistrationAdjustment } from './registrationBillingMath.js';
 
 export const REGISTRATION_IMMEDIATE_PAYMENT_CONFIRMATION_MESSAGE =
   'After making these changes to your registration, your league placements are now confirmed, so payment can be taken immediately. Click continue to proceed to checkout. Your registration updates will be confirmed after payment is received.';
@@ -203,6 +208,7 @@ export type RegistrationPaymentAdjustmentResult = {
   newTotalMinor: number;
   adjustmentMinor: number;
   refundIssued?: boolean;
+  refundRequiresApproval?: boolean;
   refundError?: string | null;
   checkoutUrl?: string | null;
 };
@@ -2408,8 +2414,19 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
   const payerMemberId = registration.submitted_by_member_id ?? input.actor.id;
   const { db, schema } = getDrizzleDb();
   const existingInvoice = await loadLatestRegistrationInvoice(input.registrationId);
-  const priorPaidMinor =
-    input.staffEdit && existingInvoice?.status === 'paid' ? existingInvoice.total_minor : 0;
+  const priorPaidMinor = input.staffEdit ? await computeRegistrationNetPaidMinor(input.registrationId) : 0;
+  if (input.staffEdit && priorPaidMinor > 0 && registration.curler_member_id) {
+    const placed = await loadPlacedRosterChargeSet({
+      registrationId: input.registrationId,
+      curlerMemberId: registration.curler_member_id,
+    });
+    evaluation.feePreview = staffEditRegistrationFeePreview({
+      context,
+      draftPreview: evaluation.feePreview,
+      chargedLeagueIds: placed.chargedLeagueIds,
+      temporaryFillLeagueIds: placed.temporaryFillLeagueIds,
+    });
+  }
   const requiresCheckoutConfirmation =
     !input.staffEdit &&
     !payLaterRequested &&
@@ -2614,34 +2631,21 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
 
   if (input.staffEdit && priorPaidMinor > 0) {
     const newTotalMinor = evaluation.feePreview.totalDueMinor;
-    const adjustmentMinor = newTotalMinor - priorPaidMinor;
+    const classified = staffPaidRegistrationAdjustment(newTotalMinor, priorPaidMinor);
+    const adjustmentMinor = classified.adjustmentMinor;
     let paymentAdjustment: RegistrationPaymentAdjustmentResult = {
-      kind: 'none',
+      kind: classified.kind,
       priorPaidMinor,
       newTotalMinor,
       adjustmentMinor,
     };
-    if (adjustmentMinor < 0) {
-      const refundAmountMinor = Math.abs(adjustmentMinor);
-      if (existingInvoice?.payment_order_id) {
-        try {
-          await createPaymentService().createRefundForOrder({
-            orderId: existingInvoice.payment_order_id,
-            amountMinor: refundAmountMinor,
-            reason: 'Registration updated by staff',
-            requestedByMemberId: input.actor.id,
-          });
-          paymentAdjustment = { ...paymentAdjustment, kind: 'refund', refundIssued: true };
-        } catch (error) {
-          paymentAdjustment = {
-            ...paymentAdjustment,
-            kind: 'refund',
-            refundIssued: false,
-            refundError: error instanceof PaymentServiceError ? error.message : 'Failed to issue refund',
-          };
-        }
-      }
-    } else if (adjustmentMinor > 0) {
+    if (classified.kind === 'refund') {
+      paymentAdjustment = {
+        ...paymentAdjustment,
+        refundIssued: false,
+        refundRequiresApproval: true,
+      };
+    } else if (classified.kind === 'balance_due') {
       try {
         const paymentService = createPaymentService();
         const order = await paymentService.createPaymentOrder({
@@ -2705,9 +2709,7 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
     if (input.changedSummary?.trim()) {
       const paymentImpact =
         paymentAdjustment.kind === 'refund'
-          ? paymentAdjustment.refundIssued
-            ? `A refund of ${(Math.abs(adjustmentMinor) / 100).toFixed(2)} USD has been issued.`
-            : `A refund of ${(Math.abs(adjustmentMinor) / 100).toFixed(2)} USD is required but could not be issued automatically.`
+          ? `This update created an overpayment of ${(Math.abs(adjustmentMinor) / 100).toFixed(2)} USD. A refund will be issued only after staff approval.`
           : paymentAdjustment.kind === 'balance_due'
             ? `An additional payment of ${(adjustmentMinor / 100).toFixed(2)} USD is now due.`
             : 'Payment amount unchanged.';

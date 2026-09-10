@@ -107,6 +107,12 @@ export type RosterRebuildSnapshot = {
   waitlistEntriesByWaitlistId: Map<number, RosterRebuildWaitlistEntry[]>;
   members: Map<number, RosterRebuildMember>;
   tuesdayEveningRosterMemberIds: Set<number>;
+  /**
+   * Play-in / Tuesday seats that still occupy a desired-count slot even when
+   * `league_roster` is not active: declared entry teams and league team
+   * membership. Keys are `${leagueId}:${memberId}`.
+   */
+  unmanagedOccupiedKeys: Set<string>;
   activeSabbaticals: RosterRebuildSabbatical[];
   pendingOffers: RosterRebuildPendingOffer[];
   duplicateRegistrationMemberIds: number[];

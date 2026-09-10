@@ -469,7 +469,7 @@ export function calculateRegistrationFees(
     };
   }
 
-  if (options?.chargedLeagueIds) {
+  if (options?.chargedLeagueIds != null) {
     return computePreview(context, options.chargedLeagueIds, options.temporaryFillLeagueIds);
   }
 
@@ -490,4 +490,24 @@ export function calculateRegistrationFees(
     ...floor,
     estimatedMaximumTotalDueMinor,
   };
+}
+
+/**
+ * Staff edits of an already-paid registration must bill the leagues currently
+ * on the roster. Draft evaluation quotes $0 for unconfirmed regular membership
+ * while placement is open, which is not a reason to rewrite a paid invoice.
+ */
+export function staffEditRegistrationFeePreview(input: {
+  context: RegistrationContext;
+  draftPreview: RegistrationFeePreview;
+  chargedLeagueIds: number[];
+  temporaryFillLeagueIds?: number[];
+}): RegistrationFeePreview {
+  if (input.chargedLeagueIds.length === 0 && (input.temporaryFillLeagueIds?.length ?? 0) === 0) {
+    return input.draftPreview;
+  }
+  return calculateRegistrationFees(input.context, {
+    chargedLeagueIds: input.chargedLeagueIds,
+    temporaryFillLeagueIds: input.temporaryFillLeagueIds,
+  });
 }

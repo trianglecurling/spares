@@ -116,6 +116,11 @@ export const leaguePriorityGuaranteeLabelSchema = {
   ],
 } as const;
 
+export const rosterPlacementSourceSchema = {
+  type: 'string',
+  enum: ['league_returner', 'waitlist_add', 'third_league'],
+} as const;
+
 export const rosterMemberSchema = {
   type: 'object',
   additionalProperties: false,
@@ -130,6 +135,10 @@ export const rosterMemberSchema = {
       anyOf: [{ type: 'null' }, leaguePriorityGuaranteeLabelSchema],
     },
     priorityRank: { type: ['number', 'null'] },
+    placementSource: {
+      anyOf: [{ type: 'null' }, rosterPlacementSourceSchema],
+    },
+    isTemporarySabbaticalFill: { type: 'boolean' },
   },
   required: [
     'memberId',
@@ -140,6 +149,8 @@ export const rosterMemberSchema = {
     'assignedTeamName',
     'guaranteeLabel',
     'priorityRank',
+    'placementSource',
+    'isTemporarySabbaticalFill',
   ],
 } as const;
 

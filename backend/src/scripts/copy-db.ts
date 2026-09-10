@@ -416,12 +416,13 @@ async function listForeignKeys(client: Pool | PoolClient): Promise<ForeignKey[]>
 }
 
 async function listSequences(client: Pool | PoolClient): Promise<SequenceValue[]> {
+  // pg_sequences has no is_called; last_value is null until the sequence is used.
   const result = await client.query<SequenceValue>(`
     SELECT
       schemaname AS schema,
       sequencename AS name,
       last_value::text AS "lastValue",
-      is_called AS "isCalled"
+      (last_value IS NOT NULL) AS "isCalled"
     FROM pg_sequences
     WHERE schemaname = 'public'
     ORDER BY sequencename

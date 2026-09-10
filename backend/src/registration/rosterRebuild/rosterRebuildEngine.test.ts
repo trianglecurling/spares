@@ -75,6 +75,7 @@ function snapshot(input: Partial<RosterRebuildSnapshot> & { leagues: RosterRebui
     waitlistEntriesByWaitlistId: new Map(),
     members,
     tuesdayEveningRosterMemberIds: new Set(),
+    unmanagedOccupiedKeys: new Set(),
     activeSabbaticals: [],
     pendingOffers: [],
     duplicateRegistrationMemberIds: [],
@@ -284,7 +285,7 @@ describe('stage returning', () => {
     expect(result.notes.some((note) => note.code === 'already_rostered')).toBe(true);
   });
 
-  test('does not place Winter returners who registered after the priority period', () => {
+  test('places Winter returners who registered after the priority period', () => {
     const hump = league({ id: 1, name: 'Hump Day', category: 'normal' });
     const result = runRosterRebuildStage(
       snapshot({
@@ -305,10 +306,12 @@ describe('stage returning', () => {
       }),
       'returning',
     );
-    expect(result.placements).toHaveLength(0);
+    expect(result.placements).toEqual([
+      expect.objectContaining({ memberId: 10, leagueId: 1, placementType: 'guaranteed_return' }),
+    ]);
   });
 
-  test('does not place junior programs for open-period registrations', () => {
+  test('places junior programs for open-period registrations', () => {
     const rec = league({ id: 20, name: 'Junior Recreational', category: 'junior_rec' });
     const result = runRosterRebuildStage(
       snapshot({
@@ -326,7 +329,39 @@ describe('stage returning', () => {
       }),
       'returning',
     );
-    expect(result.placements).toHaveLength(0);
+    expect(result.placements).toEqual([
+      expect.objectContaining({ memberId: 1, leagueId: 20, placementType: 'new_placement' }),
+    ]);
+  });
+
+  test('places a returning doubles team when a partner registered after the priority period', () => {
+    const early = league({ id: 8, name: 'Early Doubles', category: 'doubles', predecessorLeagueId: 108 });
+    const result = runRosterRebuildStage(
+      snapshot({
+        leagues: [early],
+        members: membersMap(member({ memberId: 10, name: 'Ann' }), member({ memberId: 11, name: 'Bob' })),
+        predecessorRosters: [
+          { leagueId: 108, memberId: 10, status: 'active', placementType: null, isTemporarySabbaticalFill: false, sourceRegistrationId: null },
+          { leagueId: 108, memberId: 11, status: 'active', placementType: null, isTemporarySabbaticalFill: false, sourceRegistrationId: null },
+        ],
+        registrations: [
+          registration({
+            id: 1,
+            memberId: 10,
+            priorities: [{ leagueId: 8, rank: 1, teammateMemberIds: [11], teammateText: null }],
+          }),
+          registration({
+            id: 2,
+            memberId: 11,
+            receivedDuringPriorityPeriod: false,
+            submittedAt: '2026-09-05T02:33:09.798Z',
+            priorities: [{ leagueId: 8, rank: 2, teammateMemberIds: [10], teammateText: null }],
+          }),
+        ],
+      }),
+      'returning',
+    );
+    expect(result.placements.map((row) => row.memberId).sort()).toEqual([10, 11]);
   });
 });
 
@@ -512,6 +547,39 @@ describe('Xavier/Yasmin waitlist miss', () => {
     expect(result.waitlistEvents.some((event) => event.memberId === 100 && event.outcome === 'moved_up')).toBe(true);
     expect(result.waitlistEvents.some((event) => event.memberId === 200 && event.outcome === 'moved_up')).toBe(true);
   });
+
+  test('re-offers a released seat to the member who still has 1st/2nd-league room', () => {
+    const monday = league({ id: 1, name: 'Monday Late League', category: 'normal', capacityValue: 1, waitlistId: 10 });
+    const leaguey = league({ id: 2, name: 'Leaguey McLeagueface', category: 'normal', capacityValue: 1, waitlistId: 20 });
+    const result = runRosterRebuildStage(
+      snapshot({
+        leagues: [monday, leaguey],
+        members: membersMap(member({ memberId: 10, name: 'Julia' })),
+        registrations: [
+          registration({
+            id: 1,
+            memberId: 10,
+            desiredLeagueCount: 2,
+            priorities: [
+              { leagueId: 2, rank: 1, teammateMemberIds: [], teammateText: null },
+              { leagueId: 1, rank: 2, teammateMemberIds: [], teammateText: null },
+            ],
+          }),
+        ],
+        waitlistEntriesByWaitlistId: new Map([
+          [10, [waitlistEntry({ id: 1, waitlistId: 10, memberId: 10, position: 1 })]],
+          [20, [waitlistEntry({ id: 2, waitlistId: 20, memberId: 10, position: 1 })]],
+        ]),
+      }),
+      'waitlists',
+    );
+    expect(result.placements).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ memberId: 10, leagueId: 2, placementType: 'waitlist' }),
+        expect.objectContaining({ memberId: 10, leagueId: 1, placementType: 'waitlist' }),
+      ]),
+    );
+  });
 });
 
 describe('waitlist processing details', () => {
@@ -554,7 +622,7 @@ describe('waitlist processing details', () => {
     expect(result.waitlistEvents.some((event) => event.memberId === 10 && event.outcome === 'auto_declined')).toBe(true);
   });
 
-  test('skips open-period waitlist entries without declining them so the next priority-period entry can take the seat', () => {
+  test('places open-period waitlist entries in waitlist order with everyone else', () => {
     const hump = league({ id: 1, name: 'Hump Day', category: 'normal', capacityValue: 1, waitlistId: 10 });
     const result = runRosterRebuildStage(
       snapshot({
@@ -588,10 +656,9 @@ describe('waitlist processing details', () => {
       'waitlists',
     );
     expect(result.placements).toEqual([
-      expect.objectContaining({ memberId: 11, leagueId: 1, placementType: 'waitlist' }),
+      expect.objectContaining({ memberId: 10, leagueId: 1, placementType: 'waitlist' }),
     ]);
-    expect(result.waitlistEvents.some((event) => event.memberId === 10 && event.outcome === 'skipped_open_registration')).toBe(true);
-    expect(result.waitlistMutations.some((row) => row.entryId === 1)).toBe(false);
+    expect(result.waitlistEvents.some((event) => event.outcome === 'skipped_open_registration')).toBe(false);
   });
 
   test('fills a new league with no predecessor from the waitlist', () => {
@@ -717,6 +784,156 @@ describe('waitlist processing details', () => {
           registration({
             id: 1,
             memberId: 10,
+            desiredLeagueCount: 2,
+            priorities: [{ leagueId: 1, rank: 3, teammateMemberIds: [], teammateText: null }],
+          }),
+        ],
+        waitlistEntriesByWaitlistId: new Map([
+          [10, [waitlistEntry({ id: 1, waitlistId: 10, memberId: 10, position: 1 })]],
+        ]),
+      }),
+      'waitlists',
+    );
+    expect(result.placements).toEqual([
+      expect.objectContaining({
+        memberId: 10,
+        leagueId: 1,
+        placementType: 'guaranteed_return',
+        isRank3PlusReturner: true,
+      }),
+    ]);
+  });
+
+  test('does not commit a rank-3+ hold when a play-in league already fills desired count', () => {
+    const tuesday = league({
+      id: 30,
+      name: 'Tuesday League',
+      category: 'tuesday_evening',
+      isPlayInBased: true,
+      capacityValue: 80,
+    });
+    const hump = league({ id: 33, name: 'Hump Day', category: 'normal', capacityValue: 40, waitlistId: 330 });
+    const friday = league({ id: 36, name: 'Friday Evening', category: 'normal', capacityValue: 72, waitlistId: 360 });
+    const result = runRosterRebuildStage(
+      snapshot({
+        leagues: [tuesday, hump, friday],
+        members: membersMap(member({ memberId: 310, name: 'Meg Lorenzen' })),
+        currentRosters: [
+          {
+            leagueId: 30,
+            memberId: 310,
+            status: 'removed',
+            placementType: 'guaranteed_return',
+            isTemporarySabbaticalFill: false,
+            sourceRegistrationId: 207,
+          },
+          {
+            leagueId: 33,
+            memberId: 310,
+            status: 'active',
+            placementType: 'guaranteed_return',
+            isTemporarySabbaticalFill: false,
+            sourceRegistrationId: 207,
+          },
+        ],
+        predecessorRosters: [
+          { leagueId: 133, memberId: 310, status: 'active', placementType: null, isTemporarySabbaticalFill: false, sourceRegistrationId: null },
+          { leagueId: 136, memberId: 310, status: 'active', placementType: null, isTemporarySabbaticalFill: false, sourceRegistrationId: null },
+        ],
+        unmanagedOccupiedKeys: new Set(['30:310']),
+        registrations: [
+          registration({
+            id: 207,
+            memberId: 310,
+            desiredLeagueCount: 2,
+            priorities: [
+              { leagueId: 30, rank: 1, teammateMemberIds: [], teammateText: null },
+              { leagueId: 33, rank: 2, teammateMemberIds: [], teammateText: null },
+              { leagueId: 36, rank: 3, teammateMemberIds: [], teammateText: null },
+            ],
+          }),
+        ],
+        waitlistEntriesByWaitlistId: new Map([
+          [360, [waitlistEntry({ id: 1, waitlistId: 360, memberId: 310, position: 1 })]],
+        ]),
+      }),
+      'waitlists',
+    );
+    expect(result.placements).toEqual([]);
+    expect(result.notes.some((note) => note.code === 'returner_rank_3_plus_no_allowance' && note.leagueId === 36)).toBe(
+      true,
+    );
+  });
+
+  test('still commits a rank-3+ hold when the play-in team is no longer occupying a slot', () => {
+    const tuesday = league({
+      id: 30,
+      name: 'Tuesday League',
+      category: 'tuesday_evening',
+      isPlayInBased: true,
+      capacityValue: 80,
+    });
+    const hump = league({ id: 33, name: 'Hump Day', category: 'normal', capacityValue: 40, waitlistId: 330 });
+    const friday = league({ id: 36, name: 'Friday Evening', category: 'normal', capacityValue: 1, waitlistId: 360 });
+    const result = runRosterRebuildStage(
+      snapshot({
+        leagues: [tuesday, hump, friday],
+        members: membersMap(member({ memberId: 310, name: 'Cut From Tuesday' })),
+        currentRosters: [
+          {
+            leagueId: 33,
+            memberId: 310,
+            status: 'active',
+            placementType: 'guaranteed_return',
+            isTemporarySabbaticalFill: false,
+            sourceRegistrationId: 207,
+          },
+        ],
+        predecessorRosters: [
+          { leagueId: 136, memberId: 310, status: 'active', placementType: null, isTemporarySabbaticalFill: false, sourceRegistrationId: null },
+        ],
+        registrations: [
+          registration({
+            id: 207,
+            memberId: 310,
+            desiredLeagueCount: 2,
+            priorities: [
+              { leagueId: 30, rank: 1, teammateMemberIds: [], teammateText: null },
+              { leagueId: 33, rank: 2, teammateMemberIds: [], teammateText: null },
+              { leagueId: 36, rank: 3, teammateMemberIds: [], teammateText: null },
+            ],
+          }),
+        ],
+        waitlistEntriesByWaitlistId: new Map([
+          [360, [waitlistEntry({ id: 1, waitlistId: 360, memberId: 310, position: 1 })]],
+        ]),
+      }),
+      'waitlists',
+    );
+    expect(result.placements).toEqual([
+      expect.objectContaining({
+        memberId: 310,
+        leagueId: 36,
+        placementType: 'guaranteed_return',
+        isRank3PlusReturner: true,
+      }),
+    ]);
+  });
+
+  test('commits a rank-3+ open-period returner as a reserved-seat hold', () => {
+    const hump = league({ id: 1, name: 'Hump Day', category: 'normal', capacityValue: 1, waitlistId: 10 });
+    const result = runRosterRebuildStage(
+      snapshot({
+        leagues: [hump],
+        members: membersMap(member({ memberId: 10, name: 'Late returner' })),
+        predecessorRosters: [
+          { leagueId: 101, memberId: 10, status: 'active', placementType: null, isTemporarySabbaticalFill: false, sourceRegistrationId: null },
+        ],
+        registrations: [
+          registration({
+            id: 1,
+            memberId: 10,
+            receivedDuringPriorityPeriod: false,
             desiredLeagueCount: 2,
             priorities: [{ leagueId: 1, rank: 3, teammateMemberIds: [], teammateText: null }],
           }),
@@ -1145,7 +1362,43 @@ describe('stage third-leagues', () => {
     expect(seedA.placements[0]?.memberId).not.toEqual(seedB.placements[0]?.memberId);
   });
 
-  test('blocks 3rd+ assignment when an auto-accept waitlist entry still has 1st/2nd-league room', () => {
+  test('gives leftover vacancy to a 1st/2nd waitlist entry before 3rd+ assignment', () => {
+    const hump = league({ id: 1, name: 'Hump Day', category: 'normal', capacityValue: 1, waitlistId: 10 });
+    const result = runRosterRebuildStage(
+      snapshot({
+        leagues: [hump],
+        members: membersMap(member({ memberId: 10, name: 'Waitlisted' }), member({ memberId: 11, name: 'Third' })),
+        currentRosters: [
+          { leagueId: 2, memberId: 11, status: 'active', placementType: 'waitlist', isTemporarySabbaticalFill: false, sourceRegistrationId: 2 },
+          { leagueId: 3, memberId: 11, status: 'active', placementType: 'waitlist', isTemporarySabbaticalFill: false, sourceRegistrationId: 2 },
+        ],
+        registrations: [
+          registration({
+            id: 1,
+            memberId: 10,
+            desiredLeagueCount: 1,
+            priorities: [{ leagueId: 1, rank: 1, teammateMemberIds: [], teammateText: null }],
+          }),
+          registration({
+            id: 2,
+            memberId: 11,
+            desiredLeagueCount: 3,
+            priorities: [{ leagueId: 1, rank: 3, teammateMemberIds: [], teammateText: null }],
+          }),
+        ],
+        waitlistEntriesByWaitlistId: new Map([
+          [10, [waitlistEntry({ id: 1, waitlistId: 10, memberId: 10, position: 1 })]],
+        ]),
+      }),
+      'third-leagues',
+    );
+    expect(result.placements.filter((row) => row.leagueId === 1)).toEqual([
+      expect.objectContaining({ memberId: 10, placementType: 'waitlist', stage: 'third-leagues' }),
+    ]);
+    expect(result.notes.some((note) => note.code === 'waitlist_not_exhausted')).toBe(false);
+  });
+
+  test('assigns 3rd+ after leftover 1st/2nd waitlist demand is filled', () => {
     const hump = league({ id: 1, name: 'Hump Day', category: 'normal', capacityValue: 4, waitlistId: 10 });
     const result = runRosterRebuildStage(
       snapshot({
@@ -1175,8 +1428,10 @@ describe('stage third-leagues', () => {
       }),
       'third-leagues',
     );
-    expect(result.notes.some((note) => note.code === 'waitlist_not_exhausted')).toBe(true);
-    expect(result.placements.filter((row) => row.leagueId === 1)).toHaveLength(0);
+    expect(result.placements.filter((row) => row.leagueId === 1)).toEqual([
+      expect.objectContaining({ memberId: 10, placementType: 'waitlist' }),
+      expect.objectContaining({ memberId: 11, placementType: 'new_placement' }),
+    ]);
   });
 
   test('does not block 3rd+ assignment for waitlist entries left off the registration list', () => {
@@ -1240,7 +1495,7 @@ describe('stage third-leagues', () => {
     expect(result.placements.map((row) => row.leagueId)).toEqual([40]);
   });
 
-  test('does not block 3rd+ assignment for leftover open-period waitlist entries', () => {
+  test('gives leftover vacancy to an open-period waitlist entry before 3rd+ assignment', () => {
     const hump = league({ id: 1, name: 'Hump Day', category: 'normal', capacityValue: 4, waitlistId: 10 });
     const result = runRosterRebuildStage(
       snapshot({
@@ -1271,8 +1526,10 @@ describe('stage third-leagues', () => {
       }),
       'third-leagues',
     );
-    expect(result.notes.some((note) => note.code === 'waitlist_not_exhausted')).toBe(false);
-    expect(result.placements.some((row) => row.memberId === 11 && row.leagueId === 1)).toBe(true);
+    expect(result.placements.filter((row) => row.leagueId === 1)).toEqual([
+      expect.objectContaining({ memberId: 10, placementType: 'waitlist' }),
+      expect.objectContaining({ memberId: 11, placementType: 'new_placement' }),
+    ]);
   });
 
   test('assigns a 3rd league to an open-period registrant who already has two', () => {
@@ -1397,8 +1654,8 @@ describe('stage open-registration', () => {
     expect(result.placements.filter((row) => row.leagueId === 1)).toHaveLength(0);
   });
 
-  test('does not compete with priority-period registrations for remaining 1st/2nd seats', () => {
-    const hump = league({ id: 1, name: 'Hump Day', category: 'normal', waitlistId: 10 });
+  test('open-registration leftover 1st/2nd seats compete by tenure regardless of registration period', () => {
+    const hump = league({ id: 1, name: 'Hump Day', category: 'normal', capacityValue: 1, waitlistId: 10 });
     const result = runRosterRebuildStage(
       snapshot({
         leagues: [hump],
@@ -1427,7 +1684,7 @@ describe('stage open-registration', () => {
       { randomSeed: 7 },
     );
     expect(result.placements).toEqual([
-      expect.objectContaining({ memberId: 2, leagueId: 1, stage: 'open-registration' }),
+      expect.objectContaining({ memberId: 1, leagueId: 1, stage: 'open-registration' }),
     ]);
   });
 
@@ -1454,8 +1711,8 @@ describe('stage open-registration', () => {
     ]);
   });
 
-  test('blocks open-registration assignment when a priority-period waitlist entry still has 1st/2nd-league room', () => {
-    const hump = league({ id: 1, name: 'Hump Day', category: 'normal', capacityValue: 4, waitlistId: 10 });
+  test('gives leftover vacancy to a priority-period waitlist entry before open-registration assignment', () => {
+    const hump = league({ id: 1, name: 'Hump Day', category: 'normal', capacityValue: 1, waitlistId: 10 });
     const result = runRosterRebuildStage(
       snapshot({
         leagues: [hump],
@@ -1481,8 +1738,10 @@ describe('stage open-registration', () => {
       }),
       'open-registration',
     );
-    expect(result.notes.some((note) => note.code === 'waitlist_not_exhausted')).toBe(true);
-    expect(result.placements.filter((row) => row.leagueId === 1)).toHaveLength(0);
+    expect(result.placements.filter((row) => row.leagueId === 1)).toEqual([
+      expect.objectContaining({ memberId: 10, placementType: 'waitlist', stage: 'open-registration' }),
+    ]);
+    expect(result.notes.some((note) => note.code === 'waitlist_not_exhausted')).toBe(false);
   });
 });
 

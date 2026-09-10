@@ -49,5 +49,12 @@ describe('memberCanBypassLeagueProcessingHold', () => {
         }),
       ),
     ).toBe(true);
+    expect(
+      memberCanBypassLeagueProcessingHold(
+        member({
+          scopeRules: [{ scope: 'members.manage', effect: 'allow' }],
+        }),
+      ),
+    ).toBe(true);
   });
 });

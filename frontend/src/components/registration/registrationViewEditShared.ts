@@ -223,6 +223,7 @@ export type RegistrationPaymentAdjustmentResult = {
   newTotalMinor: number;
   adjustmentMinor: number;
   refundIssued?: boolean;
+  refundRequiresApproval?: boolean;
   refundError?: string | null;
   checkoutUrl?: string | null;
 };

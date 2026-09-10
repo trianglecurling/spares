@@ -8,6 +8,7 @@ import {
   useState,
 } from 'react';
 import { createPortal } from 'react-dom';
+import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { del, get, post } from '../../api/client';
 import AppPageControlsRow from '../../components/AppPageControlsRow';
@@ -49,6 +50,7 @@ function memberHaystack(member: Member): string {
     member.phone ?? '',
     member.phone ? formatPhone(member.phone) : '',
     String(member.id),
+    ...(member.leagues ?? []).flatMap((league) => [league.name, league.teamName ?? '']),
   ]
     .join(' ')
     .toLowerCase();
@@ -99,6 +101,45 @@ const memberColumns: Array<DataTableColumn<Member>> = [
     id: 'phone',
     header: 'Phone',
     renderCell: (member) => (member.phone ? formatPhone(member.phone) : '-'),
+  },
+  {
+    id: 'leagues',
+    header: (
+      <span>
+        Leagues
+        <span className="mt-0.5 block text-xs font-normal text-gray-500 dark:text-gray-400">
+          Current session
+        </span>
+      </span>
+    ),
+    cellClassName: 'max-w-xs',
+    renderCell: (member) => {
+      const leagues = member.leagues;
+      if (leagues == null) return '—';
+      if (leagues.length === 0) {
+        return <span className="text-sm text-gray-500 dark:text-gray-400">None</span>;
+      }
+      return (
+        <ul className="flex flex-col gap-1">
+          {leagues.map((league) => (
+            <li key={league.id}>
+              <Link
+                to={`/leagues/${league.id}/roster`}
+                className="text-sm font-medium text-primary-teal-link hover:underline"
+              >
+                {league.name}
+                {league.teamName ? (
+                  <span className="font-normal text-gray-500 dark:text-gray-400">
+                    {' '}
+                    · {league.teamName}
+                  </span>
+                ) : null}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      );
+    },
   },
   {
     id: 'status',
@@ -310,6 +351,7 @@ export default function AdminMembers() {
       'emailVisible',
       'phoneVisible',
       'createdAt',
+      'leagues',
     ];
 
     const rows = members.map((m) => {
@@ -331,6 +373,7 @@ export default function AdminMembers() {
         Boolean(m.emailVisible),
         Boolean(m.phoneVisible),
         toTsvCell(m.createdAt),
+        (m.leagues ?? []).map((league) => league.name).join(', '),
       ].map(toTsvCell);
     });
 
@@ -644,7 +687,7 @@ export default function AdminMembers() {
                   className="app-input"
                   value={draftFilters.search}
                   onChange={(e) => setDraftFilter('search', e.target.value)}
-                  placeholder="Search name, email, phone, or id"
+                  placeholder="Search name, email, phone, id, or league"
                 />
               </FormField>
             </div>

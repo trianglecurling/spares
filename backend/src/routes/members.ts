@@ -42,6 +42,7 @@ import {
 import { parseQueryBoolean } from '../utils/queryParams.js';
 import { resolveRelevantSessionIdForLeagues } from '../services/curlingSessionService.js';
 import { isLeagueEligibleForSpares } from '../utils/leagueSpareEligibility.js';
+import { memberCanManageMembers } from '../utils/memberStaffAccess.js';
 import type {
   ApiErrorResponse,
   BulkCreateBody,
@@ -515,6 +516,57 @@ function memberSummaryNameFields(member: Member): { firstName: string | null; la
   };
 }
 
+type MemberSummaryLeague = {
+  id: number;
+  name: string;
+  teamName: string | null;
+};
+
+async function loadRelevantSessionLeaguesByMemberId(): Promise<Map<number, MemberSummaryLeague[]>> {
+  const today = await getCurrentDateStringAsync();
+  const sessionId = await resolveRelevantSessionIdForLeagues(today);
+  const leaguesByMemberId = new Map<number, MemberSummaryLeague[]>();
+  if (sessionId == null) return leaguesByMemberId;
+
+  const { db, schema } = getDrizzleDb();
+  const rows = (await db
+    .select({
+      memberId: schema.leagueRoster.member_id,
+      id: schema.leagues.id,
+      name: schema.leagues.name,
+      teamName: schema.leagueTeams.name,
+    })
+    .from(schema.leagueRoster)
+    .innerJoin(schema.leagues, eq(schema.leagueRoster.league_id, schema.leagues.id))
+    .leftJoin(schema.teamMembers, eq(schema.leagueRoster.member_id, schema.teamMembers.member_id))
+    .leftJoin(
+      schema.leagueTeams,
+      and(
+        eq(schema.teamMembers.team_id, schema.leagueTeams.id),
+        eq(schema.leagueTeams.league_id, schema.leagueRoster.league_id),
+      ),
+    )
+    .where(eq(schema.leagues.session_id, sessionId))
+    .orderBy(schema.leagues.day_of_week, schema.leagues.name)) as {
+    memberId: number;
+    id: number;
+    name: string;
+    teamName: string | null;
+  }[];
+
+  for (const row of rows) {
+    const list = leaguesByMemberId.get(row.memberId) ?? [];
+    const existing = list.find((league) => league.id === row.id);
+    if (!existing) {
+      list.push({ id: row.id, name: row.name, teamName: row.teamName });
+    } else if (!existing.teamName && row.teamName) {
+      existing.teamName = row.teamName;
+    }
+    leaguesByMemberId.set(row.memberId, list);
+  }
+  return leaguesByMemberId;
+}
+
 function buildMemberProfileResponse(member: Member): MemberProfileResponse {
   const dateOfBirth = normalizeDateString(member.date_of_birth);
   const minor = isMemberMinor(dateOfBirth);
@@ -950,6 +1002,10 @@ export async function memberRoutes(fastify: FastifyInstance) {
       .orderBy(schema.members.name) as Member[];
 
     const isCurrentUserAdmin = isAdmin(member);
+    const includeLeagues = Boolean(member && memberCanManageMembers(member));
+    const leaguesByMemberId = includeLeagues
+      ? await loadRelevantSessionLeaguesByMemberId()
+      : new Map<number, MemberSummaryLeague[]>();
     const leagueAdminRows = await db
       .select({ member_id: schema.leagueMemberRoles.member_id })
       .from(schema.leagueMemberRoles)
@@ -1013,6 +1069,10 @@ export async function memberRoutes(fastify: FastifyInstance) {
             dateOfBirth: m.date_of_birth,
           })
         : null;
+
+      if (includeLeagues) {
+        response.leagues = leaguesByMemberId.get(m.id) ?? [];
+      }
 
       return response;
     });

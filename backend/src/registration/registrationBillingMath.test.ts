@@ -8,6 +8,7 @@ import {
   refundableRemainingMinor,
   registrationBalanceMinor,
   remainingDueMinor,
+  staffPaidRegistrationAdjustment,
 } from './registrationBillingMath.js';
 
 describe('netPaidMinorFromPaymentActivity', () => {
@@ -53,6 +54,20 @@ describe('registration balances', () => {
     expect(refundableRemainingMinor(50000, 20000)).toBe(30000);
     expect(refundableRemainingMinor(50000, 50000)).toBe(0);
     expect(refundableRemainingMinor(50000, 60000)).toBe(0);
+  });
+});
+
+describe('staffPaidRegistrationAdjustment', () => {
+  test('does not treat an unchanged paid bill as a refund', () => {
+    expect(staffPaidRegistrationAdjustment(45000, 45000)).toEqual({ kind: 'none', adjustmentMinor: 0 });
+  });
+
+  test('classifies a lower bill as a refund that callers must approve', () => {
+    expect(staffPaidRegistrationAdjustment(30000, 50000)).toEqual({ kind: 'refund', adjustmentMinor: -20000 });
+  });
+
+  test('classifies a higher bill as a remaining balance', () => {
+    expect(staffPaidRegistrationAdjustment(50000, 30000)).toEqual({ kind: 'balance_due', adjustmentMinor: 20000 });
   });
 });
 

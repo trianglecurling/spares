@@ -24,6 +24,7 @@ import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
 import FormCheckbox from '../../components/FormCheckbox';
 import FormField from '../../components/FormField';
 import { memberHasScope } from '../../utils/permissions';
+import { memberCanViewRosterPlacement } from '../../utils/credentialAccess';
 import {
   LEAGUE_PROCESSING_ROSTER_MESSAGE,
   isLeagueProcessingForbiddenError,
@@ -41,6 +42,7 @@ import {
   type LeagueDeclaredTeam,
 } from './leagueRosterDeclaredTeams';
 import { RosterGuaranteeChip } from './RosterGuaranteeChip';
+import { RosterPlacementChips } from './RosterPlacementChip';
 
 const WEEKDAY_SELECT_OPTIONS: ChoiceOption<number>[] = [
   'Sunday',
@@ -243,6 +245,8 @@ interface LeagueRosterMember {
     | 'superfluous'
     | null;
   priorityRank?: number | null;
+  placementSource?: 'league_returner' | 'waitlist_add' | 'third_league' | null;
+  isTemporarySabbaticalFill?: boolean;
 }
 
 function emailEntriesForRosterMembers(members: LeagueRosterMember[]): string[] {
@@ -631,6 +635,10 @@ export default function LeagueDetail() {
   );
   const canManageSabbaticals = useMemo(
     () => Boolean(member && memberHasScope(member, 'members.manage')),
+    [member]
+  );
+  const canViewRosterPlacement = useMemo(
+    () => memberCanViewRosterPlacement(member),
     [member]
   );
   /** Play-in entry tab: registration managers and global league admins manage; league managers view. */
@@ -3407,6 +3415,9 @@ export default function LeagueDetail() {
                   </h2>
                   <p className="text-sm text-gray-600 dark:text-gray-400">
                     Members eligible for team assignments.
+                    {canViewRosterPlacement
+                      ? ' Placement labels show how each member was added. Temporary fill means they are occupying a sabbatical seat.'
+                      : ''}
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
@@ -3494,6 +3505,12 @@ export default function LeagueDetail() {
                                         league={league}
                                       />
                                     ) : null}
+                                    {canViewRosterPlacement ? (
+                                      <RosterPlacementChips
+                                        placementSource={rosterEntry?.placementSource}
+                                        isTemporarySabbaticalFill={rosterEntry?.isTemporarySabbaticalFill}
+                                      />
+                                    ) : null}
                                   </p>
                                 </div>
                                 {canManageRoster && rosterEntry ? (
@@ -3544,6 +3561,12 @@ export default function LeagueDetail() {
                               guaranteeLabel={entry.guaranteeLabel}
                               priorityRank={entry.priorityRank}
                               league={league}
+                            />
+                          ) : null}
+                          {canViewRosterPlacement ? (
+                            <RosterPlacementChips
+                              placementSource={entry.placementSource}
+                              isTemporarySabbaticalFill={entry.isTemporarySabbaticalFill}
                             />
                           ) : null}
                         </div>

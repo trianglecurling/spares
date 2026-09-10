@@ -28,3 +28,7 @@ export function memberCanManageMembersAdmin(member: AuthenticatedMember | null |
 export function memberCanAccessMembersArea(member: AuthenticatedMember | null | undefined): boolean {
   return memberCanManageMembersAdmin(member) || memberCanManageCredentials(member);
 }
+
+export function memberCanViewRosterPlacement(member: AuthenticatedMember | null | undefined): boolean {
+  return memberCanManageMembersAdmin(member) || memberHasScope(member, 'registrations.manage');
+}

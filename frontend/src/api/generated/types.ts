@@ -4959,6 +4959,11 @@ export interface paths {
                             phoneVisible: boolean;
                             baselineOtherClubExperienceYears?: number;
                             baselineClubExperienceYears?: number;
+                            leagues?: {
+                                id: number;
+                                name: string;
+                                teamName: null | string;
+                            }[];
                         }[];
                     };
                 };
@@ -5064,6 +5069,11 @@ export interface paths {
                                 phoneVisible: boolean;
                                 baselineOtherClubExperienceYears?: number;
                                 baselineClubExperienceYears?: number;
+                                leagues?: {
+                                    id: number;
+                                    name: string;
+                                    teamName: null | string;
+                                }[];
                             }[];
                             total: number;
                             page: number;
@@ -7236,6 +7246,8 @@ export interface paths {
                             assignedTeamName: null | string;
                             guaranteeLabel: null | ("guaranteed_return" | "awaiting_roster_entry" | "guaranteed_fallback" | "available" | "temporary_spot_available" | "waitlisted" | "subject_to_availability" | "superfluous");
                             priorityRank: null | number;
+                            placementSource: null | ("league_returner" | "waitlist_add" | "third_league");
+                            isTemporarySabbaticalFill: boolean;
                         }[];
                     };
                 };
