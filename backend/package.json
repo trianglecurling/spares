@@ -23,6 +23,7 @@
     "db:migrate:preview": "DB_CONFIG_PROFILE=preview bun run db:migrate",
     "db:copy": "bun run src/scripts/copy-db.ts",
     "db:copy-to-preview": "bun run src/scripts/copy-db.ts --from default --to preview",
+    "db:dump": "bun run src/scripts/dump-db.ts",
     "db:snapshot-waitlists": "bun run src/scripts/snapshot-waitlists.ts",
     "db:restore-waitlists": "bun run src/scripts/restore-waitlists.ts",
     "db:push": "bunx drizzle-kit push",

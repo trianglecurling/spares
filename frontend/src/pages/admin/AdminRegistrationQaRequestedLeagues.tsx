@@ -29,11 +29,41 @@ type RequestedLeaguesQaPayload =
   paths['/registration/staff/qa/requested-leagues']['get']['responses']['200']['content']['application/json'];
 type RequestedLeaguesQaRow = RequestedLeaguesQaPayload['members'][number];
 
-type QaSortKey = 'name' | 'requested' | 'rostered';
+type QaSortKey = 'name' | 'status' | 'requested' | 'rostered';
+type RequestedLeaguesMismatch = 'over' | 'short';
 
 function leagueLabel(league: Pick<RequestedLeaguesQaRow['rosteredLeagues'][number], 'name' | 'dayOfWeek'>): string {
   const day = DAY_NAMES[league.dayOfWeek];
   return day ? `${league.name} (${day})` : league.name;
+}
+
+function requestedLeaguesMismatch(row: Pick<RequestedLeaguesQaRow, 'requestedLeagueCount' | 'rosteredLeagueCount'>): RequestedLeaguesMismatch {
+  return row.rosteredLeagueCount > row.requestedLeagueCount ? 'over' : 'short';
+}
+
+const MISMATCH_LABEL: Record<RequestedLeaguesMismatch, string> = {
+  over: 'Over requested',
+  short: 'Short',
+};
+
+const MISMATCH_CHIP_CLASS: Record<RequestedLeaguesMismatch, string> = {
+  over: 'bg-amber-100 text-amber-900 dark:bg-amber-900/30 dark:text-amber-200',
+  short: 'bg-sky-100 text-sky-900 dark:bg-sky-900/30 dark:text-sky-200',
+};
+
+function countLabel(count: number, singular: string, plural: string): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function requestedLeaguesSummary(total: number, overCount: number, shortCount: number): string {
+  if (total === 0) return 'Everyone is rostered in exactly as many leagues as they requested.';
+  if (overCount > 0 && shortCount > 0) {
+    return `${countLabel(overCount, 'member is', 'members are')} rostered in more leagues than they requested, and ${countLabel(shortCount, 'is', 'are')} short. Over-requested members are listed first.`;
+  }
+  if (overCount > 0) {
+    return `${countLabel(overCount, 'member is', 'members are')} rostered in more leagues than they requested.`;
+  }
+  return `${countLabel(shortCount, 'member is', 'members are')} rostered in fewer leagues than they requested.`;
 }
 
 function emailEntriesForRequestedLeagues(members: RequestedLeaguesQaRow[]): string[] {
@@ -70,7 +100,7 @@ export default function AdminRegistrationQaRequestedLeagues() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
-  const [sort, setSort] = useState<TableSort<QaSortKey>>({ key: 'rostered', direction: 'asc' });
+  const [sort, setSort] = useState<TableSort<QaSortKey>>({ key: 'status', direction: 'asc' });
 
   const sessionId = Number(searchParams.get('sessionId')) || defaultSessionId;
 
@@ -139,16 +169,30 @@ export default function AdminRegistrationQaRequestedLeagues() {
       if (!needle) return true;
       const requestedText = member.requestedLeagues.map((league) => leagueLabel(league)).join(' ').toLowerCase();
       const rosteredText = member.rosteredLeagues.map((league) => leagueLabel(league)).join(' ').toLowerCase();
+      const statusText = MISMATCH_LABEL[requestedLeaguesMismatch(member)].toLowerCase();
       return (
         member.memberName.toLowerCase().includes(needle) ||
         (member.memberEmail ?? '').toLowerCase().includes(needle) ||
         (member.parentEmail ?? '').toLowerCase().includes(needle) ||
         requestedText.includes(needle) ||
-        rosteredText.includes(needle)
+        rosteredText.includes(needle) ||
+        statusText.includes(needle)
       );
     });
     const direction = sort.direction === 'asc' ? 1 : -1;
     return [...members].sort((a, b) => {
+      if (sort.key === 'status') {
+        const aOver = requestedLeaguesMismatch(a) === 'over';
+        const bOver = requestedLeaguesMismatch(b) === 'over';
+        if (aOver !== bOver) return (aOver ? -1 : 1) * direction;
+        if (aOver) {
+          const surplusDiff =
+            b.rosteredLeagueCount - b.requestedLeagueCount - (a.rosteredLeagueCount - a.requestedLeagueCount);
+          if (surplusDiff !== 0) return surplusDiff * direction;
+        } else if (a.rosteredLeagueCount !== b.rosteredLeagueCount) {
+          return (a.rosteredLeagueCount - b.rosteredLeagueCount) * direction;
+        }
+      }
       if (sort.key === 'rostered' && a.rosteredLeagueCount !== b.rosteredLeagueCount) {
         return (a.rosteredLeagueCount - b.rosteredLeagueCount) * direction;
       }
@@ -164,6 +208,16 @@ export default function AdminRegistrationQaRequestedLeagues() {
       return a.memberId - b.memberId;
     });
   }, [payload?.members, search, sort]);
+
+  const mismatchCounts = useMemo(() => {
+    let overCount = 0;
+    let shortCount = 0;
+    for (const member of payload?.members ?? []) {
+      if (requestedLeaguesMismatch(member) === 'over') overCount += 1;
+      else shortCount += 1;
+    }
+    return { overCount, shortCount };
+  }, [payload?.members]);
 
   const handleCopyEmails = async () => {
     const entries = emailEntriesForRequestedLeagues(filteredMembers);
@@ -200,6 +254,22 @@ export default function AdminRegistrationQaRequestedLeagues() {
           ) : null}
         </div>
       ),
+    },
+    {
+      id: 'status',
+      header: 'Status',
+      sortable: true,
+      sortKey: 'status',
+      defaultSortDirection: 'asc',
+      cellClassName: 'align-top',
+      renderCell: (row) => {
+        const mismatch = requestedLeaguesMismatch(row);
+        return (
+          <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${MISMATCH_CHIP_CLASS[mismatch]}`}>
+            {MISMATCH_LABEL[mismatch]}
+          </span>
+        );
+      },
     },
     {
       id: 'requested',
@@ -251,15 +321,19 @@ export default function AdminRegistrationQaRequestedLeagues() {
     },
   ];
 
+  const summary = payload
+    ? requestedLeaguesSummary(payload.members.length, mismatchCounts.overCount, mismatchCounts.shortCount)
+    : 'Members whose current roster count does not match the number of leagues they requested.';
+
   const emptyTitle = !sessionId
     ? 'Select a session'
     : payload && payload.members.length === 0
-      ? 'Everyone has their requested leagues'
+      ? 'Everyone matches their requested leagues'
       : 'No matching members';
   const emptyDescription = !sessionId
-    ? 'Select a session to see who is short of the leagues they requested.'
+    ? 'Select a session to see whose roster count does not match the leagues they requested.'
     : payload && payload.members.length === 0
-      ? `Every submitted registration for ${payload.sessionName} is rostered in at least as many leagues as they requested.`
+      ? `Every submitted registration for ${payload.sessionName} is rostered in exactly as many leagues as they requested.`
       : 'No members match the current search.';
 
   return (
@@ -287,7 +361,7 @@ export default function AdminRegistrationQaRequestedLeagues() {
                 className="app-input"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Name, email, or league"
+                placeholder="Name, email, league, or status"
               />
             </FormField>
           </>
@@ -303,9 +377,7 @@ export default function AdminRegistrationQaRequestedLeagues() {
         <div>
           <h2 className="app-section-title">Requested leagues</h2>
           <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-            {payload
-              ? `${payload.members.length} ${payload.members.length === 1 ? 'member is' : 'members are'} rostered in fewer leagues than they requested.`
-              : 'Members whose current roster count is below the number of leagues they requested.'}
+            {summary}
           </p>
         </div>
 

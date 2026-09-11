@@ -25,6 +25,7 @@
     "db:migrate:preview": "DB_CONFIG_PROFILE=preview bun run db:migrate",
     "db:copy": "bun run --filter backend db:copy",
     "db:copy-to-preview": "bun run --filter backend db:copy-to-preview",
+    "db:dump": "bun run --filter backend db:dump",
     "db:snapshot-waitlists": "bun run --filter backend db:snapshot-waitlists",
     "db:restore-waitlists": "bun run --filter backend db:restore-waitlists",
     "build": "bun run --filter frontend build && bun run --filter backend build",

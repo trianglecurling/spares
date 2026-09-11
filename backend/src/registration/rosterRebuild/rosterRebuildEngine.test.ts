@@ -1532,6 +1532,48 @@ describe('stage third-leagues', () => {
     ]);
   });
 
+  test('skips a full higher 3rd+ pick and fills the next league with room', () => {
+    const diva = league({ id: 34, name: 'Diva', category: 'normal', capacityValue: 1, waitlistId: 340 });
+    const saturday = league({ id: 38, name: 'Saturday Evening', category: 'normal', capacityValue: 36, waitlistId: 380 });
+    const result = runRosterRebuildStage(
+      snapshot({
+        leagues: [diva, saturday],
+        members: membersMap(member({ memberId: 319, name: 'Mayre Brouse' })),
+        currentRosters: [
+          { leagueId: 24, memberId: 319, status: 'active', placementType: 'guaranteed_return', isTemporarySabbaticalFill: false, sourceRegistrationId: 218 },
+          { leagueId: 30, memberId: 319, status: 'active', placementType: 'play_in', isTemporarySabbaticalFill: false, sourceRegistrationId: 218 },
+          {
+            leagueId: 34,
+            memberId: 99,
+            status: 'active',
+            placementType: 'guaranteed_return',
+            isTemporarySabbaticalFill: false,
+            sourceRegistrationId: 1,
+          },
+        ],
+        registrations: [
+          registration({
+            id: 218,
+            memberId: 319,
+            desiredLeagueCount: 3,
+            priorities: [
+              { leagueId: 34, rank: 3, teammateMemberIds: [], teammateText: null },
+              { leagueId: 38, rank: 4, teammateMemberIds: [], teammateText: null },
+            ],
+          }),
+        ],
+        waitlistEntriesByWaitlistId: new Map([
+          [340, []],
+          [380, []],
+        ]),
+      }),
+      'third-leagues',
+    );
+    expect(result.placements).toEqual([
+      expect.objectContaining({ memberId: 319, leagueId: 38, stage: 'third-leagues' }),
+    ]);
+  });
+
   test('assigns a 3rd league to an open-period registrant who already has two', () => {
     const hump = league({ id: 1, name: 'Hump Day', category: 'normal', waitlistId: 10 });
     const result = runRosterRebuildStage(
@@ -1708,6 +1750,81 @@ describe('stage open-registration', () => {
     );
     expect(result.placements).toEqual([
       expect.objectContaining({ memberId: 1, leagueId: 20, stage: 'open-registration' }),
+    ]);
+  });
+
+  test('skips a full higher pick and fills the next league with room', () => {
+    const friday = league({ id: 36, name: 'Friday Evening', category: 'normal', capacityValue: 1, waitlistId: 360 });
+    const saturday = league({ id: 38, name: 'Saturday Evening', category: 'normal', capacityValue: 36, waitlistId: 380 });
+    const result = runRosterRebuildStage(
+      snapshot({
+        leagues: [friday, saturday],
+        members: membersMap(member({ memberId: 601, name: 'Carter Woodiel' })),
+        currentRosters: [
+          {
+            leagueId: 36,
+            memberId: 99,
+            status: 'active',
+            placementType: 'guaranteed_return',
+            isTemporarySabbaticalFill: false,
+            sourceRegistrationId: 1,
+          },
+        ],
+        registrations: [
+          registration({
+            id: 700,
+            memberId: 601,
+            receivedDuringPriorityPeriod: false,
+            desiredLeagueCount: 1,
+            priorities: [
+              { leagueId: 36, rank: 1, teammateMemberIds: [], teammateText: null },
+              { leagueId: 38, rank: 2, teammateMemberIds: [], teammateText: null },
+            ],
+          }),
+        ],
+        waitlistEntriesByWaitlistId: new Map([
+          [360, []],
+          [380, []],
+        ]),
+      }),
+      'open-registration',
+      { randomSeed: 7 },
+    );
+    expect(result.placements).toEqual([
+      expect.objectContaining({ memberId: 601, leagueId: 38, stage: 'open-registration' }),
+    ]);
+    expect(result.notes.some((note) => note.code === 'open_registration_not_next')).toBe(false);
+  });
+
+  test('still prefers an open higher pick over a later league with room', () => {
+    const friday = league({ id: 36, name: 'Friday Evening', category: 'normal', capacityValue: 4, waitlistId: 360 });
+    const saturday = league({ id: 38, name: 'Saturday Evening', category: 'normal', capacityValue: 36, waitlistId: 380 });
+    const result = runRosterRebuildStage(
+      snapshot({
+        leagues: [friday, saturday],
+        members: membersMap(member({ memberId: 601, name: 'Carter Woodiel' })),
+        registrations: [
+          registration({
+            id: 700,
+            memberId: 601,
+            receivedDuringPriorityPeriod: false,
+            desiredLeagueCount: 1,
+            priorities: [
+              { leagueId: 36, rank: 1, teammateMemberIds: [], teammateText: null },
+              { leagueId: 38, rank: 2, teammateMemberIds: [], teammateText: null },
+            ],
+          }),
+        ],
+        waitlistEntriesByWaitlistId: new Map([
+          [360, []],
+          [380, []],
+        ]),
+      }),
+      'open-registration',
+      { randomSeed: 7 },
+    );
+    expect(result.placements).toEqual([
+      expect.objectContaining({ memberId: 601, leagueId: 36, stage: 'open-registration' }),
     ]);
   });
 

@@ -2,6 +2,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import { getDatabaseConfig } from '../../db/config.js';
 import { getDrizzleDb } from '../../db/drizzle-db.js';
 import { insertWaitlistAuditEvent } from '../waitlistAudit.js';
+import { releaseFrozenSlotIfNeeded } from '../waitlistQueueService.js';
 import type { RosterRebuildPlacement, RosterRebuildSabbaticalMutation, WaitlistMutation } from './rosterRebuildTypes.js';
 
 type ApplyExecutor = Pick<ReturnType<typeof getDrizzleDb>['db'], 'select' | 'insert' | 'update' | 'delete'>;
@@ -186,6 +187,7 @@ export async function applyWaitlistMutations(
     }
 
     if (mutation.kind === 'placed') {
+      await releaseFrozenSlotIfNeeded(entry.waitlist_id, mutation.entryId, executor);
       await executor
         .update(schema.waitlistEntries)
         .set({ status: 'placed', updated_at: sql`CURRENT_TIMESTAMP` })

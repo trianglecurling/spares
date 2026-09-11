@@ -1168,7 +1168,12 @@ function runLotteryFillStage(
           const desired = resolveDesiredLeagueCount(registration.desiredLeagueCount);
           const count = occupiedLeagueCount(snapshot, roster, registration.memberId);
           if (!eligibleForFill(registration, count, desired)) continue;
-          const next = nextUnfilledPriority(registration, leagues, roster, registration.memberId, ['normal']);
+          const next = nextUnfilledPriority(registration, leagues, roster, registration.memberId, ['normal'], {
+            isAvailable: (candidate) =>
+              !memberHasSabbatical(snapshot, registration.memberId, candidate.id) &&
+              vacancyLeft(snapshot, candidate, roster, new Map(), mode) > 0 &&
+              eligibility.get(candidate.id) === 'eligible',
+          });
           if (next?.leagueId !== league.id) continue;
           const member = snapshot.members.get(registration.memberId);
           candidates.push({
@@ -1249,13 +1254,19 @@ function runLotteryFillStage(
       if (!eligibleForFill(registration, count, desired)) continue;
       const priority = registration.priorities.find((row) => row.leagueId === league.id);
       if (!priority) continue;
-      const next = nextUnfilledPriority(registration, leagues, roster, registration.memberId, ['normal']);
+      const next = nextUnfilledPriority(registration, leagues, roster, registration.memberId, ['normal'], {
+        isAvailable: (candidate) =>
+          !memberHasSabbatical(snapshot, registration.memberId, candidate.id) &&
+          eligibility.get(candidate.id) === 'eligible' &&
+          (vacancyLeft(snapshot, candidate, roster, new Map(), 'permanent') > 0 ||
+            vacancyLeft(snapshot, candidate, roster, new Map(), 'temporary') > 0),
+      });
       if (next != null && next.leagueId !== league.id) {
         result.notes.push({
           code: stage === 'open-registration' ? 'open_registration_not_next' : 'third_league_not_next',
           leagueId: league.id,
           memberId: registration.memberId,
-          detail: `${memberLabel(snapshot, registration.memberId)} still wants another league and listed ${league.name} at #${priority.rank}, but it is not their next unfilled priority.`,
+          detail: `${memberLabel(snapshot, registration.memberId)} still wants another league and listed ${league.name} at #${priority.rank}, but it is not their next assignable priority.`,
         });
       }
     }
@@ -1400,13 +1411,16 @@ function nextUnfilledPriority(
   roster: WorkingRoster,
   memberId: number,
   categories: Array<RosterRebuildLeague['category']>,
+  options: { isAvailable?: (league: RosterRebuildLeague) => boolean } = {},
 ): RosterRebuildPriority | null {
   const allowed = new Set(categories);
   for (const priority of [...registration.priorities].sort((a, b) => a.rank - b.rank)) {
     const league = leagues.get(priority.leagueId);
     if (!league || !allowed.has(league.category)) continue;
     if (!registrationMayJoinLeague(registration, league)) continue;
-    if (!rosterHas(roster, league.id, memberId)) return priority;
+    if (rosterHas(roster, league.id, memberId)) continue;
+    if (options.isAvailable && !options.isAvailable(league)) continue;
+    return priority;
   }
   return null;
 }

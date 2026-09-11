@@ -284,7 +284,7 @@ export function buildRequestedLeaguesQaRows(input: {
     const rosteredLeagues = sortPreviousLeagues(
       [...new Map(member.rosteredLeagues.map((league) => [league.id, league])).values()],
     );
-    if (rosteredLeagues.length >= member.requestedLeagueCount) continue;
+    if (rosteredLeagues.length === member.requestedLeagueCount) continue;
     const requestedLeagues = [...member.requestedLeagues]
       .sort((a, b) => a.priorityRank - b.priorityRank || a.id - b.id)
       .filter((league, index, list) => list.findIndex((entry) => entry.id === league.id) === index);
@@ -303,7 +303,16 @@ export function buildRequestedLeaguesQaRows(input: {
     });
   }
   return rows.sort((a, b) => {
-    if (a.rosteredLeagueCount !== b.rosteredLeagueCount) return a.rosteredLeagueCount - b.rosteredLeagueCount;
+    const aOver = a.rosteredLeagueCount > a.requestedLeagueCount;
+    const bOver = b.rosteredLeagueCount > b.requestedLeagueCount;
+    if (aOver !== bOver) return aOver ? -1 : 1;
+    if (aOver) {
+      const surplusDiff =
+        b.rosteredLeagueCount - b.requestedLeagueCount - (a.rosteredLeagueCount - a.requestedLeagueCount);
+      if (surplusDiff !== 0) return surplusDiff;
+    } else if (a.rosteredLeagueCount !== b.rosteredLeagueCount) {
+      return a.rosteredLeagueCount - b.rosteredLeagueCount;
+    }
     const firstNameDiff = firstNameSortKey(a.memberFirstName, a.memberName).localeCompare(
       firstNameSortKey(b.memberFirstName, b.memberName),
     );

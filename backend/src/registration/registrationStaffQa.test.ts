@@ -287,6 +287,7 @@ describe('buildSabbaticalQaRows', () => {
 describe('buildRequestedLeaguesQaRows', () => {
   const tuesday = { id: 1, name: 'Tuesday Evening', dayOfWeek: 2 };
   const thursday = { id: 2, name: 'Thursday Doubles', dayOfWeek: 4 };
+  const friday = { id: 3, name: 'Friday Mixed', dayOfWeek: 5 };
 
   function member(input: {
     memberId: number;
@@ -310,7 +311,7 @@ describe('buildRequestedLeaguesQaRows', () => {
     };
   }
 
-  test('keeps members below their requested count and drops those who already have it', () => {
+  test('keeps members below or above their requested count and drops those who already have it', () => {
     const rows = buildRequestedLeaguesQaRows({
       members: [
         member({
@@ -343,9 +344,30 @@ describe('buildRequestedLeaguesQaRows', () => {
           memberFirstName: 'Barbara',
           requestedLeagueCount: 0,
         }),
+        member({
+          memberId: 14,
+          memberName: 'Priya Shah',
+          memberFirstName: 'Priya',
+          requestedLeagueCount: 1,
+          requestedLeagues: [{ ...tuesday, priorityRank: 1 }],
+          rosteredLeagues: [tuesday, thursday],
+        }),
       ],
     });
     expect(rows).toEqual([
+      {
+        memberId: 14,
+        memberName: 'Priya Shah',
+        memberFirstName: 'Priya',
+        memberEmail: 'priya@example.com',
+        parentEmail: null,
+        registrationId: 114,
+        registrationStatus: 'submitted',
+        requestedLeagueCount: 1,
+        rosteredLeagueCount: 2,
+        requestedLeagues: [{ ...tuesday, priorityRank: 1 }],
+        rosteredLeagues: [tuesday, thursday],
+      },
       {
         memberId: 10,
         memberName: 'Ada Lovelace',
@@ -365,7 +387,7 @@ describe('buildRequestedLeaguesQaRows', () => {
     ]);
   });
 
-  test('orders by current roster count then first name', () => {
+  test('lists over-requested members first, then short members by roster count and first name', () => {
     const rows = buildRequestedLeaguesQaRows({
       members: [
         member({
@@ -395,9 +417,38 @@ describe('buildRequestedLeaguesQaRows', () => {
           requestedLeagueCount: 2,
           rosteredLeagues: [tuesday],
         }),
+        member({
+          memberId: 24,
+          memberName: 'Sam Ortiz',
+          memberFirstName: 'Sam',
+          requestedLeagueCount: 1,
+          rosteredLeagues: [tuesday, thursday],
+        }),
+        member({
+          memberId: 25,
+          memberName: 'Priya Shah',
+          memberFirstName: 'Priya',
+          requestedLeagueCount: 1,
+          rosteredLeagues: [tuesday, thursday],
+        }),
+        member({
+          memberId: 26,
+          memberName: 'Chris Wong',
+          memberFirstName: 'Chris',
+          requestedLeagueCount: 1,
+          rosteredLeagues: [tuesday, thursday, friday],
+        }),
       ],
     });
-    expect(rows.map((row) => row.memberName)).toEqual(['Maya Patel', 'Alex Kim', 'Zoe Quinn', 'Alex Rivera']);
-    expect(rows.map((row) => row.rosteredLeagueCount)).toEqual([0, 1, 1, 2]);
+    expect(rows.map((row) => row.memberName)).toEqual([
+      'Chris Wong',
+      'Priya Shah',
+      'Sam Ortiz',
+      'Maya Patel',
+      'Alex Kim',
+      'Zoe Quinn',
+      'Alex Rivera',
+    ]);
+    expect(rows.map((row) => row.rosteredLeagueCount)).toEqual([3, 2, 2, 0, 1, 1, 2]);
   });
 });

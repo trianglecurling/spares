@@ -28,6 +28,19 @@ After verifying on preview:
 bun run db:migrate
 ```
 
+## Dump a database
+
+To save a Postgres dump without copying or restoring:
+
+```bash
+bun run db:dump -- --dry-run
+bun run db:dump
+bun run db:dump -- --profile preview
+bun run db:dump -- --file /path/to/out.dump
+```
+
+This reads `backend/data/db-config.json` by default (or `db-config.<profile>.json` with `--profile`) and writes `backend/data/db-dumps/<profile>-<timestamp>.dump` (gitignored). It does not restore, overwrite, or restart anything. Uses `pg_dump` when the client is new enough for the server; otherwise writes a SQL data dump.
+
 ## Copy production onto preview
 
 To replace the preview/test database with a full copy of production (schema + data):

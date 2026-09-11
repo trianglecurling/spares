@@ -127,7 +127,8 @@ const QA_TAB_DESCRIPTIONS: Record<QaTabKey, string> = {
   'returning-members': 'Members who played last session and have not yet registered for this session.',
   'league-return':
     'Sanity checks to confirm expected returning players have registered, and registered the way we expect.',
-  'requested-leagues': 'Members who are rostered in fewer leagues than they requested.',
+  'requested-leagues':
+    'Members whose roster count does not match the number of leagues they requested. Over-requested members are listed first.',
   sabbaticals: 'Members who registered a sabbatical and the leagues they chose.',
 };
 
