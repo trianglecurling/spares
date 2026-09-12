@@ -12510,6 +12510,54 @@
                       },
                       "isTemporarySabbaticalFill": {
                         "type": "boolean"
+                      },
+                      "totalExperienceYears": {
+                        "type": [
+                          "null",
+                          "number"
+                        ]
+                      },
+                      "clubTenure": {
+                        "anyOf": [
+                          {
+                            "type": "null"
+                          },
+                          {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "new",
+                                  "years"
+                                ]
+                              },
+                              "years": {
+                                "type": [
+                                  "number",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "kind",
+                              "years"
+                            ]
+                          }
+                        ]
+                      },
+                      "previousSessionName": {
+                        "type": [
+                          "null",
+                          "string"
+                        ]
+                      },
+                      "previousSessionLeagues": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
                       }
                     },
                     "required": [
@@ -12522,7 +12570,11 @@
                       "guaranteeLabel",
                       "priorityRank",
                       "placementSource",
-                      "isTemporarySabbaticalFill"
+                      "isTemporarySabbaticalFill",
+                      "totalExperienceYears",
+                      "clubTenure",
+                      "previousSessionName",
+                      "previousSessionLeagues"
                     ]
                   }
                 }

@@ -43,6 +43,14 @@ import {
 } from './leagueRosterDeclaredTeams';
 import { RosterGuaranteeChip } from './RosterGuaranteeChip';
 import { RosterPlacementChips } from './RosterPlacementChip';
+import {
+  buildLeagueRosterTsv,
+  formatRosterClubTenure,
+  formatRosterPreviousLeagues,
+  formatRosterYears,
+  previousSessionLeaguesColumnLabel,
+  type RosterClubTenure,
+} from './leagueRosterExport';
 
 const WEEKDAY_SELECT_OPTIONS: ChoiceOption<number>[] = [
   'Sunday',
@@ -248,6 +256,10 @@ interface LeagueRosterMember {
   priorityRank?: number | null;
   placementSource?: 'league_returner' | 'waitlist_add' | 'third_league' | null;
   isTemporarySabbaticalFill?: boolean;
+  totalExperienceYears?: number | null;
+  clubTenure?: RosterClubTenure | null;
+  previousSessionName?: string | null;
+  previousSessionLeagues?: string[];
 }
 
 function emailEntriesForRosterMembers(members: LeagueRosterMember[]): string[] {
@@ -445,6 +457,9 @@ export default function LeagueDetail() {
   const [waitlistActionLoading, setWaitlistActionLoading] = useState(false);
 
   const [rosterMembers, setRosterMembers] = useState<LeagueRosterMember[]>([]);
+  const [rosterExportOpen, setRosterExportOpen] = useState(false);
+  const [rosterExportTsv, setRosterExportTsv] = useState('');
+  const rosterExportTsvId = useId();
   const [declaredTeams, setDeclaredTeams] = useState<LeagueDeclaredTeam[]>([]);
   const [bulkRosterModalOpen, setBulkRosterModalOpen] = useState(false);
   const [bulkRosterNames, setBulkRosterNames] = useState('');
@@ -1372,6 +1387,28 @@ export default function LeagueDetail() {
       showAlert('Roster emails copied', 'success');
     } catch {
       showAlert('Failed to copy emails', 'error');
+    }
+  };
+
+  const previousSessionLeaguesHeader = previousSessionLeaguesColumnLabel(
+    rosterMembers.find((entry) => entry.previousSessionName)?.previousSessionName,
+  );
+
+  const handleOpenRosterExport = () => {
+    if (rosterMembers.length === 0) {
+      showAlert('No roster members to export yet', 'warning');
+      return;
+    }
+    setRosterExportTsv(buildLeagueRosterTsv(rosterMembers));
+    setRosterExportOpen(true);
+  };
+
+  const handleCopyRosterExport = async () => {
+    try {
+      await navigator.clipboard.writeText(rosterExportTsv);
+      showAlert('TSV copied to clipboard!', 'success');
+    } catch {
+      showAlert('Failed to copy TSV', 'error');
     }
   };
 
@@ -3474,6 +3511,11 @@ export default function LeagueDetail() {
                   <Button type="button" variant="secondary" onClick={() => void handleCopyEmails()}>
                     Copy emails
                   </Button>
+                  {canManageSetup ? (
+                    <Button type="button" variant="secondary" onClick={handleOpenRosterExport}>
+                      Export TSV
+                    </Button>
+                  ) : null}
                 </div>
               </div>
             </div>
@@ -3528,6 +3570,77 @@ export default function LeagueDetail() {
                         key={team.id}
                         className="rounded-md border border-gray-200 px-3 py-2 dark:border-gray-700"
                       >
+                        {canManageSetup ? (
+                          <div className="app-table-shell border-0">
+                            <table className="app-table">
+                              <thead className="app-table-head">
+                                <tr>
+                                  <th className="app-table-th">Name</th>
+                                  <th className="app-table-th">Total years curled</th>
+                                  <th className="app-table-th">Club tenure</th>
+                                  <th className="app-table-th">{previousSessionLeaguesHeader}</th>
+                                  {canManageRoster ? (
+                                    <th className="app-table-th">
+                                      <span className="sr-only">Actions</span>
+                                    </th>
+                                  ) : null}
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                                {team.members.map((member, index) => {
+                                  const rosterEntry =
+                                    member.memberId != null ? rosterMemberById.get(member.memberId) : undefined;
+                                  return (
+                                    <tr key={`${member.memberId ?? member.pendingName ?? index}`}>
+                                      <td className="app-table-td">
+                                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-medium text-gray-800 dark:text-gray-200">
+                                          <span>{declaredTeamMemberLabel(member)}</span>
+                                          {!member.onLeagueRoster ? (
+                                            <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-900 dark:bg-amber-900/40 dark:text-amber-200">
+                                              Not yet registered
+                                            </span>
+                                          ) : (
+                                            <RosterGuaranteeChip
+                                              guaranteeLabel={rosterEntry?.guaranteeLabel}
+                                              priorityRank={rosterEntry?.priorityRank}
+                                              league={league}
+                                            />
+                                          )}
+                                          {canViewRosterPlacement ? (
+                                            <RosterPlacementChips
+                                              placementSource={rosterEntry?.placementSource}
+                                              isTemporarySabbaticalFill={rosterEntry?.isTemporarySabbaticalFill}
+                                            />
+                                          ) : null}
+                                        </div>
+                                      </td>
+                                      <td className="app-table-td">{formatRosterYears(rosterEntry?.totalExperienceYears)}</td>
+                                      <td className="app-table-td">{formatRosterClubTenure(rosterEntry?.clubTenure)}</td>
+                                      <td className="app-table-td">
+                                        {formatRosterPreviousLeagues(rosterEntry?.previousSessionLeagues)}
+                                      </td>
+                                      {canManageRoster ? (
+                                        <td className="app-table-td">
+                                          {rosterEntry ? (
+                                            <Button
+                                              variant="outline-danger"
+                                              className="shrink-0"
+                                              onClick={() => handleRemoveRosterMember(rosterEntry)}
+                                              disabled={Boolean(rosterEntry.assignedTeamId)}
+                                              aria-label={`Remove ${rosterEntry.name} from the roster`}
+                                            >
+                                              Remove
+                                            </Button>
+                                          ) : null}
+                                        </td>
+                                      ) : null}
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : (
                         <ul>
                           {team.members.map((member, index) => {
                             const rosterEntry =
@@ -3544,12 +3657,6 @@ export default function LeagueDetail() {
                                       <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium text-amber-900 dark:bg-amber-900/40 dark:text-amber-200">
                                         Not yet registered
                                       </span>
-                                    ) : canManageSetup ? (
-                                      <RosterGuaranteeChip
-                                        guaranteeLabel={rosterEntry?.guaranteeLabel}
-                                        priorityRank={rosterEntry?.priorityRank}
-                                        league={league}
-                                      />
                                     ) : null}
                                     {canViewRosterPlacement ? (
                                       <RosterPlacementChips
@@ -3559,21 +3666,11 @@ export default function LeagueDetail() {
                                     ) : null}
                                   </p>
                                 </div>
-                                {canManageRoster && rosterEntry ? (
-                                  <Button
-                                    variant="outline-danger"
-                                    className="shrink-0"
-                                    onClick={() => handleRemoveRosterMember(rosterEntry)}
-                                    disabled={Boolean(rosterEntry.assignedTeamId)}
-                                    aria-label={`Remove ${rosterEntry.name} from the roster`}
-                                  >
-                                    Remove
-                                  </Button>
-                                ) : null}
                               </li>
                             );
                           })}
                         </ul>
+                        )}
                       </li>
                     ))}
                   </ul>
@@ -3592,6 +3689,77 @@ export default function LeagueDetail() {
                 <div className="text-center py-8 text-gray-500 dark:text-gray-400">
                   No roster members yet.
                 </div>
+              ) : canManageSetup ? (
+                <div className="app-table-shell">
+                  <table className="app-table">
+                    <thead className="app-table-head">
+                      <tr>
+                        <th className="app-table-th">Name</th>
+                        <th className="app-table-th">Total years curled</th>
+                        <th className="app-table-th">Club tenure</th>
+                        <th className="app-table-th">{previousSessionLeaguesHeader}</th>
+                        <th className="app-table-th">Team</th>
+                        {canManageRoster ? (
+                          <th className="app-table-th">
+                            <span className="sr-only">Actions</span>
+                          </th>
+                        ) : null}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                      {ungroupedRosterMembers.map((entry) => (
+                        <tr key={entry.memberId}>
+                          <td className="app-table-td">
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 font-medium text-gray-800 dark:text-gray-200">
+                              <span>{entry.name}</span>
+                              <RosterGuaranteeChip
+                                guaranteeLabel={entry.guaranteeLabel}
+                                priorityRank={entry.priorityRank}
+                                league={league}
+                              />
+                              {canViewRosterPlacement ? (
+                                <RosterPlacementChips
+                                  placementSource={entry.placementSource}
+                                  isTemporarySabbaticalFill={entry.isTemporarySabbaticalFill}
+                                />
+                              ) : null}
+                            </div>
+                            {entry.email ? (
+                              <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                <MemberEmail email={entry.email} parentEmail={entry.parentEmail} />
+                              </div>
+                            ) : null}
+                          </td>
+                          <td className="app-table-td">{formatRosterYears(entry.totalExperienceYears)}</td>
+                          <td className="app-table-td">{formatRosterClubTenure(entry.clubTenure)}</td>
+                          <td className="app-table-td">
+                            {formatRosterPreviousLeagues(entry.previousSessionLeagues)}
+                          </td>
+                          <td className="app-table-td">
+                            {entry.assignedTeamName ? (
+                              entry.assignedTeamName
+                            ) : (
+                              <span className="text-xs font-medium text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/40 px-2 py-1 rounded-full">
+                                Unassigned
+                              </span>
+                            )}
+                          </td>
+                          {canManageRoster ? (
+                            <td className="app-table-td">
+                              <Button
+                                variant="danger"
+                                onClick={() => handleRemoveRosterMember(entry)}
+                                disabled={Boolean(entry.assignedTeamId)}
+                              >
+                                Remove
+                              </Button>
+                            </td>
+                          ) : null}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               ) : (
                 <div className="space-y-3">
                   {ungroupedRosterMembers.map((entry) => (
@@ -3602,13 +3770,6 @@ export default function LeagueDetail() {
                       <div>
                         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-gray-800 dark:text-gray-200">
                           <span>{entry.name}</span>
-                          {canManageSetup ? (
-                            <RosterGuaranteeChip
-                              guaranteeLabel={entry.guaranteeLabel}
-                              priorityRank={entry.priorityRank}
-                              league={league}
-                            />
-                          ) : null}
                           {canViewRosterPlacement ? (
                             <RosterPlacementChips
                               placementSource={entry.placementSource}
@@ -3631,15 +3792,6 @@ export default function LeagueDetail() {
                           <span className="text-xs font-medium text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/40 px-2 py-1 rounded-full">
                             Unassigned
                           </span>
-                        )}
-                        {canManageRoster && (
-                          <Button
-                            variant="danger"
-                            onClick={() => handleRemoveRosterMember(entry)}
-                            disabled={Boolean(entry.assignedTeamId)}
-                          >
-                            Remove
-                          </Button>
                         )}
                       </div>
                     </div>
@@ -3910,6 +4062,35 @@ export default function LeagueDetail() {
             </Button>
           </div>
         </form>
+      </Modal>
+
+      <Modal
+        isOpen={rosterExportOpen}
+        onClose={() => setRosterExportOpen(false)}
+        title="Export roster (TSV)"
+        size="xl"
+      >
+        <div className="flex flex-col h-full min-h-0 space-y-4">
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            Copy and paste this into a spreadsheet (tab-separated values).
+          </p>
+          <FormField label="Roster TSV" htmlFor={rosterExportTsvId} className="flex min-h-0 flex-1 flex-col">
+            <textarea
+              id={rosterExportTsvId}
+              className="app-input flex-1 min-h-0 font-mono text-xs"
+              value={rosterExportTsv}
+              readOnly
+            />
+          </FormField>
+          <div className="flex justify-end space-x-3">
+            <Button type="button" variant="secondary" onClick={() => setRosterExportOpen(false)}>
+              Close
+            </Button>
+            <Button type="button" onClick={() => void handleCopyRosterExport()}>
+              Copy TSV
+            </Button>
+          </div>
+        </div>
       </Modal>
 
       <Modal

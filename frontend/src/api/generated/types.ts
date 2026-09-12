@@ -7253,6 +7253,14 @@ export interface paths {
                             priorityRank: null | number;
                             placementSource: null | ("league_returner" | "waitlist_add" | "third_league");
                             isTemporarySabbaticalFill: boolean;
+                            totalExperienceYears: null | number;
+                            clubTenure: null | {
+                                /** @enum {string} */
+                                kind: "new" | "years";
+                                years: number | null;
+                            };
+                            previousSessionName: null | string;
+                            previousSessionLeagues: string[];
                         }[];
                     };
                 };

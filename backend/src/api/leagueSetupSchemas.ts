@@ -139,6 +139,23 @@ export const rosterMemberSchema = {
       anyOf: [{ type: 'null' }, rosterPlacementSourceSchema],
     },
     isTemporarySabbaticalFill: { type: 'boolean' },
+    totalExperienceYears: { type: ['number', 'null'] },
+    clubTenure: {
+      anyOf: [
+        { type: 'null' },
+        {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            kind: { type: 'string', enum: ['new', 'years'] },
+            years: { type: ['number', 'null'] },
+          },
+          required: ['kind', 'years'],
+        },
+      ],
+    },
+    previousSessionName: { type: ['string', 'null'] },
+    previousSessionLeagues: { type: 'array', items: { type: 'string' } },
   },
   required: [
     'memberId',
@@ -151,6 +168,10 @@ export const rosterMemberSchema = {
     'priorityRank',
     'placementSource',
     'isTemporarySabbaticalFill',
+    'totalExperienceYears',
+    'clubTenure',
+    'previousSessionName',
+    'previousSessionLeagues',
   ],
 } as const;
 

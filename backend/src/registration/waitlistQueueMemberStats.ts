@@ -10,6 +10,7 @@ import {
   clubTenureSortYears,
   loadDashboardSessionForClubTenure,
   resolveClubTenure,
+  type ClubTenure,
 } from '../services/memberMembershipCardService.js';
 import { getCurrentDateStringAsync } from '../utils/time.js';
 
@@ -34,6 +35,7 @@ const SUBMITTED_REGISTRATION_STATUSES = [
 export type WaitlistQueueMemberStats = {
   isLifetimeMember: boolean;
   clubTenureYears: number;
+  clubTenure: ClubTenure | null;
   otherClubYears: number;
   totalExperienceYears: number;
 };
@@ -228,6 +230,7 @@ export async function loadWaitlistQueueMemberStats(
     stats.set(member.id, {
       isLifetimeMember,
       clubTenureYears: clubTenureSortYears(clubTenure),
+      clubTenure,
       otherClubYears: normalizeHalfYearExperienceValue(baselines.baselineOtherClubExperienceYears),
       totalExperienceYears: totalExperienceYears({
         experienceType,
@@ -245,6 +248,7 @@ export function emptyWaitlistQueueMemberStats(): WaitlistQueueMemberStats {
   return {
     isLifetimeMember: false,
     clubTenureYears: 0,
+    clubTenure: null,
     otherClubYears: 0,
     totalExperienceYears: 0,
   };

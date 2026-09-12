@@ -60,6 +60,10 @@ import {
   removeLeagueSabbatical,
   SabbaticalStaffValidationError,
 } from '../registration/sabbaticalStaffService.js';
+import {
+  emptyLeagueRosterManagerInsight,
+  loadLeagueRosterManagerInsights,
+} from './leagueRosterManagerInsights.js';
 import { loadRosterRegistrationStatuses } from '../registration/rosterRegistrationStatusService.js';
 import { deriveRosterPlacementSource } from '../registration/rosterPlacementSource.js';
 import type { Member } from '../types.js';
@@ -784,9 +788,12 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       }
 
       const includeRegistrationStatus = await hasLeagueSetupAccess(member, leagueId);
-      // Guarantee labels are manager-only; skip the registration lookup for other viewers.
+      // Guarantee labels and manager insights are manager-only; skip those lookups for other viewers.
       const statusByMemberId = includeRegistrationStatus
         ? await loadRosterRegistrationStatuses(leagueId, rosterMemberIds)
+        : new Map();
+      const managerInsightsByMemberId = includeRegistrationStatus
+        ? await loadLeagueRosterManagerInsights(leagueId, rosterMemberIds)
         : new Map();
 
       const includePlacement = memberCanViewRosterPlacement(member);
@@ -821,6 +828,8 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       return rosterRows.map((row) => {
         const assignment = assignmentMap.get(row.member_id);
         const status = statusByMemberId.get(row.member_id);
+        const insights =
+          managerInsightsByMemberId.get(row.member_id) ?? emptyLeagueRosterManagerInsight();
         return {
           memberId: row.member_id,
           name: row.name,
@@ -838,6 +847,10 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
           isTemporarySabbaticalFill: includePlacement
             ? Number(row.is_temporary_sabbatical_fill) === 1
             : false,
+          totalExperienceYears: insights.totalExperienceYears,
+          clubTenure: insights.clubTenure,
+          previousSessionName: insights.previousSessionName,
+          previousSessionLeagues: insights.previousSessionLeagues,
         };
       });
     }
