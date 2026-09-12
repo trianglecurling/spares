@@ -1,5 +1,3 @@
-export const ROSTER_CONFIRMATION_SEND_BATCH_SIZE = 5;
-
 export type RosterConfirmationSendProgress = {
   completed: number;
   total: number;
@@ -7,16 +5,34 @@ export type RosterConfirmationSendProgress = {
   failed: number;
 };
 
-export function rosterConfirmationSendBatches(
-  memberIds: number[],
-  batchSize = ROSTER_CONFIRMATION_SEND_BATCH_SIZE,
-): number[][] {
-  const size = Math.max(1, batchSize);
-  const batches: number[][] = [];
-  for (let i = 0; i < memberIds.length; i += size) {
-    batches.push(memberIds.slice(i, i + size));
+export type RosterConfirmationSendJobLike = {
+  status: 'running' | 'completed' | 'failed' | string;
+  total: number;
+  completed: number;
+  sent: number;
+  failed: number;
+  errors: Array<{ memberId: number; memberName: string; error: string }>;
+};
+
+export function rosterConfirmationSendProgressFromJob(
+  job: RosterConfirmationSendJobLike,
+): RosterConfirmationSendProgress {
+  return {
+    completed: job.completed,
+    total: job.total,
+    sent: job.sent,
+    failed: job.failed,
+  };
+}
+
+export function rosterConfirmationSendErrorsFromJob(
+  job: RosterConfirmationSendJobLike,
+): Record<number, string> {
+  const next: Record<number, string> = {};
+  for (const row of job.errors) {
+    if (row.memberId > 0) next[row.memberId] = row.error;
   }
-  return batches;
+  return next;
 }
 
 export function rosterConfirmationSendProgressPercent(progress: RosterConfirmationSendProgress): number {
@@ -24,6 +40,15 @@ export function rosterConfirmationSendProgressPercent(progress: RosterConfirmati
   return Math.min(100, Math.round((progress.completed / progress.total) * 100));
 }
 
-export function rosterConfirmationSendProgressLabel(progress: RosterConfirmationSendProgress): string {
+export function rosterConfirmationSendProgressLabel(
+  progress: RosterConfirmationSendProgress,
+  status?: string,
+): string {
+  if (status === 'failed') return `Stopped after ${progress.completed} of ${progress.total}`;
+  if (status === 'completed') return `Sent ${progress.sent} of ${progress.total}`;
   return `Sending ${progress.completed} of ${progress.total}`;
+}
+
+export function rosterConfirmationSendJobErrors(job: RosterConfirmationSendJobLike): string[] {
+  return job.errors.filter((row) => row.memberId <= 0).map((row) => row.error);
 }

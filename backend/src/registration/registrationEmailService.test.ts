@@ -329,6 +329,7 @@ describe('Phase 9 registration email rendering', () => {
     });
 
     expect(rendered.subject).toBe('Your Fall leagues');
+    expect(rendered.subject).not.toContain('payment link');
     expect(rendered.textBody).toContain('You are on the roster for the following Fall leagues:');
     expect(rendered.textBody).not.toContain('2026-27 /');
     expect(rendered.textBody).toContain('Sunday Funday (evening)');
@@ -393,6 +394,7 @@ describe('Phase 9 registration email rendering', () => {
     expect(rendered.textBody).not.toContain('Temporary sabbatical-fill spot');
     expect(rendered.textBody).toContain('Amount paid: $50.00');
     expect(rendered.textBody).toContain('Balance due: $100.00');
+    expect(rendered.subject).toBe('Your Fall leagues and payment link');
     expect(rendered.textBody).toContain('Payment link will be created when this email is sent.');
     expect(rendered.textBody).toContain('Payment is due by Sunday, September 13, 2026');
     expect(rendered.textBody).not.toContain('to secure your league selections');
@@ -430,6 +432,7 @@ describe('Phase 9 registration email rendering', () => {
       deadlineText: 'Sunday, September 13, 2026',
     });
 
+    expect(rendered.subject).toBe('Your Fall leagues and payment link');
     expect(rendered.textBody).toContain('Pay the remaining balance: https://squareup.example/pay/abc');
     expect(rendered.textBody).toContain('Payment is due by Sunday, September 13, 2026');
     expect(rendered.textBody).not.toContain('to secure your league selections');

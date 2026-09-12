@@ -15,6 +15,7 @@ import { goRedirectRoutes } from './routes/goRedirect.js';
 import { startNotificationProcessor } from './services/notificationProcessor.js';
 import { startPaymentReconciliationProcessor } from './services/paymentReconciliationProcessor.js';
 import { startVolunteerReminderProcessor } from './services/volunteerReminderProcessor.js';
+import { resumeIncompleteRosterConfirmationEmailJobs } from './registration/registrationRosterConfirmationEmailService.js';
 import { isDatabaseConfigured } from './db/config.js';
 import { warmPublicBootstrapCache } from './services/publicBootstrapCache.js';
 import { warmSearchIndex } from './search/searchIndexService.js';
@@ -98,6 +99,9 @@ function startBackgroundProcessorsIfReady(): void {
   startNotificationProcessor();
   startPaymentReconciliationProcessor();
   startVolunteerReminderProcessor();
+  void resumeIncompleteRosterConfirmationEmailJobs().catch((error) => {
+    console.error('Failed to resume roster confirmation email jobs:', error);
+  });
   backgroundProcessorsStarted = true;
 }
 

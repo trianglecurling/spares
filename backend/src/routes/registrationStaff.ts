@@ -12,10 +12,11 @@ import {
 } from '../registration/registrationMembershipPaymentService.js';
 import { issueStaffRegistrationRefund, listStaffRegistrationBilling, RegistrationBillingValidationError } from '../registration/registrationBillingService.js';
 import {
+  getLatestRosterConfirmationEmailJob,
   getRosterConfirmationEmailPreview,
   listRosterConfirmationEmails,
   RosterConfirmationEmailValidationError,
-  sendRosterConfirmationEmails,
+  startRosterConfirmationEmailJob,
 } from '../registration/registrationRosterConfirmationEmailService.js';
 import { resolveFrontendBaseUrl } from '../utils/frontendUrl.js';
 import { getStaffRegistrationStats } from '../registration/registrationStaffStats.js';
@@ -26,6 +27,7 @@ import {
   staffRosterConfirmationEmailListResponseSchema,
   staffRosterConfirmationEmailPreviewResponseSchema,
   staffRosterConfirmationEmailSendResponseSchema,
+  staffRosterConfirmationEmailSendStatusResponseSchema,
   staffRequestedLeaguesQaResponseSchema,
   staffReturningMembersQaResponseSchema,
   staffReturningPlayersQaResponseSchema,
@@ -362,13 +364,43 @@ export async function protectedRegistrationStaffRoutes(fastify: FastifyInstance)
       if (!requireRegistrationManage(request, reply)) return;
       try {
         const body = rosterConfirmationSendSchema.parse(request.body);
-        return await sendRosterConfirmationEmails({
+        return await startRosterConfirmationEmailJob({
           actor: (request as AuthenticatedRequest).member,
           sessionId: body.sessionId,
           memberIds: body.memberIds,
           unsentOnly: body.unsentOnly,
           frontendBaseUrl: resolveFrontendBaseUrl(request),
         });
+      } catch (error) {
+        if (handleStaffRegistrationError(reply, error)) return;
+        throw error;
+      }
+    },
+  );
+
+  fastify.get(
+    '/registration/staff/roster-confirmation-emails/send-status',
+    {
+      schema: {
+        tags: ['registration-staff'],
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['sessionId'],
+          properties: {
+            sessionId: { type: 'number' },
+          },
+        },
+        response: { 200: staffRosterConfirmationEmailSendStatusResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      if (!requireRegistrationManage(request, reply)) return;
+      try {
+        const query = statsQuerySchema.parse(request.query);
+        return {
+          sendJob: await getLatestRosterConfirmationEmailJob(query.sessionId),
+        };
       } catch (error) {
         if (handleStaffRegistrationError(reply, error)) return;
         throw error;

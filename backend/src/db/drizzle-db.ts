@@ -34,6 +34,7 @@ type PgSchema = {
   registrationDiscountSettings: typeof pgSchema.registrationDiscountSettingsPg;
   registrationEarlyAccessSettings: typeof pgSchema.registrationEarlyAccessSettingsPg;
   registrationLeagueProcessingSettings: typeof pgSchema.registrationLeagueProcessingSettingsPg;
+  rosterConfirmationEmailJobs: typeof pgSchema.rosterConfirmationEmailJobsPg;
   registrationPaymentDeadlines: typeof pgSchema.registrationPaymentDeadlinesPg;
   seasonMemberships: typeof pgSchema.seasonMembershipsPg;
   curlingIcePrivileges: typeof pgSchema.curlingIcePrivilegesPg;
@@ -192,6 +193,7 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       registrationDiscountSettings: sqliteSchema.registrationDiscountSettingsSqlite,
       registrationEarlyAccessSettings: sqliteSchema.registrationEarlyAccessSettingsSqlite,
       registrationLeagueProcessingSettings: sqliteSchema.registrationLeagueProcessingSettingsSqlite,
+      rosterConfirmationEmailJobs: sqliteSchema.rosterConfirmationEmailJobsSqlite,
       registrationPaymentDeadlines: sqliteSchema.registrationPaymentDeadlinesSqlite,
       seasonMemberships: sqliteSchema.seasonMembershipsSqlite,
       curlingIcePrivileges: sqliteSchema.curlingIcePrivilegesSqlite,
@@ -339,6 +341,7 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       registrationDiscountSettings: pgSchema.registrationDiscountSettingsPg,
       registrationEarlyAccessSettings: pgSchema.registrationEarlyAccessSettingsPg,
       registrationLeagueProcessingSettings: pgSchema.registrationLeagueProcessingSettingsPg,
+      rosterConfirmationEmailJobs: pgSchema.rosterConfirmationEmailJobsPg,
       registrationPaymentDeadlines: pgSchema.registrationPaymentDeadlinesPg,
       seasonMemberships: pgSchema.seasonMembershipsPg,
       curlingIcePrivileges: pgSchema.curlingIcePrivilegesPg,

@@ -2435,16 +2435,66 @@ const rosterConfirmationRecipientSchema = {
   },
 } as const;
 
+const rosterConfirmationEmailJobErrorSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['memberId', 'memberName', 'error'],
+  properties: {
+    memberId: { type: 'number' },
+    memberName: { type: 'string' },
+    error: { type: 'string' },
+  },
+} as const;
+
+export const staffRosterConfirmationEmailJobSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'id',
+    'sessionId',
+    'status',
+    'total',
+    'completed',
+    'sent',
+    'skipped',
+    'failed',
+    'errors',
+    'startedAt',
+    'updatedAt',
+    'finishedAt',
+  ],
+  properties: {
+    id: { type: 'number' },
+    sessionId: { type: 'number' },
+    status: { type: 'string', enum: ['running', 'completed', 'failed'] },
+    total: { type: 'number' },
+    completed: { type: 'number' },
+    sent: { type: 'number' },
+    skipped: { type: 'number' },
+    failed: { type: 'number' },
+    errors: { type: 'array', items: rosterConfirmationEmailJobErrorSchema },
+    startedAt: { type: 'string' },
+    updatedAt: { type: 'string' },
+    finishedAt: { type: ['string', 'null'] },
+  },
+} as const;
+
 export const staffRosterConfirmationEmailListResponseSchema = {
   type: 'object',
   additionalProperties: false,
-  required: ['sessionId', 'sessionName', 'seasonName', 'leagueProcessingActive', 'recipients'],
+  required: ['sessionId', 'sessionName', 'seasonName', 'leagueProcessingActive', 'recipients', 'sendJob'],
   properties: {
     sessionId: { type: 'number' },
     sessionName: { type: 'string' },
     seasonName: { type: 'string' },
     leagueProcessingActive: { type: 'boolean' },
     recipients: { type: 'array', items: rosterConfirmationRecipientSchema },
+    sendJob: {
+      type: ['object', 'null'],
+      additionalProperties: false,
+      required: staffRosterConfirmationEmailJobSchema.required,
+      properties: staffRosterConfirmationEmailJobSchema.properties,
+    },
   },
 } as const;
 
@@ -2475,25 +2525,18 @@ export const staffRosterConfirmationEmailPreviewResponseSchema = {
   },
 } as const;
 
-export const staffRosterConfirmationEmailSendResponseSchema = {
+export const staffRosterConfirmationEmailSendResponseSchema = staffRosterConfirmationEmailJobSchema;
+
+export const staffRosterConfirmationEmailSendStatusResponseSchema = {
   type: 'object',
   additionalProperties: false,
-  required: ['sent', 'skipped', 'errors'],
+  required: ['sendJob'],
   properties: {
-    sent: { type: 'number' },
-    skipped: { type: 'number' },
-    errors: {
-      type: 'array',
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['memberId', 'memberName', 'error'],
-        properties: {
-          memberId: { type: 'number' },
-          memberName: { type: 'string' },
-          error: { type: 'string' },
-        },
-      },
+    sendJob: {
+      type: ['object', 'null'],
+      additionalProperties: false,
+      required: staffRosterConfirmationEmailJobSchema.required,
+      properties: staffRosterConfirmationEmailJobSchema.properties,
     },
   },
 } as const;

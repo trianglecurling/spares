@@ -30194,7 +30194,8 @@
                     "sessionName",
                     "seasonName",
                     "leagueProcessingActive",
-                    "recipients"
+                    "recipients",
+                    "sendJob"
                   ],
                   "properties": {
                     "sessionId": {
@@ -30374,6 +30375,93 @@
                           }
                         }
                       }
+                    },
+                    "sendJob": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "additionalProperties": false,
+                      "required": [
+                        "id",
+                        "sessionId",
+                        "status",
+                        "total",
+                        "completed",
+                        "sent",
+                        "skipped",
+                        "failed",
+                        "errors",
+                        "startedAt",
+                        "updatedAt",
+                        "finishedAt"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "number"
+                        },
+                        "sessionId": {
+                          "type": "number"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "running",
+                            "completed",
+                            "failed"
+                          ]
+                        },
+                        "total": {
+                          "type": "number"
+                        },
+                        "completed": {
+                          "type": "number"
+                        },
+                        "sent": {
+                          "type": "number"
+                        },
+                        "skipped": {
+                          "type": "number"
+                        },
+                        "failed": {
+                          "type": "number"
+                        },
+                        "errors": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "memberId",
+                              "memberName",
+                              "error"
+                            ],
+                            "properties": {
+                              "memberId": {
+                                "type": "number"
+                              },
+                              "memberName": {
+                                "type": "string"
+                              },
+                              "error": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        },
+                        "startedAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        },
+                        "finishedAt": {
+                          "type": [
+                            "null",
+                            "string"
+                          ]
+                        }
+                      }
                     }
                   }
                 }
@@ -30425,15 +30513,47 @@
                   "type": "object",
                   "additionalProperties": false,
                   "required": [
+                    "id",
+                    "sessionId",
+                    "status",
+                    "total",
+                    "completed",
                     "sent",
                     "skipped",
-                    "errors"
+                    "failed",
+                    "errors",
+                    "startedAt",
+                    "updatedAt",
+                    "finishedAt"
                   ],
                   "properties": {
+                    "id": {
+                      "type": "number"
+                    },
+                    "sessionId": {
+                      "type": "number"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "running",
+                        "completed",
+                        "failed"
+                      ]
+                    },
+                    "total": {
+                      "type": "number"
+                    },
+                    "completed": {
+                      "type": "number"
+                    },
                     "sent": {
                       "type": "number"
                     },
                     "skipped": {
+                      "type": "number"
+                    },
+                    "failed": {
                       "type": "number"
                     },
                     "errors": {
@@ -30456,6 +30576,140 @@
                           "error": {
                             "type": "string"
                           }
+                        }
+                      }
+                    },
+                    "startedAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    },
+                    "finishedAt": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/registration/staff/roster-confirmation-emails/send-status": {
+      "get": {
+        "tags": [
+          "registration-staff"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "number"
+            },
+            "in": "query",
+            "name": "sessionId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "sendJob"
+                  ],
+                  "properties": {
+                    "sendJob": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "additionalProperties": false,
+                      "required": [
+                        "id",
+                        "sessionId",
+                        "status",
+                        "total",
+                        "completed",
+                        "sent",
+                        "skipped",
+                        "failed",
+                        "errors",
+                        "startedAt",
+                        "updatedAt",
+                        "finishedAt"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "number"
+                        },
+                        "sessionId": {
+                          "type": "number"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "running",
+                            "completed",
+                            "failed"
+                          ]
+                        },
+                        "total": {
+                          "type": "number"
+                        },
+                        "completed": {
+                          "type": "number"
+                        },
+                        "sent": {
+                          "type": "number"
+                        },
+                        "skipped": {
+                          "type": "number"
+                        },
+                        "failed": {
+                          "type": "number"
+                        },
+                        "errors": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "memberId",
+                              "memberName",
+                              "error"
+                            ],
+                            "properties": {
+                              "memberId": {
+                                "type": "number"
+                              },
+                              "memberName": {
+                                "type": "string"
+                              },
+                              "error": {
+                                "type": "string"
+                              }
+                            }
+                          }
+                        },
+                        "startedAt": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "string"
+                        },
+                        "finishedAt": {
+                          "type": [
+                            "null",
+                            "string"
+                          ]
                         }
                       }
                     }

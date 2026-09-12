@@ -967,8 +967,9 @@ export function renderRegistrationEmail(messageType: RegistrationMessageType, pa
         (payload.billingBalanceMinor ?? 0) !== 0
           ? { html: paymentAndMembershipContactHtml, text: paymentAndMembershipContactText }
           : { html: membershipContactHtml, text: membershipContactText };
+      const includePaymentLink = Boolean(payload.paymentUrl) || payload.paymentLinkPending === true;
       return {
-        subject: `Your ${sessionName} leagues`,
+        subject: includePaymentLink ? `Your ${sessionName} leagues and payment link` : `Your ${sessionName} leagues`,
         htmlBody: `
           <h2>Your ${escapeHtml(sessionName)} leagues</h2>
           <p>Hi ${escapeHtml(curlerName)},</p>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { get, post } from '../../api/client';
 import type { paths } from '../../api/generated/types';
@@ -21,10 +21,11 @@ import {
   useRosterConfirmationEmailHolds,
 } from './rosterConfirmationEmailHolds';
 import {
-  rosterConfirmationSendBatches,
+  rosterConfirmationSendErrorsFromJob,
+  rosterConfirmationSendJobErrors,
+  rosterConfirmationSendProgressFromJob,
   rosterConfirmationSendProgressLabel,
   rosterConfirmationSendProgressPercent,
-  type RosterConfirmationSendProgress,
 } from './rosterConfirmationEmailSend';
 
 type RegistrationSession = {
@@ -109,10 +110,11 @@ export default function AdminRosterConfirmationEmails() {
   const [payload, setPayload] = useState<RosterConfirmationList | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [sending, setSending] = useState(false);
-  const [sendProgress, setSendProgress] = useState<RosterConfirmationSendProgress | null>(null);
+  const [startingSend, setStartingSend] = useState(false);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [sendErrors, setSendErrors] = useState<Record<number, string>>({});
+  const watchedRunningJobIds = useRef(new Set<number>());
+  const announcedJobKeys = useRef(new Set<string>());
 
   const sessionId = Number(searchParams.get('sessionId')) || defaultSessionId;
   const { heldSet, setHeld, setHeldMany } = useRosterConfirmationEmailHolds(sessionId && sessionId > 0 ? sessionId : null);
@@ -148,22 +150,27 @@ export default function AdminRosterConfirmationEmails() {
     }
   }, [searchParams, setSessionId]);
 
-  const loadRecipients = useCallback(async () => {
+  const loadRecipients = useCallback(async (options?: { silent?: boolean }) => {
     if (!sessionId) {
       setLoading(false);
       setPayload(null);
       return;
     }
-    setLoading(true);
+    if (!options?.silent) setLoading(true);
     setError(null);
     try {
       const data = await get('/registration/staff/roster-confirmation-emails', { sessionId });
       setPayload(data);
+      if (data.sendJob) {
+        setSendErrors(rosterConfirmationSendErrorsFromJob(data.sendJob));
+      }
     } catch (err) {
-      setPayload(null);
-      setError(getApiErrorMessage(err, 'Unable to load roster confirmation emails.'));
+      if (!options?.silent) {
+        setPayload(null);
+        setError(getApiErrorMessage(err, 'Unable to load roster confirmation emails.'));
+      }
     } finally {
-      setLoading(false);
+      if (!options?.silent) setLoading(false);
     }
   }, [sessionId]);
 
@@ -174,6 +181,64 @@ export default function AdminRosterConfirmationEmails() {
   useEffect(() => {
     void loadRecipients();
   }, [loadRecipients]);
+
+  const sendJob = payload?.sendJob ?? null;
+  const jobRunning = sendJob?.status === 'running';
+  const sendBusy = startingSend || jobRunning;
+
+  useEffect(() => {
+    if (sendJob?.status === 'running') {
+      watchedRunningJobIds.current.add(sendJob.id);
+    }
+  }, [sendJob?.id, sendJob?.status]);
+
+  useEffect(() => {
+    if (!sessionId || sendJob?.status !== 'running') return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const data = await get('/registration/staff/roster-confirmation-emails/send-status', { sessionId });
+        if (cancelled) return;
+        setPayload((current) => (current ? { ...current, sendJob: data.sendJob } : current));
+        if (data.sendJob) {
+          setSendErrors(rosterConfirmationSendErrorsFromJob(data.sendJob));
+        }
+      } catch {
+        // Keep the last known job; the next poll retries.
+      }
+    };
+    const intervalId = window.setInterval(() => {
+      void poll();
+    }, 1500);
+    void poll();
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [sessionId, sendJob?.id, sendJob?.status]);
+
+  useEffect(() => {
+    if (!sendJob || sendJob.status === 'running') return;
+    if (!watchedRunningJobIds.current.has(sendJob.id)) return;
+    const key = `${sendJob.id}:${sendJob.status}:${sendJob.finishedAt ?? ''}`;
+    if (announcedJobKeys.current.has(key)) return;
+    announcedJobKeys.current.add(key);
+    const errorCount = sendJob.errors.filter((row) => row.memberId > 0).length;
+    const jobErrors = rosterConfirmationSendJobErrors(sendJob);
+    const sentLabel = `${sendJob.sent} email${sendJob.sent === 1 ? '' : 's'}`;
+    if (jobErrors.length > 0) {
+      showAlert(
+        sendJob.sent > 0 ? `${jobErrors[0]} Sent ${sentLabel} before stopping.` : jobErrors[0],
+        sendJob.sent > 0 ? 'warning' : 'error',
+      );
+    } else {
+      showAlert(
+        errorCount > 0 ? `Sent ${sentLabel}; ${errorCount} could not be sent.` : `Sent ${sentLabel}.`,
+        errorCount > 0 ? 'warning' : 'success',
+      );
+    }
+    void loadRecipients({ silent: true });
+  }, [loadRecipients, sendJob, showAlert]);
 
   const sessionOptions = useMemo(
     () =>
@@ -233,7 +298,7 @@ export default function AdminRosterConfirmationEmails() {
   const selectedToRelease = selectedHoldable.filter((row) => heldSet.has(row.memberId));
   async function sendEmails(memberIds: number[], unsentOnly: boolean) {
     if (!sessionId) return;
-    if (payload?.leagueProcessingActive) return;
+    if (payload?.leagueProcessingActive || sendBusy) return;
     const count = memberIds.length;
     const heldNote =
       unsentOnly && heldUnsentCount > 0
@@ -249,63 +314,22 @@ export default function AdminRosterConfirmationEmails() {
       cancelText: 'Cancel',
     });
     if (!confirmed) return;
-    setSending(true);
+    setStartingSend(true);
     setSendErrors({});
-    const batches = rosterConfirmationSendBatches(memberIds);
-    const accumulatedErrors: Record<number, string> = {};
-    let sentCount = 0;
-    let completed = 0;
-    setSendProgress({ completed: 0, total: count, sent: 0, failed: 0 });
     try {
-      for (const batch of batches) {
-        const result = await post('/registration/staff/roster-confirmation-emails/send', {
-          sessionId,
-          memberIds: batch,
-          unsentOnly,
-        });
-        sentCount += result.sent;
-        for (const row of result.errors) {
-          accumulatedErrors[row.memberId] = row.error;
-        }
-        completed += batch.length;
-        const failedIds = new Set(result.errors.map((row) => row.memberId));
-        setSendErrors({ ...accumulatedErrors });
-        setSendProgress({
-          completed,
-          total: count,
-          sent: sentCount,
-          failed: Object.keys(accumulatedErrors).length,
-        });
-        setPayload((current) => {
-          if (!current) return current;
-          return {
-            ...current,
-            recipients: current.recipients.map((row) => {
-              if (!batch.includes(row.memberId) || failedIds.has(row.memberId) || !row.canSend) return row;
-              return { ...row, alreadySent: true, sentAt: new Date().toISOString() };
-            }),
-          };
-        });
-      }
-      const errorCount = Object.keys(accumulatedErrors).length;
-      showAlert(
-        errorCount > 0
-          ? `Sent ${sentCount} email${sentCount === 1 ? '' : 's'}; ${errorCount} could not be sent.`
-          : `Sent ${sentCount} email${sentCount === 1 ? '' : 's'}.`,
-        errorCount > 0 ? 'warning' : 'success',
-      );
+      const job = await post('/registration/staff/roster-confirmation-emails/send', {
+        sessionId,
+        memberIds,
+        unsentOnly,
+      });
+      watchedRunningJobIds.current.add(job.id);
+      setPayload((current) => (current ? { ...current, sendJob: job } : current));
+      setSendErrors(rosterConfirmationSendErrorsFromJob(job));
       setSelectedIds([]);
-      await loadRecipients();
     } catch (err) {
-      showAlert(
-        sentCount > 0
-          ? `Stopped after sending ${sentCount} of ${count}. ${getApiErrorMessage(err, 'Failed to send roster confirmation emails.')}`
-          : getApiErrorMessage(err, 'Failed to send roster confirmation emails.'),
-        'error',
-      );
+      showAlert(getApiErrorMessage(err, 'Failed to start roster confirmation emails.'), 'error');
     } finally {
-      setSending(false);
-      setSendProgress(null);
+      setStartingSend(false);
     }
   }
 
@@ -471,7 +495,7 @@ export default function AdminRosterConfirmationEmails() {
             <Button
               type="button"
               variant="secondary"
-              disabled={sending || selectedToHold.length === 0}
+              disabled={sendBusy || selectedToHold.length === 0}
               onClick={() => setHeldMany(selectedToHold.map((row) => row.memberId), true)}
             >
               {`Hold selected${selectedToHold.length ? ` (${selectedToHold.length})` : ''}`}
@@ -479,7 +503,7 @@ export default function AdminRosterConfirmationEmails() {
             <Button
               type="button"
               variant="secondary"
-              disabled={sending || selectedToRelease.length === 0}
+              disabled={sendBusy || selectedToRelease.length === 0}
               onClick={() => setHeldMany(selectedToRelease.map((row) => row.memberId), false)}
             >
               {`Release selected${selectedToRelease.length ? ` (${selectedToRelease.length})` : ''}`}
@@ -487,17 +511,17 @@ export default function AdminRosterConfirmationEmails() {
             <Button
               type="button"
               variant="secondary"
-              disabled={sending || !sessionId || payload?.leagueProcessingActive || selectedSendable.length === 0}
+              disabled={sendBusy || !sessionId || payload?.leagueProcessingActive || selectedSendable.length === 0}
               onClick={() => void sendEmails(selectedSendable.map((row) => row.memberId), false)}
             >
-              {sending ? 'Sending…' : `Send selected${selectedSendable.length ? ` (${selectedSendable.length})` : ''}`}
+              {sendBusy ? 'Sending…' : `Send selected${selectedSendable.length ? ` (${selectedSendable.length})` : ''}`}
             </Button>
             <Button
               type="button"
-              disabled={sending || !sessionId || payload?.leagueProcessingActive || sendAllMemberIds.length === 0}
+              disabled={sendBusy || !sessionId || payload?.leagueProcessingActive || sendAllMemberIds.length === 0}
               onClick={() => void sendEmails(sendAllMemberIds, true)}
             >
-              {sending ? 'Sending…' : `Send all unsent${sendAllMemberIds.length ? ` (${sendAllMemberIds.length})` : ''}`}
+              {sendBusy ? 'Sending…' : `Send all unsent${sendAllMemberIds.length ? ` (${sendAllMemberIds.length})` : ''}`}
             </Button>
           </>
         }
@@ -541,24 +565,26 @@ export default function AdminRosterConfirmationEmails() {
                 League processing is on, so these emails cannot be sent until it is turned off.
               </p>
             ) : null}
-            {sendProgress ? (
+            {sendJob?.status === 'running' ? (
               <div className="app-card mt-4 p-4 space-y-2" role="status" aria-live="polite">
                 <div className="flex items-center justify-between text-sm text-gray-700 dark:text-gray-300">
-                  <span className="font-medium">{rosterConfirmationSendProgressLabel(sendProgress)}</span>
-                  <span>{rosterConfirmationSendProgressPercent(sendProgress)}%</span>
+                  <span className="font-medium">
+                    {rosterConfirmationSendProgressLabel(rosterConfirmationSendProgressFromJob(sendJob), sendJob.status)}
+                  </span>
+                  <span>{rosterConfirmationSendProgressPercent(rosterConfirmationSendProgressFromJob(sendJob))}%</span>
                 </div>
                 <div className="h-2 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
                   <div
                     className="h-full rounded-full bg-primary-teal transition-all duration-200"
-                    style={{ width: `${rosterConfirmationSendProgressPercent(sendProgress)}%` }}
+                    style={{
+                      width: `${rosterConfirmationSendProgressPercent(rosterConfirmationSendProgressFromJob(sendJob))}%`,
+                    }}
                   />
                 </div>
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  {sendProgress.sent} sent
-                  {sendProgress.failed > 0
-                    ? `, ${sendProgress.failed} could not be sent`
-                    : ''}
-                  . Keep this page open until sending finishes.
+                  {sendJob.sent} sent
+                  {sendJob.failed > 0 ? `, ${sendJob.failed} could not be sent` : ''}. You can leave or refresh this
+                  page; sending continues on the server.
                 </p>
               </div>
             ) : null}
@@ -610,7 +636,7 @@ export default function AdminRosterConfirmationEmails() {
                     type="button"
                     variant="secondary"
                     className="!px-3 !py-1.5"
-                    disabled={sending}
+                    disabled={sendBusy}
                     onClick={() => setHeld(row.memberId, !heldSet.has(row.memberId))}
                     aria-label={
                       heldSet.has(row.memberId)

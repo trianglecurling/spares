@@ -561,6 +561,13 @@
       "when": 1788489000000,
       "tag": "0080_remove_waitlist_offer_response_preference",
       "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1788489600000,
+      "tag": "0081_add_roster_confirmation_email_jobs",
+      "breakpoints": true
     }
   ]
 }

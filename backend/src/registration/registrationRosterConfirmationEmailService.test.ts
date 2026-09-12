@@ -3,6 +3,7 @@ import { renderRegistrationEmail } from './registrationEmailService.js';
 import {
   buildRosterConfirmationEmailPayload,
   matchAutomaticSabbaticals,
+  pickRosterConfirmationBilling,
   rosterConfirmationCheckoutLines,
   rosterConfirmationSendSideEffects,
 } from './registrationRosterConfirmationEmailService.js';
@@ -102,6 +103,21 @@ describe('automatic fallback sabbaticals', () => {
   });
 });
 
+describe('pick roster confirmation billing', () => {
+  test('uses the paid registration instead of a later unpaid duplicate', () => {
+    const paid = { registrationId: 510, paidMinor: 33300 };
+    const unpaidDuplicate = { registrationId: 538, paidMinor: 0 };
+    expect(pickRosterConfirmationBilling([unpaidDuplicate, paid], [538])).toEqual(paid);
+    expect(pickRosterConfirmationBilling([paid, unpaidDuplicate], [538])).toEqual(paid);
+  });
+
+  test('keeps the roster-linked registration when neither has a payment', () => {
+    const older = { registrationId: 510, paidMinor: 0 };
+    const rosterLinked = { registrationId: 538, paidMinor: 0 };
+    expect(pickRosterConfirmationBilling([older, rosterLinked], [538])).toEqual(rosterLinked);
+  });
+});
+
 describe('roster confirmation send side effects', () => {
   test('creates a payment link only when a balance is due and never refunds', () => {
     expect(rosterConfirmationSendSideEffects(10000)).toEqual({ createPaymentLink: true, issueRefund: false });
@@ -159,6 +175,7 @@ describe('roster confirmation payload', () => {
     expect(payload.paymentUrl).toBeNull();
     expect(payload.paymentLinkPending).toBe(true);
     expect(payload.deadlineText).toBe('Sunday, September 13, 2026');
+    expect(rendered.subject).toBe('Your Fall leagues and payment link');
     expect(rendered.textBody).toContain('Payment link will be created when this email is sent.');
     expect(rendered.textBody).toContain('Payment is due by Sunday, September 13, 2026');
     expect(rendered.textBody).not.toContain('https://');
@@ -181,6 +198,8 @@ describe('roster confirmation payload', () => {
     const rendered = renderRegistrationEmail('roster_confirmation', payload);
     expect(payload.paymentUrl).toBeNull();
     expect(payload.paymentLinkPending).toBe(false);
+    expect(rendered.subject).toBe('Your Fall leagues');
+    expect(rendered.subject).not.toContain('payment link');
     expect(rendered.textBody).toContain('refund will be issued');
     expect(rendered.textBody).not.toContain('Pay the remaining balance');
   });

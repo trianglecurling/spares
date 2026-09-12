@@ -19832,6 +19832,25 @@ export interface paths {
                                 skipReason: null | string;
                                 canSend: boolean;
                             }[];
+                            sendJob: null | {
+                                id: number;
+                                sessionId: number;
+                                /** @enum {string} */
+                                status: "running" | "completed" | "failed";
+                                total: number;
+                                completed: number;
+                                sent: number;
+                                skipped: number;
+                                failed: number;
+                                errors: {
+                                    memberId: number;
+                                    memberName: string;
+                                    error: string;
+                                }[];
+                                startedAt: string;
+                                updatedAt: string;
+                                finishedAt: null | string;
+                            };
                         };
                     };
                 };
@@ -19878,18 +19897,85 @@ export interface paths {
                     };
                     content: {
                         "application/json": {
+                            id: number;
+                            sessionId: number;
+                            /** @enum {string} */
+                            status: "running" | "completed" | "failed";
+                            total: number;
+                            completed: number;
                             sent: number;
                             skipped: number;
+                            failed: number;
                             errors: {
                                 memberId: number;
                                 memberName: string;
                                 error: string;
                             }[];
+                            startedAt: string;
+                            updatedAt: string;
+                            finishedAt: null | string;
                         };
                     };
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/registration/staff/roster-confirmation-emails/send-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query: {
+                    sessionId: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            sendJob: null | {
+                                id: number;
+                                sessionId: number;
+                                /** @enum {string} */
+                                status: "running" | "completed" | "failed";
+                                total: number;
+                                completed: number;
+                                sent: number;
+                                skipped: number;
+                                failed: number;
+                                errors: {
+                                    memberId: number;
+                                    memberName: string;
+                                    error: string;
+                                }[];
+                                startedAt: string;
+                                updatedAt: string;
+                                finishedAt: null | string;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;

@@ -811,6 +811,35 @@ export const registrationLeagueProcessingSettingsSqlite = sqliteTable('registrat
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
 });
 
+export type RosterConfirmationEmailJobStatusSqlite = 'running' | 'completed' | 'failed';
+
+/** Background send job for roster confirmation emails. */
+export const rosterConfirmationEmailJobsSqlite = sqliteTable('roster_confirmation_email_jobs', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  session_id: integer('session_id')
+    .notNull()
+    .references(() => curlingSessionsSqlite.id, { onDelete: 'cascade' }),
+  actor_member_id: integer('actor_member_id')
+    .notNull()
+    .references(() => membersSqlite.id, { onDelete: 'restrict' }),
+  status: text('status').notNull().$type<RosterConfirmationEmailJobStatusSqlite>(),
+  unsent_only: integer('unsent_only').notNull().default(0),
+  frontend_base_url: text('frontend_base_url'),
+  member_ids_json: text('member_ids_json').notNull(),
+  cursor: integer('cursor').notNull().default(0),
+  total: integer('total').notNull().default(0),
+  sent: integer('sent').notNull().default(0),
+  skipped: integer('skipped').notNull().default(0),
+  failed: integer('failed').notNull().default(0),
+  errors_json: text('errors_json').notNull().default('[]'),
+  started_at: text('started_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+  finished_at: text('finished_at'),
+}, (table) => ({
+  sessionIdx: index('idx_roster_confirmation_email_jobs_session_id').on(table.session_id),
+  statusIdx: index('idx_roster_confirmation_email_jobs_status').on(table.status),
+}));
+
 /** Per season/session deadline for voluntary "pay later" registration payment. */
 export const registrationPaymentDeadlinesSqlite = sqliteTable('registration_payment_deadlines', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -3196,6 +3225,32 @@ export const registrationLeagueProcessingSettingsPg = pgTable('registration_leag
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
 });
 
+export const rosterConfirmationEmailJobsPg = pgTable('roster_confirmation_email_jobs', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  session_id: integerPg('session_id')
+    .notNull()
+    .references(() => curlingSessionsPg.id, { onDelete: 'cascade' }),
+  actor_member_id: integerPg('actor_member_id')
+    .notNull()
+    .references(() => membersPg.id, { onDelete: 'restrict' }),
+  status: textPg('status').notNull().$type<RosterConfirmationEmailJobStatusSqlite>(),
+  unsent_only: integerPg('unsent_only').notNull().default(0),
+  frontend_base_url: textPg('frontend_base_url'),
+  member_ids_json: jsonb('member_ids_json').notNull(),
+  cursor: integerPg('cursor').notNull().default(0),
+  total: integerPg('total').notNull().default(0),
+  sent: integerPg('sent').notNull().default(0),
+  skipped: integerPg('skipped').notNull().default(0),
+  failed: integerPg('failed').notNull().default(0),
+  errors_json: jsonb('errors_json').notNull().default(sql`'[]'::jsonb`),
+  started_at: timestamp('started_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+  finished_at: timestamp('finished_at', { withTimezone: false }),
+}, (table) => ({
+  sessionIdx: indexPg('idx_roster_confirmation_email_jobs_session_id').on(table.session_id),
+  statusIdx: indexPg('idx_roster_confirmation_email_jobs_status').on(table.status),
+}));
+
 /** Per season/session deadline for voluntary "pay later" registration payment. */
 export const registrationPaymentDeadlinesPg = pgTable('registration_payment_deadlines', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
@@ -5007,6 +5062,7 @@ export const sqliteSchema = {
   registrationDiscountSettings: registrationDiscountSettingsSqlite,
   registrationEarlyAccessSettings: registrationEarlyAccessSettingsSqlite,
   registrationLeagueProcessingSettings: registrationLeagueProcessingSettingsSqlite,
+  rosterConfirmationEmailJobs: rosterConfirmationEmailJobsSqlite,
   registrationPaymentDeadlines: registrationPaymentDeadlinesSqlite,
   seasonMemberships: seasonMembershipsSqlite,
   curlingIcePrivileges: curlingIcePrivilegesSqlite,
@@ -5136,6 +5192,7 @@ export const pgSchema = {
   registrationDiscountSettings: registrationDiscountSettingsPg,
   registrationEarlyAccessSettings: registrationEarlyAccessSettingsPg,
   registrationLeagueProcessingSettings: registrationLeagueProcessingSettingsPg,
+  rosterConfirmationEmailJobs: rosterConfirmationEmailJobsPg,
   registrationPaymentDeadlines: registrationPaymentDeadlinesPg,
   seasonMemberships: seasonMembershipsPg,
   curlingIcePrivileges: curlingIcePrivilegesPg,
