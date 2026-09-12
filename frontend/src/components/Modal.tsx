@@ -89,6 +89,7 @@ export default function Modal({
             <button
               type="button"
               onClick={onClose}
+              aria-label="Close"
               className="text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
             >
               <HiXMark className="w-6 h-6" />

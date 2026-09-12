@@ -357,6 +357,11 @@ function stubBillingContext(input: {
   };
 }
 
+export type StaffRegistrationBillingLine = {
+  description: string;
+  amountMinor: number;
+};
+
 export type StaffRegistrationBillingRow = {
   registrationId: number;
   curlerId: number | null;
@@ -364,12 +369,25 @@ export type StaffRegistrationBillingRow = {
   curlerEmail: string | null;
   registrationStatus: string;
   chargedLeagues: Array<{ id: number; name: string }>;
+  owedLines: StaffRegistrationBillingLine[];
+  owedDiscountLines: StaffRegistrationBillingLine[];
+  owedSubtotalMinor: number;
+  owedDiscountMinor: number;
   owedMinor: number;
   paidMinor: number;
   balanceMinor: number;
   canRequestPayment: boolean;
   canIssueRefund: boolean;
 };
+
+function billingFeeLines(
+  items: Array<{ description: string; amountMinor: number }>,
+): StaffRegistrationBillingLine[] {
+  return items.map((item) => ({
+    description: item.description,
+    amountMinor: item.amountMinor,
+  }));
+}
 
 export async function listStaffRegistrationBilling(input: {
   actor: Member;
@@ -643,10 +661,11 @@ export async function listStaffRegistrationBilling(input: {
       chargedLeagueIds,
       juniorAssistance: assistanceByRegistration.get(row.id),
     });
-    const owedMinor = calculateRegistrationFees(context, {
+    const feePreview = calculateRegistrationFees(context, {
       chargedLeagueIds,
       temporaryFillLeagueIds,
-    }).totalDueMinor;
+    });
+    const owedMinor = feePreview.totalDueMinor;
     const paidMinor = paidByRegistration.get(row.id) ?? 0;
     const balanceMinor = registrationBalanceMinor(owedMinor, paidMinor);
     return {
@@ -661,6 +680,10 @@ export async function listStaffRegistrationBilling(input: {
       curlerEmail: row.curlerEmail,
       registrationStatus: row.status,
       chargedLeagues,
+      owedLines: billingFeeLines(feePreview.lineItems),
+      owedDiscountLines: billingFeeLines(feePreview.discountLineItems),
+      owedSubtotalMinor: feePreview.subtotalMinor,
+      owedDiscountMinor: feePreview.discountTotalMinor,
       owedMinor,
       paidMinor,
       balanceMinor,

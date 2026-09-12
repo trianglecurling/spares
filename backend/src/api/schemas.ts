@@ -2291,6 +2291,10 @@ export const staffRegistrationBillingResponseSchema = {
           'curlerEmail',
           'registrationStatus',
           'chargedLeagues',
+          'owedLines',
+          'owedDiscountLines',
+          'owedSubtotalMinor',
+          'owedDiscountMinor',
           'owedMinor',
           'paidMinor',
           'balanceMinor',
@@ -2315,6 +2319,32 @@ export const staffRegistrationBillingResponseSchema = {
               },
             },
           },
+          owedLines: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['description', 'amountMinor'],
+              properties: {
+                description: { type: 'string' },
+                amountMinor: { type: 'number' },
+              },
+            },
+          },
+          owedDiscountLines: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['description', 'amountMinor'],
+              properties: {
+                description: { type: 'string' },
+                amountMinor: { type: 'number' },
+              },
+            },
+          },
+          owedSubtotalMinor: { type: 'number' },
+          owedDiscountMinor: { type: 'number' },
           owedMinor: { type: 'number' },
           paidMinor: { type: 'number' },
           balanceMinor: { type: 'number' },

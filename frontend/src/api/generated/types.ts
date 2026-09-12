@@ -19739,6 +19739,16 @@ export interface paths {
                                     id: number;
                                     name: string;
                                 }[];
+                                owedLines: {
+                                    description: string;
+                                    amountMinor: number;
+                                }[];
+                                owedDiscountLines: {
+                                    description: string;
+                                    amountMinor: number;
+                                }[];
+                                owedSubtotalMinor: number;
+                                owedDiscountMinor: number;
                                 owedMinor: number;
                                 paidMinor: number;
                                 balanceMinor: number;

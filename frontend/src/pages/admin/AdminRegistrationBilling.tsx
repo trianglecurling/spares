@@ -8,6 +8,7 @@ import Button from '../../components/Button';
 import ChoiceInput from '../../components/ChoiceInput';
 import FormField from '../../components/FormField';
 import IssueRegistrationRefundModal from '../../components/registration/IssueRegistrationRefundModal';
+import RegistrationBillingOwedModal from '../../components/registration/RegistrationBillingOwedModal';
 import DataTable from '../../components/table/DataTable';
 import type { DataTableColumn, TableSort } from '../../components/table/tableTypes';
 import { useAlert } from '../../contexts/AlertContext';
@@ -67,6 +68,7 @@ export default function AdminRegistrationBilling() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
+  const [owedRow, setOwedRow] = useState<BillingRow | null>(null);
   const [refundRow, setRefundRow] = useState<BillingRow | null>(null);
   const [refundSaving, setRefundSaving] = useState(false);
   const [refundError, setRefundError] = useState<string | null>(null);
@@ -276,7 +278,16 @@ export default function AdminRegistrationBilling() {
       sortable: true,
       sortKey: 'owed',
       align: 'right',
-      renderCell: (row) => <span className="tabular-nums">{money(row.owedMinor)}</span>,
+      renderCell: (row) => (
+        <button
+          type="button"
+          className="rounded-sm tabular-nums text-primary-teal-link hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40"
+          onClick={() => setOwedRow(row)}
+        >
+          <span className="sr-only">View owed line items for {row.curlerName}: </span>
+          {money(row.owedMinor)}
+        </button>
+      ),
     },
     {
       id: 'paid',
@@ -449,6 +460,16 @@ export default function AdminRegistrationBilling() {
         </section>
       ) : null}
 
+      <RegistrationBillingOwedModal
+        isOpen={owedRow != null}
+        curlerName={owedRow?.curlerName ?? ''}
+        lines={owedRow?.owedLines ?? []}
+        discountLines={owedRow?.owedDiscountLines ?? []}
+        subtotalMinor={owedRow?.owedSubtotalMinor ?? 0}
+        discountMinor={owedRow?.owedDiscountMinor ?? 0}
+        owedMinor={owedRow?.owedMinor ?? 0}
+        onClose={() => setOwedRow(null)}
+      />
       <IssueRegistrationRefundModal
         isOpen={refundRow != null}
         saving={refundSaving}
