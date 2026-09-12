@@ -20,6 +20,12 @@ import {
   rosterConfirmationSendAllMemberIds,
   useRosterConfirmationEmailHolds,
 } from './rosterConfirmationEmailHolds';
+import {
+  rosterConfirmationSendBatches,
+  rosterConfirmationSendProgressLabel,
+  rosterConfirmationSendProgressPercent,
+  type RosterConfirmationSendProgress,
+} from './rosterConfirmationEmailSend';
 
 type RegistrationSession = {
   id: number;
@@ -104,6 +110,7 @@ export default function AdminRosterConfirmationEmails() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [sendProgress, setSendProgress] = useState<RosterConfirmationSendProgress | null>(null);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [sendErrors, setSendErrors] = useState<Record<number, string>>({});
 
@@ -244,26 +251,61 @@ export default function AdminRosterConfirmationEmails() {
     if (!confirmed) return;
     setSending(true);
     setSendErrors({});
+    const batches = rosterConfirmationSendBatches(memberIds);
+    const accumulatedErrors: Record<number, string> = {};
+    let sentCount = 0;
+    let completed = 0;
+    setSendProgress({ completed: 0, total: count, sent: 0, failed: 0 });
     try {
-      const result = await post('/registration/staff/roster-confirmation-emails/send', {
-        sessionId,
-        memberIds,
-        unsentOnly,
-      });
-      const errorCount = result.errors.length;
-      setSendErrors(Object.fromEntries(result.errors.map((row) => [row.memberId, row.error])));
+      for (const batch of batches) {
+        const result = await post('/registration/staff/roster-confirmation-emails/send', {
+          sessionId,
+          memberIds: batch,
+          unsentOnly,
+        });
+        sentCount += result.sent;
+        for (const row of result.errors) {
+          accumulatedErrors[row.memberId] = row.error;
+        }
+        completed += batch.length;
+        const failedIds = new Set(result.errors.map((row) => row.memberId));
+        setSendErrors({ ...accumulatedErrors });
+        setSendProgress({
+          completed,
+          total: count,
+          sent: sentCount,
+          failed: Object.keys(accumulatedErrors).length,
+        });
+        setPayload((current) => {
+          if (!current) return current;
+          return {
+            ...current,
+            recipients: current.recipients.map((row) => {
+              if (!batch.includes(row.memberId) || failedIds.has(row.memberId) || !row.canSend) return row;
+              return { ...row, alreadySent: true, sentAt: new Date().toISOString() };
+            }),
+          };
+        });
+      }
+      const errorCount = Object.keys(accumulatedErrors).length;
       showAlert(
         errorCount > 0
-          ? `Sent ${result.sent} email${result.sent === 1 ? '' : 's'}; ${errorCount} could not be sent.`
-          : `Sent ${result.sent} email${result.sent === 1 ? '' : 's'}.`,
+          ? `Sent ${sentCount} email${sentCount === 1 ? '' : 's'}; ${errorCount} could not be sent.`
+          : `Sent ${sentCount} email${sentCount === 1 ? '' : 's'}.`,
         errorCount > 0 ? 'warning' : 'success',
       );
       setSelectedIds([]);
       await loadRecipients();
     } catch (err) {
-      showAlert(getApiErrorMessage(err, 'Failed to send roster confirmation emails.'), 'error');
+      showAlert(
+        sentCount > 0
+          ? `Stopped after sending ${sentCount} of ${count}. ${getApiErrorMessage(err, 'Failed to send roster confirmation emails.')}`
+          : getApiErrorMessage(err, 'Failed to send roster confirmation emails.'),
+        'error',
+      );
     } finally {
       setSending(false);
+      setSendProgress(null);
     }
   }
 
@@ -498,6 +540,27 @@ export default function AdminRosterConfirmationEmails() {
               <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
                 League processing is on, so these emails cannot be sent until it is turned off.
               </p>
+            ) : null}
+            {sendProgress ? (
+              <div className="app-card mt-4 p-4 space-y-2" role="status" aria-live="polite">
+                <div className="flex items-center justify-between text-sm text-gray-700 dark:text-gray-300">
+                  <span className="font-medium">{rosterConfirmationSendProgressLabel(sendProgress)}</span>
+                  <span>{rosterConfirmationSendProgressPercent(sendProgress)}%</span>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+                  <div
+                    className="h-full rounded-full bg-primary-teal transition-all duration-200"
+                    style={{ width: `${rosterConfirmationSendProgressPercent(sendProgress)}%` }}
+                  />
+                </div>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {sendProgress.sent} sent
+                  {sendProgress.failed > 0
+                    ? `, ${sendProgress.failed} could not be sent`
+                    : ''}
+                  . Keep this page open until sending finishes.
+                </p>
+              </div>
             ) : null}
           </div>
           <DataTable
