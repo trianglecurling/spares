@@ -41,7 +41,10 @@ export function canTransitionPaymentOrderStatus(
   return ORDER_STATUS_TRANSITIONS[from].has(to);
 }
 
-const UPGRADABLE_CHARGE_TRANSACTION_STATUSES = new Set(['created', 'pending']);
+const UPGRADABLE_CHARGE_TRANSACTION_STATUSES: ReadonlySet<PaymentOrderStatus> = new Set([
+  'created',
+  'pending',
+]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
