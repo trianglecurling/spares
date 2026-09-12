@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   getRegistrationStartScreenMode,
+  isRegistrationCheckoutReturnStep,
   isDraftRegistrationResumeStatus,
   guestApiMembershipChoice,
   membershipNeedsSabbaticalStep,
@@ -75,6 +76,13 @@ describe('registration start screen mode', () => {
         registrationWindowOpen: true,
       }),
     ).toBe('fresh_start');
+  });
+
+  test('checkout return pages stay available after the registration window closes', () => {
+    expect(isRegistrationCheckoutReturnStep('success')).toBe(true);
+    expect(isRegistrationCheckoutReturnStep('cancel')).toBe(true);
+    expect(isRegistrationCheckoutReturnStep('start')).toBe(false);
+    expect(isRegistrationCheckoutReturnStep('review')).toBe(false);
   });
 
   test('a new registration is offered only when no draft is in progress', () => {

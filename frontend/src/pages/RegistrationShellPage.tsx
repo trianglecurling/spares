@@ -79,6 +79,7 @@ import {
 import { dateOfBirthValidationMessage } from '../utils/memberAge';
 import {
   nextStepFor,
+  isRegistrationCheckoutReturnStep,
   parseRegistrationResumePointer,
   guestApiMembershipChoice,
   membershipNeedsSabbaticalStep,
@@ -4166,7 +4167,7 @@ export default function RegistrationShellPage() {
         </div>
       </RegistrationCard>
     );
-  } else if (windowState.state === 'closed') {
+  } else if (windowState.state === 'closed' && !isRegistrationCheckoutReturnStep(currentStep)) {
     content = (
       <RegistrationCard>
         <RegistrationFlowHeader />

@@ -65,6 +65,11 @@ export const REGISTRATION_FLOW_STEPS = new Set([
   'review',
 ]);
 
+/** Square/Stripe return pages that must stay reachable after the registration window closes. */
+export function isRegistrationCheckoutReturnStep(step: string): boolean {
+  return step === 'success' || step === 'cancel';
+}
+
 const DRAFT_RESUME_STATUSES = new Set([
   'identity_incomplete',
   'policies_incomplete',
