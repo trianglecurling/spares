@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
-  AMOUNT_ALREADY_PAID_DESCRIPTION,
+  applyPriorPaidToInvoiceLines,
   curlingRegistrationCheckoutLineItems,
   netPaidMinorFromPaymentActivity,
   parseRegistrationRefundNote,
@@ -96,6 +96,20 @@ describe('parseRegistrationRefundNote', () => {
   });
 });
 
+describe('applyPriorPaidToInvoiceLines', () => {
+  test('drops a paid membership and leaves later league fees', () => {
+    expect(
+      applyPriorPaidToInvoiceLines(
+        [
+          { description: 'Regular membership', amountMinor: 20800 },
+          { description: 'Monday Late league fee', amountMinor: 15000 },
+        ],
+        20800,
+      ),
+    ).toEqual([{ description: 'Monday Late league fee', amountMinor: 15000 }]);
+  });
+});
+
 describe('curlingRegistrationCheckoutLineItems', () => {
   test('uses invoice lines when nothing has been paid', () => {
     expect(
@@ -113,7 +127,20 @@ describe('curlingRegistrationCheckoutLineItems', () => {
     ]);
   });
 
-  test('appends an already-paid credit so remaining charges stay itemized', () => {
+  test('omits fully paid leading charges instead of adding a credit', () => {
+    expect(
+      curlingRegistrationCheckoutLineItems({
+        invoiceLines: [
+          { description: 'Regular membership', amountMinor: 20800 },
+          { description: 'Tuesday league fee', amountMinor: 15000 },
+        ],
+        orderAmountMinor: 15000,
+        priorPaidMinor: 20800,
+      }),
+    ).toEqual([{ description: 'Tuesday league fee', amountMinor: 15000 }]);
+  });
+
+  test('reduces a partially paid leading charge and keeps later unpaid items', () => {
     expect(
       curlingRegistrationCheckoutLineItems({
         invoiceLines: [
@@ -123,10 +150,23 @@ describe('curlingRegistrationCheckoutLineItems', () => {
         orderAmountMinor: 15000,
         priorPaidMinor: 25000,
       }),
+    ).toEqual([{ description: 'Tuesday league fee', amountMinor: 15000 }]);
+  });
+
+  test('keeps real discounts after omitting a paid membership', () => {
+    expect(
+      curlingRegistrationCheckoutLineItems({
+        invoiceLines: [
+          { description: 'Regular membership', amountMinor: 20800 },
+          { description: 'Friday Evening league fee', amountMinor: 15000 },
+          { description: 'Temporary sabbatical-fill discount', amountMinor: -2000 },
+        ],
+        orderAmountMinor: 13000,
+        priorPaidMinor: 20800,
+      }),
     ).toEqual([
-      { description: 'Regular membership', amountMinor: 10000 },
-      { description: 'Tuesday league fee', amountMinor: 30000 },
-      { description: AMOUNT_ALREADY_PAID_DESCRIPTION, amountMinor: -25000 },
+      { description: 'Friday Evening league fee', amountMinor: 15000 },
+      { description: 'Temporary sabbatical-fill discount', amountMinor: -2000 },
     ]);
   });
 

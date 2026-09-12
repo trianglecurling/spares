@@ -17,6 +17,7 @@ import { memberHasScope } from '../../utils/permissions';
 import { dateTimeLocalToIso, isoToDateTimeLocal } from '../../utils/clubTime';
 import AdminRegistrationsList from './AdminRegistrationsList';
 import AdminRegistrationBilling from './AdminRegistrationBilling';
+import AdminRosterConfirmationEmails from './AdminRosterConfirmationEmails';
 import AdminRegistrationQa from './AdminRegistrationQa';
 import AdminRegistrationQaRequestedLeagues from './AdminRegistrationQaRequestedLeagues';
 import AdminRegistrationQaReturningMembers from './AdminRegistrationQaReturningMembers';
@@ -101,7 +102,7 @@ interface PaymentDeadline {
   paymentDeadlineAt: string;
 }
 
-type PrimaryTab = 'summary' | 'list' | 'billing' | 'qa' | 'settings';
+type PrimaryTab = 'summary' | 'list' | 'billing' | 'roster-emails' | 'qa' | 'settings';
 type TabKey = 'seasons' | 'sessions' | 'periods' | 'prices' | 'discounts';
 type QaTabKey = 'returning-members' | 'league-return' | 'requested-leagues' | 'sabbaticals';
 
@@ -273,6 +274,13 @@ export default function AdminRegistrationConfig() {
     if (after[0] === 'billing') {
       return {
         primaryTab: 'billing' as PrimaryTab,
+        activeTab: 'seasons' as TabKey,
+        qaTab: 'returning-members' as QaTabKey,
+      };
+    }
+    if (after[0] === 'roster-emails') {
+      return {
+        primaryTab: 'roster-emails' as PrimaryTab,
         activeTab: 'seasons' as TabKey,
         qaTab: 'returning-members' as QaTabKey,
       };
@@ -791,6 +799,15 @@ export default function AdminRegistrationConfig() {
       isActive: primaryTab === 'billing',
     },
     {
+      key: 'roster-emails',
+      label: 'Roster emails',
+      to:
+        primaryTab === 'roster-emails'
+          ? `${location.pathname}${location.search}`
+          : `/admin/registrations/roster-emails${sessionQuery}`,
+      isActive: primaryTab === 'roster-emails',
+    },
+    {
       key: 'qa',
       label: 'QA checks',
       to:
@@ -835,6 +852,8 @@ export default function AdminRegistrationConfig() {
         ? 'Search and filter registrations for the selected session.'
         : primaryTab === 'billing'
           ? 'Compare what each registration owes with what has been paid.'
+          : primaryTab === 'roster-emails'
+          ? 'Preview and send league roster confirmation emails, including billing and payment links.'
           : primaryTab === 'qa'
           ? QA_TAB_DESCRIPTIONS[qaTab]
           : 'Configure seasons, sessions, registration schedule, and pricing.';
@@ -849,6 +868,7 @@ export default function AdminRegistrationConfig() {
         {primaryTab === 'summary' ? <AdminRegistrationsList mode="summary" /> : null}
         {primaryTab === 'list' ? <AdminRegistrationsList mode="list" /> : null}
         {primaryTab === 'billing' ? <AdminRegistrationBilling /> : null}
+        {primaryTab === 'roster-emails' ? <AdminRosterConfirmationEmails /> : null}
         {primaryTab === 'qa' ? <PageTabs items={qaTabs} ariaLabel="QA sections" /> : null}
         {primaryTab === 'qa' && qaTab === 'returning-members' ? <AdminRegistrationQaReturningMembers /> : null}
         {primaryTab === 'qa' && qaTab === 'league-return' ? <AdminRegistrationQa /> : null}

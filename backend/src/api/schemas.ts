@@ -2328,6 +2328,7 @@ export const staffRegistrationBillingResponseSchema = {
               properties: {
                 description: { type: 'string' },
                 amountMinor: { type: 'number' },
+                lineType: { type: 'string' },
               },
             },
           },
@@ -2340,6 +2341,7 @@ export const staffRegistrationBillingResponseSchema = {
               properties: {
                 description: { type: 'string' },
                 amountMinor: { type: 'number' },
+                lineType: { type: 'string' },
               },
             },
           },
@@ -2364,6 +2366,135 @@ export const staffRegistrationRefundResponseSchema = {
     registrationId: { type: 'number' },
     amountRefundedMinor: { type: 'number' },
     refundIds: { type: 'array', items: { type: 'number' } },
+  },
+} as const;
+
+const rosterConfirmationLeagueSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['leagueId', 'leagueName', 'isTemporarySabbaticalFill'],
+  properties: {
+    leagueId: { type: 'number' },
+    leagueName: { type: 'string' },
+    isTemporarySabbaticalFill: { type: 'boolean' },
+  },
+} as const;
+
+const rosterConfirmationLineSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['description', 'amountMinor'],
+  properties: {
+    description: { type: 'string' },
+    amountMinor: { type: 'number' },
+  },
+} as const;
+
+const rosterConfirmationRecipientSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'memberId',
+    'memberName',
+    'memberEmail',
+    'parentEmail',
+    'registrationId',
+    'leagues',
+    'owedLines',
+    'owedDiscountLines',
+    'owedSubtotalMinor',
+    'owedDiscountMinor',
+    'owedMinor',
+    'paidMinor',
+    'balanceMinor',
+    'checkoutLines',
+    'alreadySent',
+    'sentAt',
+    'skipReason',
+    'canSend',
+  ],
+  properties: {
+    memberId: { type: 'number' },
+    memberName: { type: 'string' },
+    memberEmail: { type: ['string', 'null'] },
+    parentEmail: { type: ['string', 'null'] },
+    registrationId: { type: ['number', 'null'] },
+    leagues: { type: 'array', items: rosterConfirmationLeagueSchema },
+    owedLines: { type: 'array', items: rosterConfirmationLineSchema },
+    owedDiscountLines: { type: 'array', items: rosterConfirmationLineSchema },
+    owedSubtotalMinor: { type: 'number' },
+    owedDiscountMinor: { type: 'number' },
+    owedMinor: { type: 'number' },
+    paidMinor: { type: 'number' },
+    balanceMinor: { type: 'number' },
+    checkoutLines: { type: 'array', items: rosterConfirmationLineSchema },
+    alreadySent: { type: 'boolean' },
+    sentAt: { type: ['string', 'null'] },
+    skipReason: { type: ['string', 'null'] },
+    canSend: { type: 'boolean' },
+  },
+} as const;
+
+export const staffRosterConfirmationEmailListResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['sessionId', 'sessionName', 'seasonName', 'leagueProcessingActive', 'recipients'],
+  properties: {
+    sessionId: { type: 'number' },
+    sessionName: { type: 'string' },
+    seasonName: { type: 'string' },
+    leagueProcessingActive: { type: 'boolean' },
+    recipients: { type: 'array', items: rosterConfirmationRecipientSchema },
+  },
+} as const;
+
+export const staffRosterConfirmationEmailPreviewResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: [
+    'sessionId',
+    'sessionName',
+    'seasonName',
+    'leagueProcessingActive',
+    'recipient',
+    'subject',
+    'htmlBody',
+    'textBody',
+    'paymentLinkPending',
+  ],
+  properties: {
+    sessionId: { type: 'number' },
+    sessionName: { type: 'string' },
+    seasonName: { type: 'string' },
+    leagueProcessingActive: { type: 'boolean' },
+    recipient: rosterConfirmationRecipientSchema,
+    subject: { type: 'string' },
+    htmlBody: { type: 'string' },
+    textBody: { type: 'string' },
+    paymentLinkPending: { type: 'boolean' },
+  },
+} as const;
+
+export const staffRosterConfirmationEmailSendResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['sent', 'skipped', 'errors'],
+  properties: {
+    sent: { type: 'number' },
+    skipped: { type: 'number' },
+    errors: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['memberId', 'memberName', 'error'],
+        properties: {
+          memberId: { type: 'number' },
+          memberName: { type: 'string' },
+          error: { type: 'string' },
+        },
+      },
+    },
   },
 } as const;
 

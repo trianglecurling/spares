@@ -3,6 +3,7 @@ import { ProtectedRoute } from '../../components/ProtectedRoute';
 import AdminRegistrationConfig from './AdminRegistrationConfig';
 import AdminRegistrationCreate from './AdminRegistrationCreate';
 import AdminRegistrationDetail from './AdminRegistrationDetail';
+import AdminRosterConfirmationEmailPreview from './AdminRosterConfirmationEmailPreview';
 
 const SETTINGS_TABS = new Set(['seasons', 'sessions', 'periods', 'prices', 'discounts']);
 const QA_TABS = new Set(['returning-members', 'league-return', 'requested-leagues', 'sabbaticals']);
@@ -59,6 +60,20 @@ export default function AdminRegistrationRoute() {
   if (segment === 'billing') {
     if (subsegment) {
       return <Navigate to={`/admin/registrations/billing${location.search}`} replace />;
+    }
+    return <ConfigPage />;
+  }
+
+  if (segment === 'roster-emails') {
+    if (subsegment && /^\d+$/.test(subsegment)) {
+      return (
+        <ProtectedRoute anyOfScopes={['registrations.manage', 'admin.manage']}>
+          <AdminRosterConfirmationEmailPreview />
+        </ProtectedRoute>
+      );
+    }
+    if (subsegment) {
+      return <Navigate to={`/admin/registrations/roster-emails${location.search}`} replace />;
     }
     return <ConfigPage />;
   }

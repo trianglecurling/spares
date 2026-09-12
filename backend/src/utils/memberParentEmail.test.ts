@@ -7,6 +7,7 @@ import {
   namedCopyEmailEntries,
   parentEmailForMinor,
   parentEmailLookupFromMembers,
+  registrationParentCopyEmail,
 } from './memberParentEmail.js';
 
 describe('distinctGuardianEmail', () => {
@@ -70,6 +71,41 @@ describe('parentEmailForMinor', () => {
         guardianEmail: 'parent@example.com',
         dateOfBirth: '2015-01-15',
         isMinor: false,
+      }),
+    ).toBeNull();
+  });
+});
+
+describe('registrationParentCopyEmail', () => {
+  test('prefers the registration guardian email over the member record', () => {
+    expect(
+      registrationParentCopyEmail({
+        memberEmail: 'kid@example.com',
+        dateOfBirth: '2015-01-15',
+        memberGuardianEmail: 'old-parent@example.com',
+        registrationGuardianEmail: 'current-parent@example.com',
+      }),
+    ).toBe('current-parent@example.com');
+  });
+
+  test('falls back to the member guardian email', () => {
+    expect(
+      registrationParentCopyEmail({
+        memberEmail: 'kid@example.com',
+        dateOfBirth: '2015-01-15',
+        memberGuardianEmail: 'parent@example.com',
+        registrationGuardianEmail: null,
+      }),
+    ).toBe('parent@example.com');
+  });
+
+  test('omits a parent copy for adults', () => {
+    expect(
+      registrationParentCopyEmail({
+        memberEmail: 'adult@example.com',
+        dateOfBirth: '1990-01-15',
+        memberGuardianEmail: 'parent@example.com',
+        registrationGuardianEmail: 'parent@example.com',
       }),
     ).toBeNull();
   });

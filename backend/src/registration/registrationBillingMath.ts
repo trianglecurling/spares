@@ -13,7 +13,6 @@ export const COUNTED_REGISTRATION_REFUND_STATUSES = new Set([
   'approved',
 ]);
 
-export const AMOUNT_ALREADY_PAID_DESCRIPTION = 'Amount already paid';
 export const REGISTRATION_REFUND_NOTE_MAX_LENGTH = 160;
 export const DEFAULT_REGISTRATION_REFUND_NOTE = 'Registration overpayment refund';
 
@@ -112,9 +111,44 @@ export type CurlingCheckoutLine = {
 };
 
 /**
+ * Apply money already paid to current invoice charges in order (membership,
+ * then later fees). Fully covered charges are omitted so Square can sell the
+ * remaining catalog items instead of a synthetic "amount already paid" credit.
+ */
+export function applyPriorPaidToInvoiceLines<T extends { amountMinor: number }>(
+  invoiceLines: T[],
+  priorPaidMinor: number,
+): T[] {
+  const remainingPaid = Math.max(0, Math.round(priorPaidMinor));
+  if (remainingPaid <= 0) return invoiceLines;
+
+  let leftoverPaid = remainingPaid;
+  const leftoverCharges: T[] = [];
+  const discounts: T[] = [];
+  for (const line of invoiceLines) {
+    if (line.amountMinor < 0) {
+      discounts.push(line);
+      continue;
+    }
+    if (leftoverPaid >= line.amountMinor) {
+      leftoverPaid -= line.amountMinor;
+      continue;
+    }
+    if (leftoverPaid > 0) {
+      leftoverCharges.push({ ...line, amountMinor: line.amountMinor - leftoverPaid });
+      leftoverPaid = 0;
+      continue;
+    }
+    leftoverCharges.push(line);
+  }
+  return [...leftoverCharges, ...discounts];
+}
+
+/**
  * Build Square/Stripe checkout lines for a registration charge.
- * Invoice lines are the current bill; a prior-paid credit is appended so the
- * checkout total matches the remaining amount due.
+ * Prior payments cover leading invoice charges and drop those items from the
+ * cart. Real discounts stay; the checkout total must still match the remaining
+ * amount due.
  */
 export function curlingRegistrationCheckoutLineItems(input: {
   invoiceLines: Array<{ description: string; amountMinor: number }>;
@@ -123,19 +157,15 @@ export function curlingRegistrationCheckoutLineItems(input: {
   allowBalanceFallback?: boolean;
 }): CurlingCheckoutLine[] | undefined {
   const priorPaidMinor = Math.max(0, Math.round(input.priorPaidMinor ?? 0));
-  const lineItems: CurlingCheckoutLine[] = input.invoiceLines
-    .map((line) => ({
-      description: line.description.trim(),
-      amountMinor: line.amountMinor,
-    }))
-    .filter((line) => line.description.length > 0 && line.amountMinor !== 0);
-
-  if (priorPaidMinor > 0) {
-    lineItems.push({
-      description: AMOUNT_ALREADY_PAID_DESCRIPTION,
-      amountMinor: -priorPaidMinor,
-    });
-  }
+  const lineItems: CurlingCheckoutLine[] = applyPriorPaidToInvoiceLines(
+    input.invoiceLines
+      .map((line) => ({
+        description: line.description.trim(),
+        amountMinor: line.amountMinor,
+      }))
+      .filter((line) => line.description.length > 0 && line.amountMinor !== 0),
+    priorPaidMinor,
+  );
 
   if (lineItems.length > 0 && checkoutLinesTotalMinor(lineItems) === input.orderAmountMinor) {
     return lineItems;

@@ -7,6 +7,7 @@ import type {
   RegistrationCommunicationMessageTypeSqlite,
 } from '../db/drizzle-schema.js';
 import { sendEmail } from '../services/email.js';
+import { registrationParentCopyEmail } from '../utils/memberParentEmail.js';
 import { paymentDetailsUrl } from '../utils/paymentDetailsUrl.js';
 
 const REGISTRATION_RECEIPT_ORDER_STATUSES = new Set([
@@ -51,10 +52,19 @@ export const REGISTRATION_JUNIORS_EMAIL = 'juniors@trianglecurling.com';
 
 type RegistrationContactType = 'payment' | 'membership' | 'juniors';
 
-const REGISTRATION_CONTACT_PROMPTS: Record<RegistrationContactType, string> = {
-  payment: 'Questions about payments?',
-  membership: 'Questions about membership or league placements?',
-  juniors: 'Questions about junior curling?',
+const REGISTRATION_CONTACT_LINES: Record<RegistrationContactType, { prompt: string; verb: string }> = {
+  payment: {
+    prompt: 'Do you have a question about your bill or think there may be a mistake?',
+    verb: 'Please contact',
+  },
+  membership: {
+    prompt: 'Questions about membership or league placements?',
+    verb: 'Contact',
+  },
+  juniors: {
+    prompt: 'Questions about junior curling?',
+    verb: 'Contact',
+  },
 };
 
 function registrationContactEmail(type: RegistrationContactType): string {
@@ -69,12 +79,14 @@ function registrationContactEmail(type: RegistrationContactType): string {
 }
 
 function registrationContactLineText(type: RegistrationContactType): string {
-  return `${REGISTRATION_CONTACT_PROMPTS[type]} Contact ${registrationContactEmail(type)}.`;
+  const line = REGISTRATION_CONTACT_LINES[type];
+  return `${line.prompt} ${line.verb} ${registrationContactEmail(type)}.`;
 }
 
 function registrationContactLineHtml(type: RegistrationContactType): string {
   const email = registrationContactEmail(type);
-  return `<p>${REGISTRATION_CONTACT_PROMPTS[type]} Contact <a href="mailto:${email}">${email}</a>.</p>`;
+  const line = REGISTRATION_CONTACT_LINES[type];
+  return `<p>${line.prompt} ${line.verb} <a href="mailto:${email}">${email}</a>.</p>`;
 }
 
 function registrationContactHtml(types: RegistrationContactType[]): string {
@@ -133,6 +145,16 @@ export interface RegistrationEmailPayload {
   receiptLineItems?: RegistrationReceiptLineItem[] | null;
   receiptSubtotalMinor?: number | null;
   receiptDiscountMinor?: number | null;
+  rosterLeagues?: Array<{
+    leagueName: string;
+    isTemporarySabbaticalFill?: boolean | null;
+  }> | null;
+  automaticSabbaticals?: Array<{
+    sabbaticalLeagueName: string;
+    temporaryFillLeagueNames?: string[] | null;
+  }> | null;
+  billingBalanceMinor?: number | null;
+  paymentLinkPending?: boolean | null;
   paidAt?: string | null;
   paymentReference?: string | null;
   paymentDetailsUrl?: string | null;
@@ -262,6 +284,155 @@ function receiptTableHtml(payload: RegistrationEmailPayload): string {
       <tfoot>${footerRows.join('')}</tfoot>
     </table>
   `;
+}
+
+function joinLeagueNames(names: string[]): string {
+  if (names.length === 0) return '';
+  if (names.length === 1) return names[0];
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  return `${names.slice(0, -1).join(', ')}, and ${names[names.length - 1]}`;
+}
+
+export function automaticSabbaticalExplanation(item: {
+  sabbaticalLeagueName: string;
+  temporaryFillLeagueNames?: string[] | null;
+}): string {
+  const sabbaticalName = item.sabbaticalLeagueName.trim() || 'that league';
+  const fills = (item.temporaryFillLeagueNames ?? []).map((name) => name.trim()).filter(Boolean);
+  if (fills.length === 0) {
+    return `You did not request a sabbatical. Your guaranteed seat on ${sabbaticalName} was converted to a sabbatical so you could take a higher-priority temporary sabbatical-fill spot. This keeps your right to return to ${sabbaticalName} in a future session.`;
+  }
+  if (fills.length === 1) {
+    return `You did not request a sabbatical. Because you received a higher-priority temporary sabbatical-fill spot on ${fills[0]}, your guaranteed seat on ${sabbaticalName} was converted to a sabbatical so you could take that temporary spot. This keeps your right to return to ${sabbaticalName} in a future session.`;
+  }
+  return `You did not request a sabbatical. Because you received higher-priority temporary sabbatical-fill spots on ${joinLeagueNames(fills)}, your guaranteed seat on ${sabbaticalName} was converted to a sabbatical so you could take those temporary spots. This keeps your right to return to ${sabbaticalName} in a future session.`;
+}
+
+function automaticSabbaticalHtml(items?: RegistrationEmailPayload['automaticSabbaticals']): string {
+  const explanations = (items ?? []).map((item) => automaticSabbaticalExplanation(item)).filter(Boolean);
+  if (explanations.length === 0) return '';
+  return `
+    <h3>Why you have a sabbatical</h3>
+    ${explanations.map((text) => `<p>${escapeHtml(text)}</p>`).join('')}
+  `;
+}
+
+function automaticSabbaticalText(items?: RegistrationEmailPayload['automaticSabbaticals']): string {
+  const explanations = (items ?? []).map((item) => automaticSabbaticalExplanation(item)).filter(Boolean);
+  if (explanations.length === 0) return '';
+  return `Why you have a sabbatical\n${explanations.join('\n')}`;
+}
+
+function rosterLeagueLabels(leagues?: RegistrationEmailPayload['rosterLeagues']): string[] {
+  return (leagues ?? [])
+    .map((league) => {
+      const name = league.leagueName.trim();
+      if (!name) return '';
+      return league.isTemporarySabbaticalFill ? `${name}*` : name;
+    })
+    .filter(Boolean);
+}
+
+function billingBalanceLabel(balanceMinor?: number | null): string {
+  if (typeof balanceMinor !== 'number' || !Number.isFinite(balanceMinor)) return 'Balance';
+  if (balanceMinor > 0) return 'Balance due';
+  if (balanceMinor < 0) return 'Credit';
+  return 'Balance';
+}
+
+function billingSummaryTableHtml(payload: RegistrationEmailPayload): string {
+  const lineItems = payload.receiptLineItems ?? [];
+  const rows = lineItems
+    .map(
+      (line) =>
+        `<tr><td>${escapeHtml(line.description)}</td><td style="text-align:right; white-space:nowrap;">${money(line.amountMinor)}</td></tr>`,
+    )
+    .join('');
+  const footerRows = [
+    typeof payload.receiptSubtotalMinor === 'number'
+      ? `<tr><td>Subtotal</td><td style="text-align:right; white-space:nowrap;">${money(payload.receiptSubtotalMinor)}</td></tr>`
+      : null,
+    typeof payload.receiptDiscountMinor === 'number' && payload.receiptDiscountMinor > 0
+      ? `<tr><td>Discounts</td><td style="text-align:right; white-space:nowrap;">${money(-payload.receiptDiscountMinor)}</td></tr>`
+      : null,
+    `<tr><td>Amount paid</td><td style="text-align:right; white-space:nowrap;">${money(payload.amountPaidMinor)}</td></tr>`,
+    `<tr><td><strong>${escapeHtml(billingBalanceLabel(payload.billingBalanceMinor))}</strong></td><td style="text-align:right; white-space:nowrap;"><strong>${money(payload.billingBalanceMinor)}</strong></td></tr>`,
+  ].filter(Boolean);
+  const body = lineItems.length > 0 ? `<tbody>${rows}</tbody>` : '';
+
+  return `
+    <table style="border-collapse:collapse; width:100%; max-width:36rem;">
+      <thead>
+        <tr>
+          <th style="text-align:left; border-bottom:1px solid #d1d5db; padding:0.35rem 0;">Item</th>
+          <th style="text-align:right; border-bottom:1px solid #d1d5db; padding:0.35rem 0;">Amount</th>
+        </tr>
+      </thead>
+      ${body}
+      <tfoot>${footerRows.join('')}</tfoot>
+    </table>
+  `;
+}
+
+function billingSummaryTableText(payload: RegistrationEmailPayload): string {
+  const lineItems = payload.receiptLineItems ?? [];
+  const lines = lineItems.map((line) => `${line.description}: ${money(line.amountMinor)}`);
+  if (typeof payload.receiptSubtotalMinor === 'number') {
+    lines.push(`Subtotal: ${money(payload.receiptSubtotalMinor)}`);
+  }
+  if (typeof payload.receiptDiscountMinor === 'number' && payload.receiptDiscountMinor > 0) {
+    lines.push(`Discounts: ${money(-payload.receiptDiscountMinor)}`);
+  }
+  lines.push(`Amount paid: ${money(payload.amountPaidMinor)}`);
+  lines.push(`${billingBalanceLabel(payload.billingBalanceMinor)}: ${money(payload.billingBalanceMinor)}`);
+  return lines.join('\n');
+}
+
+function paymentDueSentence(payload: RegistrationEmailPayload): string | null {
+  const deadlineText = payload.deadlineText?.trim();
+  if (!deadlineText) return null;
+  return `Payment is due by ${deadlineText}`;
+}
+
+function paymentDueHtml(payload: RegistrationEmailPayload): string {
+  const deadlineText = payload.deadlineText?.trim();
+  if (!deadlineText) return '';
+  return `<p>Payment is due by ${escapeHtml(deadlineText)}</p>`;
+}
+
+function rosterPaymentHtml(payload: RegistrationEmailPayload): string {
+  const balance = payload.billingBalanceMinor ?? 0;
+  if (balance > 0) {
+    const dueHtml = paymentDueHtml(payload);
+    if (payload.paymentUrl) {
+      return `<p><a href="${escapeHtml(payload.paymentUrl)}">Pay the remaining balance</a></p>${dueHtml}`;
+    }
+    if (payload.paymentLinkPending) {
+      return `<p>Payment link will be created when this email is sent.</p>${dueHtml}`;
+    }
+    return `<p>A payment link is not available yet.</p>${dueHtml}`;
+  }
+  if (balance < 0) {
+    return '<p>A refund will be issued within 5–7 business days.</p>';
+  }
+  return '';
+}
+
+function rosterPaymentText(payload: RegistrationEmailPayload): string {
+  const balance = payload.billingBalanceMinor ?? 0;
+  if (balance > 0) {
+    const due = paymentDueSentence(payload);
+    const link = payload.paymentUrl
+      ? `Pay the remaining balance: ${payload.paymentUrl}`
+      : payload.paymentLinkPending
+        ? 'Payment link will be created when this email is sent.'
+        : 'A payment link is not available yet.';
+    return due ? `${link}\n${due}` : link;
+  }
+  if (balance < 0) {
+    return 'A refund will be issued within 5–7 business days.';
+  }
+  return '';
 }
 
 function receiptTableText(payload: RegistrationEmailPayload): string {
@@ -639,11 +810,23 @@ export function renderRegistrationEmail(messageType: RegistrationMessageType, pa
           <p>Your registration payment for ${escapeHtml(season)} is ready.</p>
           ${summaryHtml}
           <p><strong>Amount due:</strong> ${money(payload.amountDueMinor)}</p>
+          ${payload.deadlineText ? `<p><strong>Payment is due</strong> ${escapeHtml(payload.deadlineText)} to secure your league selections.</p>` : ''}
           ${paymentLinkHtml(payload)}
           <p>Payment is required to complete registration.</p>
           ${paymentAndMembershipContactHtml}
         `,
-        textBody: `Your registration payment is ready\n\n${summaryText}\n\nAmount due: ${money(payload.amountDueMinor)}\nPayment link: ${payload.paymentUrl ?? 'Not available'}\nPayment is required to complete registration.\n\n${paymentAndMembershipContactText}`,
+        textBody: [
+          'Your registration payment is ready',
+          '',
+          summaryText,
+          '',
+          `Amount due: ${money(payload.amountDueMinor)}`,
+          payload.deadlineText ? `Payment is due ${payload.deadlineText} to secure your league selections.` : null,
+          `Payment link: ${payload.paymentUrl ?? 'Not available'}`,
+          'Payment is required to complete registration.',
+          '',
+          paymentAndMembershipContactText,
+        ].filter(Boolean).join('\n'),
       };
     case 'junior_assistance_pending':
       return {
@@ -762,7 +945,96 @@ export function renderRegistrationEmail(messageType: RegistrationMessageType, pa
         textBody: `Registration canceled\n\nHi ${curlerName},\n\nYour registration for ${season} has been canceled.\nYou will not be placed into any leagues from this registration.\n\n${refundText}\n\nIf you still need to register, you may submit a new registration while priority registration is open.\n${payload.dashboardUrl ? `Dashboard: ${payload.dashboardUrl}\n` : ''}\n${cancellationContactText}`,
       };
     }
+    case 'roster_confirmation': {
+      const sessionName = payload.sessionName?.trim() || payload.seasonName?.trim() || 'the season';
+      const leagueLabels = rosterLeagueLabels(payload.rosterLeagues);
+      const hasTemporaryFill = (payload.rosterLeagues ?? []).some((league) => league.isTemporarySabbaticalFill);
+      const leagueHtml = listItems(leagueLabels);
+      const leagueText = textList(leagueLabels);
+      const footnoteHtml = hasTemporaryFill
+        ? '<p>* Temporary sabbatical-fill spot. This league spot was available because someone is taking a sabbatical. It is not a permanent spot; the sabbatical holder maintains the right to return in a future session, but you receive a $20 discount for this league. You also keep your waitlist spot in this league in case a permanent spot opens in a future session.</p>'
+        : '';
+      const footnoteText = hasTemporaryFill
+        ? '* Temporary sabbatical-fill spot. This league spot was available because someone is taking a sabbatical. It is not a permanent spot; the sabbatical holder maintains the right to return in a future session, but you receive a $20 discount for this league. You also keep your waitlist spot in this league in case a permanent spot opens in a future session.'
+        : '';
+      const billingHtml = billingSummaryTableHtml(payload);
+      const billingText = billingSummaryTableText(payload);
+      const paymentHtml = rosterPaymentHtml(payload);
+      const paymentText = rosterPaymentText(payload);
+      const automaticSabbaticalSectionHtml = automaticSabbaticalHtml(payload.automaticSabbaticals);
+      const automaticSabbaticalSectionText = automaticSabbaticalText(payload.automaticSabbaticals);
+      const contacts =
+        (payload.billingBalanceMinor ?? 0) !== 0
+          ? { html: paymentAndMembershipContactHtml, text: paymentAndMembershipContactText }
+          : { html: membershipContactHtml, text: membershipContactText };
+      return {
+        subject: `Your ${sessionName} leagues`,
+        htmlBody: `
+          <h2>Your ${escapeHtml(sessionName)} leagues</h2>
+          <p>Hi ${escapeHtml(curlerName)},</p>
+          <p>You are on the roster for the following ${escapeHtml(sessionName)} leagues:</p>
+          ${leagueHtml}
+          ${footnoteHtml}
+          ${automaticSabbaticalSectionHtml}
+          <h3>Billing summary</h3>
+          ${billingHtml}
+          ${paymentHtml}
+          ${payload.dashboardUrl ? `<p><a href="${escapeHtml(payload.dashboardUrl)}">View your registration status</a></p>` : ''}
+          ${contacts.html}
+        `,
+        textBody: `Your ${sessionName} leagues\n\nHi ${curlerName},\n\nYou are on the roster for the following ${sessionName} leagues:\n${leagueText}\n${footnoteText ? `\n${footnoteText}\n` : ''}${automaticSabbaticalSectionText ? `\n${automaticSabbaticalSectionText}\n` : ''}\nBilling summary\n${billingText}\n${paymentText ? `\n${paymentText}\n` : ''}${payload.dashboardUrl ? `\nView your registration status: ${payload.dashboardUrl}\n` : ''}\n${contacts.text}`,
+      };
+    }
+    default: {
+      const unsupported: never = messageType;
+      throw new Error(`Unsupported registration email type: ${String(unsupported)}`);
+    }
   }
+}
+
+async function loadRegistrationParentCopyEmail(input: {
+  recipientEmail: string;
+  recipientMemberId?: number | null;
+  registrationId?: number | null;
+}): Promise<string | null> {
+  const { db, schema } = getDrizzleDb();
+  let dateOfBirth: unknown = null;
+  let memberGuardianEmail: string | null = null;
+  let registrationGuardianEmail: string | null = null;
+  let memberId = input.recipientMemberId ?? null;
+
+  if (input.registrationId) {
+    const [registration] = await db
+      .select({
+        guardianEmail: schema.curlingRegistrations.guardian_email,
+        curlerMemberId: schema.curlingRegistrations.curler_member_id,
+      })
+      .from(schema.curlingRegistrations)
+      .where(eq(schema.curlingRegistrations.id, input.registrationId))
+      .limit(1);
+    registrationGuardianEmail = registration?.guardianEmail ?? null;
+    if (memberId == null) memberId = registration?.curlerMemberId ?? null;
+  }
+
+  if (memberId != null) {
+    const [member] = await db
+      .select({
+        dateOfBirth: schema.members.date_of_birth,
+        guardianEmail: schema.members.guardian_email,
+      })
+      .from(schema.members)
+      .where(eq(schema.members.id, memberId))
+      .limit(1);
+    dateOfBirth = member?.dateOfBirth ?? null;
+    memberGuardianEmail = member?.guardianEmail ?? null;
+  }
+
+  return registrationParentCopyEmail({
+    memberEmail: input.recipientEmail,
+    dateOfBirth,
+    memberGuardianEmail,
+    registrationGuardianEmail,
+  });
 }
 
 function deliveryStatusFromResult(status: 'sent' | 'logged' | 'failed'): RegistrationCommunicationDeliveryStatusSqlite {
@@ -808,8 +1080,15 @@ export async function sendRegistrationEmail(input: SendRegistrationEmailInput): 
     return mapMessageSummary(held);
   }
 
+  let parentCopyEmail: string | null = null;
+  try {
+    parentCopyEmail = await loadRegistrationParentCopyEmail(input);
+  } catch (error) {
+    console.error('[Registration Email] Failed to resolve parent copy email:', error);
+  }
   const result = await sendEmail({
     to: input.recipientEmail,
+    cc: parentCopyEmail,
     recipientName: input.recipientName,
     subject: rendered.subject,
     htmlContent: rendered.htmlBody,
@@ -976,8 +1255,19 @@ export async function resendRegistrationOutboundMessage(messageId: number): Prom
     return mapMessageSummary(held);
   }
 
+  let parentCopyEmail: string | null = null;
+  try {
+    parentCopyEmail = await loadRegistrationParentCopyEmail({
+      recipientEmail: original.recipient_email,
+      recipientMemberId: original.recipient_member_id,
+      registrationId: original.registration_id,
+    });
+  } catch (error) {
+    console.error('[Registration Email] Failed to resolve parent copy email:', error);
+  }
   const result = await sendEmail({
     to: original.recipient_email,
+    cc: parentCopyEmail,
     recipientName: original.recipient_email,
     subject: original.subject,
     htmlContent: original.html_body,

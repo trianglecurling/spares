@@ -7,4 +7,5 @@ export {
   normalizeEmailKey,
   parentEmailForMinor,
   parentEmailLookupFromMembers,
+  registrationParentCopyEmail,
 } from '../../../backend/src/utils/memberParentEmail';

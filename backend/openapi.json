@@ -30105,6 +30105,198 @@
                                 },
                                 "amountMinor": {
                                   "type": "number"
+                                },
+                                "lineType": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          },
+                          "owedDiscountLines": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "required": [
+                                "description",
+                                "amountMinor"
+                              ],
+                              "properties": {
+                                "description": {
+                                  "type": "string"
+                                },
+                                "amountMinor": {
+                                  "type": "number"
+                                },
+                                "lineType": {
+                                  "type": "string"
+                                }
+                              }
+                            }
+                          },
+                          "owedSubtotalMinor": {
+                            "type": "number"
+                          },
+                          "owedDiscountMinor": {
+                            "type": "number"
+                          },
+                          "owedMinor": {
+                            "type": "number"
+                          },
+                          "paidMinor": {
+                            "type": "number"
+                          },
+                          "balanceMinor": {
+                            "type": "number"
+                          },
+                          "canRequestPayment": {
+                            "type": "boolean"
+                          },
+                          "canIssueRefund": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/registration/staff/roster-confirmation-emails": {
+      "get": {
+        "tags": [
+          "registration-staff"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "number"
+            },
+            "in": "query",
+            "name": "sessionId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "sessionId",
+                    "sessionName",
+                    "seasonName",
+                    "leagueProcessingActive",
+                    "recipients"
+                  ],
+                  "properties": {
+                    "sessionId": {
+                      "type": "number"
+                    },
+                    "sessionName": {
+                      "type": "string"
+                    },
+                    "seasonName": {
+                      "type": "string"
+                    },
+                    "leagueProcessingActive": {
+                      "type": "boolean"
+                    },
+                    "recipients": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "memberId",
+                          "memberName",
+                          "memberEmail",
+                          "parentEmail",
+                          "registrationId",
+                          "leagues",
+                          "owedLines",
+                          "owedDiscountLines",
+                          "owedSubtotalMinor",
+                          "owedDiscountMinor",
+                          "owedMinor",
+                          "paidMinor",
+                          "balanceMinor",
+                          "checkoutLines",
+                          "alreadySent",
+                          "sentAt",
+                          "skipReason",
+                          "canSend"
+                        ],
+                        "properties": {
+                          "memberId": {
+                            "type": "number"
+                          },
+                          "memberName": {
+                            "type": "string"
+                          },
+                          "memberEmail": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "parentEmail": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "registrationId": {
+                            "type": [
+                              "null",
+                              "number"
+                            ]
+                          },
+                          "leagues": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "required": [
+                                "leagueId",
+                                "leagueName",
+                                "isTemporarySabbaticalFill"
+                              ],
+                              "properties": {
+                                "leagueId": {
+                                  "type": "number"
+                                },
+                                "leagueName": {
+                                  "type": "string"
+                                },
+                                "isTemporarySabbaticalFill": {
+                                  "type": "boolean"
+                                }
+                              }
+                            }
+                          },
+                          "owedLines": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "required": [
+                                "description",
+                                "amountMinor"
+                              ],
+                              "properties": {
+                                "description": {
+                                  "type": "string"
+                                },
+                                "amountMinor": {
+                                  "type": "number"
                                 }
                               }
                             }
@@ -30143,15 +30335,388 @@
                           "balanceMinor": {
                             "type": "number"
                           },
-                          "canRequestPayment": {
+                          "checkoutLines": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "required": [
+                                "description",
+                                "amountMinor"
+                              ],
+                              "properties": {
+                                "description": {
+                                  "type": "string"
+                                },
+                                "amountMinor": {
+                                  "type": "number"
+                                }
+                              }
+                            }
+                          },
+                          "alreadySent": {
                             "type": "boolean"
                           },
-                          "canIssueRefund": {
+                          "sentAt": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "skipReason": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "canSend": {
                             "type": "boolean"
                           }
                         }
                       }
                     }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/registration/staff/roster-confirmation-emails/send": {
+      "post": {
+        "tags": [
+          "registration-staff"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "sessionId"
+                ],
+                "properties": {
+                  "sessionId": {
+                    "type": "number"
+                  },
+                  "memberIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    }
+                  },
+                  "unsentOnly": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "sent",
+                    "skipped",
+                    "errors"
+                  ],
+                  "properties": {
+                    "sent": {
+                      "type": "number"
+                    },
+                    "skipped": {
+                      "type": "number"
+                    },
+                    "errors": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "memberId",
+                          "memberName",
+                          "error"
+                        ],
+                        "properties": {
+                          "memberId": {
+                            "type": "number"
+                          },
+                          "memberName": {
+                            "type": "string"
+                          },
+                          "error": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/registration/staff/roster-confirmation-emails/{memberId}": {
+      "get": {
+        "tags": [
+          "registration-staff"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "number"
+            },
+            "in": "query",
+            "name": "sessionId",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "memberId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "sessionId",
+                    "sessionName",
+                    "seasonName",
+                    "leagueProcessingActive",
+                    "recipient",
+                    "subject",
+                    "htmlBody",
+                    "textBody",
+                    "paymentLinkPending"
+                  ],
+                  "properties": {
+                    "sessionId": {
+                      "type": "number"
+                    },
+                    "sessionName": {
+                      "type": "string"
+                    },
+                    "seasonName": {
+                      "type": "string"
+                    },
+                    "leagueProcessingActive": {
+                      "type": "boolean"
+                    },
+                    "recipient": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "memberId",
+                        "memberName",
+                        "memberEmail",
+                        "parentEmail",
+                        "registrationId",
+                        "leagues",
+                        "owedLines",
+                        "owedDiscountLines",
+                        "owedSubtotalMinor",
+                        "owedDiscountMinor",
+                        "owedMinor",
+                        "paidMinor",
+                        "balanceMinor",
+                        "checkoutLines",
+                        "alreadySent",
+                        "sentAt",
+                        "skipReason",
+                        "canSend"
+                      ],
+                      "properties": {
+                        "memberId": {
+                          "type": "number"
+                        },
+                        "memberName": {
+                          "type": "string"
+                        },
+                        "memberEmail": {
+                          "type": [
+                            "null",
+                            "string"
+                          ]
+                        },
+                        "parentEmail": {
+                          "type": [
+                            "null",
+                            "string"
+                          ]
+                        },
+                        "registrationId": {
+                          "type": [
+                            "null",
+                            "number"
+                          ]
+                        },
+                        "leagues": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "leagueId",
+                              "leagueName",
+                              "isTemporarySabbaticalFill"
+                            ],
+                            "properties": {
+                              "leagueId": {
+                                "type": "number"
+                              },
+                              "leagueName": {
+                                "type": "string"
+                              },
+                              "isTemporarySabbaticalFill": {
+                                "type": "boolean"
+                              }
+                            }
+                          }
+                        },
+                        "owedLines": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "description",
+                              "amountMinor"
+                            ],
+                            "properties": {
+                              "description": {
+                                "type": "string"
+                              },
+                              "amountMinor": {
+                                "type": "number"
+                              }
+                            }
+                          }
+                        },
+                        "owedDiscountLines": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "description",
+                              "amountMinor"
+                            ],
+                            "properties": {
+                              "description": {
+                                "type": "string"
+                              },
+                              "amountMinor": {
+                                "type": "number"
+                              }
+                            }
+                          }
+                        },
+                        "owedSubtotalMinor": {
+                          "type": "number"
+                        },
+                        "owedDiscountMinor": {
+                          "type": "number"
+                        },
+                        "owedMinor": {
+                          "type": "number"
+                        },
+                        "paidMinor": {
+                          "type": "number"
+                        },
+                        "balanceMinor": {
+                          "type": "number"
+                        },
+                        "checkoutLines": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "required": [
+                              "description",
+                              "amountMinor"
+                            ],
+                            "properties": {
+                              "description": {
+                                "type": "string"
+                              },
+                              "amountMinor": {
+                                "type": "number"
+                              }
+                            }
+                          }
+                        },
+                        "alreadySent": {
+                          "type": "boolean"
+                        },
+                        "sentAt": {
+                          "type": [
+                            "null",
+                            "string"
+                          ]
+                        },
+                        "skipReason": {
+                          "type": [
+                            "null",
+                            "string"
+                          ]
+                        },
+                        "canSend": {
+                          "type": "boolean"
+                        }
+                      }
+                    },
+                    "subject": {
+                      "type": "string"
+                    },
+                    "htmlBody": {
+                      "type": "string"
+                    },
+                    "textBody": {
+                      "type": "string"
+                    },
+                    "paymentLinkPending": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "required": [
+                    "error"
+                  ],
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
                   }
                 }
               }

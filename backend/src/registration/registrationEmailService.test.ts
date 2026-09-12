@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { formatRegistrationTeammatesDisplay, renderRegistrationEmail } from './registrationEmailService.js';
+import {
+  automaticSabbaticalExplanation,
+  formatRegistrationTeammatesDisplay,
+  renderRegistrationEmail,
+} from './registrationEmailService.js';
 
 describe('Phase 9 registration email rendering', () => {
   test('formatRegistrationTeammatesDisplay joins account-linked and pending names', () => {
@@ -64,6 +68,23 @@ describe('Phase 9 registration email rendering', () => {
     expect(rendered.textBody).toContain(
       'Payment is due before leagues begin to secure your league selections.',
     );
+  });
+
+  test('deferred payment-link email includes the payment deadline', () => {
+    const rendered = renderRegistrationEmail('deferred_registration_payment_link', {
+      curlerName: 'Alex Curler',
+      seasonName: '2026-27',
+      sessionName: 'Fall',
+      amountDueMinor: 15000,
+      paymentUrl: 'https://example.test/pay',
+      deadlineText: 'by Monday, September 14, 2026 at 11:59 PM EDT',
+      summaryLines: ['Hump Day league fee'],
+    });
+
+    expect(rendered.textBody).toContain(
+      'Payment is due by Monday, September 14, 2026 at 11:59 PM EDT to secure your league selections.',
+    );
+    expect(rendered.textBody).toContain('https://example.test/pay');
   });
 
   test('waitlist joined email explains when a teammate was added by someone else', () => {
@@ -278,11 +299,141 @@ describe('Phase 9 registration email rendering', () => {
     expect(rendered.textBody).toContain('Total paid: $475.00');
     expect(rendered.textBody).toContain('finance@trianglecurling.com');
     expect(rendered.textBody).toContain('membership@trianglecurling.com');
-    expect(rendered.textBody).toContain('Questions about payments? Contact finance@trianglecurling.com.');
+    expect(rendered.textBody).toContain(
+      'Do you have a question about your bill or think there may be a mistake? Please contact finance@trianglecurling.com.',
+    );
     expect(rendered.textBody).toContain(
       'Questions about membership or league placements? Contact membership@trianglecurling.com.',
     );
     expect(rendered.htmlBody).toContain('Payment receipt');
     expect(rendered.htmlBody).toContain('mailto:finance@trianglecurling.com');
+  });
+
+  test('roster confirmation lists temporary fills with an asterisk and footnote', () => {
+    const rendered = renderRegistrationEmail('roster_confirmation', {
+      curlerName: 'Alex Curler',
+      seasonName: '2026-27',
+      sessionName: 'Fall',
+      rosterLeagues: [
+        { leagueName: 'Sunday Funday (evening)', isTemporarySabbaticalFill: false },
+        { leagueName: 'Friday Evening', isTemporarySabbaticalFill: true },
+      ],
+      receiptLineItems: [
+        { description: 'Regular membership fee', amountMinor: 30000 },
+        { description: 'Friday Evening temporary sabbatical-fill discount', amountMinor: -5000 },
+      ],
+      receiptSubtotalMinor: 30000,
+      receiptDiscountMinor: 5000,
+      amountPaidMinor: 25000,
+      billingBalanceMinor: 0,
+    });
+
+    expect(rendered.subject).toBe('Your Fall leagues');
+    expect(rendered.textBody).toContain('You are on the roster for the following Fall leagues:');
+    expect(rendered.textBody).not.toContain('2026-27 /');
+    expect(rendered.textBody).toContain('Sunday Funday (evening)');
+    expect(rendered.textBody).toContain('Friday Evening*');
+    expect(rendered.textBody).toContain('* Temporary sabbatical-fill spot');
+    expect(rendered.textBody).toContain('someone is taking a sabbatical');
+    expect(rendered.textBody).toContain('$20 discount');
+    expect(rendered.textBody).toContain('keep your waitlist spot');
+    expect(rendered.textBody).toContain('Amount paid: $250.00');
+    expect(rendered.textBody).toContain('Balance: $0.00');
+    expect(rendered.textBody).not.toContain('Pay the remaining balance');
+    expect(rendered.textBody).not.toContain('refund will be issued');
+    expect(rendered.textBody).not.toContain('Why you have a sabbatical');
+  });
+
+  test('roster confirmation explains an automatic fallback sabbatical', () => {
+    const rendered = renderRegistrationEmail('roster_confirmation', {
+      curlerName: 'Alex Curler',
+      seasonName: '2026-27',
+      sessionName: 'Fall 2026',
+      rosterLeagues: [
+        { leagueName: 'Sunday Funday (evening)', isTemporarySabbaticalFill: false },
+        { leagueName: 'Friday Evening', isTemporarySabbaticalFill: true },
+      ],
+      automaticSabbaticals: [
+        {
+          sabbaticalLeagueName: 'Monday Late League',
+          temporaryFillLeagueNames: ['Friday Evening'],
+        },
+      ],
+      billingBalanceMinor: 0,
+    });
+
+    expect(rendered.textBody).toContain('Why you have a sabbatical');
+    expect(rendered.textBody).toContain('You did not request a sabbatical');
+    expect(rendered.textBody).toContain('Friday Evening');
+    expect(rendered.textBody).toContain('Monday Late League');
+    expect(rendered.textBody).toContain('right to return to Monday Late League');
+    expect(rendered.htmlBody).toContain('Why you have a sabbatical');
+    expect(automaticSabbaticalExplanation({
+      sabbaticalLeagueName: 'Monday Late League',
+      temporaryFillLeagueNames: ['Friday Evening'],
+    })).toContain('You did not request a sabbatical');
+  });
+
+  test('roster confirmation with a balance due uses a payment-link placeholder in preview', () => {
+    const rendered = renderRegistrationEmail('roster_confirmation', {
+      curlerName: 'Alex Curler',
+      seasonName: '2026-27',
+      sessionName: 'Fall',
+      rosterLeagues: [{ leagueName: 'Hump Day', isTemporarySabbaticalFill: false }],
+      receiptLineItems: [{ description: 'Hump Day league fee', amountMinor: 15000 }],
+      amountPaidMinor: 5000,
+      billingBalanceMinor: 10000,
+      amountDueMinor: 10000,
+      paymentLinkPending: true,
+      deadlineText: 'Sunday, September 13, 2026',
+    });
+
+    expect(rendered.textBody).toContain('Hump Day');
+    expect(rendered.textBody).not.toContain('Hump Day*');
+    expect(rendered.textBody).not.toContain('Temporary sabbatical-fill spot');
+    expect(rendered.textBody).toContain('Amount paid: $50.00');
+    expect(rendered.textBody).toContain('Balance due: $100.00');
+    expect(rendered.textBody).toContain('Payment link will be created when this email is sent.');
+    expect(rendered.textBody).toContain('Payment is due by Sunday, September 13, 2026');
+    expect(rendered.textBody).not.toContain('to secure your league selections');
+    expect(rendered.textBody).not.toContain('11:59');
+    expect(rendered.textBody).not.toContain('https://');
+  });
+
+  test('roster confirmation with a credit tells the member a refund will be reviewed', () => {
+    const rendered = renderRegistrationEmail('roster_confirmation', {
+      curlerName: 'Alex Curler',
+      seasonName: '2026-27',
+      sessionName: 'Fall',
+      rosterLeagues: [{ leagueName: 'Hump Day', isTemporarySabbaticalFill: false }],
+      receiptLineItems: [{ description: 'Hump Day league fee', amountMinor: 10000 }],
+      amountPaidMinor: 15000,
+      billingBalanceMinor: -5000,
+    });
+
+    expect(rendered.textBody).toContain('Credit: -$50.00');
+    expect(rendered.textBody).toContain('A refund will be issued within 5–7 business days');
+    expect(rendered.textBody).not.toContain('send it manually');
+    expect(rendered.textBody).not.toContain('Pay the remaining balance');
+  });
+
+  test('roster confirmation includes the Square payment URL when one is provided', () => {
+    const rendered = renderRegistrationEmail('roster_confirmation', {
+      curlerName: 'Alex Curler',
+      seasonName: '2026-27',
+      sessionName: 'Fall',
+      rosterLeagues: [{ leagueName: 'Hump Day', isTemporarySabbaticalFill: false }],
+      receiptLineItems: [{ description: 'Hump Day league fee', amountMinor: 15000 }],
+      amountPaidMinor: 0,
+      billingBalanceMinor: 15000,
+      paymentUrl: 'https://squareup.example/pay/abc',
+      deadlineText: 'Sunday, September 13, 2026',
+    });
+
+    expect(rendered.textBody).toContain('Pay the remaining balance: https://squareup.example/pay/abc');
+    expect(rendered.textBody).toContain('Payment is due by Sunday, September 13, 2026');
+    expect(rendered.textBody).not.toContain('to secure your league selections');
+    expect(rendered.htmlBody).toContain('https://squareup.example/pay/abc');
+    expect(rendered.htmlBody).toContain('Payment is due');
   });
 });

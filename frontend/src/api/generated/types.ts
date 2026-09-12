@@ -19742,6 +19742,77 @@ export interface paths {
                                 owedLines: {
                                     description: string;
                                     amountMinor: number;
+                                    lineType?: string;
+                                }[];
+                                owedDiscountLines: {
+                                    description: string;
+                                    amountMinor: number;
+                                    lineType?: string;
+                                }[];
+                                owedSubtotalMinor: number;
+                                owedDiscountMinor: number;
+                                owedMinor: number;
+                                paidMinor: number;
+                                balanceMinor: number;
+                                canRequestPayment: boolean;
+                                canIssueRefund: boolean;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/registration/staff/roster-confirmation-emails": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query: {
+                    sessionId: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            sessionId: number;
+                            sessionName: string;
+                            seasonName: string;
+                            leagueProcessingActive: boolean;
+                            recipients: {
+                                memberId: number;
+                                memberName: string;
+                                memberEmail: null | string;
+                                parentEmail: null | string;
+                                registrationId: null | number;
+                                leagues: {
+                                    leagueId: number;
+                                    leagueName: string;
+                                    isTemporarySabbaticalFill: boolean;
+                                }[];
+                                owedLines: {
+                                    description: string;
+                                    amountMinor: number;
                                 }[];
                                 owedDiscountLines: {
                                     description: string;
@@ -19752,9 +19823,161 @@ export interface paths {
                                 owedMinor: number;
                                 paidMinor: number;
                                 balanceMinor: number;
-                                canRequestPayment: boolean;
-                                canIssueRefund: boolean;
+                                checkoutLines: {
+                                    description: string;
+                                    amountMinor: number;
+                                }[];
+                                alreadySent: boolean;
+                                sentAt: null | string;
+                                skipReason: null | string;
+                                canSend: boolean;
                             }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/registration/staff/roster-confirmation-emails/send": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        sessionId: number;
+                        memberIds?: number[];
+                        unsentOnly?: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            sent: number;
+                            skipped: number;
+                            errors: {
+                                memberId: number;
+                                memberName: string;
+                                error: string;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/registration/staff/roster-confirmation-emails/{memberId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query: {
+                    sessionId: number;
+                };
+                header?: never;
+                path: {
+                    memberId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            sessionId: number;
+                            sessionName: string;
+                            seasonName: string;
+                            leagueProcessingActive: boolean;
+                            recipient: {
+                                memberId: number;
+                                memberName: string;
+                                memberEmail: null | string;
+                                parentEmail: null | string;
+                                registrationId: null | number;
+                                leagues: {
+                                    leagueId: number;
+                                    leagueName: string;
+                                    isTemporarySabbaticalFill: boolean;
+                                }[];
+                                owedLines: {
+                                    description: string;
+                                    amountMinor: number;
+                                }[];
+                                owedDiscountLines: {
+                                    description: string;
+                                    amountMinor: number;
+                                }[];
+                                owedSubtotalMinor: number;
+                                owedDiscountMinor: number;
+                                owedMinor: number;
+                                paidMinor: number;
+                                balanceMinor: number;
+                                checkoutLines: {
+                                    description: string;
+                                    amountMinor: number;
+                                }[];
+                                alreadySent: boolean;
+                                sentAt: null | string;
+                                skipReason: null | string;
+                                canSend: boolean;
+                            };
+                            subject: string;
+                            htmlBody: string;
+                            textBody: string;
+                            paymentLinkPending: boolean;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
                         };
                     };
                 };

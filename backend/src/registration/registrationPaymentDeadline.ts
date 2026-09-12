@@ -31,6 +31,20 @@ export function formatRegistrationPaymentDeadline(deadline: Date | string): stri
   }).format(date);
 }
 
+/** Calendar date only, e.g. Sunday, September 13, 2026. */
+export function formatRegistrationPaymentDeadlineDate(deadline: Date | string | null | undefined): string | null {
+  if (!deadline) return null;
+  const date = deadline instanceof Date ? deadline : new Date(deadline);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: config.timeZone,
+  }).format(date);
+}
+
 /** Phrase after “Payment is due …” for pay-later warnings and emails. */
 export function registrationPayLaterDuePhrase(deadlineAt: Date | string | null | undefined): string {
   if (!deadlineAt) return 'before leagues begin';

@@ -124,12 +124,14 @@ async function sendMailWithTransporter(
   fullHtmlContent: string,
   senderAddress: string
 ): Promise<void> {
+  const cc = emailCcAddress(options);
   await transporter.sendMail({
     from: senderAddress,
     to: options.to,
     subject: options.subject,
     html: fullHtmlContent,
     ...(options.textContent ? { text: options.textContent } : {}),
+    ...(cc ? { cc } : {}),
     ...(options.replyTo && options.replyTo.trim().length > 0
       ? { replyTo: options.replyTo }
       : {}),
@@ -155,10 +157,17 @@ interface EmailOptions {
   textContent?: string;
   recipientName: string;
   replyTo?: string;
+  /** Distinct parent/guardian copy address for minors. */
+  cc?: string | null;
   /** Send-budget category; defaults to staff (fail-open). */
   budgetKind?: SendBudgetKind;
   /** When true, over-budget still sends (staff). Public/OTP should leave false. */
   failOpenBudget?: boolean;
+}
+
+function emailCcAddress(options: EmailOptions): string | null {
+  const cc = options.cc?.trim() || '';
+  return cc || null;
 }
 
 export interface EmailDeliveryResult {
@@ -203,6 +212,7 @@ function logEmail(options: EmailOptions, fullHtmlContent: string, prefix: string
   console.log('='.repeat(80));
   console.log(`[${prefix}] Email would be sent:`);
   console.log('To:', options.to);
+  if (emailCcAddress(options)) console.log('Cc:', emailCcAddress(options));
   console.log('Subject:', options.subject);
   console.log('Recipient Name:', options.recipientName);
   console.log('HTML Content:');
@@ -288,6 +298,7 @@ export async function sendEmail(options: EmailOptions, memberToken?: string): Pr
       logEvent({ eventType: 'email.sent' }).catch(() => {});
     } else {
       const client = await getEmailClient();
+      const ccAddress = emailCcAddress(options);
 
       // senderAddress must be just the email address, not formatted with display name
       // Display name is not directly supported in the Azure Email SDK senderAddress field
@@ -300,6 +311,7 @@ export async function sendEmail(options: EmailOptions, memberToken?: string): Pr
         },
         recipients: {
           to: [{ address: options.to, displayName: options.recipientName }],
+          ...(ccAddress ? { cc: [{ address: ccAddress }] } : {}),
         },
       };
       if (options.replyTo && options.replyTo.trim().length > 0) {

@@ -32,35 +32,147 @@ function parsePaymentMetadata(metadata: unknown): Record<string, unknown> {
   return metadata && typeof metadata === 'object' ? (metadata as Record<string, unknown>) : {};
 }
 
-export async function listCurlingRegistrationPaymentActivity(
-  registrationId: number,
-): Promise<RegistrationPaymentActivityItem[]> {
+type PaymentOrderActivityRow = {
+  id: number;
+  order_token: string | null;
+  provider: RegistrationPaymentActivityItem['provider'];
+  amount_minor: number;
+  currency: string;
+  status: string;
+  provider_order_id: string | null;
+  metadata: unknown;
+  completed_at: string | Date | null;
+  created_at: string | Date | null;
+};
+
+type RefundActivityRow = {
+  id: number;
+  payment_order_id: number;
+  provider: RegistrationPaymentActivityItem['provider'];
+  amount_minor: number;
+  currency: string;
+  status: string;
+  reason: string | null;
+  provider_refund_id: string | null;
+  processed_at: string | Date | null;
+  created_at: string | Date | null;
+};
+
+function sortPaymentActivity(items: RegistrationPaymentActivityItem[]): RegistrationPaymentActivityItem[] {
+  return items.sort((left, right) => {
+    const leftTime = left.occurredAt ? new Date(left.occurredAt).getTime() : 0;
+    const rightTime = right.occurredAt ? new Date(right.occurredAt).getTime() : 0;
+    return rightTime - leftTime;
+  });
+}
+
+export function groupPaymentActivityByRegistration(input: {
+  registrationIds: number[];
+  subjectOrders: Array<{ id: number; subjectId: number | null }>;
+  invoiceLinks: Array<{ paymentOrderId: number | null; registrationId: number }>;
+  orders: PaymentOrderActivityRow[];
+  refunds: RefundActivityRow[];
+}): Map<number, RegistrationPaymentActivityItem[]> {
+  const result = new Map<number, RegistrationPaymentActivityItem[]>();
+  for (const registrationId of input.registrationIds) {
+    result.set(registrationId, []);
+  }
+
+  const orderIdsToRegistrations = new Map<number, Set<number>>();
+  const addLink = (orderId: number, registrationId: number) => {
+    const set = orderIdsToRegistrations.get(orderId) ?? new Set<number>();
+    set.add(registrationId);
+    orderIdsToRegistrations.set(orderId, set);
+  };
+  for (const row of input.subjectOrders) {
+    if (row.subjectId != null) addLink(row.id, row.subjectId);
+  }
+  for (const row of input.invoiceLinks) {
+    if (row.paymentOrderId != null) addLink(row.paymentOrderId, row.registrationId);
+  }
+
+  const orderTokenById = new Map(input.orders.map((order) => [order.id, order.order_token ?? null]));
+  for (const order of input.orders) {
+    const metadata = parsePaymentMetadata(order.metadata);
+    const item: RegistrationPaymentActivityItem = {
+      id: `payment:${order.id}`,
+      kind: 'payment',
+      orderId: order.id,
+      orderToken: order.order_token ?? null,
+      amountMinor: order.amount_minor,
+      currency: order.currency,
+      status: order.status,
+      occurredAt: normalizeOccurredAt(order.completed_at ?? order.created_at),
+      provider: order.provider,
+      providerReference: order.provider_order_id,
+      label: metadata.paymentKind === 'registration_balance' ? 'Additional payment' : 'Payment',
+    };
+    for (const registrationId of orderIdsToRegistrations.get(order.id) ?? []) {
+      result.get(registrationId)?.push(item);
+    }
+  }
+  for (const refund of input.refunds) {
+    const item: RegistrationPaymentActivityItem = {
+      id: `refund:${refund.id}`,
+      kind: 'refund',
+      orderId: refund.payment_order_id,
+      orderToken: orderTokenById.get(refund.payment_order_id) ?? null,
+      amountMinor: refund.amount_minor,
+      currency: refund.currency,
+      status: refund.status,
+      occurredAt: normalizeOccurredAt(refund.processed_at ?? refund.created_at),
+      provider: refund.provider,
+      providerReference: refund.provider_refund_id,
+      label: refund.reason?.trim() || 'Refund',
+    };
+    for (const registrationId of orderIdsToRegistrations.get(refund.payment_order_id) ?? []) {
+      result.get(registrationId)?.push(item);
+    }
+  }
+
+  for (const items of result.values()) {
+    sortPaymentActivity(items);
+  }
+  return result;
+}
+
+export async function listCurlingRegistrationPaymentActivityByRegistrationIds(
+  registrationIds: number[],
+): Promise<Map<number, RegistrationPaymentActivityItem[]>> {
+  const empty = new Map<number, RegistrationPaymentActivityItem[]>();
+  for (const registrationId of registrationIds) empty.set(registrationId, []);
+  if (registrationIds.length === 0) return empty;
+
   const { db, schema } = getDrizzleDb();
-  const [subjectOrders, invoiceOrderRows] = await Promise.all([
+  const [subjectOrders, invoiceLinks] = await Promise.all([
     db
-      .select({ id: schema.paymentOrders.id })
+      .select({
+        id: schema.paymentOrders.id,
+        subjectId: schema.paymentOrders.subject_id,
+      })
       .from(schema.paymentOrders)
       .where(
         and(
           eq(schema.paymentOrders.subject_type, 'curling_registration'),
-          eq(schema.paymentOrders.subject_id, registrationId),
+          inArray(schema.paymentOrders.subject_id, registrationIds),
         ),
       ),
     db
-      .select({ paymentOrderId: schema.registrationInvoices.payment_order_id })
+      .select({
+        paymentOrderId: schema.registrationInvoices.payment_order_id,
+        registrationId: schema.registrationInvoices.registration_id,
+      })
       .from(schema.registrationInvoices)
-      .where(eq(schema.registrationInvoices.registration_id, registrationId)),
+      .where(inArray(schema.registrationInvoices.registration_id, registrationIds)),
   ]);
 
   const orderIds = [
     ...new Set([
       ...subjectOrders.map((row) => row.id),
-      ...invoiceOrderRows
-        .map((row) => row.paymentOrderId)
-        .filter((id): id is number => id != null),
+      ...invoiceLinks.map((row) => row.paymentOrderId).filter((id): id is number => id != null),
     ]),
   ];
-  if (orderIds.length === 0) return [];
+  if (orderIds.length === 0) return empty;
 
   const [orders, refunds] = await Promise.all([
     db
@@ -95,48 +207,20 @@ export async function listCurlingRegistrationPaymentActivity(
       .where(inArray(schema.refunds.payment_order_id, orderIds)),
   ]);
 
-  const orderTokenById = new Map(orders.map((order) => [order.id, order.order_token ?? null]));
-
-  const items: RegistrationPaymentActivityItem[] = [];
-  for (const order of orders) {
-    const metadata = parsePaymentMetadata(order.metadata);
-    const isBalance = metadata.paymentKind === 'registration_balance';
-    items.push({
-      id: `payment:${order.id}`,
-      kind: 'payment',
-      orderId: order.id,
-      orderToken: order.order_token ?? null,
-      amountMinor: order.amount_minor,
-      currency: order.currency,
-      status: order.status,
-      occurredAt: normalizeOccurredAt(order.completed_at ?? order.created_at),
-      provider: order.provider,
-      providerReference: order.provider_order_id,
-      label: isBalance ? 'Additional payment' : 'Payment',
-    });
-  }
-
-  for (const refund of refunds) {
-    items.push({
-      id: `refund:${refund.id}`,
-      kind: 'refund',
-      orderId: refund.payment_order_id,
-      orderToken: orderTokenById.get(refund.payment_order_id) ?? null,
-      amountMinor: refund.amount_minor,
-      currency: refund.currency,
-      status: refund.status,
-      occurredAt: normalizeOccurredAt(refund.processed_at ?? refund.created_at),
-      provider: refund.provider,
-      providerReference: refund.provider_refund_id,
-      label: refund.reason?.trim() || 'Refund',
-    });
-  }
-
-  return items.sort((left, right) => {
-    const leftTime = left.occurredAt ? new Date(left.occurredAt).getTime() : 0;
-    const rightTime = right.occurredAt ? new Date(right.occurredAt).getTime() : 0;
-    return rightTime - leftTime;
+  return groupPaymentActivityByRegistration({
+    registrationIds,
+    subjectOrders,
+    invoiceLinks,
+    orders,
+    refunds,
   });
+}
+
+export async function listCurlingRegistrationPaymentActivity(
+  registrationId: number,
+): Promise<RegistrationPaymentActivityItem[]> {
+  const byRegistration = await listCurlingRegistrationPaymentActivityByRegistrationIds([registrationId]);
+  return byRegistration.get(registrationId) ?? [];
 }
 
 export async function getRegistrationPaymentSummary(paymentOrderId: number | null) {

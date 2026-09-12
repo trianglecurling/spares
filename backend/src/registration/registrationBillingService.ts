@@ -1,7 +1,10 @@
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import type { CurlingMembershipOptionSqlite } from '../db/drizzle-schema.js';
-import { listCurlingRegistrationPaymentActivity } from '../domains/payments/queries/paymentSummaries.js';
+import {
+  listCurlingRegistrationPaymentActivity,
+  listCurlingRegistrationPaymentActivityByRegistrationIds,
+} from '../domains/payments/queries/paymentSummaries.js';
 import { createPaymentService, PaymentServiceError } from '../services/paymentService.js';
 import type { Member } from '../types.js';
 import { effectiveLeagueRegistrationFeeMinor } from './registrationConfigValidation.js';
@@ -360,6 +363,7 @@ function stubBillingContext(input: {
 export type StaffRegistrationBillingLine = {
   description: string;
   amountMinor: number;
+  lineType?: string;
 };
 
 export type StaffRegistrationBillingRow = {
@@ -381,17 +385,19 @@ export type StaffRegistrationBillingRow = {
 };
 
 function billingFeeLines(
-  items: Array<{ description: string; amountMinor: number }>,
+  items: Array<{ description: string; amountMinor: number; lineType?: string }>,
 ): StaffRegistrationBillingLine[] {
   return items.map((item) => ({
     description: item.description,
     amountMinor: item.amountMinor,
+    lineType: item.lineType,
   }));
 }
 
 export async function listStaffRegistrationBilling(input: {
   actor: Member;
   sessionId: number;
+  curlerMemberIds?: number[];
 }): Promise<{
   sessionId: number;
   sessionName: string;
@@ -417,6 +423,15 @@ export async function listStaffRegistrationBilling(input: {
     .limit(1);
   if (!session) {
     throw new RegistrationBillingValidationError({ sessionId: 'Session was not found.' });
+  }
+  const sessionName = session.seasonName ? `${session.seasonName} / ${session.name}` : session.name;
+  if (input.curlerMemberIds && input.curlerMemberIds.length === 0) {
+    return {
+      sessionId: session.id,
+      sessionName,
+      leagueProcessingActive: await isLeagueProcessingActive(),
+      registrations: [],
+    };
   }
 
   const registrationRows = await db
@@ -446,6 +461,9 @@ export async function listStaffRegistrationBilling(input: {
         eq(schema.curlingRegistrations.session_id, input.sessionId),
         sql`${schema.curlingRegistrations.submitted_at} IS NOT NULL`,
         inArray(schema.curlingRegistrations.status, [...BILLING_REGISTRATION_STATUSES]),
+        input.curlerMemberIds && input.curlerMemberIds.length > 0
+          ? inArray(schema.curlingRegistrations.curler_member_id, input.curlerMemberIds)
+          : undefined,
       ),
     )
     .orderBy(asc(schema.members.last_name), asc(schema.members.first_name), asc(schema.curlingRegistrations.id));
@@ -606,15 +624,16 @@ export async function listStaffRegistrationBilling(input: {
   }
 
   const paidByRegistration = new Map<number, number>();
-  await Promise.all(
-    registrationIds.map(async (registrationId) => {
-      const activity = await listCurlingRegistrationPaymentActivity(registrationId);
-      paidByRegistration.set(
-        registrationId,
-        netPaidMinorFromPaymentActivity(activity, latestInvoiceByRegistration.get(registrationId) ?? null),
-      );
-    }),
-  );
+  const activityByRegistration = await listCurlingRegistrationPaymentActivityByRegistrationIds(registrationIds);
+  for (const registrationId of registrationIds) {
+    paidByRegistration.set(
+      registrationId,
+      netPaidMinorFromPaymentActivity(
+        activityByRegistration.get(registrationId) ?? [],
+        latestInvoiceByRegistration.get(registrationId) ?? null,
+      ),
+    );
+  }
 
   const season: RegistrationContext['season'] = {
     id: session.seasonId,
@@ -694,7 +713,7 @@ export async function listStaffRegistrationBilling(input: {
 
   return {
     sessionId: session.id,
-    sessionName: session.seasonName ? `${session.seasonName} / ${session.name}` : session.name,
+    sessionName,
     leagueProcessingActive,
     registrations,
   };

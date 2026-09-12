@@ -2691,12 +2691,14 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
           kind: 'balance_due',
           checkoutUrl: checkout.checkoutUrl,
         };
+        const deadline = await getRegistrationPaymentDeadline(registration.season_id, registration.session_id);
         await safeSendRegistrationEmail({
           registrationId: input.registrationId,
           messageType: 'deferred_registration_payment_link',
           payload: {
             amountDueMinor: adjustmentMinor,
             paymentUrl: checkout.checkoutUrl,
+            deadlineText: registrationPayLaterDuePhrase(deadline?.paymentDeadlineAt),
             summaryLines: await registrationSummaryLines(context),
           },
         });
@@ -2986,6 +2988,8 @@ export async function triggerDeferredRegistrationPayment(input: {
    * Checkout line items stay the current roster bill, with credit for amounts already paid.
    */
   collectBalance?: boolean;
+  /** Create the checkout without sending the deferred payment-link email. */
+  skipEmail?: boolean;
 }): Promise<SubmitRegistrationResult> {
   const registration = await loadFullRegistration(input.registrationId);
   if (!registration.curler_member_id) {
@@ -3115,15 +3119,19 @@ export async function triggerDeferredRegistrationPayment(input: {
         updated_at: sql`CURRENT_TIMESTAMP`,
       })
       .where(eq(schema.curlingRegistrations.id, input.registrationId));
-    await safeSendRegistrationEmail({
-      registrationId: input.registrationId,
-      messageType: 'deferred_registration_payment_link',
-      payload: {
-        amountDueMinor: remainingMinor,
-        paymentUrl: checkout.checkoutUrl,
-        summaryLines: await registrationSummaryLines(paymentContext),
-      },
-    });
+    if (!input.skipEmail) {
+      const deadline = await getRegistrationPaymentDeadline(registration.season_id, registration.session_id);
+      await safeSendRegistrationEmail({
+        registrationId: input.registrationId,
+        messageType: 'deferred_registration_payment_link',
+        payload: {
+          amountDueMinor: remainingMinor,
+          paymentUrl: checkout.checkoutUrl,
+          deadlineText: registrationPayLaterDuePhrase(deadline?.paymentDeadlineAt),
+          summaryLines: await registrationSummaryLines(paymentContext),
+        },
+      });
+    }
     return {
       outcome: 'immediate_payment',
       registrationId: input.registrationId,

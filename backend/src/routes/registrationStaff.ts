@@ -11,12 +11,21 @@ import {
   triggerDeferredRegistrationPayment,
 } from '../registration/registrationMembershipPaymentService.js';
 import { issueStaffRegistrationRefund, listStaffRegistrationBilling, RegistrationBillingValidationError } from '../registration/registrationBillingService.js';
+import {
+  getRosterConfirmationEmailPreview,
+  listRosterConfirmationEmails,
+  RosterConfirmationEmailValidationError,
+  sendRosterConfirmationEmails,
+} from '../registration/registrationRosterConfirmationEmailService.js';
 import { resolveFrontendBaseUrl } from '../utils/frontendUrl.js';
 import { getStaffRegistrationStats } from '../registration/registrationStaffStats.js';
 import {
   staffRegistrationBillingResponseSchema,
   staffRegistrationRefundResponseSchema,
   staffRequestPaymentResponseSchema,
+  staffRosterConfirmationEmailListResponseSchema,
+  staffRosterConfirmationEmailPreviewResponseSchema,
+  staffRosterConfirmationEmailSendResponseSchema,
   staffRequestedLeaguesQaResponseSchema,
   staffReturningMembersQaResponseSchema,
   staffReturningPlayersQaResponseSchema,
@@ -72,6 +81,10 @@ function handleStaffRegistrationError(reply: FastifyReply, error: unknown): bool
     sendValidationError(reply, error.message, error.details);
     return true;
   }
+  if (error instanceof RosterConfirmationEmailValidationError) {
+    sendValidationError(reply, error.message, error.details);
+    return true;
+  }
   if (error instanceof RegistrationQueryValidationError) {
     sendValidationError(reply, error.message, error.details);
     return true;
@@ -122,6 +135,14 @@ const sabbaticalsQaQuerySchema = z.object({
 });
 const requestedLeaguesQaQuerySchema = z.object({
   sessionId: z.coerce.number().int().positive(),
+});
+const rosterConfirmationMemberParamsSchema = z.object({
+  memberId: z.coerce.number().int().positive(),
+});
+const rosterConfirmationSendSchema = z.object({
+  sessionId: z.number().int().positive(),
+  memberIds: z.array(z.number().int().positive()).optional(),
+  unsentOnly: z.boolean().optional(),
 });
 const staffSubmitSchema = z.object({
   changedSummary: z.string().min(1).optional(),
@@ -282,6 +303,125 @@ export async function protectedRegistrationStaffRoutes(fastify: FastifyInstance)
           sessionId: query.sessionId,
         });
       } catch (error) {
+        if (handleStaffRegistrationError(reply, error)) return;
+        throw error;
+      }
+    },
+  );
+
+  fastify.get(
+    '/registration/staff/roster-confirmation-emails',
+    {
+      schema: {
+        tags: ['registration-staff'],
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['sessionId'],
+          properties: {
+            sessionId: { type: 'number' },
+          },
+        },
+        response: { 200: staffRosterConfirmationEmailListResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      if (!requireRegistrationManage(request, reply)) return;
+      try {
+        const query = statsQuerySchema.parse(request.query);
+        return await listRosterConfirmationEmails({
+          actor: (request as AuthenticatedRequest).member,
+          sessionId: query.sessionId,
+        });
+      } catch (error) {
+        if (handleStaffRegistrationError(reply, error)) return;
+        throw error;
+      }
+    },
+  );
+
+  fastify.post(
+    '/registration/staff/roster-confirmation-emails/send',
+    {
+      schema: {
+        tags: ['registration-staff'],
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['sessionId'],
+          properties: {
+            sessionId: { type: 'number' },
+            memberIds: { type: 'array', items: { type: 'number' } },
+            unsentOnly: { type: 'boolean' },
+          },
+        },
+        response: { 200: staffRosterConfirmationEmailSendResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      if (!requireRegistrationManage(request, reply)) return;
+      try {
+        const body = rosterConfirmationSendSchema.parse(request.body);
+        return await sendRosterConfirmationEmails({
+          actor: (request as AuthenticatedRequest).member,
+          sessionId: body.sessionId,
+          memberIds: body.memberIds,
+          unsentOnly: body.unsentOnly,
+          frontendBaseUrl: resolveFrontendBaseUrl(request),
+        });
+      } catch (error) {
+        if (handleStaffRegistrationError(reply, error)) return;
+        throw error;
+      }
+    },
+  );
+
+  fastify.get(
+    '/registration/staff/roster-confirmation-emails/:memberId',
+    {
+      schema: {
+        tags: ['registration-staff'],
+        params: {
+          type: 'object',
+          properties: { memberId: { type: 'string' } },
+          required: ['memberId'],
+        },
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['sessionId'],
+          properties: {
+            sessionId: { type: 'number' },
+          },
+        },
+        response: {
+          200: staffRosterConfirmationEmailPreviewResponseSchema,
+          404: {
+            type: 'object',
+            additionalProperties: true,
+            required: ['error'],
+            properties: {
+              error: { type: 'string' },
+              details: {},
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      if (!requireRegistrationManage(request, reply)) return;
+      try {
+        const params = rosterConfirmationMemberParamsSchema.parse(request.params);
+        const query = statsQuerySchema.parse(request.query);
+        return await getRosterConfirmationEmailPreview({
+          actor: (request as AuthenticatedRequest).member,
+          sessionId: query.sessionId,
+          memberId: params.memberId,
+        });
+      } catch (error) {
+        if (error instanceof RosterConfirmationEmailValidationError && error.details.memberId) {
+          return reply.code(404).send({ error: error.message });
+        }
         if (handleStaffRegistrationError(reply, error)) return;
         throw error;
       }

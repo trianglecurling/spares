@@ -61,6 +61,20 @@ export function parentEmailForMinor(input: {
   return distinctGuardianEmail(input.email, input.guardianEmail);
 }
 
+/** Distinct parent copy address for a registration email. Prefers the registration guardian. */
+export function registrationParentCopyEmail(input: {
+  memberEmail?: string | null;
+  dateOfBirth?: unknown;
+  memberGuardianEmail?: string | null;
+  registrationGuardianEmail?: string | null;
+}): string | null {
+  return parentEmailForMinor({
+    email: input.memberEmail,
+    guardianEmail: input.registrationGuardianEmail?.trim() || input.memberGuardianEmail,
+    dateOfBirth: input.dateOfBirth,
+  });
+}
+
 /** `{email, parentEmail}` for API payloads that already expose a member email. */
 export function memberContactEmails(row: {
   email?: string | null;
