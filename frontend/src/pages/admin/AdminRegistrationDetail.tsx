@@ -162,21 +162,25 @@ function formatDateTime(value: string | null) {
   return formatClubDateTime(value) || value;
 }
 
-const SETTLED_PAYMENT_STATUSES = new Set(['succeeded', 'partially_refunded', 'refunded']);
+const SETTLED_PAYMENT_STATUSES = new Set(['succeeded', 'partially_refunded', 'refunded', 'pending_refund']);
+const COUNTED_REFUND_STATUSES = new Set(['succeeded', 'processing', 'requested', 'approved']);
 
 function invoicePaymentTotals(
   paymentActivity: RegistrationDetail['paymentActivity'],
   invoiceTotalMinor: number,
   invoiceStatus?: string | null,
+  offlinePaymentNote?: string | null,
 ): { paymentsMinor: number; balanceMinor: number; includesOfflinePayment: boolean } {
   const grossPaymentsMinor = paymentActivity
     .filter((entry) => entry.kind === 'payment' && SETTLED_PAYMENT_STATUSES.has(entry.status))
     .reduce((sum, entry) => sum + entry.amountMinor, 0);
   const refundsMinor = paymentActivity
-    .filter((entry) => entry.kind === 'refund' && entry.status === 'succeeded')
+    .filter((entry) => entry.kind === 'refund' && COUNTED_REFUND_STATUSES.has(entry.status))
     .reduce((sum, entry) => sum + entry.amountMinor, 0);
-  let netPaymentsMinor = grossPaymentsMinor - refundsMinor;
-  const includesOfflinePayment = invoiceStatus === 'paid' && netPaymentsMinor < invoiceTotalMinor;
+  let netPaymentsMinor = Math.max(0, grossPaymentsMinor - refundsMinor);
+  const offlineNote = offlinePaymentNote?.trim() ?? '';
+  const includesOfflinePayment =
+    invoiceStatus === 'paid' && Boolean(offlineNote) && netPaymentsMinor < invoiceTotalMinor;
   if (includesOfflinePayment) {
     netPaymentsMinor = invoiceTotalMinor;
   }
@@ -357,6 +361,7 @@ export default function AdminRegistrationDetail() {
             detail.paymentActivity,
             detail.invoice.totalMinor,
             detail.invoice.status,
+            detail.invoice.offlinePaymentNote,
           );
           if (
             detail.registration.registrationStatus === 'cancelled' ||

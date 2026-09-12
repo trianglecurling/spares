@@ -1272,7 +1272,7 @@ function runLotteryFillStage(
     }
   }
 
-  if (stage === 'third-leagues') placeDayLeagues(snapshot, leagues, roster, result);
+  if (stage === 'third-leagues') placeDayLeagues(snapshot, leagues, roster, result, randomKey);
   result.leagueVacancies = vacancySnapshots(snapshot, roster, new Map());
   result.notes.push({
     code: 'random_seed',
@@ -1375,31 +1375,101 @@ function placeDayLeagues(
   leagues: Map<number, RosterRebuildLeague>,
   roster: WorkingRoster,
   result: RosterRebuildResult,
+  randomKey: Map<number, number>,
 ): void {
   const dayLeagues = leaguesInCategory(snapshot.leagues, 'day_league');
   if (dayLeagues.length === 0) return;
-  const members = [...snapshot.registrations].sort((a, b) => a.memberId - b.memberId);
-  for (const registration of members) {
+  const iceNoted = new Set<string>();
+  type DayCandidate = {
+    registration: RosterRebuildRegistration;
+    league: RosterRebuildLeague;
+    rank: number;
+    count: number;
+    desired: number;
+    fillingFirstOrSecond: boolean;
+    tenure: number;
+    experience: number;
+    random: number;
+  };
+  const nextCandidate = (registration: RosterRebuildRegistration): DayCandidate | null => {
     const desired = resolveDesiredLeagueCount(registration.desiredLeagueCount);
+    const count = occupiedLeagueCount(snapshot, roster, registration.memberId);
+    if (count >= desired) return null;
     for (const priority of [...registration.priorities].sort((a, b) => a.rank - b.rank)) {
       const league = leagues.get(priority.leagueId);
       if (!league || league.category !== 'day_league') continue;
+      if (rosterHas(roster, league.id, registration.memberId)) continue;
       if (!registrationMayJoinLeague(registration, league)) {
-        noteIcePrivilegesBlock(result, snapshot, registration, league);
+        const key = rosterKey(league.id, registration.memberId);
+        if (!iceNoted.has(key)) {
+          iceNoted.add(key);
+          noteIcePrivilegesBlock(result, snapshot, registration, league);
+        }
         continue;
       }
-      const count = occupiedLeagueCount(snapshot, roster, registration.memberId);
-      if (count >= desired) break;
-      addPlacement(result, roster, {
-        stage: 'third-leagues',
-        pass: null,
+      if (vacancyLeft(snapshot, league, roster, new Map(), 'permanent') <= 0) continue;
+      const member = snapshot.members.get(registration.memberId);
+      return {
+        registration,
+        league,
+        rank: priority.rank,
+        count,
+        desired,
+        fillingFirstOrSecond: count < 2,
+        tenure: member?.clubTenureYears ?? 0,
+        experience: member?.totalExperienceYears ?? 0,
+        random: randomKey.get(registration.memberId) ?? 0,
+      };
+    }
+    return null;
+  };
+  let placed = true;
+  while (placed) {
+    placed = false;
+    const candidates: DayCandidate[] = [];
+    for (const registration of snapshot.registrations) {
+      const candidate = nextCandidate(registration);
+      if (candidate) candidates.push(candidate);
+    }
+    if (candidates.length === 0) break;
+    candidates.sort((a, b) => {
+      if (a.fillingFirstOrSecond !== b.fillingFirstOrSecond) return a.fillingFirstOrSecond ? -1 : 1;
+      if (b.tenure !== a.tenure) return b.tenure - a.tenure;
+      if (b.experience !== a.experience) return b.experience - a.experience;
+      if (b.random !== a.random) return b.random - a.random;
+      return a.registration.memberId - b.registration.memberId || a.league.id - b.league.id;
+    });
+    const winner = candidates[0];
+    if (!winner) break;
+    const slot = winner.fillingFirstOrSecond ? '1st/2nd' : '3rd+';
+    addPlacement(result, roster, {
+      stage: 'third-leagues',
+      pass: null,
+      leagueId: winner.league.id,
+      memberId: winner.registration.memberId,
+      placementType: 'new_placement',
+      reason: `Day league auto-grant of ${winner.league.name} as ${slot} league (rank #${winner.rank}); requested ${winner.desired}, currently ${winner.count}.`,
+      sourceRegistrationId: winner.registration.id,
+      waitlistEntryId: null,
+      isRank3PlusReturner: false,
+    });
+    placed = true;
+  }
+  for (const registration of snapshot.registrations) {
+    const desired = resolveDesiredLeagueCount(registration.desiredLeagueCount);
+    const count = occupiedLeagueCount(snapshot, roster, registration.memberId);
+    if (count >= desired) continue;
+    for (const priority of [...registration.priorities].sort((a, b) => a.rank - b.rank)) {
+      const league = leagues.get(priority.leagueId);
+      if (!league || league.category !== 'day_league') continue;
+      if (rosterHas(roster, league.id, registration.memberId)) continue;
+      if (!registrationMayJoinLeague(registration, league)) continue;
+      if (vacancyLeft(snapshot, league, roster, new Map(), 'permanent') > 0) continue;
+      result.notes.push({
+        code: 'day_league_no_vacancy',
         leagueId: league.id,
         memberId: registration.memberId,
-        placementType: 'new_placement',
-        reason: `Day league auto-grant of ${league.name} (rank #${priority.rank}); requested ${desired}, currently ${count}.`,
-        sourceRegistrationId: registration.id,
-        waitlistEntryId: null,
-        isRank3PlusReturner: false,
+        detail: `${memberLabel(snapshot, registration.memberId)} listed ${league.name} at #${priority.rank}, but the league is at capacity.`,
       });
     }
   }

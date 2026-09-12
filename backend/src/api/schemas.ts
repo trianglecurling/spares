@@ -2290,6 +2290,7 @@ export const staffRegistrationBillingResponseSchema = {
           'curlerName',
           'curlerEmail',
           'registrationStatus',
+          'chargedLeagues',
           'owedMinor',
           'paidMinor',
           'balanceMinor',
@@ -2302,6 +2303,18 @@ export const staffRegistrationBillingResponseSchema = {
           curlerName: { type: 'string' },
           curlerEmail: { type: ['string', 'null'] },
           registrationStatus: { type: 'string' },
+          chargedLeagues: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['id', 'name'],
+              properties: {
+                id: { type: 'number' },
+                name: { type: 'string' },
+              },
+            },
+          },
           owedMinor: { type: 'number' },
           paidMinor: { type: 'number' },
           balanceMinor: { type: 'number' },

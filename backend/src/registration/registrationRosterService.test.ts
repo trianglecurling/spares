@@ -5,6 +5,7 @@ import {
   registrationStatusCommitsRoster,
   rosterLeagueIdsToKeep,
   rosterPlacementsForRegistration,
+  shouldRemoveOrphanedRosterRow,
 } from './registrationRosterService.js';
 import { evaluateLeaguePriorities } from './leaguePriorityEvaluation.js';
 import { league, priority, registrationContext } from './registrationTestFixtures.js';
@@ -179,6 +180,30 @@ describe('Junior Recreational roster placement', () => {
       desiredLeagueCount: null,
     });
     expect(rosterPlacementsForRegistration(context, evaluateLeaguePriorities(context))).toEqual([]);
+  });
+});
+
+describe('shouldRemoveOrphanedRosterRow', () => {
+  test('keeps play-in and temporary-fill seats that registration save did not grant', () => {
+    const keep = new Set([34]);
+    expect(
+      shouldRemoveOrphanedRosterRow(
+        { league_id: 30, is_temporary_sabbatical_fill: 0, placement_type: 'play_in' },
+        keep,
+      ),
+    ).toBe(false);
+    expect(
+      shouldRemoveOrphanedRosterRow(
+        { league_id: 21, is_temporary_sabbatical_fill: 1, placement_type: 'temporary_sabbatical_fill' },
+        keep,
+      ),
+    ).toBe(false);
+    expect(
+      shouldRemoveOrphanedRosterRow(
+        { league_id: 27, is_temporary_sabbatical_fill: 0, placement_type: 'new_placement' },
+        keep,
+      ),
+    ).toBe(true);
   });
 });
 

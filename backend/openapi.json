@@ -30038,6 +30038,7 @@
                           "curlerName",
                           "curlerEmail",
                           "registrationStatus",
+                          "chargedLeagues",
                           "owedMinor",
                           "paidMinor",
                           "balanceMinor",
@@ -30065,6 +30066,25 @@
                           },
                           "registrationStatus": {
                             "type": "string"
+                          },
+                          "chargedLeagues": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "required": [
+                                "id",
+                                "name"
+                              ],
+                              "properties": {
+                                "id": {
+                                  "type": "number"
+                                },
+                                "name": {
+                                  "type": "string"
+                                }
+                              }
+                            }
                           },
                           "owedMinor": {
                             "type": "number"

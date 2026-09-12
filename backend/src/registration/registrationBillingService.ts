@@ -17,6 +17,13 @@ import { LISTABLE_REGISTRATION_STATUSES } from './registrationStaffQuery.js';
 import { defaultSabbaticalDurationLimitYears } from './sabbaticalDurationLimit.js';
 import { memberCanManageRegistrations } from '../utils/registrationStaffAccess.js';
 import {
+  addChargedLeague,
+  emptyRegistrationChargeSet,
+  mergeRegistrationChargeSets,
+  type RegistrationChargeSet,
+} from './registrationBillingChargeSet.js';
+import {
+  COUNTED_REGISTRATION_REFUND_STATUSES,
   netPaidMinorFromPaymentActivity,
   parseRegistrationRefundNote,
   refundableRemainingMinor,
@@ -24,6 +31,8 @@ import {
   registrationBalanceMinor,
   remainingDueMinor,
 } from './registrationBillingMath.js';
+
+const ENTERED_PLAY_IN_TEAM_STATUSES = ['entered'] as const;
 
 const BILLING_REGISTRATION_STATUSES = LISTABLE_REGISTRATION_STATUSES.filter((status) => status !== 'cancelled');
 
@@ -139,30 +148,121 @@ async function loadBillingPriceSettings(): Promise<{
   };
 }
 
+async function loadSessionPlacementChargeLeagues(input: {
+  sessionId: number;
+  memberIds: number[];
+}): Promise<Map<number, number[]>> {
+  const extraByMember = new Map<number, number[]>();
+  if (input.memberIds.length === 0) return extraByMember;
+  const { db, schema } = getDrizzleDb();
+  const [teamRows, playInRows, sessionRosterRows] = await Promise.all([
+    db
+      .select({
+        memberId: schema.teamMembers.member_id,
+        leagueId: schema.leagueTeams.league_id,
+      })
+      .from(schema.teamMembers)
+      .innerJoin(schema.leagueTeams, eq(schema.leagueTeams.id, schema.teamMembers.team_id))
+      .innerJoin(schema.leagues, eq(schema.leagues.id, schema.leagueTeams.league_id))
+      .where(
+        and(
+          inArray(schema.teamMembers.member_id, input.memberIds),
+          eq(schema.leagues.session_id, input.sessionId),
+        ),
+      ),
+    db
+      .select({
+        memberId: schema.leagueEntryTeamMembers.member_id,
+        leagueId: schema.leagueEntryTeams.league_id,
+      })
+      .from(schema.leagueEntryTeamMembers)
+      .innerJoin(
+        schema.leagueEntryTeams,
+        eq(schema.leagueEntryTeams.id, schema.leagueEntryTeamMembers.entry_team_id),
+      )
+      .innerJoin(schema.leagues, eq(schema.leagues.id, schema.leagueEntryTeams.league_id))
+      .where(
+        and(
+          inArray(schema.leagueEntryTeamMembers.member_id, input.memberIds),
+          eq(schema.leagues.session_id, input.sessionId),
+          inArray(schema.leagueEntryTeams.status, [...ENTERED_PLAY_IN_TEAM_STATUSES]),
+        ),
+      ),
+    db
+      .select({
+        memberId: schema.leagueRoster.member_id,
+        leagueId: schema.leagueRoster.league_id,
+      })
+      .from(schema.leagueRoster)
+      .innerJoin(schema.leagues, eq(schema.leagues.id, schema.leagueRoster.league_id))
+      .where(
+        and(
+          inArray(schema.leagueRoster.member_id, input.memberIds),
+          eq(schema.leagueRoster.status, 'active'),
+          eq(schema.leagues.session_id, input.sessionId),
+        ),
+      ),
+  ]);
+
+  const push = (memberId: number | null, leagueId: number) => {
+    if (memberId == null) return;
+    const list = extraByMember.get(memberId) ?? [];
+    list.push(leagueId);
+    extraByMember.set(memberId, list);
+  };
+  for (const row of teamRows) push(row.memberId, row.leagueId);
+  for (const row of playInRows) push(row.memberId, row.leagueId);
+  for (const row of sessionRosterRows) push(row.memberId, row.leagueId);
+  return extraByMember;
+}
+
+function chargeSetFromRosterRows(
+  rows: Array<{ leagueId: number; temporaryFill: number }>,
+): RegistrationChargeSet {
+  const current = emptyRegistrationChargeSet();
+  for (const row of rows) {
+    addChargedLeague(current, row.leagueId, row.temporaryFill === 1);
+  }
+  return {
+    chargedLeagueIds: [...new Set(current.chargedLeagueIds)],
+    temporaryFillLeagueIds: [...new Set(current.temporaryFillLeagueIds)],
+  };
+}
+
 export async function loadPlacedRosterChargeSet(input: {
   registrationId: number;
   curlerMemberId: number;
-}): Promise<{ chargedLeagueIds: number[]; temporaryFillLeagueIds: number[] }> {
+}): Promise<RegistrationChargeSet> {
   const { db, schema } = getDrizzleDb();
-  const placedRows = await db
-    .select({
-      leagueId: schema.leagueRoster.league_id,
-      temporaryFill: schema.leagueRoster.is_temporary_sabbatical_fill,
-    })
-    .from(schema.leagueRoster)
-    .where(
-      and(
-        eq(schema.leagueRoster.member_id, input.curlerMemberId),
-        eq(schema.leagueRoster.source_registration_id, input.registrationId),
-        eq(schema.leagueRoster.status, 'active'),
+  const [registration] = await db
+    .select({ sessionId: schema.curlingRegistrations.session_id })
+    .from(schema.curlingRegistrations)
+    .where(eq(schema.curlingRegistrations.id, input.registrationId))
+    .limit(1);
+  const [placedRows, extrasByMember] = await Promise.all([
+    db
+      .select({
+        leagueId: schema.leagueRoster.league_id,
+        temporaryFill: schema.leagueRoster.is_temporary_sabbatical_fill,
+      })
+      .from(schema.leagueRoster)
+      .where(
+        and(
+          eq(schema.leagueRoster.member_id, input.curlerMemberId),
+          eq(schema.leagueRoster.source_registration_id, input.registrationId),
+          eq(schema.leagueRoster.status, 'active'),
+        ),
       ),
-    );
-  return {
-    chargedLeagueIds: [...new Set(placedRows.map((row) => row.leagueId))],
-    temporaryFillLeagueIds: [
-      ...new Set(placedRows.filter((row) => row.temporaryFill === 1).map((row) => row.leagueId)),
-    ],
-  };
+    registration
+      ? loadSessionPlacementChargeLeagues({
+          sessionId: registration.sessionId,
+          memberIds: [input.curlerMemberId],
+        })
+      : Promise.resolve(new Map<number, number[]>()),
+  ]);
+  return mergeRegistrationChargeSets(chargeSetFromRosterRows(placedRows), {
+    chargedLeagueIds: extrasByMember.get(input.curlerMemberId) ?? [],
+  });
 }
 
 export async function computeRegistrationNetPaidMinor(registrationId: number): Promise<number> {
@@ -263,6 +363,7 @@ export type StaffRegistrationBillingRow = {
   curlerName: string;
   curlerEmail: string | null;
   registrationStatus: string;
+  chargedLeagues: Array<{ id: number; name: string }>;
   owedMinor: number;
   paidMinor: number;
   balanceMinor: number;
@@ -393,12 +494,29 @@ export async function listStaffRegistrationBilling(input: {
           .where(inArray(schema.registrationInvoices.registration_id, registrationIds))
           .orderBy(desc(schema.registrationInvoices.updated_at), desc(schema.registrationInvoices.id)),
       ])
-    : [[], [], [], []];
+      : [[], [], [], []];
+
+  const curlerMemberIds = [
+    ...new Set(
+      registrationRows
+        .map((row) => row.curlerMemberId)
+        .filter((memberId): memberId is number => memberId != null),
+    ),
+  ];
+  const extrasByMember = curlerMemberIds.length
+    ? await loadSessionPlacementChargeLeagues({
+        sessionId: session.id,
+        memberIds: curlerMemberIds,
+      })
+    : new Map<number, number[]>();
 
   const missingLeagueIds = new Set<number>();
   for (const row of rosterRows) missingLeagueIds.add(row.leagueId);
   for (const row of selectionRows) {
     if (row.leagueId != null) missingLeagueIds.add(row.leagueId);
+  }
+  for (const leagueIds of extrasByMember.values()) {
+    for (const leagueId of leagueIds) missingLeagueIds.add(leagueId);
   }
   const unknownLeagueIds = [...missingLeagueIds].filter((id) => leagues[id] == null);
   if (unknownLeagueIds.length > 0) {
@@ -408,16 +526,32 @@ export async function listStaffRegistrationBilling(input: {
     }
   }
 
-  const rosterByRegistration = new Map<number, { chargedLeagueIds: number[]; temporaryFillLeagueIds: number[] }>();
+  const registrationsByMember = new Map<number, number[]>();
+  for (const row of registrationRows) {
+    if (row.curlerMemberId == null) continue;
+    const list = registrationsByMember.get(row.curlerMemberId) ?? [];
+    list.push(row.id);
+    registrationsByMember.set(row.curlerMemberId, list);
+  }
+
+  const rosterByRegistration = new Map<number, RegistrationChargeSet>();
+  const addChargeSet = (registrationId: number, part: Partial<RegistrationChargeSet>) => {
+    rosterByRegistration.set(
+      registrationId,
+      mergeRegistrationChargeSets(rosterByRegistration.get(registrationId), part),
+    );
+  };
   for (const row of rosterRows) {
     if (row.registrationId == null) continue;
-    const current = rosterByRegistration.get(row.registrationId) ?? {
-      chargedLeagueIds: [],
-      temporaryFillLeagueIds: [],
-    };
-    current.chargedLeagueIds.push(row.leagueId);
-    if (row.temporaryFill === 1) current.temporaryFillLeagueIds.push(row.leagueId);
-    rosterByRegistration.set(row.registrationId, current);
+    addChargeSet(row.registrationId, {
+      chargedLeagueIds: [row.leagueId],
+      temporaryFillLeagueIds: row.temporaryFill === 1 ? [row.leagueId] : [],
+    });
+  }
+  for (const [memberId, leagueIds] of extrasByMember) {
+    for (const registrationId of registrationsByMember.get(memberId) ?? []) {
+      addChargeSet(registrationId, { chargedLeagueIds: leagueIds });
+    }
   }
 
   const selectionsByRegistration = new Map<number, RegistrationSelectionInput[]>();
@@ -479,9 +613,12 @@ export async function listStaffRegistrationBilling(input: {
   };
 
   const registrations: StaffRegistrationBillingRow[] = registrationRows.map((row) => {
-    const roster = rosterByRegistration.get(row.id) ?? { chargedLeagueIds: [], temporaryFillLeagueIds: [] };
-    const chargedLeagueIds = [...new Set(roster.chargedLeagueIds)];
-    const temporaryFillLeagueIds = [...new Set(roster.temporaryFillLeagueIds)];
+    const roster = rosterByRegistration.get(row.id) ?? emptyRegistrationChargeSet();
+    const chargedLeagueIds = roster.chargedLeagueIds;
+    const temporaryFillLeagueIds = roster.temporaryFillLeagueIds;
+    const chargedLeagues = chargedLeagueIds
+      .map((leagueId) => ({ id: leagueId, name: leagues[leagueId]?.name ?? `League ${leagueId}` }))
+      .sort((left, right) => left.name.localeCompare(right.name));
     const context = stubBillingContext({
       season,
       session: sessionContext,
@@ -523,6 +660,7 @@ export async function listStaffRegistrationBilling(input: {
       }),
       curlerEmail: row.curlerEmail,
       registrationStatus: row.status,
+      chargedLeagues,
       owedMinor,
       paidMinor,
       balanceMinor,
@@ -593,7 +731,7 @@ export async function issueStaffRegistrationRefund(input: {
   const activity = await listCurlingRegistrationPaymentActivity(input.registrationId);
   const refundedByOrder = new Map<number, number>();
   for (const entry of activity) {
-    if (entry.kind !== 'refund' || entry.status !== 'succeeded') continue;
+    if (entry.kind !== 'refund' || !COUNTED_REGISTRATION_REFUND_STATUSES.has(entry.status)) continue;
     refundedByOrder.set(entry.orderId, (refundedByOrder.get(entry.orderId) ?? 0) + entry.amountMinor);
   }
 

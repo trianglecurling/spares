@@ -1495,6 +1495,123 @@ describe('stage third-leagues', () => {
     expect(result.placements.map((row) => row.leagueId)).toEqual([40]);
   });
 
+  test('does not auto-grant a day league past capacity', () => {
+    const tueDay = league({ id: 40, name: 'Tuesday Daytime', category: 'day_league', waitlistId: null, capacityValue: 2 });
+    const result = runRosterRebuildStage(
+      snapshot({
+        leagues: [tueDay],
+        members: membersMap(
+          member({ memberId: 10, name: 'Senior', clubTenureYears: 12 }),
+          member({ memberId: 11, name: 'Mid', clubTenureYears: 6 }),
+          member({ memberId: 12, name: 'Junior', clubTenureYears: 1 }),
+        ),
+        registrations: [
+          registration({
+            id: 1,
+            memberId: 10,
+            desiredLeagueCount: 1,
+            priorities: [{ leagueId: 40, rank: 1, teammateMemberIds: [], teammateText: null }],
+          }),
+          registration({
+            id: 2,
+            memberId: 11,
+            desiredLeagueCount: 1,
+            priorities: [{ leagueId: 40, rank: 1, teammateMemberIds: [], teammateText: null }],
+          }),
+          registration({
+            id: 3,
+            memberId: 12,
+            desiredLeagueCount: 1,
+            priorities: [{ leagueId: 40, rank: 1, teammateMemberIds: [], teammateText: null }],
+          }),
+        ],
+      }),
+      'third-leagues',
+      { randomSeed: 7 },
+    );
+    expect(result.placements.map((row) => row.memberId).sort((a, b) => a - b)).toEqual([10, 11]);
+    expect(result.notes.some((note) => note.code === 'day_league_no_vacancy' && note.memberId === 12 && note.leagueId === 40)).toBe(true);
+    expect(result.leagueVacancies.find((row) => row.leagueId === 40)?.rostered).toBe(2);
+  });
+
+  test('grants a later day league when the higher-ranked day league is full', () => {
+    const tueDay = league({ id: 40, name: 'Tuesday Daytime', category: 'day_league', waitlistId: null, capacityValue: 1 });
+    const wedDay = league({ id: 41, name: 'Wednesday Day', category: 'day_league', waitlistId: null, capacityValue: 2 });
+    const result = runRosterRebuildStage(
+      snapshot({
+        leagues: [tueDay, wedDay],
+        members: membersMap(
+          member({ memberId: 10, name: 'Senior', clubTenureYears: 12 }),
+          member({ memberId: 11, name: 'Junior', clubTenureYears: 1 }),
+        ),
+        registrations: [
+          registration({
+            id: 1,
+            memberId: 10,
+            desiredLeagueCount: 1,
+            priorities: [{ leagueId: 40, rank: 1, teammateMemberIds: [], teammateText: null }],
+          }),
+          registration({
+            id: 2,
+            memberId: 11,
+            desiredLeagueCount: 1,
+            priorities: [
+              { leagueId: 40, rank: 1, teammateMemberIds: [], teammateText: null },
+              { leagueId: 41, rank: 2, teammateMemberIds: [], teammateText: null },
+            ],
+          }),
+        ],
+      }),
+      'third-leagues',
+      { randomSeed: 7 },
+    );
+    expect(result.placements).toEqual([
+      expect.objectContaining({ memberId: 10, leagueId: 40 }),
+      expect.objectContaining({ memberId: 11, leagueId: 41 }),
+    ]);
+  });
+
+  test('gives a 1st/2nd day-league seat to a day-only registrant before a more tenured 3rd+ add-on', () => {
+    const tueDay = league({ id: 40, name: 'Tuesday Daytime', category: 'day_league', waitlistId: null, capacityValue: 1 });
+    const result = runRosterRebuildStage(
+      snapshot({
+        leagues: [tueDay],
+        members: membersMap(
+          member({ memberId: 10, name: 'Tenured third', clubTenureYears: 20 }),
+          member({ memberId: 417, name: 'Steven Marquard', clubTenureYears: 1 }),
+        ),
+        currentRosters: [
+          { leagueId: 1, memberId: 10, status: 'active', placementType: 'guaranteed_return', isTemporarySabbaticalFill: false, sourceRegistrationId: 1 },
+          { leagueId: 2, memberId: 10, status: 'active', placementType: 'guaranteed_return', isTemporarySabbaticalFill: false, sourceRegistrationId: 1 },
+        ],
+        registrations: [
+          registration({
+            id: 1,
+            memberId: 10,
+            desiredLeagueCount: 3,
+            priorities: [{ leagueId: 40, rank: 3, teammateMemberIds: [], teammateText: null }],
+          }),
+          registration({
+            id: 2,
+            memberId: 417,
+            desiredLeagueCount: 1,
+            priorities: [{ leagueId: 40, rank: 1, teammateMemberIds: [], teammateText: null }],
+          }),
+        ],
+      }),
+      'third-leagues',
+      { randomSeed: 7 },
+    );
+    expect(result.placements).toEqual([
+      expect.objectContaining({
+        memberId: 417,
+        leagueId: 40,
+        reason: expect.stringContaining('1st/2nd'),
+      }),
+    ]);
+    expect(result.notes.some((note) => note.code === 'day_league_no_vacancy' && note.memberId === 10)).toBe(true);
+  });
+
   test('gives leftover vacancy to an open-period waitlist entry before 3rd+ assignment', () => {
     const hump = league({ id: 1, name: 'Hump Day', category: 'normal', capacityValue: 4, waitlistId: 10 });
     const result = runRosterRebuildStage(

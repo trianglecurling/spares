@@ -22,6 +22,24 @@ describe('netPaidMinorFromPaymentActivity', () => {
     ).toBe(40000);
   });
 
+  test('counts in-flight refunds so a processing full refund is not still paid', () => {
+    expect(
+      netPaidMinorFromPaymentActivity([
+        { kind: 'payment', status: 'succeeded', amountMinor: 58300 },
+        { kind: 'refund', status: 'processing', amountMinor: 58300 },
+      ]),
+    ).toBe(0);
+  });
+
+  test('does not treat a failed refund as money returned', () => {
+    expect(
+      netPaidMinorFromPaymentActivity([
+        { kind: 'payment', status: 'succeeded', amountMinor: 58300 },
+        { kind: 'refund', status: 'failed', amountMinor: 58300 },
+      ]),
+    ).toBe(58300);
+  });
+
   test('treats an offline paid invoice as paid when card activity is short', () => {
     expect(
       netPaidMinorFromPaymentActivity([], {

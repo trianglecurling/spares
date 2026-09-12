@@ -261,6 +261,16 @@ export default function AdminRegistrationBilling() {
       renderCell: (row) => registrationStatusLabel(row.registrationStatus),
     },
     {
+      id: 'leagues',
+      header: 'Rostered leagues',
+      renderCell: (row) =>
+        row.chargedLeagues.length > 0 ? (
+          <span>{row.chargedLeagues.map((league) => league.name).join(', ')}</span>
+        ) : (
+          <span className="text-gray-500 dark:text-gray-400">None</span>
+        ),
+    },
+    {
       id: 'owed',
       header: 'Owed',
       sortable: true,

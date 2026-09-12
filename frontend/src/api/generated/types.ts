@@ -19735,6 +19735,10 @@ export interface paths {
                                 curlerName: string;
                                 curlerEmail: null | string;
                                 registrationStatus: string;
+                                chargedLeagues: {
+                                    id: number;
+                                    name: string;
+                                }[];
                                 owedMinor: number;
                                 paidMinor: number;
                                 balanceMinor: number;

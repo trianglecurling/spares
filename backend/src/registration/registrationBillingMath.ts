@@ -5,6 +5,14 @@ export const SETTLED_REGISTRATION_PAYMENT_STATUSES = new Set([
   'pending_refund',
 ]);
 
+/** Refunds that reduce net paid, including Square/in-flight rows that have not yet settled. */
+export const COUNTED_REGISTRATION_REFUND_STATUSES = new Set([
+  'succeeded',
+  'processing',
+  'requested',
+  'approved',
+]);
+
 export const AMOUNT_ALREADY_PAID_DESCRIPTION = 'Amount already paid';
 export const REGISTRATION_REFUND_NOTE_MAX_LENGTH = 160;
 export const DEFAULT_REGISTRATION_REFUND_NOTE = 'Registration overpayment refund';
@@ -33,7 +41,7 @@ export function netPaidMinorFromPaymentActivity(
     .filter((entry) => entry.kind === 'payment' && SETTLED_REGISTRATION_PAYMENT_STATUSES.has(entry.status))
     .reduce((sum, entry) => sum + entry.amountMinor, 0);
   const refundsMinor = activity
-    .filter((entry) => entry.kind === 'refund' && entry.status === 'succeeded')
+    .filter((entry) => entry.kind === 'refund' && COUNTED_REGISTRATION_REFUND_STATUSES.has(entry.status))
     .reduce((sum, entry) => sum + entry.amountMinor, 0);
   let netPaymentsMinor = grossPaymentsMinor - refundsMinor;
   const offlineNote = latestInvoice?.offlinePaymentNote?.trim() ?? '';

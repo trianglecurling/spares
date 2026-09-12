@@ -290,6 +290,24 @@ async function removeRegistrationRosterRows(
  * nothing even though the registrant still wants those leagues. Non-payment
  * is not a reason to drop them — staff removes people from a league.
  */
+export function shouldRemoveOrphanedRosterRow(
+  row: {
+    league_id: number;
+    is_temporary_sabbatical_fill: number;
+    placement_type: string | null;
+  },
+  keepLeagueIds: Set<number>,
+): boolean {
+  if (keepLeagueIds.has(row.league_id)) return false;
+  // Waitlist-accepted temporary fills are not created from the priority list
+  // and must not be removed when registration is saved or submitted.
+  if (row.is_temporary_sabbatical_fill === 1) return false;
+  // Play-in grants are owned by the play-in workflow. Saving a registration
+  // must not drop that seat (or its fee) while the entry is still entered.
+  if (row.placement_type === 'play_in') return false;
+  return true;
+}
+
 export function rosterLeagueIdsToKeep(input: {
   selectedLeagueIds?: Iterable<number> | null;
   placements: Array<{ leagueId: number }>;
@@ -345,13 +363,9 @@ export async function removeOrphanedRegistrationRosterPlacements(input: {
       ),
     );
 
-  const rowsToRemove = rosterRows.filter((row: (typeof rosterRows)[number]) => {
-    if (keepLeagueIds.has(row.league_id)) return false;
-    // Waitlist-accepted temporary fills are not created from the priority list
-    // and must not be removed when registration is saved or submitted.
-    if (row.is_temporary_sabbatical_fill === 1) return false;
-    return true;
-  });
+  const rowsToRemove = rosterRows.filter((row: (typeof rosterRows)[number]) =>
+    shouldRemoveOrphanedRosterRow(row, keepLeagueIds),
+  );
   await removeRegistrationRosterRows(executor, rowsToRemove);
 }
 
