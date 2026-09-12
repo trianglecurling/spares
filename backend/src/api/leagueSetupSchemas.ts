@@ -465,6 +465,24 @@ export const sabbaticalAddResponseSchema = {
   required: ['id', 'leagueId', 'memberId'],
 } as const;
 
+export const teamsPublishedBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    teamsPublished: { type: 'boolean' },
+  },
+  required: ['teamsPublished'],
+} as const;
+
+export const teamsPublishedResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    teamsPublished: { type: 'boolean' },
+  },
+  required: ['teamsPublished'],
+} as const;
+
 export const sabbaticalRemoveBodySchema = {
   type: 'object',
   additionalProperties: false,

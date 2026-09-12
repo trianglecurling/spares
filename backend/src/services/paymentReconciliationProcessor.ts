@@ -25,6 +25,15 @@ export async function reconcileStalePaymentsOnce(): Promise<void> {
       );
     }
 
+    const recovered = await paymentService.reconcileRecoverableFailedOrders(
+      config.payment.reconcile.batchSize,
+    );
+    if (recovered.checked > 0 || recovered.changed > 0) {
+      console.log(
+        `[Payment Reconciliation] failed_recovery checked=${recovered.checked} changed=${recovered.changed}`
+      );
+    }
+
     if (getEnabledPaymentProviders().includes('square')) {
       const completeSummary = await paymentService.completePaidProviderOrdersForFullyPaidPayments({
         provider: 'square',

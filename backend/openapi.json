@@ -9890,6 +9890,9 @@
                           "number"
                         ]
                       },
+                      "teamsPublished": {
+                        "type": "boolean"
+                      },
                       "predecessorLeagueId": {
                         "type": [
                           "null",
@@ -9977,6 +9980,7 @@
                       "allowsSabbatical",
                       "allowsDropIns",
                       "dropInFeeMinor",
+                      "teamsPublished",
                       "predecessorLeagueId",
                       "successorLeagueId",
                       "publicNotes",
@@ -10298,6 +10302,9 @@
                         "number"
                       ]
                     },
+                    "teamsPublished": {
+                      "type": "boolean"
+                    },
                     "predecessorLeagueId": {
                       "type": [
                         "null",
@@ -10385,6 +10392,7 @@
                     "allowsSabbatical",
                     "allowsDropIns",
                     "dropInFeeMinor",
+                    "teamsPublished",
                     "predecessorLeagueId",
                     "successorLeagueId",
                     "publicNotes",
@@ -10629,6 +10637,9 @@
                               "number"
                             ]
                           },
+                          "teamsPublished": {
+                            "type": "boolean"
+                          },
                           "predecessorLeagueId": {
                             "type": [
                               "null",
@@ -10716,6 +10727,7 @@
                           "allowsSabbatical",
                           "allowsDropIns",
                           "dropInFeeMinor",
+                          "teamsPublished",
                           "predecessorLeagueId",
                           "successorLeagueId",
                           "publicNotes",
@@ -11074,6 +11086,9 @@
                         "number"
                       ]
                     },
+                    "teamsPublished": {
+                      "type": "boolean"
+                    },
                     "predecessorLeagueId": {
                       "type": [
                         "null",
@@ -11161,6 +11176,7 @@
                     "allowsSabbatical",
                     "allowsDropIns",
                     "dropInFeeMinor",
+                    "teamsPublished",
                     "predecessorLeagueId",
                     "successorLeagueId",
                     "publicNotes",
@@ -11570,6 +11586,9 @@
                               "number"
                             ]
                           },
+                          "teamsPublished": {
+                            "type": "boolean"
+                          },
                           "predecessorLeagueId": {
                             "type": [
                               "null",
@@ -11657,6 +11676,7 @@
                           "allowsSabbatical",
                           "allowsDropIns",
                           "dropInFeeMinor",
+                          "teamsPublished",
                           "predecessorLeagueId",
                           "successorLeagueId",
                           "publicNotes",
@@ -13443,6 +13463,63 @@
                   },
                   "required": [
                     "success"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/leagues/{id}/teams-published": {
+      "patch": {
+        "tags": [
+          "league-setup"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "teamsPublished": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "teamsPublished"
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "teamsPublished": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "teamsPublished"
                   ]
                 }
               }

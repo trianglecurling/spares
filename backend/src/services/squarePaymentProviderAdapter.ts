@@ -73,6 +73,38 @@ function mapSquarePaymentStatus(status: string | null): PaymentOrderStatus | nul
   return null;
 }
 
+/**
+ * A declined card on an open checkout is not a terminal order failure.
+ * Keep the payment order open so a retry on the same link can succeed.
+ */
+export function resolveSquareWebhookNextStatus(input: {
+  eventType: string;
+  paymentStatus?: string | null;
+  order?: unknown;
+  orderUpdated?: unknown;
+}): PaymentOrderStatus | null {
+  const isRefundEvent = input.eventType.toLowerCase().includes('refund');
+  const paymentStatus = mapSquarePaymentStatus(input.paymentStatus ?? null);
+  if (paymentStatus === 'failed' && !isRefundEvent) {
+    return null;
+  }
+  if (paymentStatus) {
+    return paymentStatus;
+  }
+  if (input.order) {
+    const fromOrder = resolveSquareOrderPaymentStatusFromRecord(input.order);
+    if (fromOrder) return fromOrder;
+  }
+  if (isRecord(input.orderUpdated)) {
+    const fromUpdated = mapSquareOrderState(recordString(input.orderUpdated, ['state']));
+    if (fromUpdated) return fromUpdated;
+  }
+  if (isRefundEvent) {
+    return 'refunded';
+  }
+  return null;
+}
+
 function mapSquareOrderState(state: string | null): PaymentOrderStatus | null {
   if (!state) return null;
   const normalized = state.trim().toUpperCase();
@@ -267,6 +299,7 @@ async function resolveSquareOrderPaymentStatus(
     return 'pending';
   }
 
+  let sawPending = false;
   for (const tender of order.tenders) {
     if (!isRecord(tender)) continue;
     const paymentId = asString(tender.paymentId ?? tender.payment_id ?? tender.id);
@@ -274,14 +307,18 @@ async function resolveSquareOrderPaymentStatus(
     try {
       const paymentResponse = await client.payments.get({ paymentId });
       const paymentStatus = mapSquarePaymentStatus(asString(paymentResponse.payment?.status));
-      if (paymentStatus === 'succeeded' || paymentStatus === 'failed') {
-        return paymentStatus;
+      if (paymentStatus === 'succeeded') {
+        return 'succeeded';
+      }
+      if (paymentStatus === 'pending') {
+        sawPending = true;
       }
     } catch {
       // Fall through to pending when Square has not materialized the payment yet.
     }
   }
 
+  if (sawPending) return 'pending';
   return resolved ?? 'pending';
 }
 
@@ -564,16 +601,13 @@ export class SquarePaymentProviderAdapter implements PaymentProviderAdapter {
       || moneyCurrency(refund?.amount_money ?? refund?.amountMoney, 'usd')
       || moneyCurrency(order?.total_money ?? order?.totalMoney, 'usd');
 
-    let nextStatus = mapSquarePaymentStatus(asString(payment?.status));
-    if (!nextStatus && order) {
-      nextStatus = resolveSquareOrderPaymentStatusFromRecord(order);
-    }
-    if (!nextStatus && orderUpdated) {
-      nextStatus = mapSquareOrderState(recordString(orderUpdated, ['state']));
-    }
-    if (!nextStatus && isRefundEvent) {
-      nextStatus = 'refunded';
-    }
+    const paymentStatus = mapSquarePaymentStatus(asString(payment?.status));
+    const nextStatus = resolveSquareWebhookNextStatus({
+      eventType,
+      paymentStatus: asString(payment?.status),
+      order,
+      orderUpdated,
+    });
 
     const refundAmountMinor = moneyAmountMinor(refund?.amount_money ?? refund?.amountMoney);
     const transactionAmount = transactionType === 'refund' && refundAmountMinor > 0 ? refundAmountMinor : amountMinor;
@@ -604,7 +638,7 @@ export class SquarePaymentProviderAdapter implements PaymentProviderAdapter {
               Array.isArray(processingFee) && processingFee.length > 0
                 ? moneyAmountMinor(processingFee[0])
                 : null,
-            status: nextStatus ?? 'pending',
+            status: paymentStatus ?? nextStatus ?? 'pending',
             occurredAt,
             metadata: isRecord(payment?.note) ? payment.note : null,
           }

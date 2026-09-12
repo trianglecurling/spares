@@ -5,6 +5,7 @@ import {
   isSquareOrderFullyPaid,
   isSquareVersionMismatch,
   planSquareOrderCompletion,
+  resolveSquareWebhookNextStatus,
 } from './squarePaymentProviderAdapter.js';
 import { PaymentServiceError, type CreateCheckoutInput } from './paymentService.js';
 
@@ -273,5 +274,34 @@ describe('buildSquareOrderDetails', () => {
         },
       },
     ]);
+  });
+});
+
+describe('resolveSquareWebhookNextStatus', () => {
+  test('declined payment.created does not fail the checkout order', () => {
+    expect(
+      resolveSquareWebhookNextStatus({
+        eventType: 'payment.created',
+        paymentStatus: 'FAILED',
+      }),
+    ).toBeNull();
+  });
+
+  test('completed payment.updated succeeds the checkout order', () => {
+    expect(
+      resolveSquareWebhookNextStatus({
+        eventType: 'payment.updated',
+        paymentStatus: 'COMPLETED',
+      }),
+    ).toBe('succeeded');
+  });
+
+  test('canceled Square order still fails the checkout', () => {
+    expect(
+      resolveSquareWebhookNextStatus({
+        eventType: 'order.updated',
+        orderUpdated: { state: 'CANCELED' },
+      }),
+    ).toBe('failed');
   });
 });

@@ -112,6 +112,7 @@ export interface League {
   allows_sabbatical: number;
   allows_drop_ins?: number;
   drop_in_fee_minor?: number | null;
+  teams_published?: number;
   predecessor_league_id: number | null;
   successor_league_id: number | null;
   public_notes?: string | null;

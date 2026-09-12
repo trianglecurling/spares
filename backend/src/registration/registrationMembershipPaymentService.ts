@@ -285,16 +285,18 @@ export function resolveRegistrationPaymentStatus(input: {
   totalDueMinor: number | null;
 }): RegistrationPaymentStatusPayload['paymentStatus'] {
   if (input.invoiceStatus === 'paid' || input.registrationStatus === 'confirmed') return 'confirmed';
-  if (input.invoiceStatus === 'failed' || input.paymentOrderStatus === 'failed') return 'failed';
-  if (input.invoiceStatus === 'deferred') return 'deferred';
-  if (input.totalDueMinor === 0) return 'no_payment_due';
-
   if (isCancelledRegistrationState(input)) {
     if (input.paymentOrderStatus === 'succeeded' || input.paymentOrderStatus === 'partially_refunded') {
       return 'payment_unapplied';
     }
     return 'cancelled';
   }
+  if (input.paymentOrderStatus === 'succeeded' || input.paymentOrderStatus === 'partially_refunded') {
+    return 'confirming';
+  }
+  if (input.invoiceStatus === 'failed' || input.paymentOrderStatus === 'failed') return 'failed';
+  if (input.invoiceStatus === 'deferred') return 'deferred';
+  if (input.totalDueMinor === 0) return 'no_payment_due';
 
   return 'confirming';
 }
@@ -3148,7 +3150,7 @@ export async function triggerDeferredRegistrationPayment(input: {
   }
 }
 
-const UNCONFIRMED_REGISTRATION_INVOICE_STATUSES = ['checkout_started', 'awaiting_payment'] as const;
+const UNCONFIRMED_REGISTRATION_INVOICE_STATUSES = ['checkout_started', 'awaiting_payment', 'failed'] as const;
 
 async function applyConfirmedRegistrationEntitlementsInTx(input: {
   tx: any;
@@ -3407,7 +3409,7 @@ export async function syncCurlingRegistrationPaymentConfirmationForOrder(orderId
     return false;
   }
 
-  if (order.status === 'pending' || order.status === 'created') {
+  if (order.status === 'pending' || order.status === 'created' || order.status === 'failed') {
     await paymentService.reconcilePaymentOrder(orderId, 'registration-payment-sync');
     order = await paymentService.getPaymentOrderById(orderId);
     if (!order) return false;

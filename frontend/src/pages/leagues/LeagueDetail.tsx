@@ -146,6 +146,7 @@ interface League {
   allowsSabbatical: boolean;
   allowsDropIns?: boolean;
   dropInFeeMinor?: number | null;
+  teamsPublished?: boolean;
   predecessorLeagueId: number | null;
   successorLeagueId: number | null;
   publicNotes?: string | null;
@@ -488,6 +489,7 @@ export default function LeagueDetail() {
   } | null>(null);
   const teamFormRef = useRef<HTMLDivElement | null>(null);
   const [teamFormOpen, setTeamFormOpen] = useState(false);
+  const [savingTeamsPublished, setSavingTeamsPublished] = useState(false);
 
   const [roleMembers, setRoleMembers] = useState<Record<TeamRole, MemberSearchResult | null>>(
     createRoleRecord(null)
@@ -500,6 +502,7 @@ export default function LeagueDetail() {
 
   const numericLeagueId = useMemo(() => parseInt(leagueId || '', 10), [leagueId]);
   const leagueAllowsDropIns = Boolean(league?.allowsDropIns);
+  const teamsListPublished = league?.teamsPublished !== false;
   const unassignedRosterMembers = useMemo(
     () => rosterMembers.filter((member) => !member.assignedTeamId),
     [rosterMembers]
@@ -1552,6 +1555,13 @@ export default function LeagueDetail() {
     }
   };
 
+  const getFallbackRole = (excludedRole: TeamRole, unavailableRoles: TeamRole[] = []) => {
+    const unavailable = new Set([excludedRole, ...unavailableRoles]);
+    const fallbackOrder: TeamRole[] = ['third', 'fourth', 'lead', 'second'];
+    const available = fallbackOrder.filter((role) => roleMembers[role] && !unavailable.has(role));
+    return available[0] ?? excludedRole;
+  };
+
   const handleSelectRoleMember = (role: TeamRole, selected: MemberSearchResult) => {
     if (selectedRoleMemberIds.includes(selected.id) && roleMembers[role]?.id !== selected.id) {
       showAlert('Member is already selected for another role.', 'warning');
@@ -1562,6 +1572,19 @@ export default function LeagueDetail() {
 
   const handleClearRoleMember = (role: TeamRole) => {
     setRoleMembers((prev) => ({ ...prev, [role]: null }));
+    if (skipRole === role) {
+      const nextSkip = getFallbackRole(role);
+      setSkipRole(nextSkip);
+      if (viceRole === nextSkip) {
+        setViceRole(getFallbackRole(nextSkip, [role]));
+      }
+    } else if (viceRole === role) {
+      const nextVice = getFallbackRole(role);
+      setViceRole(nextVice);
+      if (skipRole === nextVice) {
+        setSkipRole(getFallbackRole(nextVice, [role]));
+      }
+    }
   };
 
   const handleSelectDoublesMember = (role: DoublesRole, selected: MemberSearchResult) => {
@@ -1584,44 +1607,37 @@ export default function LeagueDetail() {
       return [];
     }
 
-    const requiredRoles: TeamRole[] = ['lead', 'third', 'fourth'];
-    for (const role of requiredRoles) {
-      if (!roleMembers[role]) {
-        showAlert(`Select a ${roleLabels[role]} for the roster.`, 'warning');
-        return null;
-      }
-    }
-
     const selectedEntries = teamRoles
       .map((role) => {
         const selected = roleMembers[role];
         if (!selected) return null;
-        return {
-          memberId: selected.id,
-          name: selected.name,
-          role,
-          isSkip: role === skipRole,
-          isVice: role === viceRole,
-        } as RosterMember;
+        return { role, selected };
       })
-      .filter(Boolean) as RosterMember[];
+      .filter((entry): entry is { role: TeamRole; selected: MemberSearchResult } => entry != null);
 
     if (selectedEntries.length < 3) {
       showAlert('Teams rosters need at least 3 players.', 'warning');
       return null;
     }
 
-    if (!roleMembers[skipRole] || !roleMembers[viceRole]) {
+    const resolvedSkip = roleMembers[skipRole] ? skipRole : getFallbackRole(skipRole);
+    const resolvedVice =
+      roleMembers[viceRole] && viceRole !== resolvedSkip
+        ? viceRole
+        : getFallbackRole(viceRole, [resolvedSkip]);
+
+    if (!roleMembers[resolvedSkip] || !roleMembers[resolvedVice] || resolvedSkip === resolvedVice) {
       showAlert('Select roster members for skip and vice.', 'warning');
       return null;
     }
 
-    if (skipRole === viceRole) {
-      showAlert('Skip and vice must be different roles.', 'warning');
-      return null;
-    }
-
-    return selectedEntries;
+    return selectedEntries.map(({ role, selected }) => ({
+      memberId: selected.id,
+      name: selected.name,
+      role,
+      isSkip: role === resolvedSkip,
+      isVice: role === resolvedVice,
+    })) as RosterMember[];
   };
 
   const buildDoublesRoster = () => {
@@ -1654,12 +1670,6 @@ export default function LeagueDetail() {
     }
 
     return selectedEntries;
-  };
-
-  const getFallbackRole = (excludedRole: TeamRole) => {
-    const fallbackOrder: TeamRole[] = ['third', 'fourth', 'lead', 'second'];
-    const available = fallbackOrder.filter((role) => roleMembers[role] && role !== excludedRole);
-    return available[0] ?? excludedRole;
   };
 
   const handleTeamSubmit = async (e: FormEvent) => {
@@ -1743,6 +1753,24 @@ export default function LeagueDetail() {
     } catch (error: unknown) {
       console.error('Failed to delete team:', error);
       showAlert(formatApiError(error, 'Failed to delete team'), 'error');
+    }
+  };
+
+  const handleTeamsPublishedChange = async (next: boolean) => {
+    if (!league) return;
+    setSavingTeamsPublished(true);
+    try {
+      await patch(
+        '/leagues/{id}/teams-published',
+        { teamsPublished: next },
+        { id: String(numericLeagueId) }
+      );
+      setLeague({ ...league, teamsPublished: next });
+      showAlert(next ? 'Teams list published' : 'Teams list unpublished', 'success');
+    } catch (error: unknown) {
+      showAlert(formatApiError(error, 'Failed to update teams list publish setting'), 'error');
+    } finally {
+      setSavingTeamsPublished(false);
     }
   };
 
@@ -1950,6 +1978,8 @@ export default function LeagueDetail() {
                   </Link>{' '}
                   and does not use teams.
                 </p>
+              ) : !teamsListPublished && !canManageSetup ? (
+                <InlineStateMessage title="Teams have not been published yet." />
               ) : teams.length === 0 ? (
                 <div className="text-sm text-gray-500 dark:text-gray-400">No teams yet.</div>
               ) : divisions.length > 1 ? (
@@ -2906,8 +2936,24 @@ export default function LeagueDetail() {
                   </>
                 }
               />
+            ) : !teamsListPublished && !canManageSetup ? (
+              <AppStateCard
+                title="Teams have not been published yet."
+                description="The league manager will publish the teams list when it is ready."
+              />
             ) : (
               <>
+            {canManageSetup && (
+              <div className="app-card">
+                <FormCheckbox
+                  label="Publish teams list"
+                  checked={teamsListPublished}
+                  disabled={savingTeamsPublished}
+                  onChange={(checked) => void handleTeamsPublishedChange(checked)}
+                  helperText="Members can see this list when it is published. Schedule and standings still show team names."
+                />
+              </div>
+            )}
             {canManageSetup && (
               <div
                 ref={teamFormRef}
@@ -2992,7 +3038,7 @@ export default function LeagueDetail() {
                         <p className="text-xs text-gray-500 dark:text-gray-400">
                           {league.format === 'doubles'
                             ? 'Add Player 1 and Player 2.'
-                            : 'Add lead, third, fourth (and optional second), then pick skip and vice.'}
+                            : 'Add three or four players in any positions, then pick skip and vice.'}
                         </p>
                       </div>
 

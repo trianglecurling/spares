@@ -137,6 +137,15 @@ describe('Phase 7 submission and checkout decisions', () => {
         totalDueMinor: 12500,
       })
     ).toBe('failed');
+
+    expect(
+      resolveRegistrationPaymentStatus({
+        invoiceStatus: 'failed',
+        registrationStatus: 'awaiting_payment',
+        paymentOrderStatus: 'succeeded',
+        totalDueMinor: 12500,
+      })
+    ).toBe('confirming');
   });
 
   test('deferred-to-immediate edit preview does not create checkout until confirmed', () => {

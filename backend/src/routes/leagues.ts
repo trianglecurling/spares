@@ -475,6 +475,7 @@ function mapLeagueResponse(
     allows_sabbatical?: number | boolean;
     allows_drop_ins?: number | boolean;
     drop_in_fee_minor?: number | null;
+    teams_published?: number | boolean;
     predecessor_league_id?: number | null;
     successor_league_id?: number | null;
     public_notes?: string | null;
@@ -513,6 +514,9 @@ function mapLeagueResponse(
     allowsSabbatical: toBool(row.allows_sabbatical ?? 1),
     allowsDropIns: toBool(row.allows_drop_ins ?? 0),
     dropInFeeMinor: row.drop_in_fee_minor ?? null,
+    teamsPublished: row.teams_published === undefined || row.teams_published === null
+      ? true
+      : toBool(row.teams_published),
     predecessorLeagueId: row.predecessor_league_id ?? null,
     successorLeagueId: row.successor_league_id ?? null,
     publicNotes: row.public_notes?.trim() || null,

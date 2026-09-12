@@ -2,6 +2,7 @@ import { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { and, desc, eq, inArray, ne, notInArray, or, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
+import { validateLeagueTeamRoster } from './leagueTeamRosterValidation.js';
 import { successResponseSchema } from '../api/schemas.js';
 import {
   divisionCreateBodySchema,
@@ -31,6 +32,8 @@ import {
   sheetUpdateBodySchema,
   teamCreateBodySchema,
   teamListResponseSchema,
+  teamsPublishedBodySchema,
+  teamsPublishedResponseSchema,
   teamResponseSchema,
   teamRosterResponseSchema,
   teamRosterUpdateBodySchema,
@@ -240,6 +243,10 @@ const sabbaticalRemoveSchema = z.object({
   reason: z.string().min(1),
 });
 
+const teamsPublishedSchema = z.object({
+  teamsPublished: z.boolean(),
+});
+
 const idParamsSchema = {
   type: 'object',
   additionalProperties: false,
@@ -307,84 +314,6 @@ function getLastName(fullName: string): string {
   if (!trimmed) return '';
   const parts = trimmed.split(/\s+/);
   return parts[parts.length - 1] || trimmed;
-}
-
-function validateRoster(
-  format: 'teams' | 'doubles' | 'instructional',
-  members: TeamMemberInput[]
-): TeamMemberInput[] {
-  const rosterShapeFormat = format === 'doubles' ? 'doubles' : 'teams';
-  const normalized = members.map((m) => ({
-    ...m,
-    isSkip: Boolean(m.isSkip),
-    isVice: Boolean(m.isVice),
-  }));
-
-  const memberIds = new Set<number>();
-  for (const member of normalized) {
-    if (memberIds.has(member.memberId)) {
-      throw new Error('Roster has duplicate members.');
-    }
-    memberIds.add(member.memberId);
-  }
-
-  const roles = normalized.map((m) => m.role);
-  const roleSet = new Set(roles);
-  if (roleSet.size !== roles.length) {
-    throw new Error('Roster roles must be unique.');
-  }
-
-  if (rosterShapeFormat === 'teams') {
-    const allowedRoles = new Set(['lead', 'second', 'third', 'fourth']);
-    if (!normalized.every((m) => allowedRoles.has(m.role))) {
-      throw new Error('Teams roster roles must be lead, second, third, or fourth.');
-    }
-
-    if (normalized.length !== 3 && normalized.length !== 4) {
-      throw new Error('Teams rosters must have 3 or 4 players.');
-    }
-
-    if (!roleSet.has('lead') || !roleSet.has('third') || !roleSet.has('fourth')) {
-      throw new Error('Teams rosters must include lead, third, and fourth.');
-    }
-
-    if (normalized.length === 4 && !roleSet.has('second')) {
-      throw new Error('Four-person teams must include a second.');
-    }
-
-    if (normalized.length === 3 && roleSet.has('second')) {
-      throw new Error('Three-person teams may not include a second.');
-    }
-
-    const skips = normalized.filter((m) => m.isSkip);
-    const vices = normalized.filter((m) => m.isVice);
-
-    if (skips.length !== 1) {
-      throw new Error('Teams rosters must have exactly one skip.');
-    }
-    if (vices.length !== 1) {
-      throw new Error('Teams rosters must have exactly one vice.');
-    }
-    if (skips[0].memberId === vices[0].memberId) {
-      throw new Error('Skip and vice must be different players.');
-    }
-
-    return normalized;
-  }
-
-  if (normalized.length !== 2) {
-    throw new Error('Doubles rosters must have exactly two players.');
-  }
-
-  if (!(roleSet.has('player1') && roleSet.has('player2'))) {
-    throw new Error('Doubles rosters must include player1 and player2.');
-  }
-
-  if (normalized.some((m) => m.isSkip || m.isVice)) {
-    throw new Error('Doubles rosters do not support skip or vice.');
-  }
-
-  return normalized;
 }
 
 function computeDefaultTeamName(
@@ -1709,6 +1638,55 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
     }
   );
 
+  fastify.patch<{ Reply: ApiReply<unknown> }>(
+    '/leagues/:id/teams-published',
+    {
+      schema: {
+        tags: ['league-setup'],
+        params: idParamsSchema,
+        body: teamsPublishedBodySchema,
+        response: {
+          200: teamsPublishedResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const member = request.member;
+      const { id } = request.params as { id: string };
+      const leagueId = parseInt(id, 10);
+
+      if (!member || !(await hasLeagueSetupAccess(member, leagueId))) {
+        return reply.code(403).send({ error: 'Forbidden' });
+      }
+
+      const body = teamsPublishedSchema.parse(request.body);
+      const { db, schema } = getDrizzleDb();
+
+      const leagues = await db
+        .select({ id: schema.leagues.id })
+        .from(schema.leagues)
+        .where(eq(schema.leagues.id, leagueId))
+        .limit(1);
+      if (leagues.length === 0) {
+        return reply.code(404).send({ error: 'League not found' });
+      }
+
+      if (await leagueAllowsDropIns(leagueId)) {
+        return reply.code(400).send({ error: DROP_IN_LEAGUE_NO_TEAMS_MESSAGE });
+      }
+
+      await db
+        .update(schema.leagues)
+        .set({
+          teams_published: body.teamsPublished ? 1 : 0,
+          updated_at: sql`CURRENT_TIMESTAMP`,
+        })
+        .where(eq(schema.leagues.id, leagueId));
+
+      return { teamsPublished: body.teamsPublished };
+    }
+  );
+
   // Teams and rosters
   fastify.get<{ Reply: ApiReply<unknown> }>(
     '/leagues/:id/teams',
@@ -1893,7 +1871,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
 
       if (body.members && body.members.length > 0) {
         try {
-          const roster = validateRoster(format, body.members);
+          const roster = validateLeagueTeamRoster(format, body.members);
           const memberIds = roster.map((entry) => entry.memberId);
           for (const memberId of memberIds) {
             if (await isMemberExpired(db, schema, memberId)) {
@@ -2210,7 +2188,7 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        const roster = validateRoster(team.format, body.members);
+        const roster = validateLeagueTeamRoster(team.format, body.members);
         const memberIds = roster.map((entry) => entry.memberId);
 
         for (const memberId of memberIds) {

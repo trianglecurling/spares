@@ -456,6 +456,8 @@ export const leaguesSqlite = sqliteTable('leagues', {
   allows_sabbatical: integer('allows_sabbatical').default(1).notNull(),
   allows_drop_ins: integer('allows_drop_ins').default(0).notNull(),
   drop_in_fee_minor: integer('drop_in_fee_minor'),
+  /** When 0, members cannot see the league teams list. Managers can still manage teams. */
+  teams_published: integer('teams_published').default(1).notNull(),
   predecessor_league_id: integer('predecessor_league_id'),
   successor_league_id: integer('successor_league_id'),
   public_notes: text('public_notes'),
@@ -2903,6 +2905,8 @@ export const leaguesPg = pgTable('leagues', {
   allows_sabbatical: integerPg('allows_sabbatical').default(1).notNull(),
   allows_drop_ins: integerPg('allows_drop_ins').default(0).notNull(),
   drop_in_fee_minor: integerPg('drop_in_fee_minor'),
+  /** When 0, members cannot see the league teams list. Managers can still manage teams. */
+  teams_published: integerPg('teams_published').default(1).notNull(),
   predecessor_league_id: integerPg('predecessor_league_id'),
   successor_league_id: integerPg('successor_league_id'),
   public_notes: textPg('public_notes'),

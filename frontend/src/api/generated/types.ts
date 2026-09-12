@@ -6192,6 +6192,7 @@ export interface paths {
                             allowsSabbatical: boolean;
                             allowsDropIns: boolean;
                             dropInFeeMinor: null | number;
+                            teamsPublished: boolean;
                             predecessorLeagueId: null | number;
                             successorLeagueId: null | number;
                             publicNotes: null | string;
@@ -6294,6 +6295,7 @@ export interface paths {
                             allowsSabbatical: boolean;
                             allowsDropIns: boolean;
                             dropInFeeMinor: null | number;
+                            teamsPublished: boolean;
                             predecessorLeagueId: null | number;
                             successorLeagueId: null | number;
                             publicNotes: null | string;
@@ -6423,6 +6425,7 @@ export interface paths {
                                 allowsSabbatical: boolean;
                                 allowsDropIns: boolean;
                                 dropInFeeMinor: null | number;
+                                teamsPublished: boolean;
                                 predecessorLeagueId: null | number;
                                 successorLeagueId: null | number;
                                 publicNotes: null | string;
@@ -6582,6 +6585,7 @@ export interface paths {
                             allowsSabbatical: boolean;
                             allowsDropIns: boolean;
                             dropInFeeMinor: null | number;
+                            teamsPublished: boolean;
                             predecessorLeagueId: null | number;
                             successorLeagueId: null | number;
                             publicNotes: null | string;
@@ -6730,6 +6734,7 @@ export interface paths {
                                 allowsSabbatical: boolean;
                                 allowsDropIns: boolean;
                                 dropInFeeMinor: null | number;
+                                teamsPublished: boolean;
                                 predecessorLeagueId: null | number;
                                 successorLeagueId: null | number;
                                 publicNotes: null | string;
@@ -7807,6 +7812,51 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/leagues/{id}/teams-published": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        teamsPublished: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            teamsPublished: boolean;
+                        };
+                    };
+                };
+            };
+        };
         trace?: never;
     };
     "/leagues/{id}/teams": {

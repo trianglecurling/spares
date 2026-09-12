@@ -26,11 +26,22 @@ const ORDER_STATUS_TRANSITIONS: Record<PaymentOrderStatus, ReadonlySet<PaymentOr
   created: new Set(['pending', 'succeeded', 'failed']),
   pending: new Set(['succeeded', 'failed', 'partially_refunded', 'pending_refund', 'refunded']),
   succeeded: new Set(['partially_refunded', 'pending_refund', 'refunded']),
-  failed: new Set(),
+  // A declined first attempt used to terminate the order. Allow recovery when a
+  // later charge on the same checkout succeeds, or when we reopen it as pending.
+  failed: new Set(['pending', 'succeeded']),
   pending_refund: new Set(['succeeded', 'partially_refunded', 'refunded']),
   refunded: new Set(),
   partially_refunded: new Set(['partially_refunded', 'pending_refund', 'refunded', 'succeeded']),
 };
+
+export function canTransitionPaymentOrderStatus(
+  from: PaymentOrderStatus,
+  to: PaymentOrderStatus,
+): boolean {
+  return ORDER_STATUS_TRANSITIONS[from].has(to);
+}
+
+const UPGRADABLE_CHARGE_TRANSACTION_STATUSES = new Set(['created', 'pending']);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -1703,6 +1714,7 @@ export class PaymentService {
         if (changed) {
           currentStatus = providerStatus;
           if (providerStatus === 'succeeded') {
+            await this.upgradeOpenChargeTransactionsToSucceeded(orderId);
             await this.runSucceededOrderSideEffects(orderId);
           } else if (providerStatus === 'refunded' || providerStatus === 'partially_refunded') {
             await this.runRefundedOrderSideEffects(orderId);
@@ -1733,6 +1745,7 @@ export class PaymentService {
     });
 
     if ((providerStatus === 'succeeded' || currentStatus === 'succeeded') && !changed) {
+      await this.upgradeOpenChargeTransactionsToSucceeded(orderId);
       await this.confirmCurlingRegistrationForSucceededOrder(orderId);
       await this.confirmEventRegistrationForSucceededOrder(orderId);
       await this.completePaidProviderOrderForPaymentOrder(orderId);
@@ -1886,6 +1899,146 @@ export class PaymentService {
       skippedByMaxAge,
       staleThresholdIso: staleBefore.toISOString(),
       maxPendingAgeThresholdIso: maxPendingAgeThreshold ? maxPendingAgeThreshold.toISOString() : null,
+      results,
+    };
+  }
+
+  private async recordOrUpgradePaymentTransaction(input: {
+    paymentOrderId: number;
+    provider: PaymentProvider;
+    providerTransactionId: string;
+    transactionType: PaymentTransactionType;
+    amountMinor: number;
+    currency: string;
+    feeMinor: number | null;
+    status: PaymentOrderStatus;
+    occurredAt: Date | null;
+    metadata: string | null;
+  }): Promise<void> {
+    const [existing] = await this.db
+      .select({
+        id: this.schema.paymentTransactions.id,
+        status: this.schema.paymentTransactions.status,
+      })
+      .from(this.schema.paymentTransactions)
+      .where(
+        and(
+          eq(this.schema.paymentTransactions.provider, input.provider),
+          eq(this.schema.paymentTransactions.provider_transaction_id, input.providerTransactionId),
+        ),
+      )
+      .limit(1);
+
+    if (!existing) {
+      await this.db.insert(this.schema.paymentTransactions).values({
+        payment_order_id: input.paymentOrderId,
+        provider: input.provider,
+        provider_transaction_id: input.providerTransactionId,
+        transaction_type: input.transactionType,
+        amount_minor: input.amountMinor,
+        currency: input.currency,
+        fee_minor: input.feeMinor,
+        status: input.status,
+        occurred_at: input.occurredAt ?? sql`CURRENT_TIMESTAMP`,
+        metadata: input.metadata,
+      });
+      await logEvent({
+        eventType: 'payment.transaction.recorded',
+        relatedId: input.paymentOrderId,
+        meta: {
+          provider: input.provider,
+          providerTransactionId: input.providerTransactionId,
+          transactionType: input.transactionType,
+          amountMinor: input.amountMinor,
+        },
+      });
+      return;
+    }
+
+    if (
+      existing.status !== input.status
+      && UPGRADABLE_CHARGE_TRANSACTION_STATUSES.has(existing.status)
+      && (input.status === 'succeeded' || input.status === 'failed')
+    ) {
+      await this.db
+        .update(this.schema.paymentTransactions)
+        .set({
+          status: input.status,
+          amount_minor: input.amountMinor,
+          fee_minor: input.feeMinor,
+          occurred_at: input.occurredAt ?? sql`CURRENT_TIMESTAMP`,
+        })
+        .where(eq(this.schema.paymentTransactions.id, existing.id));
+    }
+  }
+
+  private async upgradeOpenChargeTransactionsToSucceeded(orderId: number): Promise<void> {
+    await this.db
+      .update(this.schema.paymentTransactions)
+      .set({ status: 'succeeded' })
+      .where(
+        and(
+          eq(this.schema.paymentTransactions.payment_order_id, orderId),
+          inArray(this.schema.paymentTransactions.transaction_type, ['charge', 'capture']),
+          inArray(this.schema.paymentTransactions.status, [...UPGRADABLE_CHARGE_TRANSACTION_STATUSES]),
+        ),
+      );
+  }
+
+  async reconcileRecoverableFailedOrders(
+    limit: number,
+    reason = 'background-reconcile-failed-recovery',
+  ): Promise<ReconcilePendingPaymentsSummary> {
+    const batchLimit = Math.max(1, Math.min(200, limit));
+    const metadataColumn = this.schema.paymentOrders.metadata;
+    const isPostgres = getDatabaseConfig()?.type === 'postgres';
+    const completedOnProvider = isPostgres
+      ? sql`COALESCE(${metadataColumn}::jsonb->>'squareOrderCompletedAt', '') <> ''`
+      : sql`COALESCE(json_extract(COALESCE(${metadataColumn}, '{}'), '$.squareOrderCompletedAt'), '') <> ''`;
+
+    const rows = await this.db
+      .select({
+        id: this.schema.paymentOrders.id,
+      })
+      .from(this.schema.paymentOrders)
+      .where(
+        and(
+          eq(this.schema.paymentOrders.status, 'failed'),
+          or(
+            completedOnProvider,
+            sql`EXISTS (
+              SELECT 1 FROM payment_transactions pt
+              WHERE pt.payment_order_id = ${this.schema.paymentOrders.id}
+                AND pt.status IN ('pending', 'succeeded')
+            )`,
+          ),
+        ),
+      )
+      .orderBy(this.schema.paymentOrders.id)
+      .limit(batchLimit);
+
+    const results: ReconcilePaymentOrderResult[] = [];
+    for (const row of rows) {
+      try {
+        results.push(await this.reconcilePaymentOrder(row.id, reason));
+      } catch (error) {
+        await logEvent({
+          eventType: 'payment.order.reconcile_failed',
+          relatedId: row.id,
+          meta: {
+            error: error instanceof Error ? error.message : 'Unknown error',
+            reason,
+          },
+        });
+      }
+    }
+
+    return {
+      checked: rows.length,
+      changed: results.filter((result) => result.changed).length,
+      skippedByMaxAge: 0,
+      staleThresholdIso: new Date().toISOString(),
+      maxPendingAgeThresholdIso: null,
       results,
     };
   }
@@ -2076,36 +2229,17 @@ export class PaymentService {
 
       if (verified.transaction) {
         const occurredAt = parseTimestamp(verified.transaction.occurredAt);
-        await this.db
-          .insert(this.schema.paymentTransactions)
-          .values({
-            payment_order_id: order.id,
-            provider: input.provider,
-            provider_transaction_id: verified.transaction.providerTransactionId,
-            transaction_type: verified.transaction.transactionType,
-            amount_minor: verified.transaction.amountMinor,
-            currency: verified.transaction.currency,
-            fee_minor: verified.transaction.feeMinor,
-            status: verified.transaction.status,
-            occurred_at: occurredAt ?? sql`CURRENT_TIMESTAMP`,
-            metadata: verified.transaction.metadata ? safeJsonStringify(verified.transaction.metadata) : null,
-          })
-          .onConflictDoNothing({
-            target: [
-              this.schema.paymentTransactions.provider,
-              this.schema.paymentTransactions.provider_transaction_id,
-            ],
-          });
-
-        await logEvent({
-          eventType: 'payment.transaction.recorded',
-          relatedId: order.id,
-          meta: {
-            provider: input.provider,
-            providerTransactionId: verified.transaction.providerTransactionId,
-            transactionType: verified.transaction.transactionType,
-            amountMinor: verified.transaction.amountMinor,
-          },
+        await this.recordOrUpgradePaymentTransaction({
+          paymentOrderId: order.id,
+          provider: input.provider,
+          providerTransactionId: verified.transaction.providerTransactionId,
+          transactionType: verified.transaction.transactionType,
+          amountMinor: verified.transaction.amountMinor,
+          currency: verified.transaction.currency,
+          feeMinor: verified.transaction.feeMinor,
+          status: verified.transaction.status,
+          occurredAt,
+          metadata: verified.transaction.metadata ? safeJsonStringify(verified.transaction.metadata) : null,
         });
       }
 
@@ -2113,11 +2247,18 @@ export class PaymentService {
       let transitionedToRefunded = false;
       let transitionedToFailed = false;
       if (verified.nextStatus) {
-        const transitioned = await this.transitionOrderStatus(
-          order.id,
-          verified.nextStatus,
-          `webhook:${input.provider}:${verified.eventType}`
-        );
+        let transitioned = false;
+        try {
+          transitioned = await this.transitionOrderStatus(
+            order.id,
+            verified.nextStatus,
+            `webhook:${input.provider}:${verified.eventType}`
+          );
+        } catch (error) {
+          if (!(error instanceof PaymentServiceError && error.statusCode === 409)) {
+            throw error;
+          }
+        }
         transitionedToSucceeded = transitioned && verified.nextStatus === 'succeeded';
         transitionedToRefunded = transitioned && (verified.nextStatus === 'refunded' || verified.nextStatus === 'partially_refunded');
         transitionedToFailed = transitioned && verified.nextStatus === 'failed';
@@ -2133,9 +2274,8 @@ export class PaymentService {
         })
         .where(eq(this.schema.paymentEvents.id, eventId!));
 
-      if (transitionedToSucceeded) {
-        await this.runSucceededOrderSideEffects(order.id, verified.orderLookup.providerOrderId);
-      } else if (verified.nextStatus === 'succeeded') {
+      if (transitionedToSucceeded || verified.nextStatus === 'succeeded') {
+        await this.upgradeOpenChargeTransactionsToSucceeded(order.id);
         await this.runSucceededOrderSideEffects(order.id, verified.orderLookup.providerOrderId);
       }
 
