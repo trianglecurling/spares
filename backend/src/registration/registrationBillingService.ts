@@ -17,6 +17,7 @@ import type {
 import { calculateRegistrationFees } from './registrationFeeCalculator.js';
 import { isLeagueProcessingActive } from './registrationLeagueProcessing.js';
 import { LISTABLE_REGISTRATION_STATUSES } from './registrationStaffQuery.js';
+import { ACTIVE_SABBATICAL_STATUSES } from './registrationPriorityLabels.js';
 import { defaultSabbaticalDurationLimitYears } from './sabbaticalDurationLimit.js';
 import { memberCanManageRegistrations } from '../utils/registrationStaffAccess.js';
 import {
@@ -217,6 +218,34 @@ async function loadSessionPlacementChargeLeagues(input: {
   for (const row of playInRows) push(row.memberId, row.leagueId);
   for (const row of sessionRosterRows) push(row.memberId, row.leagueId);
   return extraByMember;
+}
+
+export function resolveBillingRegistrationIdForSabbatical(input: {
+  sourceRegistrationId: number | null;
+  memberId: number;
+  registrationIds: Set<number>;
+  registrationsByMember: Map<number, number[]>;
+}): number | null {
+  if (input.sourceRegistrationId != null && input.registrationIds.has(input.sourceRegistrationId)) {
+    return input.sourceRegistrationId;
+  }
+  return input.registrationsByMember.get(input.memberId)?.[0] ?? null;
+}
+
+/** Staff sabbaticals live on `curling_league_sabbaticals` and may have no registration selection. */
+export function addSabbaticalSelectionsForBilling(
+  selectionsByRegistration: Map<number, RegistrationSelectionInput[]>,
+  sabbaticals: Array<{ registrationId: number; leagueId: number }>,
+): void {
+  for (const sabbatical of sabbaticals) {
+    const list = selectionsByRegistration.get(sabbatical.registrationId) ?? [];
+    const alreadyListed = list.some(
+      (selection) => selection.selectionType === 'sabbatical' && selection.leagueId === sabbatical.leagueId,
+    );
+    if (alreadyListed) continue;
+    list.push({ selectionType: 'sabbatical', leagueId: sabbatical.leagueId });
+    selectionsByRegistration.set(sabbatical.registrationId, list);
+  }
 }
 
 function chargeSetFromRosterRows(
@@ -545,6 +574,24 @@ export async function listStaffRegistrationBilling(input: {
         memberIds: curlerMemberIds,
       })
     : new Map<number, number[]>();
+  const sabbaticalRows =
+    curlerMemberIds.length > 0
+      ? await db
+          .select({
+            memberId: schema.curlingLeagueSabbaticals.member_id,
+            leagueId: schema.curlingLeagueSabbaticals.current_league_id,
+            sourceRegistrationId: schema.curlingLeagueSabbaticals.source_registration_id,
+          })
+          .from(schema.curlingLeagueSabbaticals)
+          .innerJoin(schema.leagues, eq(schema.leagues.id, schema.curlingLeagueSabbaticals.current_league_id))
+          .where(
+            and(
+              inArray(schema.curlingLeagueSabbaticals.member_id, curlerMemberIds),
+              eq(schema.leagues.session_id, session.id),
+              inArray(schema.curlingLeagueSabbaticals.status, [...ACTIVE_SABBATICAL_STATUSES]),
+            ),
+          )
+      : [];
 
   const missingLeagueIds = new Set<number>();
   for (const row of rosterRows) missingLeagueIds.add(row.leagueId);
@@ -554,6 +601,7 @@ export async function listStaffRegistrationBilling(input: {
   for (const leagueIds of extrasByMember.values()) {
     for (const leagueId of leagueIds) missingLeagueIds.add(leagueId);
   }
+  for (const row of sabbaticalRows) missingLeagueIds.add(row.leagueId);
   const unknownLeagueIds = [...missingLeagueIds].filter((id) => leagues[id] == null);
   if (unknownLeagueIds.length > 0) {
     const extraLeagues = await db.select().from(schema.leagues).where(inArray(schema.leagues.id, unknownLeagueIds));
@@ -600,6 +648,21 @@ export async function listStaffRegistrationBilling(input: {
     });
     selectionsByRegistration.set(row.registrationId, list);
   }
+  const registrationIdSet = new Set(registrationIds);
+  addSabbaticalSelectionsForBilling(
+    selectionsByRegistration,
+    sabbaticalRows
+      .map((row) => {
+        const registrationId = resolveBillingRegistrationIdForSabbatical({
+          sourceRegistrationId: row.sourceRegistrationId,
+          memberId: row.memberId,
+          registrationIds: registrationIdSet,
+          registrationsByMember,
+        });
+        return registrationId == null ? null : { registrationId, leagueId: row.leagueId };
+      })
+      .filter((row): row is { registrationId: number; leagueId: number } => row != null),
+  );
 
   const assistanceByRegistration = new Map<number, JuniorAssistanceRequest>();
   for (const row of assistanceRows) {
