@@ -91,7 +91,7 @@ type DrizzleTx = Parameters<Parameters<DrizzleDb['transaction']>[0]>[0];
 type SheetRow = DrizzleSchema['sheets']['$inferSelect'];
 type DivisionRow = DrizzleSchema['leagueDivisions']['$inferSelect'];
 
-/** YYYY-MM-DD for today (UTC date). Used to exclude expired members from add/search. */
+/** YYYY-MM-DD for today (UTC date). Used for social-member and manager membership checks. */
 function todayDateString(): string {
   return new Date().toISOString().split('T')[0];
 }
@@ -1000,7 +1000,6 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
             and(
               eq(schema.leagueRoster.league_id, leagueId),
               memberIsNotSocialCondition(schema, today),
-              memberHasActiveMembershipCondition(schema, today),
               or(
                 sql`LOWER(${schema.members.name}) LIKE ${search}`,
                 sql`LOWER(COALESCE(${schema.members.email}, '')) LIKE ${search}`
@@ -1036,7 +1035,6 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
           and(
             rosterIdSet.length > 0 ? notInArray(schema.members.id, rosterIdSet) : sql`1=1`,
             memberIsNotSocialCondition(schema, today),
-            memberHasActiveMembershipCondition(schema, today),
             or(
               sql`LOWER(${schema.members.name}) LIKE ${search}`,
               sql`LOWER(COALESCE(${schema.members.email}, '')) LIKE ${search}`
@@ -1112,10 +1110,6 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
           .send({ error: 'Social members cannot be added to a league roster.' });
       }
 
-      if (await isMemberExpired(db, schema, body.memberId)) {
-        return reply.code(400).send({ error: 'Cannot add an expired member to the roster.' });
-      }
-
       const result = await db
         .insert(schema.leagueRoster)
         .values({ league_id: leagueId, member_id: body.memberId })
@@ -1170,7 +1164,6 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
         .from(schema.members)
         .where(
           and(
-            memberHasActiveMembershipCondition(schema, today),
             memberIsNotSocialCondition(schema, today),
             inArray(lowerName, uniqueNormalized)
           )
@@ -1225,15 +1218,6 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
 
       const toInsert = uniqueMatchedIds.filter((id) => !existingIds.has(id));
       if (toInsert.length > 0) {
-        for (const memberId of toInsert) {
-          if (await isMemberExpired(db, schema, memberId, today)) {
-            return reply
-              .code(400)
-              .send({
-                error: 'One or more matched members are expired and cannot be added to the roster.',
-              });
-          }
-        }
         await db
           .insert(schema.leagueRoster)
           .values(toInsert.map((memberId) => ({ league_id: leagueId, member_id: memberId })))
@@ -1254,7 +1238,6 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
           .from(schema.members)
           .where(
             and(
-              memberHasActiveMembershipCondition(schema, today),
               memberIsNotSocialCondition(schema, today),
               or(
                 sql`LOWER(${schema.members.name}) LIKE ${search}`,
@@ -1886,15 +1869,6 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
         try {
           const roster = validateLeagueTeamRoster(format, body.members);
           const memberIds = roster.map((entry) => entry.memberId);
-          for (const memberId of memberIds) {
-            if (await isMemberExpired(db, schema, memberId)) {
-              return reply
-                .code(400)
-                .send({
-                  error: 'One or more roster members are expired and cannot be added to a team.',
-                });
-            }
-          }
           await db.transaction(async (tx: DrizzleTx) => {
             await tx.delete(schema.teamMembers).where(eq(schema.teamMembers.team_id, team.id));
 
@@ -2203,16 +2177,6 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
       try {
         const roster = validateLeagueTeamRoster(team.format, body.members);
         const memberIds = roster.map((entry) => entry.memberId);
-
-        for (const memberId of memberIds) {
-          if (await isMemberExpired(db, schema, memberId)) {
-            return reply
-              .code(400)
-              .send({
-                error: 'One or more roster members are expired and cannot be added to a team.',
-              });
-          }
-        }
 
         await db.transaction(async (tx: DrizzleTx) => {
           const existingMembers = (await tx
