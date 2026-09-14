@@ -755,7 +755,8 @@ export type RegistrationPaymentItemLineTypeSqlite =
   | 'student_league_discount'
   | 'reciprocal_discount'
   | 'winter_only_discount'
-  | 'sabbatical_fill_discount';
+  | 'sabbatical_fill_discount'
+  | 'financial_assistance_discount';
 
 export const registrationPaymentItemNamesSqlite = sqliteTable('registration_payment_item_names', {
   line_type: text('line_type').primaryKey().notNull().$type<RegistrationPaymentItemLineTypeSqlite>(),

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { sendValidationError } from '../api/errors.js';
 import type { Member } from '../types.js';
 import { isAdmin } from '../utils/auth.js';
+import { memberCanManageRegistrations } from '../utils/registrationStaffAccess.js';
 import { memberCanManageWaitlists, memberCanViewWaitlists } from '../utils/waitlistAccess.js';
 import {
   acceptWaitlistOffer,
@@ -40,6 +41,19 @@ function requireAdmin(request: FastifyRequest, reply: FastifyReply): boolean {
     return false;
   }
   if (!isAdmin(member)) {
+    reply.code(403).send({ error: 'Forbidden' });
+    return false;
+  }
+  return true;
+}
+
+function requireRegistrationManage(request: FastifyRequest, reply: FastifyReply): boolean {
+  const member = request.member;
+  if (!member) {
+    reply.code(401).send({ error: 'Unauthorized' });
+    return false;
+  }
+  if (!memberCanManageRegistrations(member)) {
     reply.code(403).send({ error: 'Forbidden' });
     return false;
   }
@@ -225,23 +239,62 @@ export async function protectedRegistrationWaitlistStaffRoutes(fastify: FastifyI
     }
   });
 
-  fastify.patch('/registration/staff/financial-assistance/:id', async (request, reply) => {
-    if (!requireAdmin(request, reply)) return;
-    try {
-      const params = idParamsSchema.parse(request.params);
-      const body = financialAssistanceReviewSchema.parse(request.body);
-      return await reviewJuniorFinancialAssistance({
-        requestId: params.id,
-        actorMemberId: (request as AuthenticatedRequest).member.id,
-        status: body.status,
-        approvedPercentage: body.approvedPercentage,
-        staffNotes: body.staffNotes,
-      });
-    } catch (error) {
-      if (handleWaitlistError(reply, error)) return;
-      throw error;
-    }
-  });
+  fastify.patch(
+    '/registration/staff/financial-assistance/:id',
+    {
+      schema: {
+        tags: ['registration-staff'],
+        params: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['id'],
+          properties: {
+            id: { type: 'string' },
+          },
+        },
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['status'],
+          properties: {
+            status: {
+              type: 'string',
+              enum: ['approved', 'partially_approved', 'denied', 'withdrawn'],
+            },
+            approvedPercentage: { type: ['number', 'null'] },
+            staffNotes: { type: ['string', 'null'] },
+          },
+        },
+        response: {
+          200: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['request'],
+            properties: {
+              request: { type: 'object', additionalProperties: true },
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      if (!requireRegistrationManage(request, reply)) return;
+      try {
+        const params = idParamsSchema.parse(request.params);
+        const body = financialAssistanceReviewSchema.parse(request.body);
+        return await reviewJuniorFinancialAssistance({
+          requestId: params.id,
+          actorMemberId: (request as AuthenticatedRequest).member.id,
+          status: body.status,
+          approvedPercentage: body.approvedPercentage,
+          staffNotes: body.staffNotes,
+        });
+      } catch (error) {
+        if (handleWaitlistError(reply, error)) return;
+        throw error;
+      }
+    },
+  );
 
   fastify.get('/registration/waitlists/leagues/:leagueId', async (request, reply) => {
     if (!requireWaitlistView(request, reply)) return;

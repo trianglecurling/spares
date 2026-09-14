@@ -621,6 +621,31 @@ describe('registration business logic', () => {
     expectReason(assisted.paymentDecision, 'junior_financial_assistance_requires_review');
   });
 
+  test('approved Junior Recreational financial assistance discounts the program fee', () => {
+    const pending = calculateRegistrationFees(
+      membershipOnly({
+        membershipOption: 'junior_recreational',
+        juniorAssistance: { requestedPercent: 50, status: 'pending' },
+      }),
+    );
+    expect(pending.discountLineItems).toHaveLength(0);
+    expect(pending.totalDueMinor).toBe(7500);
+
+    const approved = calculateRegistrationFees(
+      membershipOnly({
+        membershipOption: 'junior_recreational',
+        juniorAssistance: { requestedPercent: 50, approvedPercent: 50, status: 'approved' },
+      }),
+    );
+    expect(approved.discountLineItems).toEqual([
+      expect.objectContaining({
+        lineType: 'financial_assistance_discount',
+        amountMinor: -3750,
+      }),
+    ]);
+    expect(approved.totalDueMinor).toBe(3750);
+  });
+
   test('payment is immediate when every wanted league is guaranteed and deferred otherwise', () => {
     expect(evaluateRegistrationDraft(registrationContext()).paymentDecision.outcome).toBe('immediate_payment');
 

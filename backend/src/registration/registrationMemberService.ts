@@ -680,6 +680,7 @@ export async function getMemberRegistrationDetail(registrationId: number, actor:
     .limit(1);
   const [financialAssistance] = await db
     .select({
+      requestId: schema.financialAssistanceRequests.id,
       requestedPercent: schema.financialAssistanceRequests.requested_percentage,
       approvedPercent: schema.financialAssistanceRequests.approved_percentage,
       status: schema.financialAssistanceRequests.status,
@@ -756,6 +757,7 @@ export async function getMemberRegistrationDetail(registrationId: number, actor:
       basicIceFallbackInterest: booleanFromSqliteFlag(registration.basic_ice_fallback_interest),
       financialAssistance: financialAssistance
         ? {
+            requestId: financialAssistance.requestId,
             requestedPercent: Number(financialAssistance.requestedPercent),
             approvedPercent:
               financialAssistance.approvedPercent == null ? null : Number(financialAssistance.approvedPercent),

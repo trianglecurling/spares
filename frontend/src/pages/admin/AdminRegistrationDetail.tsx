@@ -24,6 +24,8 @@ import {
   type LeaguePriorityGuaranteeLabel,
 } from '../../components/registration/leaguePriorityShared';
 import RegistrationCollectedDetails from '../../components/registration/RegistrationCollectedDetails';
+import ReviewFinancialAssistanceModal from '../../components/registration/ReviewFinancialAssistanceModal';
+import { canReviewFinancialAssistance } from '../../components/registration/financialAssistanceReviewShared';
 import type { RegistrationCollectedDetailsFields } from '../../components/registration/registrationCollectedDetailsShared';
 import { formatClubDateTime } from '../../utils/clubTime';
 import { playInEntryTeamMembersText } from '../../components/registration/RegistrationPlayInEntryPanel';
@@ -332,6 +334,9 @@ export default function AdminRegistrationDetail() {
   const [refundPrompt, setRefundPrompt] = useState<{ amountMinor: number } | null>(null);
   const [refundSaving, setRefundSaving] = useState(false);
   const [refundError, setRefundError] = useState<string | null>(null);
+  const [reviewAssistanceOpen, setReviewAssistanceOpen] = useState(false);
+  const [reviewAssistanceSaving, setReviewAssistanceSaving] = useState(false);
+  const [reviewAssistanceError, setReviewAssistanceError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!Number.isFinite(numericId)) return;
@@ -387,6 +392,39 @@ export default function AdminRegistrationDetail() {
     setActiveEditModal(null);
     showAlert('Registration updated.', 'success', 'Changes saved');
     await load();
+  }
+
+  async function saveAssistanceReview(input: {
+    status: 'approved' | 'partially_approved' | 'denied';
+    approvedPercentage: number;
+    staffNotes: string | null;
+  }) {
+    const assistance = detail?.registration.financialAssistance;
+    if (!canReviewFinancialAssistance(assistance)) return;
+    setReviewAssistanceSaving(true);
+    setReviewAssistanceError(null);
+    try {
+      await api.patch(
+        `/registration/staff/financial-assistance/${assistance.requestId}`,
+        {
+          status: input.status,
+          approvedPercentage: input.approvedPercentage,
+          staffNotes: input.staffNotes,
+        },
+      );
+      showAlert(
+        input.status === 'denied'
+          ? 'Financial assistance was denied. Send the invoice from roster emails when you are ready.'
+          : 'Financial assistance was saved. Send the discounted invoice from roster emails when you are ready.',
+        'success',
+      );
+      setReviewAssistanceOpen(false);
+      await load();
+    } catch (err) {
+      setReviewAssistanceError(getApiErrorMessage(err, 'Unable to save this financial assistance review.'));
+    } finally {
+      setReviewAssistanceSaving(false);
+    }
   }
 
   function handleStaffPaymentAdjustment(result: SubmitRegistrationEditsResult) {
@@ -610,8 +648,22 @@ export default function AdminRegistrationDetail() {
                   {offlinePaymentDescription(detail.invoice)}
                 </p>
               ) : null}
-              {detail.canRequestPayment || detail.canRecordOfflinePayment ? (
+              {detail.canRequestPayment ||
+              detail.canRecordOfflinePayment ||
+              canReviewFinancialAssistance(detail.registration.financialAssistance) ? (
                 <div className="flex flex-wrap gap-3">
+                  {canReviewFinancialAssistance(detail.registration.financialAssistance) ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => {
+                        setReviewAssistanceError(null);
+                        setReviewAssistanceOpen(true);
+                      }}
+                    >
+                      Review assistance
+                    </Button>
+                  ) : null}
                   {detail.canRequestPayment ? (
                     <Button
                       type="button"
@@ -988,6 +1040,25 @@ export default function AdminRegistrationDetail() {
         }}
         onSubmit={(note) => void issueApprovedRefund(note)}
       />
+      {reviewAssistanceOpen &&
+      detail &&
+      canReviewFinancialAssistance(detail.registration.financialAssistance) ? (
+        <ReviewFinancialAssistanceModal
+          isOpen
+          saving={reviewAssistanceSaving}
+          memberName={detail.registration.curlerName}
+          assistance={detail.registration.financialAssistance}
+          error={reviewAssistanceError}
+          onClose={() => {
+            if (reviewAssistanceSaving) return;
+            setReviewAssistanceOpen(false);
+            setReviewAssistanceError(null);
+          }}
+          onSubmit={(input) => {
+            void saveAssistanceReview(input);
+          }}
+        />
+      ) : null}
     </>
   );
 }

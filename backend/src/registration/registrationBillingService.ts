@@ -395,6 +395,13 @@ export type StaffRegistrationBillingLine = {
   lineType?: string;
 };
 
+export type StaffRegistrationFinancialAssistance = {
+  requestId: number;
+  requestedPercent: number;
+  approvedPercent: number | null;
+  status: string;
+};
+
 export type StaffRegistrationBillingRow = {
   registrationId: number;
   curlerId: number | null;
@@ -411,6 +418,7 @@ export type StaffRegistrationBillingRow = {
   balanceMinor: number;
   canRequestPayment: boolean;
   canIssueRefund: boolean;
+  financialAssistance: StaffRegistrationFinancialAssistance | null;
 };
 
 function billingFeeLines(
@@ -421,6 +429,17 @@ function billingFeeLines(
     amountMinor: item.amountMinor,
     lineType: item.lineType,
   }));
+}
+
+function juniorAssistanceForFees(
+  assistance: StaffRegistrationFinancialAssistance | undefined,
+): JuniorAssistanceRequest | undefined {
+  if (!assistance) return undefined;
+  return {
+    requestedPercent: assistance.requestedPercent,
+    approvedPercent: assistance.approvedPercent,
+    status: assistance.status as JuniorAssistanceRequest['status'],
+  };
 }
 
 export async function listStaffRegistrationBilling(input: {
@@ -539,6 +558,7 @@ export async function listStaffRegistrationBilling(input: {
           .where(inArray(schema.registrationSelections.registration_id, registrationIds)),
         db
           .select({
+            requestId: schema.financialAssistanceRequests.id,
             registrationId: schema.financialAssistanceRequests.registration_id,
             requestedPercent: schema.financialAssistanceRequests.requested_percentage,
             approvedPercent: schema.financialAssistanceRequests.approved_percentage,
@@ -664,11 +684,12 @@ export async function listStaffRegistrationBilling(input: {
       .filter((row): row is { registrationId: number; leagueId: number } => row != null),
   );
 
-  const assistanceByRegistration = new Map<number, JuniorAssistanceRequest>();
+  const assistanceByRegistration = new Map<number, StaffRegistrationFinancialAssistance>();
   for (const row of assistanceRows) {
     assistanceByRegistration.set(row.registrationId, {
-      requestedPercent: row.requestedPercent,
-      approvedPercent: row.approvedPercent,
+      requestId: row.requestId,
+      requestedPercent: Number(row.requestedPercent),
+      approvedPercent: row.approvedPercent == null ? null : Number(row.approvedPercent),
       status: row.status,
     });
   }
@@ -741,7 +762,7 @@ export async function listStaffRegistrationBilling(input: {
       },
       selections: selectionsByRegistration.get(row.id) ?? [],
       chargedLeagueIds,
-      juniorAssistance: assistanceByRegistration.get(row.id),
+      juniorAssistance: juniorAssistanceForFees(assistanceByRegistration.get(row.id)),
     });
     const feePreview = calculateRegistrationFees(context, {
       chargedLeagueIds,
@@ -771,6 +792,7 @@ export async function listStaffRegistrationBilling(input: {
       balanceMinor,
       canRequestPayment: remainingDueMinor(owedMinor, paidMinor) > 0 && !leagueProcessingActive,
       canIssueRefund: refundDueMinor(owedMinor, paidMinor) > 0,
+      financialAssistance: assistanceByRegistration.get(row.id) ?? null,
     };
   });
 

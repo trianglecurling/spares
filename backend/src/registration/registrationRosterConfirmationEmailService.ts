@@ -28,7 +28,14 @@ export class RosterConfirmationEmailValidationError extends Error {
   }
 }
 
-export type RosterConfirmationSkipReason = 'no_email' | 'no_registration';
+export type RosterConfirmationSkipReason = 'no_email' | 'no_registration' | 'pending_financial_assistance';
+
+export type RosterConfirmationFinancialAssistance = {
+  requestId: number;
+  requestedPercent: number;
+  approvedPercent: number | null;
+  status: string;
+};
 
 export type RosterConfirmationLeague = {
   leagueId: number;
@@ -55,6 +62,7 @@ export type RosterConfirmationRecipient = {
   sentAt: string | null;
   skipReason: RosterConfirmationSkipReason | null;
   canSend: boolean;
+  financialAssistance: RosterConfirmationFinancialAssistance | null;
 };
 
 export type RosterConfirmationEmailJobStatus = 'running' | 'completed' | 'failed';
@@ -250,9 +258,14 @@ export function buildRosterConfirmationEmailPayload(input: {
   };
 }
 
-function skipReasonFor(email: string | null, registrationId: number | null): RosterConfirmationSkipReason | null {
-  if (!email?.trim()) return 'no_email';
-  if (registrationId == null) return 'no_registration';
+export function rosterConfirmationSkipReason(input: {
+  email: string | null;
+  registrationId: number | null;
+  financialAssistanceStatus?: string | null;
+}): RosterConfirmationSkipReason | null {
+  if (!input.email?.trim()) return 'no_email';
+  if (input.registrationId == null) return 'no_registration';
+  if (input.financialAssistanceStatus === 'pending') return 'pending_financial_assistance';
   return null;
 }
 
@@ -449,7 +462,12 @@ async function loadRosterConfirmationRecipients(input: {
       const preferredRegistrationId =
         draft.registrationIds.length > 0 ? Math.max(...draft.registrationIds) : billingRow?.registrationId ?? null;
       const registrationId = billingRow?.registrationId ?? preferredRegistrationId;
-      const skipReason = skipReasonFor(draft.memberEmail, registrationId);
+      const financialAssistance = billingRow?.financialAssistance ?? null;
+      const skipReason = rosterConfirmationSkipReason({
+        email: draft.memberEmail,
+        registrationId,
+        financialAssistanceStatus: financialAssistance?.status,
+      });
       const owedLines = billingRow?.owedLines ?? [];
       const owedDiscountLines = billingRow?.owedDiscountLines ?? [];
       const owedMinor = billingRow?.owedMinor ?? 0;
@@ -487,6 +505,7 @@ async function loadRosterConfirmationRecipients(input: {
         sentAt: null,
         skipReason,
         canSend: skipReason == null,
+        financialAssistance,
       };
     })
     .sort((left, right) => left.memberName.localeCompare(right.memberName) || left.memberId - right.memberId);
@@ -753,9 +772,11 @@ export async function getRosterConfirmationEmailJobById(
 }
 
 function skipSendError(recipient: RosterConfirmationRecipient): string {
-  return recipient.skipReason === 'no_email'
-    ? 'This member does not have an email address.'
-    : 'This roster seat is not linked to a registration.';
+  if (recipient.skipReason === 'no_email') return 'This member does not have an email address.';
+  if (recipient.skipReason === 'pending_financial_assistance') {
+    return 'Junior Recreational financial assistance is still pending review.';
+  }
+  return 'This roster seat is not linked to a registration.';
 }
 
 async function sendOneRosterConfirmationEmail(input: {

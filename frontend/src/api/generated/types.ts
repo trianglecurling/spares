@@ -14909,7 +14909,7 @@ export interface paths {
                 query?: never;
                 header?: never;
                 path: {
-                    lineType: "regular_membership_fee" | "social_membership_fee" | "junior_recreational_fee" | "league_fee" | "spare_only_fee" | "sabbatical_fee" | "replacement_name_tag_fee" | "student_discount" | "student_league_discount" | "reciprocal_discount" | "winter_only_discount" | "sabbatical_fill_discount";
+                    lineType: "regular_membership_fee" | "social_membership_fee" | "junior_recreational_fee" | "league_fee" | "spare_only_fee" | "sabbatical_fee" | "replacement_name_tag_fee" | "student_discount" | "student_league_discount" | "reciprocal_discount" | "winter_only_discount" | "sabbatical_fill_discount" | "financial_assistance_discount";
                 };
                 cookie?: never;
             };
@@ -19889,6 +19889,12 @@ export interface paths {
                                 sentAt: null | string;
                                 skipReason: null | string;
                                 canSend: boolean;
+                                financialAssistance: null | {
+                                    requestId: number;
+                                    requestedPercent: number;
+                                    approvedPercent: null | number;
+                                    status: string;
+                                };
                             }[];
                             sendJob: null | {
                                 id: number;
@@ -20103,6 +20109,12 @@ export interface paths {
                                 sentAt: null | string;
                                 skipReason: null | string;
                                 canSend: boolean;
+                                financialAssistance: null | {
+                                    requestId: number;
+                                    requestedPercent: number;
+                                    approvedPercent: null | number;
+                                    status: string;
+                                };
                             };
                             subject: string;
                             htmlBody: string;
@@ -20860,14 +20872,29 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody?: never;
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        status: "approved" | "partially_approved" | "denied" | "withdrawn";
+                        approvedPercentage?: number | null;
+                        staffNotes?: string | null;
+                    };
+                };
+            };
             responses: {
                 /** @description Default Response */
                 200: {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content?: never;
+                    content: {
+                        "application/json": {
+                            request: {
+                                [key: string]: unknown;
+                            };
+                        };
+                    };
                 };
             };
         };

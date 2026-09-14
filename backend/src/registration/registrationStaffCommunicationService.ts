@@ -17,18 +17,21 @@ function memberName(row: { name?: string | null; first_name?: string | null; las
   return parts.length > 0 ? parts.join(' ') : row.name?.trim() || row.email?.trim() || 'there';
 }
 
-function hostedCheckoutUrl(metadata: unknown): string | null {
-  const value = typeof metadata === 'string' ? (() => {
-    try {
-      return JSON.parse(metadata) as unknown;
-    } catch {
-      return null;
-    }
-  })() : metadata;
-  if (value && typeof value === 'object' && 'hostedCheckoutUrl' in value && typeof value.hostedCheckoutUrl === 'string') {
-    return value.hostedCheckoutUrl;
+export function financialAssistanceReviewDecision(
+  requestedPercent: number,
+  approvedPercent: number,
+): {
+  status: 'approved' | 'partially_approved' | 'denied';
+  approvedPercentage: number;
+} {
+  const approvedPercentage = Math.max(0, Math.min(100, approvedPercent));
+  if (approvedPercentage <= 0) {
+    return { status: 'denied', approvedPercentage: 0 };
   }
-  return null;
+  if (approvedPercentage === requestedPercent) {
+    return { status: 'approved', approvedPercentage };
+  }
+  return { status: 'partially_approved', approvedPercentage };
 }
 
 export async function listStaffRegistrationCommunications(input: { registrationId?: number; waitlistOfferId?: number }) {
@@ -81,12 +84,20 @@ export async function reviewJuniorFinancialAssistance(input: {
     .where(eq(schema.financialAssistanceRequests.id, input.requestId))
     .limit(1);
   if (!request) throw new Error('Financial assistance request was not found.');
+  const requestedPercent = Number(request.requested_percentage);
+  const decided =
+    input.status === 'withdrawn'
+      ? { status: 'withdrawn' as const, approvedPercentage: 0 }
+      : financialAssistanceReviewDecision(
+          requestedPercent,
+          input.approvedPercentage ?? (input.status === 'approved' ? requestedPercent : 0),
+        );
   const reviewedAt = getDatabaseConfig()?.type === 'postgres' ? new Date() : new Date().toISOString();
   const [updated] = await db
     .update(schema.financialAssistanceRequests)
     .set({
-      status: input.status,
-      approved_percentage: input.approvedPercentage ?? (input.status === 'approved' ? request.requested_percentage : 0),
+      status: decided.status,
+      approved_percentage: decided.approvedPercentage,
       reviewed_by_member_id: input.actorMemberId,
       reviewed_at: dbValue(reviewedAt),
       staff_notes: input.staffNotes?.trim() || null,
@@ -96,14 +107,6 @@ export async function reviewJuniorFinancialAssistance(input: {
     .returning();
 
   const [member] = await db.select().from(schema.members).where(eq(schema.members.id, request.member_id)).limit(1);
-  const [invoice] = await db
-    .select()
-    .from(schema.registrationInvoices)
-    .where(eq(schema.registrationInvoices.registration_id, request.registration_id))
-    .limit(1);
-  const order = invoice?.payment_order_id
-    ? (await db.select().from(schema.paymentOrders).where(eq(schema.paymentOrders.id, invoice.payment_order_id)).limit(1))[0]
-    : null;
   if (member?.email) {
     await sendRegistrationEmailForDashboard({
       messageType: 'junior_assistance_decision',
@@ -112,10 +115,8 @@ export async function reviewJuniorFinancialAssistance(input: {
       recipientMemberId: member.id,
       registrationId: request.registration_id,
       payload: {
-        requestedAssistancePercent: request.requested_percentage,
+        requestedAssistancePercent: requestedPercent,
         approvedAssistancePercent: updated.approved_percentage ?? 0,
-        amountDueMinor: invoice?.total_minor ?? null,
-        paymentUrl: hostedCheckoutUrl(order?.metadata),
       },
     });
   }

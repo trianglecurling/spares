@@ -2392,6 +2392,18 @@ const rosterConfirmationLineSchema = {
   },
 } as const;
 
+const rosterConfirmationFinancialAssistanceSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['requestId', 'requestedPercent', 'approvedPercent', 'status'],
+  properties: {
+    requestId: { type: 'number' },
+    requestedPercent: { type: 'number' },
+    approvedPercent: { type: ['number', 'null'] },
+    status: { type: 'string' },
+  },
+} as const;
+
 const rosterConfirmationRecipientSchema = {
   type: 'object',
   additionalProperties: false,
@@ -2414,6 +2426,7 @@ const rosterConfirmationRecipientSchema = {
     'sentAt',
     'skipReason',
     'canSend',
+    'financialAssistance',
   ],
   properties: {
     memberId: { type: 'number' },
@@ -2434,6 +2447,12 @@ const rosterConfirmationRecipientSchema = {
     sentAt: { type: ['string', 'null'] },
     skipReason: { type: ['string', 'null'] },
     canSend: { type: 'boolean' },
+    financialAssistance: {
+      type: ['object', 'null'],
+      additionalProperties: false,
+      required: rosterConfirmationFinancialAssistanceSchema.required,
+      properties: rosterConfirmationFinancialAssistanceSchema.properties,
+    },
   },
 } as const;
 

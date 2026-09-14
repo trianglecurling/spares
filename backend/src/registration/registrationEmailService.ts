@@ -842,18 +842,17 @@ export function renderRegistrationEmail(messageType: RegistrationMessageType, pa
       };
     case 'junior_assistance_decision':
       return {
-        subject: 'Junior Recreational registration payment is ready',
+        subject: 'Junior Recreational assistance request reviewed',
         htmlBody: `
-          <h2>Junior Recreational registration payment is ready</h2>
+          <h2>Junior Recreational assistance request reviewed</h2>
           <p>Staff has reviewed the assistance request for ${escapeHtml(curlerName)}.</p>
           <p><strong>Requested assistance:</strong> ${payload.requestedAssistancePercent ?? 'Not available'}%</p>
           <p><strong>Approved assistance:</strong> ${payload.approvedAssistancePercent ?? 0}%</p>
-          <p><strong>Final amount due:</strong> ${money(payload.amountDueMinor)}</p>
-          ${paymentLinkHtml(payload)}
-          <p>If the approved amount creates a concern, please contact <a href="mailto:${REGISTRATION_JUNIORS_EMAIL}">${REGISTRATION_JUNIORS_EMAIL}</a> before paying.</p>
-          ${registrationContactHtml(['payment'])}
+          <p>The invoice that includes this decision will be sent separately.</p>
+          <p>If the approved amount creates a concern, please contact <a href="mailto:${REGISTRATION_JUNIORS_EMAIL}">${REGISTRATION_JUNIORS_EMAIL}</a>.</p>
+          ${juniorsContactHtml}
         `,
-        textBody: `Junior Recreational registration payment is ready\n\nRequested assistance: ${payload.requestedAssistancePercent ?? 'Not available'}%\nApproved assistance: ${payload.approvedAssistancePercent ?? 0}%\nFinal amount due: ${money(payload.amountDueMinor)}\nPayment link: ${payload.paymentUrl ?? 'Not available'}\nIf the approved amount creates a concern, contact ${REGISTRATION_JUNIORS_EMAIL} before paying.\n\n${registrationContactText(['payment'])}`,
+        textBody: `Junior Recreational assistance request reviewed\n\nRequested assistance: ${payload.requestedAssistancePercent ?? 'Not available'}%\nApproved assistance: ${payload.approvedAssistancePercent ?? 0}%\nThe invoice that includes this decision will be sent separately.\nIf the approved amount creates a concern, contact ${REGISTRATION_JUNIORS_EMAIL}.\n\n${juniorsContactText}`,
       };
     case 'sabbatical_confirmation':
       return {

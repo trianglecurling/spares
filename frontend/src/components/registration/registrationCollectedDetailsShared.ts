@@ -1,4 +1,5 @@
 export type RegistrationFinancialAssistanceSummary = {
+  requestId?: number | null;
   requestedPercent: number;
   approvedPercent: number | null;
   status: string;

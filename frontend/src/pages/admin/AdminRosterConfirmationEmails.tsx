@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { get, post } from '../../api/client';
+import { get, patch, post } from '../../api/client';
 import type { paths } from '../../api/generated/types';
 import AppPageControlsRow from '../../components/AppPageControlsRow';
 import AppStateCard from '../../components/AppStateCard';
@@ -14,6 +14,9 @@ import { useConfirm } from '../../contexts/ConfirmContext';
 import useTableQueryState from '../../hooks/useTableQueryState';
 import api, { getApiErrorMessage } from '../../utils/api';
 import MemberEmail from '../../components/MemberEmail';
+import ReviewFinancialAssistanceModal from '../../components/registration/ReviewFinancialAssistanceModal';
+import { canReviewFinancialAssistance } from '../../components/registration/financialAssistanceReviewShared';
+import { financialAssistanceLabel } from '../../components/registration/registrationCollectedDetailsShared';
 import { rosterConfirmationEmailPreviewPath } from './rosterConfirmationEmailPaths';
 import {
   canHoldRosterConfirmationEmail,
@@ -41,6 +44,7 @@ type RosterConfirmationRecipient = RosterConfirmationList['recipients'][number];
 
 type BalanceFilter = 'all' | 'due' | 'credit' | 'settled';
 type SentFilter = 'all' | 'unsent' | 'sent' | 'held';
+type AssistanceFilter = 'all' | 'pending' | 'reviewed';
 type SortKey = 'name' | 'owed' | 'paid' | 'balance';
 
 const PAGE_SIZE = 50;
@@ -58,6 +62,12 @@ const SENT_FILTER_OPTIONS: Array<{ value: SentFilter; label: string }> = [
   { value: 'unsent', label: 'Unsent' },
   { value: 'held', label: 'Held' },
   { value: 'sent', label: 'Sent' },
+];
+
+const ASSISTANCE_FILTER_OPTIONS: Array<{ value: AssistanceFilter; label: string }> = [
+  { value: 'all', label: 'All assistance' },
+  { value: 'pending', label: 'Needs review' },
+  { value: 'reviewed', label: 'Reviewed' },
 ];
 
 function money(minor: number) {
@@ -84,10 +94,11 @@ export default function AdminRosterConfirmationEmails() {
   const searchFieldId = useId();
   const balanceFieldId = useId();
   const sentFieldId = useId();
+  const assistanceFieldId = useId();
   const [searchParams, setSearchParams] = useSearchParams();
   const { page, sort, filters, setPage, setSort, setFilter } = useTableQueryState<
     SortKey,
-    { search: string; balance: string; sent: string }
+    { search: string; balance: string; sent: string; assistance: string }
   >({
     defaultSort: { key: 'name', direction: 'asc' },
     sortKeys: SORT_KEYS,
@@ -103,6 +114,11 @@ export default function AdminRosterConfirmationEmails() {
         defaultValue: 'all',
         parse: (raw) => (raw && ['unsent', 'held', 'sent'].includes(raw) ? raw : 'all'),
       },
+      assistance: {
+        queryKey: 'assistance',
+        defaultValue: 'all',
+        parse: (raw) => (raw && ['pending', 'reviewed'].includes(raw) ? raw : 'all'),
+      },
     },
   });
   const [sessions, setSessions] = useState<RegistrationSession[]>([]);
@@ -113,6 +129,9 @@ export default function AdminRosterConfirmationEmails() {
   const [startingSend, setStartingSend] = useState(false);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [sendErrors, setSendErrors] = useState<Record<number, string>>({});
+  const [reviewTarget, setReviewTarget] = useState<RosterConfirmationRecipient | null>(null);
+  const [reviewSaving, setReviewSaving] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
   const watchedRunningJobIds = useRef(new Set<number>());
   const announcedJobKeys = useRef(new Set<string>());
 
@@ -121,6 +140,9 @@ export default function AdminRosterConfirmationEmails() {
   const search = filters.search;
   const balanceFilter = (['all', 'due', 'credit', 'settled'].includes(filters.balance) ? filters.balance : 'all') as BalanceFilter;
   const sentFilter = (['all', 'unsent', 'held', 'sent'].includes(filters.sent) ? filters.sent : 'all') as SentFilter;
+  const assistanceFilter = (
+    ['all', 'pending', 'reviewed'].includes(filters.assistance) ? filters.assistance : 'all'
+  ) as AssistanceFilter;
 
   const setSessionId = useCallback(
     (nextSessionId: string) => {
@@ -258,6 +280,10 @@ export default function AdminRosterConfirmationEmails() {
       if (sentFilter === 'unsent' && row.alreadySent) return false;
       if (sentFilter === 'held' && (row.alreadySent || !heldSet.has(row.memberId))) return false;
       if (sentFilter === 'sent' && !row.alreadySent) return false;
+      if (assistanceFilter === 'pending' && row.financialAssistance?.status !== 'pending') return false;
+      if (assistanceFilter === 'reviewed' && (!row.financialAssistance || row.financialAssistance.status === 'pending')) {
+        return false;
+      }
       if (!needle) return true;
       return (
         row.memberName.toLowerCase().includes(needle) ||
@@ -284,7 +310,7 @@ export default function AdminRosterConfirmationEmails() {
       if (nameDiff !== 0) return nameDiff * (sort.key === 'name' ? direction : 1);
       return a.memberId - b.memberId;
     });
-  }, [balanceFilter, heldSet, payload?.recipients, search, sentFilter, sort]);
+  }, [assistanceFilter, balanceFilter, heldSet, payload?.recipients, search, sentFilter, sort]);
 
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
@@ -296,6 +322,9 @@ export default function AdminRosterConfirmationEmails() {
   const selectedHoldable = selectedSendable.filter((row) => canHoldRosterConfirmationEmail(row));
   const selectedToHold = selectedHoldable.filter((row) => !heldSet.has(row.memberId));
   const selectedToRelease = selectedHoldable.filter((row) => heldSet.has(row.memberId));
+  const pendingAssistanceCount = (payload?.recipients ?? []).filter(
+    (row) => row.financialAssistance?.status === 'pending',
+  ).length;
   async function sendEmails(memberIds: number[], unsentOnly: boolean) {
     if (!sessionId) return;
     if (payload?.leagueProcessingActive || sendBusy) return;
@@ -333,6 +362,40 @@ export default function AdminRosterConfirmationEmails() {
     }
   }
 
+  async function saveAssistanceReview(input: {
+    status: 'approved' | 'partially_approved' | 'denied';
+    approvedPercentage: number;
+    staffNotes: string | null;
+  }) {
+    const assistance = reviewTarget?.financialAssistance;
+    if (!canReviewFinancialAssistance(assistance)) return;
+    setReviewSaving(true);
+    setReviewError(null);
+    try {
+      await patch(
+        '/registration/staff/financial-assistance/{id}',
+        {
+          status: input.status,
+          approvedPercentage: input.approvedPercentage,
+          staffNotes: input.staffNotes,
+        },
+        { id: String(assistance.requestId) },
+      );
+      showAlert(
+        input.status === 'denied'
+          ? 'Financial assistance was denied. You can send the full-price invoice from this tab.'
+          : 'Financial assistance was saved. You can send the discounted invoice from this tab.',
+        'success',
+      );
+      setReviewTarget(null);
+      await loadRecipients({ silent: true });
+    } catch (err) {
+      setReviewError(getApiErrorMessage(err, 'Unable to save this financial assistance review.'));
+    } finally {
+      setReviewSaving(false);
+    }
+  }
+
   const columns: Array<DataTableColumn<RosterConfirmationRecipient, SortKey>> = [
     {
       id: 'name',
@@ -366,6 +429,14 @@ export default function AdminRosterConfirmationEmails() {
         ) : (
           <span className="text-gray-500 dark:text-gray-400">None</span>
         ),
+    },
+    {
+      id: 'assistance',
+      header: 'Assistance',
+      renderCell: (row) => {
+        const label = financialAssistanceLabel(row.financialAssistance);
+        return label ? <span>{label}</span> : <span className="text-gray-500 dark:text-gray-400">None</span>;
+      },
     },
     {
       id: 'owed',
@@ -414,11 +485,13 @@ export default function AdminRosterConfirmationEmails() {
             ? 'No email'
             : row.skipReason === 'no_registration'
               ? 'No registration'
-              : row.alreadySent
-                ? 'Sent'
-                : heldSet.has(row.memberId)
-                  ? 'Held'
-                  : 'Unsent';
+              : row.skipReason === 'pending_financial_assistance'
+                ? 'Needs review'
+                : row.alreadySent
+                  ? 'Sent'
+                  : heldSet.has(row.memberId)
+                    ? 'Held'
+                    : 'Unsent';
         return (
           <div>
             <div>{status}</div>
@@ -488,6 +561,23 @@ export default function AdminRosterConfirmationEmails() {
                 options={SENT_FILTER_OPTIONS}
               />
             </FormField>
+            <FormField label="Assistance" htmlFor={assistanceFieldId}>
+              <ChoiceInput
+                inputId={assistanceFieldId}
+                layout="popover"
+                value={
+                  ASSISTANCE_FILTER_OPTIONS.some((option) => option.value === assistanceFilter)
+                    ? assistanceFilter
+                    : 'all'
+                }
+                onChange={(value) => {
+                  const next = Array.isArray(value) ? value[0] : value;
+                  if (!next) return;
+                  setFilter('assistance', next);
+                }}
+                options={ASSISTANCE_FILTER_OPTIONS}
+              />
+            </FormField>
           </>
         }
         right={
@@ -551,6 +641,13 @@ export default function AdminRosterConfirmationEmails() {
             {payload?.recipients.some((row) => row.leagues.some((league) => league.isTemporarySabbaticalFill)) ? (
               <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
                 * Temporary sabbatical-fill spot.
+              </p>
+            ) : null}
+            {pendingAssistanceCount > 0 ? (
+              <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                {pendingAssistanceCount === 1
+                  ? '1 Junior Recreational financial assistance request needs review before that invoice can be sent.'
+                  : `${pendingAssistanceCount} Junior Recreational financial assistance requests need review before those invoices can be sent.`}
               </p>
             ) : null}
             {heldUnsentCount > 0 ? (
@@ -629,27 +726,63 @@ export default function AdminRosterConfirmationEmails() {
             }}
             actions={{
               header: 'Actions',
-              widthClassName: 'w-[7.5rem]',
-              renderActions: (row) =>
-                canHoldRosterConfirmationEmail(row) ? (
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    className="!px-3 !py-1.5"
-                    disabled={sendBusy}
-                    onClick={() => setHeld(row.memberId, !heldSet.has(row.memberId))}
-                    aria-label={
-                      heldSet.has(row.memberId)
-                        ? `Release held email for ${row.memberName}`
-                        : `Hold email for ${row.memberName}`
-                    }
-                  >
-                    {heldSet.has(row.memberId) ? 'Release' : 'Hold'}
-                  </Button>
-                ) : null,
+              widthClassName: 'w-[12.5rem]',
+              renderActions: (row) => (
+                <div className="flex flex-wrap justify-end gap-2">
+                  {canReviewFinancialAssistance(row.financialAssistance) ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="!px-3 !py-1.5"
+                      disabled={sendBusy}
+                      onClick={() => {
+                        setReviewError(null);
+                        setReviewTarget(row);
+                      }}
+                      aria-label={`Review financial assistance for ${row.memberName}`}
+                    >
+                      Review
+                    </Button>
+                  ) : null}
+                  {canHoldRosterConfirmationEmail(row) ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="!px-3 !py-1.5"
+                      disabled={sendBusy}
+                      onClick={() => setHeld(row.memberId, !heldSet.has(row.memberId))}
+                      aria-label={
+                        heldSet.has(row.memberId)
+                          ? `Release held email for ${row.memberName}`
+                          : `Hold email for ${row.memberName}`
+                      }
+                    >
+                      {heldSet.has(row.memberId) ? 'Release' : 'Hold'}
+                    </Button>
+                  ) : null}
+                </div>
+              ),
             }}
           />
         </section>
+      ) : null}
+
+      {reviewTarget && canReviewFinancialAssistance(reviewTarget.financialAssistance) ? (
+        <ReviewFinancialAssistanceModal
+          isOpen
+          saving={reviewSaving}
+          memberName={reviewTarget.memberName}
+          assistance={reviewTarget.financialAssistance}
+          error={reviewError}
+          onClose={() => {
+            if (reviewSaving) return;
+            setReviewTarget(null);
+            setReviewError(null);
+          }}
+          onSubmit={(input) => {
+            void saveAssistanceReview(input);
+          }}
+        />
       ) : null}
     </>
   );

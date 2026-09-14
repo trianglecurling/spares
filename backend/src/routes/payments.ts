@@ -60,6 +60,7 @@ const registrationItemLineTypeParamSchema = z.object({
     'reciprocal_discount',
     'winter_only_discount',
     'sabbatical_fill_discount',
+    'financial_assistance_discount',
   ]),
 });
 
@@ -437,6 +438,7 @@ export async function paymentRoutes(fastify: FastifyInstance): Promise<void> {
                 'reciprocal_discount',
                 'winter_only_discount',
                 'sabbatical_fill_discount',
+                'financial_assistance_discount',
               ],
             },
           },

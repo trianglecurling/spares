@@ -24838,7 +24838,8 @@
                 "student_league_discount",
                 "reciprocal_discount",
                 "winter_only_discount",
-                "sabbatical_fill_discount"
+                "sabbatical_fill_discount",
+                "financial_assistance_discount"
               ]
             },
             "in": "path",
@@ -30362,7 +30363,8 @@
                           "alreadySent",
                           "sentAt",
                           "skipReason",
-                          "canSend"
+                          "canSend",
+                          "financialAssistance"
                         ],
                         "properties": {
                           "memberId": {
@@ -30501,6 +30503,36 @@
                           },
                           "canSend": {
                             "type": "boolean"
+                          },
+                          "financialAssistance": {
+                            "type": [
+                              "null",
+                              "object"
+                            ],
+                            "additionalProperties": false,
+                            "required": [
+                              "requestId",
+                              "requestedPercent",
+                              "approvedPercent",
+                              "status"
+                            ],
+                            "properties": {
+                              "requestId": {
+                                "type": "number"
+                              },
+                              "requestedPercent": {
+                                "type": "number"
+                              },
+                              "approvedPercent": {
+                                "type": [
+                                  "null",
+                                  "number"
+                                ]
+                              },
+                              "status": {
+                                "type": "string"
+                              }
+                            }
                           }
                         }
                       }
@@ -30926,7 +30958,8 @@
                         "alreadySent",
                         "sentAt",
                         "skipReason",
-                        "canSend"
+                        "canSend",
+                        "financialAssistance"
                       ],
                       "properties": {
                         "memberId": {
@@ -31065,6 +31098,36 @@
                         },
                         "canSend": {
                           "type": "boolean"
+                        },
+                        "financialAssistance": {
+                          "type": [
+                            "null",
+                            "object"
+                          ],
+                          "additionalProperties": false,
+                          "required": [
+                            "requestId",
+                            "requestedPercent",
+                            "approvedPercent",
+                            "status"
+                          ],
+                          "properties": {
+                            "requestId": {
+                              "type": "number"
+                            },
+                            "requestedPercent": {
+                              "type": "number"
+                            },
+                            "approvedPercent": {
+                              "type": [
+                                "null",
+                                "number"
+                              ]
+                            },
+                            "status": {
+                              "type": "string"
+                            }
+                          }
                         }
                       }
                     },
@@ -32115,6 +32178,46 @@
     },
     "/registration/staff/financial-assistance/{id}": {
       "patch": {
+        "tags": [
+          "registration-staff"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "status"
+                ],
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "approved",
+                      "partially_approved",
+                      "denied",
+                      "withdrawn"
+                    ]
+                  },
+                  "approvedPercentage": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "staffNotes": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
         "parameters": [
           {
             "schema": {
@@ -32127,7 +32230,24 @@
         ],
         "responses": {
           "200": {
-            "description": "Default Response"
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "request"
+                  ],
+                  "properties": {
+                    "request": {
+                      "type": "object",
+                      "additionalProperties": true
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }

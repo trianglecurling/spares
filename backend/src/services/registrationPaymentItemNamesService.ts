@@ -19,7 +19,8 @@ export type RegistrationPaymentItemLineType =
   | 'student_league_discount'
   | 'reciprocal_discount'
   | 'winter_only_discount'
-  | 'sabbatical_fill_discount';
+  | 'sabbatical_fill_discount'
+  | 'financial_assistance_discount';
 
 export type RegistrationPaymentItemNameDefinition = {
   lineType: RegistrationPaymentItemLineType;
@@ -87,6 +88,11 @@ export const REGISTRATION_PAYMENT_ITEM_NAME_DEFINITIONS: RegistrationPaymentItem
     lineType: 'sabbatical_fill_discount',
     label: 'Temporary sabbatical-fill discount',
     defaultItemName: 'Temporary sabbatical-fill discount',
+  },
+  {
+    lineType: 'financial_assistance_discount',
+    label: 'Junior Recreational financial assistance',
+    defaultItemName: 'Junior Recreational financial assistance',
   },
 ];
 

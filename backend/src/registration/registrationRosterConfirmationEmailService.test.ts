@@ -6,7 +6,27 @@ import {
   pickRosterConfirmationBilling,
   rosterConfirmationCheckoutLines,
   rosterConfirmationSendSideEffects,
+  rosterConfirmationSkipReason,
 } from './registrationRosterConfirmationEmailService.js';
+
+describe('roster confirmation skip reasons', () => {
+  test('blocks sending while Junior Recreational financial assistance is pending', () => {
+    expect(
+      rosterConfirmationSkipReason({
+        email: 'parent@example.com',
+        registrationId: 12,
+        financialAssistanceStatus: 'pending',
+      }),
+    ).toBe('pending_financial_assistance');
+    expect(
+      rosterConfirmationSkipReason({
+        email: 'parent@example.com',
+        registrationId: 12,
+        financialAssistanceStatus: 'approved',
+      }),
+    ).toBeNull();
+  });
+});
 
 describe('roster confirmation checkout lines', () => {
   test('uses mapped Square product names instead of friendly invoice descriptions', () => {
@@ -35,6 +55,36 @@ describe('roster confirmation checkout lines', () => {
       { description: 'TCC Regular Membership', amountMinor: 5000 },
       { description: 'League', amountMinor: 15000 },
       { description: 'Temporary sabbatical-fill discount', amountMinor: -5000 },
+    ]);
+  });
+
+  test('maps Junior Recreational financial assistance to the Square item name', () => {
+    expect(
+      rosterConfirmationCheckoutLines({
+        owedLines: [
+          {
+            description: 'Junior Recreational program',
+            amountMinor: 7500,
+            lineType: 'junior_recreational_fee',
+          },
+        ],
+        owedDiscountLines: [
+          {
+            description: 'Junior Recreational financial assistance',
+            amountMinor: -3750,
+            lineType: 'financial_assistance_discount',
+          },
+        ],
+        owedMinor: 3750,
+        paidMinor: 0,
+        configuredNames: new Map([
+          ['junior_recreational_fee', 'Junior Rec'],
+          ['financial_assistance_discount', 'Need-based financial aid'],
+        ]),
+      }),
+    ).toEqual([
+      { description: 'Junior Rec', amountMinor: 7500 },
+      { description: 'Need-based financial aid', amountMinor: -3750 },
     ]);
   });
 
@@ -202,5 +252,20 @@ describe('roster confirmation payload', () => {
     expect(rendered.subject).not.toContain('payment link');
     expect(rendered.textBody).toContain('refund will be issued');
     expect(rendered.textBody).not.toContain('Pay the remaining balance');
+  });
+});
+
+describe('junior assistance decision email', () => {
+  test('tells families the invoice will be sent separately', () => {
+    const rendered = renderRegistrationEmail('junior_assistance_decision', {
+      curlerName: 'Jamie Curler',
+      requestedAssistancePercent: 50,
+      approvedAssistancePercent: 25,
+    });
+    expect(rendered.subject).toBe('Junior Recreational assistance request reviewed');
+    expect(rendered.textBody).toContain('Requested assistance: 50%');
+    expect(rendered.textBody).toContain('Approved assistance: 25%');
+    expect(rendered.textBody).toContain('The invoice that includes this decision will be sent separately.');
+    expect(rendered.textBody).not.toContain('Payment link');
   });
 });
