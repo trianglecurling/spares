@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, or, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, or, sql } from 'drizzle-orm';
 import { config } from '../config.js';
 import { getDatabaseConfig } from '../db/config.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
@@ -15,10 +15,11 @@ import {
   type CurlingCheckoutLine,
 } from './registrationBillingMath.js';
 import { listStaffRegistrationBilling } from './registrationBillingService.js';
+import { LISTABLE_REGISTRATION_STATUSES } from './registrationStaffQuery.js';
 import { renderRegistrationEmail, sendRegistrationEmailForDashboard, type RegistrationEmailPayload } from './registrationEmailService.js';
 import { isLeagueProcessingActive, LEAGUE_PROCESSING_HOLD_REASON } from './registrationLeagueProcessing.js';
 import { triggerDeferredRegistrationPayment } from './registrationMembershipPaymentService.js';
-import { formatRegistrationPaymentDeadlineDate, getRegistrationPaymentDeadline } from './registrationPaymentDeadline.js';
+import { formatRosterConfirmationPaymentDueText, getRegistrationPaymentDeadline } from './registrationPaymentDeadline.js';
 import { registrationParentCopyEmail } from '../utils/memberParentEmail.js';
 import { buildAuthzClaimsForMember } from '../utils/rbac.js';
 
@@ -63,6 +64,7 @@ export type RosterConfirmationRecipient = {
   skipReason: RosterConfirmationSkipReason | null;
   canSend: boolean;
   financialAssistance: RosterConfirmationFinancialAssistance | null;
+  membershipLabel: string | null;
 };
 
 export type RosterConfirmationEmailJobStatus = 'running' | 'completed' | 'failed';
@@ -100,6 +102,36 @@ type LoadedRosterConfirmation = Omit<RosterConfirmationListResult, 'sendJob'> & 
   automaticSabbaticalsByMemberId: Map<number, RosterConfirmationAutomaticSabbatical[]>;
   deadlineText: string;
 };
+
+const ROSTER_EMAIL_REGISTRATION_STATUSES = LISTABLE_REGISTRATION_STATUSES.filter(
+  (status) => status !== 'cancelled',
+);
+
+export function isMembershipOnlyRosterConfirmation(input: {
+  membershipOption: string;
+  icePrivilegesChoice?: string | null;
+}): boolean {
+  if (input.membershipOption === 'social') return true;
+  if (input.membershipOption === 'regular_spare_only') return true;
+  if (input.membershipOption === 'regular') {
+    return input.icePrivilegesChoice === 'none' || input.icePrivilegesChoice === 'basic_ice';
+  }
+  return false;
+}
+
+export function rosterConfirmationMembershipLabel(input: {
+  membershipOption: string;
+  icePrivilegesChoice?: string | null;
+}): string | null {
+  if (input.membershipOption === 'social') return 'Social membership';
+  if (input.membershipOption === 'regular_spare_only' || input.icePrivilegesChoice === 'basic_ice') {
+    return 'Regular membership with basic ice privileges';
+  }
+  if (input.membershipOption === 'regular' && input.icePrivilegesChoice === 'none') {
+    return 'Regular membership with no ice privileges';
+  }
+  return null;
+}
 
 function frontendBaseUrl(): string {
   return config.frontendUrl.replace(/\/+$/, '');
@@ -238,6 +270,7 @@ export function buildRosterConfirmationEmailPayload(input: {
   dashboardUrl?: string | null;
   automaticSabbaticals?: RosterConfirmationAutomaticSabbatical[];
   deadlineText?: string | null;
+  membershipLabel?: string | null;
 }): RegistrationEmailPayload {
   return {
     curlerName: input.memberName,
@@ -255,6 +288,7 @@ export function buildRosterConfirmationEmailPayload(input: {
     dashboardUrl: input.dashboardUrl ?? null,
     automaticSabbaticals: input.automaticSabbaticals ?? [],
     deadlineText: input.deadlineText ?? null,
+    membershipLabel: input.membershipLabel ?? null,
   };
 }
 
@@ -380,12 +414,57 @@ async function loadRosterConfirmationRecipients(input: {
     throw new RosterConfirmationEmailValidationError({ sessionId: 'Session was not found.' });
   }
 
+  const membershipOnlyRows = await db
+    .select({
+      memberId: schema.curlingRegistrations.curler_member_id,
+      registrationId: schema.curlingRegistrations.id,
+      membershipOption: schema.curlingRegistrations.membership_option,
+      icePrivilegesChoice: schema.curlingRegistrations.ice_privileges_choice,
+      memberName: schema.members.name,
+      firstName: schema.members.first_name,
+      lastName: schema.members.last_name,
+      email: schema.members.email,
+      dateOfBirth: schema.members.date_of_birth,
+      guardianEmail: schema.members.guardian_email,
+    })
+    .from(schema.curlingRegistrations)
+    .innerJoin(schema.members, eq(schema.members.id, schema.curlingRegistrations.curler_member_id))
+    .where(
+      and(
+        eq(schema.curlingRegistrations.session_id, input.sessionId),
+        sql`${schema.curlingRegistrations.submitted_at} IS NOT NULL`,
+        inArray(schema.curlingRegistrations.status, [...ROSTER_EMAIL_REGISTRATION_STATUSES]),
+        isNotNull(schema.curlingRegistrations.curler_member_id),
+        or(
+          eq(schema.curlingRegistrations.membership_option, 'social'),
+          eq(schema.curlingRegistrations.membership_option, 'regular_spare_only'),
+          and(
+            eq(schema.curlingRegistrations.membership_option, 'regular'),
+            eq(schema.curlingRegistrations.ice_privileges_choice, 'none'),
+          ),
+          and(
+            eq(schema.curlingRegistrations.membership_option, 'regular'),
+            eq(schema.curlingRegistrations.ice_privileges_choice, 'basic_ice'),
+          ),
+        ),
+        input.memberId != null ? eq(schema.curlingRegistrations.curler_member_id, input.memberId) : undefined,
+      ),
+    );
+
   const rosterMemberIds = [...new Set(rosterRows.map((row) => row.memberId))];
+  const membershipOnlyMemberIds = [
+    ...new Set(
+      membershipOnlyRows
+        .map((row) => row.memberId)
+        .filter((memberId): memberId is number => memberId != null),
+    ),
+  ];
+  const billingMemberIds = [...new Set([...rosterMemberIds, ...membershipOnlyMemberIds])];
   const [billing, configuredNames] = await Promise.all([
     listStaffRegistrationBilling({
       actor: input.actor,
       sessionId: input.sessionId,
-      curlerMemberIds: rosterMemberIds,
+      curlerMemberIds: billingMemberIds,
     }),
     loadRegistrationPaymentItemNameMap(),
   ]);
@@ -398,6 +477,7 @@ async function loadRosterConfirmationRecipients(input: {
     guardianEmail: string | null;
     registrationIds: number[];
     leagues: Map<number, RosterConfirmationLeague>;
+    membershipLabel: string | null;
   };
   const drafts = new Map<number, Draft>();
   for (const row of rosterRows) {
@@ -409,6 +489,7 @@ async function loadRosterConfirmationRecipients(input: {
       guardianEmail: row.guardianEmail?.trim() || null,
       registrationIds: [],
       leagues: new Map<number, RosterConfirmationLeague>(),
+      membershipLabel: null,
     };
     if (row.registrationId != null && !existing.registrationIds.includes(row.registrationId)) {
       existing.registrationIds.push(row.registrationId);
@@ -419,6 +500,28 @@ async function loadRosterConfirmationRecipients(input: {
       leagueName: row.leagueName,
       isTemporarySabbaticalFill: prior?.isTemporarySabbaticalFill === true || row.isTemporarySabbaticalFill === 1,
     });
+    drafts.set(row.memberId, existing);
+  }
+  for (const row of membershipOnlyRows) {
+    if (row.memberId == null) continue;
+    const membershipLabel = rosterConfirmationMembershipLabel({
+      membershipOption: row.membershipOption,
+      icePrivilegesChoice: row.icePrivilegesChoice,
+    });
+    const existing = drafts.get(row.memberId) ?? {
+      memberId: row.memberId,
+      memberName: memberDisplayName(row),
+      memberEmail: row.email?.trim() || null,
+      dateOfBirth: row.dateOfBirth ?? null,
+      guardianEmail: row.guardianEmail?.trim() || null,
+      registrationIds: [],
+      leagues: new Map<number, RosterConfirmationLeague>(),
+      membershipLabel,
+    };
+    if (!existing.registrationIds.includes(row.registrationId)) {
+      existing.registrationIds.push(row.registrationId);
+    }
+    if (!existing.membershipLabel) existing.membershipLabel = membershipLabel;
     drafts.set(row.memberId, existing);
   }
 
@@ -506,6 +609,7 @@ async function loadRosterConfirmationRecipients(input: {
         skipReason,
         canSend: skipReason == null,
         financialAssistance,
+        membershipLabel: draft.membershipLabel,
       };
     })
     .sort((left, right) => left.memberName.localeCompare(right.memberName) || left.memberId - right.memberId);
@@ -560,7 +664,7 @@ async function loadRosterConfirmationRecipients(input: {
       sessionId: session.id,
       recipients,
     }),
-    deadlineText: formatRegistrationPaymentDeadlineDate(deadline?.paymentDeadlineAt) ?? '',
+    deadlineText: formatRosterConfirmationPaymentDueText(deadline?.paymentDeadlineAt) ?? '',
   };
 }
 
@@ -593,6 +697,7 @@ function payloadForRecipient(
     dashboardUrl: options.dashboardUrl,
     automaticSabbaticals: list.automaticSabbaticalsByMemberId.get(recipient.memberId) ?? [],
     deadlineText: recipient.balanceMinor > 0 && list.deadlineText ? list.deadlineText : null,
+    membershipLabel: recipient.membershipLabel,
   });
 }
 

@@ -439,4 +439,43 @@ describe('Phase 9 registration email rendering', () => {
     expect(rendered.htmlBody).toContain('https://squareup.example/pay/abc');
     expect(rendered.htmlBody).toContain('Payment is due');
   });
+
+  test('roster confirmation for membership-only registrants confirms membership instead of leagues', () => {
+    const rendered = renderRegistrationEmail('roster_confirmation', {
+      curlerName: 'Alex Curler',
+      seasonName: '2026-27',
+      sessionName: 'Fall',
+      rosterLeagues: [],
+      membershipLabel: 'Social membership',
+      receiptLineItems: [{ description: 'Social membership', amountMinor: 5000 }],
+      amountPaidMinor: 0,
+      billingBalanceMinor: 5000,
+      paymentUrl: 'https://squareup.example/pay/abc',
+    });
+
+    expect(rendered.subject).toBe('Your Fall membership and payment link');
+    expect(rendered.textBody).toContain('This email confirms your social membership for Fall.');
+    expect(rendered.textBody).not.toContain('You are on the roster');
+    expect(rendered.textBody).not.toContain('No itemized summary is available');
+    expect(rendered.htmlBody).toContain('Your Fall membership');
+  });
+
+  test('roster confirmation says payment is due upon receipt after the deadline', () => {
+    const rendered = renderRegistrationEmail('roster_confirmation', {
+      curlerName: 'Alex Curler',
+      seasonName: '2026-27',
+      sessionName: 'Fall',
+      rosterLeagues: [{ leagueName: 'Hump Day', isTemporarySabbaticalFill: false }],
+      receiptLineItems: [{ description: 'Hump Day league fee', amountMinor: 15000 }],
+      amountPaidMinor: 0,
+      billingBalanceMinor: 15000,
+      paymentUrl: 'https://squareup.example/pay/abc',
+      deadlineText: 'upon receipt',
+    });
+
+    expect(rendered.textBody).toContain('Payment is due upon receipt');
+    expect(rendered.textBody).not.toContain('Payment is due by upon receipt');
+    expect(rendered.htmlBody).toContain('Payment is due upon receipt');
+    expect(rendered.htmlBody).not.toContain('Payment is due by');
+  });
 });

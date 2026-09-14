@@ -19895,6 +19895,7 @@ export interface paths {
                                     approvedPercent: null | number;
                                     status: string;
                                 };
+                                membershipLabel: null | string;
                             }[];
                             sendJob: null | {
                                 id: number;
@@ -20115,6 +20116,7 @@ export interface paths {
                                     approvedPercent: null | number;
                                     status: string;
                                 };
+                                membershipLabel: null | string;
                             };
                             subject: string;
                             htmlBody: string;

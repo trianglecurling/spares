@@ -9,6 +9,7 @@ import type {
 import { sendEmail } from '../services/email.js';
 import { registrationParentCopyEmail } from '../utils/memberParentEmail.js';
 import { paymentDetailsUrl } from '../utils/paymentDetailsUrl.js';
+import { ROSTER_PAYMENT_DUE_UPON_RECEIPT } from './registrationPaymentDeadline.js';
 
 const REGISTRATION_RECEIPT_ORDER_STATUSES = new Set([
   'succeeded',
@@ -129,6 +130,7 @@ export interface RegistrationEmailPayload {
   acceptUrl?: string | null;
   declineUrl?: string | null;
   deadlineText?: string | null;
+  membershipLabel?: string | null;
   offerResponseSource?: 'explicit' | 'automatic' | string | null;
   isTemporarySabbaticalFill?: boolean | null;
   requestedAssistancePercent?: number | null;
@@ -323,6 +325,12 @@ function automaticSabbaticalText(items?: RegistrationEmailPayload['automaticSabb
   return `Why you have a sabbatical\n${explanations.join('\n')}`;
 }
 
+function rosterMembershipConfirmationSentence(sessionName: string, membershipLabel?: string | null): string {
+  const label = membershipLabel?.trim();
+  if (label) return `This email confirms your ${label[0].toLowerCase()}${label.slice(1)} for ${sessionName}.`;
+  return `This email confirms your ${sessionName} membership.`;
+}
+
 function rosterLeagueLabels(leagues?: RegistrationEmailPayload['rosterLeagues']): string[] {
   return (leagues ?? [])
     .map((league) => {
@@ -391,12 +399,14 @@ function billingSummaryTableText(payload: RegistrationEmailPayload): string {
 function paymentDueSentence(payload: RegistrationEmailPayload): string | null {
   const deadlineText = payload.deadlineText?.trim();
   if (!deadlineText) return null;
+  if (deadlineText === ROSTER_PAYMENT_DUE_UPON_RECEIPT) return 'Payment is due upon receipt';
   return `Payment is due by ${deadlineText}`;
 }
 
 function paymentDueHtml(payload: RegistrationEmailPayload): string {
   const deadlineText = payload.deadlineText?.trim();
   if (!deadlineText) return '';
+  if (deadlineText === ROSTER_PAYMENT_DUE_UPON_RECEIPT) return '<p>Payment is due upon receipt</p>';
   return `<p>Payment is due by ${escapeHtml(deadlineText)}</p>`;
 }
 
@@ -947,9 +957,12 @@ export function renderRegistrationEmail(messageType: RegistrationMessageType, pa
     case 'roster_confirmation': {
       const sessionName = payload.sessionName?.trim() || payload.seasonName?.trim() || 'the season';
       const leagueLabels = rosterLeagueLabels(payload.rosterLeagues);
+      const hasLeagues = leagueLabels.length > 0;
+      const subjectNoun = hasLeagues ? 'leagues' : 'membership';
+      const membershipConfirmation = rosterMembershipConfirmationSentence(sessionName, payload.membershipLabel);
       const hasTemporaryFill = (payload.rosterLeagues ?? []).some((league) => league.isTemporarySabbaticalFill);
-      const leagueHtml = listItems(leagueLabels);
-      const leagueText = textList(leagueLabels);
+      const leagueHtml = hasLeagues ? listItems(leagueLabels) : '';
+      const leagueText = hasLeagues ? textList(leagueLabels) : '';
       const footnoteHtml = hasTemporaryFill
         ? '<p>* Temporary sabbatical-fill spot. This league spot was available because someone is taking a sabbatical. It is not a permanent spot; the sabbatical holder maintains the right to return in a future session, but you receive a $20 discount for this league. You also keep your waitlist spot in this league in case a permanent spot opens in a future session.</p>'
         : '';
@@ -968,12 +981,17 @@ export function renderRegistrationEmail(messageType: RegistrationMessageType, pa
           : { html: membershipContactHtml, text: membershipContactText };
       const includePaymentLink = Boolean(payload.paymentUrl) || payload.paymentLinkPending === true;
       return {
-        subject: includePaymentLink ? `Your ${sessionName} leagues and payment link` : `Your ${sessionName} leagues`,
+        subject: includePaymentLink
+          ? `Your ${sessionName} ${subjectNoun} and payment link`
+          : `Your ${sessionName} ${subjectNoun}`,
         htmlBody: `
-          <h2>Your ${escapeHtml(sessionName)} leagues</h2>
+          <h2>Your ${escapeHtml(sessionName)} ${subjectNoun}</h2>
           <p>Hi ${escapeHtml(curlerName)},</p>
-          <p>You are on the roster for the following ${escapeHtml(sessionName)} leagues:</p>
-          ${leagueHtml}
+          ${
+            hasLeagues
+              ? `<p>You are on the roster for the following ${escapeHtml(sessionName)} leagues:</p>${leagueHtml}`
+              : `<p>${escapeHtml(membershipConfirmation)}</p>`
+          }
           ${footnoteHtml}
           ${automaticSabbaticalSectionHtml}
           <h3>Billing summary</h3>
@@ -982,7 +1000,11 @@ export function renderRegistrationEmail(messageType: RegistrationMessageType, pa
           ${payload.dashboardUrl ? `<p><a href="${escapeHtml(payload.dashboardUrl)}">View your registration status</a></p>` : ''}
           ${contacts.html}
         `,
-        textBody: `Your ${sessionName} leagues\n\nHi ${curlerName},\n\nYou are on the roster for the following ${sessionName} leagues:\n${leagueText}\n${footnoteText ? `\n${footnoteText}\n` : ''}${automaticSabbaticalSectionText ? `\n${automaticSabbaticalSectionText}\n` : ''}\nBilling summary\n${billingText}\n${paymentText ? `\n${paymentText}\n` : ''}${payload.dashboardUrl ? `\nView your registration status: ${payload.dashboardUrl}\n` : ''}\n${contacts.text}`,
+        textBody: `Your ${sessionName} ${subjectNoun}\n\nHi ${curlerName},\n\n${
+          hasLeagues
+            ? `You are on the roster for the following ${sessionName} leagues:\n${leagueText}`
+            : membershipConfirmation
+        }\n${footnoteText ? `\n${footnoteText}\n` : ''}${automaticSabbaticalSectionText ? `\n${automaticSabbaticalSectionText}\n` : ''}\nBilling summary\n${billingText}\n${paymentText ? `\n${paymentText}\n` : ''}${payload.dashboardUrl ? `\nView your registration status: ${payload.dashboardUrl}\n` : ''}\n${contacts.text}`,
       };
     }
     default: {

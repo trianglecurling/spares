@@ -2427,6 +2427,7 @@ const rosterConfirmationRecipientSchema = {
     'skipReason',
     'canSend',
     'financialAssistance',
+    'membershipLabel',
   ],
   properties: {
     memberId: { type: 'number' },
@@ -2453,6 +2454,7 @@ const rosterConfirmationRecipientSchema = {
       required: rosterConfirmationFinancialAssistanceSchema.required,
       properties: rosterConfirmationFinancialAssistanceSchema.properties,
     },
+    membershipLabel: { type: ['string', 'null'] },
   },
 } as const;
 

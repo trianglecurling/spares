@@ -6,8 +6,37 @@ import {
   pickRosterConfirmationBilling,
   rosterConfirmationCheckoutLines,
   rosterConfirmationSendSideEffects,
+  isMembershipOnlyRosterConfirmation,
+  rosterConfirmationMembershipLabel,
   rosterConfirmationSkipReason,
 } from './registrationRosterConfirmationEmailService.js';
+
+describe('membership-only roster confirmation recipients', () => {
+  test('includes social, basic ice, and no-ice regular memberships', () => {
+    expect(isMembershipOnlyRosterConfirmation({ membershipOption: 'social' })).toBe(true);
+    expect(isMembershipOnlyRosterConfirmation({ membershipOption: 'regular_spare_only' })).toBe(true);
+    expect(
+      isMembershipOnlyRosterConfirmation({ membershipOption: 'regular', icePrivilegesChoice: 'none' }),
+    ).toBe(true);
+    expect(
+      isMembershipOnlyRosterConfirmation({ membershipOption: 'regular', icePrivilegesChoice: 'basic_ice' }),
+    ).toBe(true);
+    expect(
+      isMembershipOnlyRosterConfirmation({ membershipOption: 'regular', icePrivilegesChoice: 'league_play' }),
+    ).toBe(false);
+    expect(isMembershipOnlyRosterConfirmation({ membershipOption: 'junior_recreational' })).toBe(false);
+  });
+
+  test('labels membership-only recipients for the staff table and email', () => {
+    expect(rosterConfirmationMembershipLabel({ membershipOption: 'social' })).toBe('Social membership');
+    expect(rosterConfirmationMembershipLabel({ membershipOption: 'regular_spare_only' })).toBe(
+      'Regular membership with basic ice privileges',
+    );
+    expect(
+      rosterConfirmationMembershipLabel({ membershipOption: 'regular', icePrivilegesChoice: 'none' }),
+    ).toBe('Regular membership with no ice privileges');
+  });
+});
 
 describe('roster confirmation skip reasons', () => {
   test('blocks sending while Junior Recreational financial assistance is pending', () => {
@@ -229,6 +258,26 @@ describe('roster confirmation payload', () => {
     expect(rendered.textBody).toContain('Payment link will be created when this email is sent.');
     expect(rendered.textBody).toContain('Payment is due by Sunday, September 13, 2026');
     expect(rendered.textBody).not.toContain('https://');
+  });
+
+  test('late roster emails say payment is due upon receipt', () => {
+    const payload = buildRosterConfirmationEmailPayload({
+      memberName: 'Alex Curler',
+      seasonName: '2026-27',
+      sessionName: 'Fall',
+      leagues: [{ leagueName: 'Hump Day', isTemporarySabbaticalFill: false }],
+      owedLines: [{ description: 'Hump Day league fee', amountMinor: 15000 }],
+      owedDiscountLines: [],
+      owedSubtotalMinor: 15000,
+      owedDiscountMinor: 0,
+      owedMinor: 15000,
+      paidMinor: 0,
+      balanceMinor: 15000,
+      deadlineText: 'upon receipt',
+    });
+    const rendered = renderRegistrationEmail('roster_confirmation', payload);
+    expect(rendered.textBody).toContain('Payment is due upon receipt');
+    expect(rendered.textBody).not.toContain('Payment is due by');
   });
 
   test('credit payload never includes a payment link', () => {

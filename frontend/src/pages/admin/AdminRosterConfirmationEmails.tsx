@@ -289,7 +289,8 @@ export default function AdminRosterConfirmationEmails() {
         row.memberName.toLowerCase().includes(needle) ||
         (row.memberEmail ?? '').toLowerCase().includes(needle) ||
         (row.parentEmail ?? '').toLowerCase().includes(needle) ||
-        row.leagues.some((league) => league.leagueName.toLowerCase().includes(needle))
+        row.leagues.some((league) => league.leagueName.toLowerCase().includes(needle)) ||
+        (row.membershipLabel ?? '').toLowerCase().includes(needle)
       );
     });
     const direction = sort.direction === 'asc' ? 1 : -1;
@@ -420,12 +421,14 @@ export default function AdminRosterConfirmationEmails() {
     },
     {
       id: 'leagues',
-      header: 'Leagues',
+      header: 'Leagues or membership',
       renderCell: (row) =>
         row.leagues.length > 0 ? (
           <span>
             {row.leagues.map((league) => `${league.leagueName}${league.isTemporarySabbaticalFill ? '*' : ''}`).join(', ')}
           </span>
+        ) : row.membershipLabel ? (
+          <span>{row.membershipLabel}</span>
         ) : (
           <span className="text-gray-500 dark:text-gray-400">None</span>
         ),
@@ -532,7 +535,7 @@ export default function AdminRosterConfirmationEmails() {
                   event.preventDefault();
                   setFilter('search', searchDraft);
                 }}
-                placeholder="Name, email, or league"
+                placeholder="Name, email, league, or membership"
               />
             </FormField>
             <FormField label="Balance" htmlFor={balanceFieldId}>
@@ -618,7 +621,7 @@ export default function AdminRosterConfirmationEmails() {
       />
 
       {loading ? (
-        <AppStateCard title="Loading roster emails" description="Loading rostered members and billing summaries." />
+        <AppStateCard title="Loading roster emails" description="Loading members and billing summaries." />
       ) : null}
 
       {error ? (
@@ -635,7 +638,7 @@ export default function AdminRosterConfirmationEmails() {
             <h2 className="app-section-title">Roster confirmation emails</h2>
             <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
               {payload
-                ? `${payload.recipients.length} rostered ${payload.recipients.length === 1 ? 'member' : 'members'}. Open a name to read the email that would be sent.`
+                ? `${payload.recipients.length} ${payload.recipients.length === 1 ? 'member' : 'members'}. Open a name to read the email that would be sent.`
                 : 'Preview and send league roster confirmation emails.'}
             </p>
             {payload?.recipients.some((row) => row.leagues.some((league) => league.isTemporarySabbaticalFill)) ? (
@@ -713,7 +716,7 @@ export default function AdminRosterConfirmationEmails() {
             emptyState={
               <AppStateCard
                 compact
-                title="No rostered members found"
+                title="No members found"
                 description="Try another session, search, or filter."
               />
             }

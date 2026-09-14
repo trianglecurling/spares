@@ -45,6 +45,30 @@ export function formatRegistrationPaymentDeadlineDate(deadline: Date | string | 
   }).format(date);
 }
 
+export const ROSTER_PAYMENT_DUE_UPON_RECEIPT = 'upon receipt';
+
+export function isRegistrationPaymentDeadlinePassed(
+  deadlineAt: Date | string | null | undefined,
+  now: Date = new Date(),
+): boolean {
+  if (!deadlineAt) return false;
+  const deadline = deadlineAt instanceof Date ? deadlineAt : new Date(deadlineAt);
+  if (Number.isNaN(deadline.getTime())) return false;
+  return deadline.getTime() <= now.getTime();
+}
+
+/** Date for roster emails, or “upon receipt” after the deadline has passed. */
+export function formatRosterConfirmationPaymentDueText(
+  deadlineAt: Date | string | null | undefined,
+  now: Date = new Date(),
+): string | null {
+  if (!deadlineAt) return null;
+  if (isRegistrationPaymentDeadlinePassed(deadlineAt, now)) {
+    return ROSTER_PAYMENT_DUE_UPON_RECEIPT;
+  }
+  return formatRegistrationPaymentDeadlineDate(deadlineAt);
+}
+
 /** Phrase after “Payment is due …” for pay-later warnings and emails. */
 export function registrationPayLaterDuePhrase(deadlineAt: Date | string | null | undefined): string {
   if (!deadlineAt) return 'before leagues begin';
