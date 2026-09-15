@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { PaymentServiceError } from '../services/paymentService.js';
 import {
   offlinePaymentCheckoutExpireFailure,
+  paymentUrlFromRegistrationMessagePayload,
   RegistrationMembershipPaymentValidationError,
 } from './registrationMembershipPaymentService.js';
 
@@ -25,5 +26,22 @@ describe('offlinePaymentCheckoutExpireFailure', () => {
 
   test('leaves unrelated errors untouched', () => {
     expect(offlinePaymentCheckoutExpireFailure(new Error('network down'))).toBeNull();
+  });
+});
+
+describe('existing registration payment URLs', () => {
+  test('reads a payment URL from a stored outbound payload', () => {
+    expect(
+      paymentUrlFromRegistrationMessagePayload({
+        paymentUrl: 'https://squareup.example/pay/abc',
+      }),
+    ).toBe('https://squareup.example/pay/abc');
+    expect(
+      paymentUrlFromRegistrationMessagePayload(
+        JSON.stringify({ paymentUrl: ' https://squareup.example/pay/abc ' }),
+      ),
+    ).toBe('https://squareup.example/pay/abc');
+    expect(paymentUrlFromRegistrationMessagePayload({ paymentUrl: '' })).toBeNull();
+    expect(paymentUrlFromRegistrationMessagePayload({ amountDueMinor: 1000 })).toBeNull();
   });
 });

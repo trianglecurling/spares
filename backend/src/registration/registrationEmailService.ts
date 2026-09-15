@@ -126,6 +126,7 @@ export interface RegistrationEmailPayload {
   amountDueMinor?: number | null;
   amountPaidMinor?: number | null;
   paymentUrl?: string | null;
+  paymentLinkReuse?: boolean | null;
   dashboardUrl?: string | null;
   acceptUrl?: string | null;
   declineUrl?: string | null;
@@ -420,6 +421,9 @@ function rosterPaymentHtml(payload: RegistrationEmailPayload): string {
     if (payload.paymentLinkPending) {
       return `<p>Payment link will be created when this email is sent.</p>${dueHtml}`;
     }
+    if (payload.paymentLinkReuse) {
+      return `<p>Your existing payment link will be included when this reminder is sent.</p>${dueHtml}`;
+    }
     return `<p>A payment link is not available yet.</p>${dueHtml}`;
   }
   if (balance < 0) {
@@ -436,7 +440,9 @@ function rosterPaymentText(payload: RegistrationEmailPayload): string {
       ? `Pay the remaining balance: ${payload.paymentUrl}`
       : payload.paymentLinkPending
         ? 'Payment link will be created when this email is sent.'
-        : 'A payment link is not available yet.';
+        : payload.paymentLinkReuse
+          ? 'Your existing payment link will be included when this reminder is sent.'
+          : 'A payment link is not available yet.';
     return due ? `${link}\n${due}` : link;
   }
   if (balance < 0) {
@@ -1005,6 +1011,30 @@ export function renderRegistrationEmail(messageType: RegistrationMessageType, pa
             ? `You are on the roster for the following ${sessionName} leagues:\n${leagueText}`
             : membershipConfirmation
         }\n${footnoteText ? `\n${footnoteText}\n` : ''}${automaticSabbaticalSectionText ? `\n${automaticSabbaticalSectionText}\n` : ''}\nBilling summary\n${billingText}\n${paymentText ? `\n${paymentText}\n` : ''}${payload.dashboardUrl ? `\nView your registration status: ${payload.dashboardUrl}\n` : ''}\n${contacts.text}`,
+      };
+    }
+    case 'roster_payment_reminder': {
+      const sessionName = payload.sessionName?.trim() || payload.seasonName?.trim() || 'the season';
+      const leagueLabels = rosterLeagueLabels(payload.rosterLeagues);
+      const hasLeagues = leagueLabels.length > 0;
+      const subjectNoun = hasLeagues ? 'leagues' : 'membership';
+      const billingHtml = billingSummaryTableHtml(payload);
+      const billingText = billingSummaryTableText(payload);
+      const paymentHtml = rosterPaymentHtml(payload);
+      const paymentText = rosterPaymentText(payload);
+      return {
+        subject: `Payment reminder for your ${sessionName} ${subjectNoun}`,
+        htmlBody: `
+          <h2>Payment reminder</h2>
+          <p>Hi ${escapeHtml(curlerName)},</p>
+          <p>This is a reminder that payment is still due for your ${escapeHtml(sessionName)} ${escapeHtml(subjectNoun)}. Please use the same payment link from your roster email.</p>
+          <h3>Billing summary</h3>
+          ${billingHtml}
+          ${paymentHtml}
+          ${payload.dashboardUrl ? `<p><a href="${escapeHtml(payload.dashboardUrl)}">View your registration status</a></p>` : ''}
+          ${paymentAndMembershipContactHtml}
+        `,
+        textBody: `Payment reminder\n\nHi ${curlerName},\n\nThis is a reminder that payment is still due for your ${sessionName} ${subjectNoun}. Please use the same payment link from your roster email.\n\nBilling summary\n${billingText}\n${paymentText ? `\n${paymentText}\n` : ''}${payload.dashboardUrl ? `\nView your registration status: ${payload.dashboardUrl}\n` : ''}\n${paymentAndMembershipContactText}`,
       };
     }
     default: {

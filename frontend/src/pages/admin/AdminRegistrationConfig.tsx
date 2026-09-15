@@ -853,7 +853,7 @@ export default function AdminRegistrationConfig() {
         : primaryTab === 'billing'
           ? 'Compare what each registration owes with what has been paid.'
           : primaryTab === 'roster-emails'
-          ? 'Preview and send league roster confirmation emails, including billing and payment links.'
+          ? 'Preview and send league roster confirmation emails, payment links, and unpaid payment reminders.'
           : primaryTab === 'qa'
           ? QA_TAB_DESCRIPTIONS[qaTab]
           : 'Configure seasons, sessions, registration schedule, and pricing.';

@@ -198,7 +198,9 @@ export default function AdminRosterConfirmationEmailPreview() {
               <dd className="text-sm text-gray-900 dark:text-gray-100">
                 {preview.recipient.skipReason === 'pending_financial_assistance'
                   ? 'Needs financial assistance review before this invoice can be sent'
-                  : preview.recipient.alreadySent
+                  : preview.recipient.alreadySent && preview.recipient.balanceMinor > 0
+                    ? 'Already sent. A payment reminder will reuse the existing payment link.'
+                    : preview.recipient.alreadySent
                     ? 'Already sent'
                     : recipientHeld
                       ? 'Held — skipped by Send all unsent'

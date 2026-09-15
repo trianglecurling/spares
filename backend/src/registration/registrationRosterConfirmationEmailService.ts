@@ -18,7 +18,10 @@ import { listStaffRegistrationBilling } from './registrationBillingService.js';
 import { LISTABLE_REGISTRATION_STATUSES } from './registrationStaffQuery.js';
 import { renderRegistrationEmail, sendRegistrationEmailForDashboard, type RegistrationEmailPayload } from './registrationEmailService.js';
 import { isLeagueProcessingActive, LEAGUE_PROCESSING_HOLD_REASON } from './registrationLeagueProcessing.js';
-import { triggerDeferredRegistrationPayment } from './registrationMembershipPaymentService.js';
+import {
+  loadExistingRegistrationPaymentUrl,
+  triggerDeferredRegistrationPayment,
+} from './registrationMembershipPaymentService.js';
 import { formatRosterConfirmationPaymentDueText, getRegistrationPaymentDeadline } from './registrationPaymentDeadline.js';
 import { registrationParentCopyEmail } from '../utils/memberParentEmail.js';
 import { buildAuthzClaimsForMember } from '../utils/rbac.js';
@@ -205,14 +208,28 @@ export function pickRosterConfirmationBilling<T extends { registrationId: number
   })[0];
 }
 
-export function rosterConfirmationSendSideEffects(balanceMinor: number): {
+export function isRosterConfirmationPaymentReminder(input: {
+  alreadySent: boolean;
+  balanceMinor: number;
+}): boolean {
+  return input.alreadySent && input.balanceMinor > 0;
+}
+
+export function rosterConfirmationSendSideEffects(input: {
+  balanceMinor: number;
+  alreadySent?: boolean;
+}): {
   createPaymentLink: boolean;
+  reusePaymentLink: boolean;
   issueRefund: boolean;
 } {
-  return {
-    createPaymentLink: balanceMinor > 0,
-    issueRefund: false,
-  };
+  if (input.balanceMinor <= 0) {
+    return { createPaymentLink: false, reusePaymentLink: false, issueRefund: false };
+  }
+  if (input.alreadySent) {
+    return { createPaymentLink: false, reusePaymentLink: true, issueRefund: false };
+  }
+  return { createPaymentLink: true, reusePaymentLink: false, issueRefund: false };
 }
 
 export function rosterConfirmationCheckoutLines(input: {
@@ -267,6 +284,7 @@ export function buildRosterConfirmationEmailPayload(input: {
   balanceMinor: number;
   paymentUrl?: string | null;
   paymentLinkPending?: boolean;
+  paymentLinkReuse?: boolean;
   dashboardUrl?: string | null;
   automaticSabbaticals?: RosterConfirmationAutomaticSabbatical[];
   deadlineText?: string | null;
@@ -285,6 +303,7 @@ export function buildRosterConfirmationEmailPayload(input: {
     billingBalanceMinor: input.balanceMinor,
     paymentUrl: input.paymentUrl ?? null,
     paymentLinkPending: input.paymentLinkPending === true,
+    paymentLinkReuse: input.paymentLinkReuse === true,
     dashboardUrl: input.dashboardUrl ?? null,
     automaticSabbaticals: input.automaticSabbaticals ?? [],
     deadlineText: input.deadlineText ?? null,
@@ -678,7 +697,12 @@ async function dashboardUrlFor(registrationId: number | null, memberId: number):
 function payloadForRecipient(
   list: LoadedRosterConfirmation,
   recipient: RosterConfirmationRecipient,
-  options: { paymentUrl?: string | null; paymentLinkPending?: boolean; dashboardUrl?: string | null },
+  options: {
+    paymentUrl?: string | null;
+    paymentLinkPending?: boolean;
+    paymentLinkReuse?: boolean;
+    dashboardUrl?: string | null;
+  },
 ): RegistrationEmailPayload {
   return buildRosterConfirmationEmailPayload({
     memberName: recipient.memberName,
@@ -694,6 +718,7 @@ function payloadForRecipient(
     balanceMinor: recipient.balanceMinor,
     paymentUrl: options.paymentUrl,
     paymentLinkPending: options.paymentLinkPending,
+    paymentLinkReuse: options.paymentLinkReuse,
     dashboardUrl: options.dashboardUrl,
     automaticSabbaticals: list.automaticSabbaticalsByMemberId.get(recipient.memberId) ?? [],
     deadlineText: recipient.balanceMinor > 0 && list.deadlineText ? list.deadlineText : null,
@@ -736,12 +761,19 @@ export async function getRosterConfirmationEmailPreview(input: {
   if (!recipient) {
     throw new RosterConfirmationEmailValidationError({ memberId: 'This member is not on a league roster for the selected session.' });
   }
-  const paymentLinkPending = recipient.balanceMinor > 0;
+  const isReminder = isRosterConfirmationPaymentReminder(recipient);
+  const paymentUrl =
+    isReminder && recipient.registrationId != null
+      ? await loadExistingRegistrationPaymentUrl(recipient.registrationId)
+      : null;
+  const paymentLinkPending = recipient.balanceMinor > 0 && !isReminder;
   const payload = payloadForRecipient(list, recipient, {
+    paymentUrl,
     paymentLinkPending,
+    paymentLinkReuse: isReminder && !paymentUrl,
     dashboardUrl: await dashboardUrlFor(recipient.registrationId, recipient.memberId),
   });
-  const rendered = renderRegistrationEmail('roster_confirmation', payload);
+  const rendered = renderRegistrationEmail(isReminder ? 'roster_payment_reminder' : 'roster_confirmation', payload);
   return {
     sessionId: list.sessionId,
     sessionName: list.sessionName,
@@ -895,8 +927,17 @@ async function sendOneRosterConfirmationEmail(input: {
     throw new Error(skipSendError(recipient));
   }
   let paymentUrl: string | null = null;
-  const sideEffects = rosterConfirmationSendSideEffects(recipient.balanceMinor);
-  if (sideEffects.createPaymentLink) {
+  const sideEffects = rosterConfirmationSendSideEffects({
+    balanceMinor: recipient.balanceMinor,
+    alreadySent: recipient.alreadySent,
+  });
+  const isReminder = isRosterConfirmationPaymentReminder(recipient);
+  if (sideEffects.reusePaymentLink) {
+    paymentUrl = await loadExistingRegistrationPaymentUrl(recipient.registrationId);
+    if (!paymentUrl) {
+      throw new Error('An existing payment link was not found for this registration.');
+    }
+  } else if (sideEffects.createPaymentLink) {
     const payment = await triggerDeferredRegistrationPayment({
       registrationId: recipient.registrationId,
       actorMemberId: input.actor.id,
@@ -916,7 +957,7 @@ async function sendOneRosterConfirmationEmail(input: {
     dashboardUrl: await dashboardUrlFor(recipient.registrationId, recipient.memberId),
   });
   const sent = await sendRegistrationEmailForDashboard({
-    messageType: 'roster_confirmation',
+    messageType: isReminder ? 'roster_payment_reminder' : 'roster_confirmation',
     recipientEmail: recipient.memberEmail,
     recipientName: recipient.memberName,
     recipientMemberId: recipient.memberId,

@@ -1777,6 +1777,64 @@ async function loadLatestRegistrationInvoice(registrationId: number) {
   return invoice ?? null;
 }
 
+export function paymentUrlFromRegistrationMessagePayload(payloadJson: unknown): string | null {
+  const value =
+    typeof payloadJson === 'string'
+      ? (() => {
+          try {
+            return JSON.parse(payloadJson) as unknown;
+          } catch {
+            return null;
+          }
+        })()
+      : payloadJson;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const paymentUrl = (value as { paymentUrl?: unknown }).paymentUrl;
+  if (typeof paymentUrl !== 'string') return null;
+  const trimmed = paymentUrl.trim();
+  return trimmed || null;
+}
+
+/** Existing hosted checkout URL for a registration. Does not create or expire a checkout. */
+export async function loadExistingRegistrationPaymentUrl(registrationId: number): Promise<string | null> {
+  const invoice = await loadLatestRegistrationInvoice(registrationId);
+  if (invoice?.payment_order_id) {
+    const existingOrder = await createPaymentService().getPaymentOrderById(invoice.payment_order_id);
+    const hostedCheckoutUrl =
+      typeof existingOrder?.metadata.hostedCheckoutUrl === 'string' ? existingOrder.metadata.hostedCheckoutUrl.trim() : '';
+    if (
+      hostedCheckoutUrl &&
+      existingOrder &&
+      (existingOrder.status === 'pending' || existingOrder.status === 'created')
+    ) {
+      return hostedCheckoutUrl;
+    }
+  }
+
+  const { db, schema } = getDrizzleDb();
+  const rows = await db
+    .select({ payloadJson: schema.registrationOutboundMessages.payload_json })
+    .from(schema.registrationOutboundMessages)
+    .where(
+      and(
+        eq(schema.registrationOutboundMessages.registration_id, registrationId),
+        eq(schema.registrationOutboundMessages.delivery_status, 'sent'),
+        inArray(schema.registrationOutboundMessages.message_type, [
+          'roster_confirmation',
+          'deferred_registration_payment_link',
+          'roster_payment_reminder',
+          'registration_submitted_immediate_payment',
+        ]),
+      ),
+    )
+    .orderBy(desc(schema.registrationOutboundMessages.sent_at), desc(schema.registrationOutboundMessages.id));
+  for (const row of rows) {
+    const paymentUrl = paymentUrlFromRegistrationMessagePayload(row.payloadJson);
+    if (paymentUrl) return paymentUrl;
+  }
+  return null;
+}
+
 function waitlistPositionSortKey(registrationId: number, leagueId: number): string {
   return `${Date.now().toString().padStart(13, '0')}:${registrationId}:${leagueId}`;
 }

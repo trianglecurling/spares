@@ -18,6 +18,7 @@ describe('league processing hold helpers', () => {
     expect(isHeldLeagueProcessingMessageType('registration_submitted_deferred_payment')).toBe(false);
     expect(isHeldLeagueProcessingMessageType('waitlist_changed_by_staff')).toBe(false);
     expect(isHeldLeagueProcessingMessageType('roster_confirmation')).toBe(false);
+    expect(isHeldLeagueProcessingMessageType('roster_payment_reminder')).toBe(false);
   });
 
   test('hides member payment links only for placement-pending statuses', () => {

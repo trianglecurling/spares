@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { renderRegistrationEmail } from './registrationEmailService.js';
 import {
   buildRosterConfirmationEmailPayload,
+  isRosterConfirmationPaymentReminder,
   matchAutomaticSabbaticals,
   pickRosterConfirmationBilling,
   rosterConfirmationCheckoutLines,
@@ -199,9 +200,32 @@ describe('pick roster confirmation billing', () => {
 
 describe('roster confirmation send side effects', () => {
   test('creates a payment link only when a balance is due and never refunds', () => {
-    expect(rosterConfirmationSendSideEffects(10000)).toEqual({ createPaymentLink: true, issueRefund: false });
-    expect(rosterConfirmationSendSideEffects(0)).toEqual({ createPaymentLink: false, issueRefund: false });
-    expect(rosterConfirmationSendSideEffects(-5000)).toEqual({ createPaymentLink: false, issueRefund: false });
+    expect(rosterConfirmationSendSideEffects({ balanceMinor: 10000 })).toEqual({
+      createPaymentLink: true,
+      reusePaymentLink: false,
+      issueRefund: false,
+    });
+    expect(rosterConfirmationSendSideEffects({ balanceMinor: 0 })).toEqual({
+      createPaymentLink: false,
+      reusePaymentLink: false,
+      issueRefund: false,
+    });
+    expect(rosterConfirmationSendSideEffects({ balanceMinor: -5000 })).toEqual({
+      createPaymentLink: false,
+      reusePaymentLink: false,
+      issueRefund: false,
+    });
+  });
+
+  test('reuses the existing payment link for unpaid follow-ups', () => {
+    expect(rosterConfirmationSendSideEffects({ balanceMinor: 10000, alreadySent: true })).toEqual({
+      createPaymentLink: false,
+      reusePaymentLink: true,
+      issueRefund: false,
+    });
+    expect(isRosterConfirmationPaymentReminder({ alreadySent: true, balanceMinor: 10000 })).toBe(true);
+    expect(isRosterConfirmationPaymentReminder({ alreadySent: false, balanceMinor: 10000 })).toBe(false);
+    expect(isRosterConfirmationPaymentReminder({ alreadySent: true, balanceMinor: 0 })).toBe(false);
   });
 });
 
@@ -258,6 +282,31 @@ describe('roster confirmation payload', () => {
     expect(rendered.textBody).toContain('Payment link will be created when this email is sent.');
     expect(rendered.textBody).toContain('Payment is due by Sunday, September 13, 2026');
     expect(rendered.textBody).not.toContain('https://');
+  });
+
+  test('reminder preview reuses the existing payment link instead of creating one', () => {
+    const payload = buildRosterConfirmationEmailPayload({
+      memberName: 'Alex Curler',
+      seasonName: '2026-27',
+      sessionName: 'Fall',
+      leagues: [{ leagueName: 'Hump Day', isTemporarySabbaticalFill: false }],
+      owedLines: [{ description: 'Hump Day league fee', amountMinor: 15000 }],
+      owedDiscountLines: [],
+      owedSubtotalMinor: 15000,
+      owedDiscountMinor: 0,
+      owedMinor: 15000,
+      paidMinor: 0,
+      balanceMinor: 15000,
+      paymentLinkReuse: true,
+      deadlineText: 'Sunday, September 13, 2026',
+    });
+    const rendered = renderRegistrationEmail('roster_payment_reminder', payload);
+    expect(payload.paymentUrl).toBeNull();
+    expect(payload.paymentLinkPending).toBe(false);
+    expect(payload.paymentLinkReuse).toBe(true);
+    expect(rendered.subject).toBe('Payment reminder for your Fall leagues');
+    expect(rendered.textBody).toContain('Your existing payment link will be included when this reminder is sent.');
+    expect(rendered.textBody).not.toContain('Payment link will be created when this email is sent.');
   });
 
   test('late roster emails say payment is due upon receipt', () => {

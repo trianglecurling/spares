@@ -396,7 +396,8 @@ export type RegistrationCommunicationMessageTypeSqlite =
   | 'byot_registration_confirmation'
   | 'registration_manually_updated_by_staff'
   | 'registration_cancelled_by_member'
-  | 'roster_confirmation';
+  | 'roster_confirmation'
+  | 'roster_payment_reminder';
 
 export const curlingSeasonsSqlite = sqliteTable('curling_seasons', {
   id: integer('id').primaryKey({ autoIncrement: true }),

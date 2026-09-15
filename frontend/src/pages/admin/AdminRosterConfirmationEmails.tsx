@@ -20,7 +20,9 @@ import { financialAssistanceLabel } from '../../components/registration/registra
 import { rosterConfirmationEmailPreviewPath } from './rosterConfirmationEmailPaths';
 import {
   canHoldRosterConfirmationEmail,
+  isRosterConfirmationPaymentReminder,
   rosterConfirmationSendAllMemberIds,
+  rosterConfirmationUnpaidReminderMemberIds,
   useRosterConfirmationEmailHolds,
 } from './rosterConfirmationEmailHolds';
 import {
@@ -318,29 +320,43 @@ export default function AdminRosterConfirmationEmails() {
   const pagedRows = filteredRows.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
   const unsentSendable = (payload?.recipients ?? []).filter((row) => canHoldRosterConfirmationEmail(row));
   const sendAllMemberIds = rosterConfirmationSendAllMemberIds(payload?.recipients ?? [], heldSet);
+  const unpaidReminderMemberIds = rosterConfirmationUnpaidReminderMemberIds(payload?.recipients ?? []);
   const heldUnsentCount = unsentSendable.filter((row) => heldSet.has(row.memberId)).length;
   const selectedSendable = (payload?.recipients ?? []).filter((row) => selectedIds.includes(row.memberId) && row.canSend);
+  const selectedReminders = selectedSendable.filter((row) => isRosterConfirmationPaymentReminder(row));
   const selectedHoldable = selectedSendable.filter((row) => canHoldRosterConfirmationEmail(row));
   const selectedToHold = selectedHoldable.filter((row) => !heldSet.has(row.memberId));
   const selectedToRelease = selectedHoldable.filter((row) => heldSet.has(row.memberId));
   const pendingAssistanceCount = (payload?.recipients ?? []).filter(
     (row) => row.financialAssistance?.status === 'pending',
   ).length;
-  async function sendEmails(memberIds: number[], unsentOnly: boolean) {
+  async function sendEmails(memberIds: number[], mode: 'selected' | 'unsent' | 'unpaid') {
     if (!sessionId) return;
     if (payload?.leagueProcessingActive || sendBusy) return;
     const count = memberIds.length;
+    const unsentOnly = mode === 'unsent';
     const heldNote =
       unsentOnly && heldUnsentCount > 0
         ? ` ${heldUnsentCount} held ${heldUnsentCount === 1 ? 'email is' : 'emails are'} skipped.`
         : '';
+    const reminderCopy =
+      count === 1
+        ? 'This sends a payment reminder using the existing Square payment link. A new payment link is not created.'
+        : `This sends ${count} payment reminders using each member's existing Square payment link. New payment links are not created.`;
     const confirmed = await confirm({
-      title: unsentOnly ? 'Send unsent roster emails?' : 'Send roster emails?',
+      title:
+        mode === 'unpaid'
+          ? 'Send payment reminders?'
+          : unsentOnly
+            ? 'Send unsent roster emails?'
+            : 'Send roster emails?',
       message:
-        count === 1
-          ? `This sends the roster confirmation email.${heldNote} A Square payment link is created only if a remaining balance is due. Credits are not refunded automatically.`
-          : `This sends ${count} roster confirmation emails.${heldNote} Square payment links are created only for remaining balances. Credits are not refunded automatically.`,
-      confirmText: 'Send emails',
+        mode === 'unpaid'
+          ? reminderCopy
+          : count === 1
+            ? `This sends the roster confirmation email.${heldNote} A Square payment link is created only if a remaining balance is due and no link exists yet. Follow-up reminders reuse the existing payment link. Credits are not refunded automatically.`
+            : `This sends ${count} roster confirmation emails.${heldNote} Square payment links are created only for remaining balances that do not already have a link. Follow-up reminders reuse existing payment links. Credits are not refunded automatically.`,
+      confirmText: mode === 'unpaid' ? 'Send reminders' : 'Send emails',
       cancelText: 'Cancel',
     });
     if (!confirmed) return;
@@ -605,14 +621,31 @@ export default function AdminRosterConfirmationEmails() {
               type="button"
               variant="secondary"
               disabled={sendBusy || !sessionId || payload?.leagueProcessingActive || selectedSendable.length === 0}
-              onClick={() => void sendEmails(selectedSendable.map((row) => row.memberId), false)}
+              onClick={() =>
+                void sendEmails(
+                  selectedSendable.map((row) => row.memberId),
+                  selectedSendable.length > 0 && selectedReminders.length === selectedSendable.length
+                    ? 'unpaid'
+                    : 'selected',
+                )
+              }
             >
               {sendBusy ? 'Sending…' : `Send selected${selectedSendable.length ? ` (${selectedSendable.length})` : ''}`}
             </Button>
             <Button
               type="button"
+              variant="secondary"
+              disabled={sendBusy || !sessionId || payload?.leagueProcessingActive || unpaidReminderMemberIds.length === 0}
+              onClick={() => void sendEmails(unpaidReminderMemberIds, 'unpaid')}
+            >
+              {sendBusy
+                ? 'Sending…'
+                : `Send unpaid${unpaidReminderMemberIds.length ? ` (${unpaidReminderMemberIds.length})` : ''}`}
+            </Button>
+            <Button
+              type="button"
               disabled={sendBusy || !sessionId || payload?.leagueProcessingActive || sendAllMemberIds.length === 0}
-              onClick={() => void sendEmails(sendAllMemberIds, true)}
+              onClick={() => void sendEmails(sendAllMemberIds, 'unsent')}
             >
               {sendBusy ? 'Sending…' : `Send all unsent${sendAllMemberIds.length ? ` (${sendAllMemberIds.length})` : ''}`}
             </Button>
@@ -658,6 +691,13 @@ export default function AdminRosterConfirmationEmails() {
                 {heldUnsentCount === 1
                   ? '1 email is held and will be skipped by Send all unsent. You can still send it with Send selected.'
                   : `${heldUnsentCount} emails are held and will be skipped by Send all unsent. You can still send them with Send selected.`}
+              </p>
+            ) : null}
+            {unpaidReminderMemberIds.length > 0 ? (
+              <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                {unpaidReminderMemberIds.length === 1
+                  ? '1 member still owes and can receive a payment reminder that reuses their existing payment link.'
+                  : `${unpaidReminderMemberIds.length} members still owe and can receive payment reminders that reuse their existing payment links.`}
               </p>
             ) : null}
             {payload?.leagueProcessingActive ? (

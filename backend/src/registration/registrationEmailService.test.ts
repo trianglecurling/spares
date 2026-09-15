@@ -478,4 +478,26 @@ describe('Phase 9 registration email rendering', () => {
     expect(rendered.htmlBody).toContain('Payment is due upon receipt');
     expect(rendered.htmlBody).not.toContain('Payment is due by');
   });
+
+  test('roster payment reminder reuses the existing payment link', () => {
+    const rendered = renderRegistrationEmail('roster_payment_reminder', {
+      curlerName: 'Alex Curler',
+      seasonName: '2026-27',
+      sessionName: 'Fall',
+      rosterLeagues: [{ leagueName: 'Hump Day', isTemporarySabbaticalFill: false }],
+      receiptLineItems: [{ description: 'Hump Day league fee', amountMinor: 15000 }],
+      amountPaidMinor: 0,
+      billingBalanceMinor: 15000,
+      amountDueMinor: 15000,
+      paymentUrl: 'https://squareup.example/pay/abc',
+      deadlineText: 'Sunday, September 13, 2026',
+    });
+
+    expect(rendered.subject).toBe('Payment reminder for your Fall leagues');
+    expect(rendered.textBody).toContain('This is a reminder that payment is still due for your Fall leagues.');
+    expect(rendered.textBody).toContain('Please use the same payment link from your roster email.');
+    expect(rendered.textBody).toContain('Pay the remaining balance: https://squareup.example/pay/abc');
+    expect(rendered.textBody).not.toContain('Payment link will be created when this email is sent.');
+    expect(rendered.htmlBody).toContain('https://squareup.example/pay/abc');
+  });
 });

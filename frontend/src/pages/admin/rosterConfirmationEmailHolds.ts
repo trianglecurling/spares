@@ -50,6 +50,20 @@ export function rosterConfirmationSendAllMemberIds(
     .map((row) => row.memberId);
 }
 
+export function isRosterConfirmationPaymentReminder(row: {
+  canSend: boolean;
+  alreadySent: boolean;
+  balanceMinor: number;
+}): boolean {
+  return row.canSend && row.alreadySent && row.balanceMinor > 0;
+}
+
+export function rosterConfirmationUnpaidReminderMemberIds(
+  recipients: Array<{ memberId: number; canSend: boolean; alreadySent: boolean; balanceMinor: number }>,
+): number[] {
+  return recipients.filter((row) => isRosterConfirmationPaymentReminder(row)).map((row) => row.memberId);
+}
+
 export function useRosterConfirmationEmailHolds(sessionId: number | null) {
   const [heldIds, setHeldIds] = useState<number[]>(() =>
     sessionId ? loadRosterConfirmationEmailHolds(sessionId) : [],
