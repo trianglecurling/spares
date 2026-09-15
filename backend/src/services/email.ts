@@ -190,8 +190,9 @@ function applySendBudgetOrBlock(options: EmailOptions): EmailDeliveryResult | nu
   return null;
 }
 
-function getLoginRedirectUrl(pathAndSearch: string): string {
-  return `${config.frontendUrl}/login?redirect=${encodeURIComponent(pathAndSearch)}`;
+function getAppUrl(pathAndSearch: string): string {
+  const path = pathAndSearch.startsWith('/') ? pathAndSearch : `/${pathAndSearch}`;
+  return `${config.frontendUrl}${path}`;
 }
 
 function buildFullHtmlContent(htmlContent: string, _memberToken?: string): string {
@@ -399,8 +400,8 @@ export async function sendSpareRequestEmail(
   const leagueLine = requestDetails.leagueName
     ? `<p><strong>League:</strong> ${requestDetails.leagueName}</p>`
     : '';
-  const acceptUrl = getLoginRedirectUrl(`/spare-request/respond?requestId=${spareRequestId}`);
-  const declineUrl = getLoginRedirectUrl(`/spare-request/decline?requestId=${spareRequestId}`);
+  const acceptUrl = getAppUrl(`/spare-request/respond?requestId=${spareRequestId}`);
+  const declineUrl = getAppUrl(`/spare-request/decline?requestId=${spareRequestId}`);
 
   const htmlContent = `
     <h2>New Spare Request</h2>

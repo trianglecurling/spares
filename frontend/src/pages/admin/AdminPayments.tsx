@@ -1,10 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import api, { formatApiError } from '../../utils/api';
 import Button from '../../components/Button';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
+import AppPageControlsRow from '../../components/AppPageControlsRow';
 import AppStateCard from '../../components/AppStateCard';
+import FormField from '../../components/FormField';
 import DataTable from '../../components/table/DataTable';
 import type { DataTableColumn } from '../../components/table/tableTypes';
+import useTableQueryState from '../../hooks/useTableQueryState';
 import { useAlert } from '../../contexts/AlertContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { memberHasScope } from '../../utils/permissions';
@@ -39,6 +42,7 @@ type PaymentOrderSummary = {
   status: PaymentOrderStatus;
   statusReason: string | null;
   providerOrderId: string | null;
+  memberName: string | null;
   metadata: unknown;
   createdByMemberId: number | null;
   completedAt: string | null;
@@ -151,9 +155,52 @@ const PAYMENT_EVENT_STATUS_OPTIONS: ChoiceOption<PaymentEventStatus>[] = [
   { value: 'failed', label: 'Failed' },
 ];
 
+const PAYMENTS_PAGE_SIZE = 50;
+const PAYMENT_ORDER_SORT_KEYS = ['createdAt'] as const;
+type PaymentOrderSortKey = (typeof PAYMENT_ORDER_SORT_KEYS)[number];
+type PaymentOrderFilters = {
+  search: string;
+  provider: '' | PaymentProvider;
+  subjectType: '' | PaymentSubjectType;
+  status: '' | PaymentOrderStatus;
+};
+
+function parseProviderFilter(raw: string | null): '' | PaymentProvider {
+  if (raw === 'stripe' || raw === 'paypal' || raw === 'square') return raw;
+  return '';
+}
+
+function parseSubjectTypeFilter(raw: string | null): '' | PaymentSubjectType {
+  if (
+    raw === 'donation' ||
+    raw === 'membership' ||
+    raw === 'event_registration' ||
+    raw === 'curling_registration'
+  ) {
+    return raw;
+  }
+  return '';
+}
+
+function parseOrderStatusFilter(raw: string | null): '' | PaymentOrderStatus {
+  if (
+    raw === 'created' ||
+    raw === 'pending' ||
+    raw === 'succeeded' ||
+    raw === 'failed' ||
+    raw === 'pending_refund' ||
+    raw === 'refunded' ||
+    raw === 'partially_refunded'
+  ) {
+    return raw;
+  }
+  return '';
+}
+
 export default function AdminPayments({ activeTab = 'activity' }: AdminPaymentsProps) {
   const { member } = useAuth();
   const { showAlert } = useAlert();
+  const fieldId = useId();
   const [loadingOrders, setLoadingOrders] = useState(true);
   const [loadingOrderDetail, setLoadingOrderDetail] = useState(false);
   const [loadingEvents, setLoadingEvents] = useState(true);
@@ -164,39 +211,76 @@ export default function AdminPayments({ activeTab = 'activity' }: AdminPaymentsP
   const [eventsData, setEventsData] = useState<PaymentEventsResponse | null>(null);
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
 
-  const [providerFilter, setProviderFilter] = useState<'' | PaymentProvider>('');
-  const [subjectTypeFilter, setSubjectTypeFilter] = useState<'' | PaymentSubjectType>('');
-  const [statusFilter, setStatusFilter] = useState<'' | PaymentOrderStatus>('');
+  const orderFilterConfig = useMemo(
+    () => ({
+      search: { queryKey: 'search', defaultValue: '', debounceMs: 250 },
+      provider: {
+        queryKey: 'provider',
+        defaultValue: '' as const,
+        parse: parseProviderFilter,
+      },
+      subjectType: {
+        queryKey: 'subjectType',
+        defaultValue: '' as const,
+        parse: parseSubjectTypeFilter,
+      },
+      status: {
+        queryKey: 'status',
+        defaultValue: '' as const,
+        parse: parseOrderStatusFilter,
+      },
+    }),
+    []
+  );
+
+  const {
+    page,
+    filters,
+    draftFilters,
+    setPage,
+    setFilter,
+    setDraftFilter,
+  } = useTableQueryState<PaymentOrderSortKey, PaymentOrderFilters>({
+    defaultSort: { key: 'createdAt', direction: 'desc' },
+    sortKeys: PAYMENT_ORDER_SORT_KEYS,
+    filterConfig: orderFilterConfig,
+  });
 
   const [eventProviderFilter, setEventProviderFilter] = useState<'' | PaymentProvider>('');
   const [eventStatusFilter, setEventStatusFilter] = useState<'' | PaymentEventStatus>('');
 
-  const loadOrders = async () => {
+  const loadOrders = useCallback(async () => {
     setLoadingOrders(true);
     try {
-      const params: Record<string, string | number> = { limit: 50, offset: 0 };
-      if (providerFilter) params.provider = providerFilter;
-      if (subjectTypeFilter) params.subjectType = subjectTypeFilter;
-      if (statusFilter) params.status = statusFilter;
+      const params: Record<string, string | number> = {
+        limit: PAYMENTS_PAGE_SIZE,
+        offset: (page - 1) * PAYMENTS_PAGE_SIZE,
+      };
+      if (filters.search.trim()) params.search = filters.search.trim();
+      if (filters.provider) params.provider = filters.provider;
+      if (filters.subjectType) params.subjectType = filters.subjectType;
+      if (filters.status) params.status = filters.status;
       const { data } = await api.get<PaymentOrdersResponse>('/payments/orders', { params });
       setOrdersData(data);
-      if (data.orders.length === 0) {
-        setSelectedOrderId(null);
-        setOrderDetail(null);
+      const maxPage = Math.max(1, Math.ceil(data.total / PAYMENTS_PAGE_SIZE));
+      if (data.total > 0 && data.orders.length === 0 && page > maxPage) {
+        setPage(maxPage, { replace: true });
         return;
       }
-      const nextSelectedId =
-        selectedOrderId && data.orders.some((order) => order.id === selectedOrderId)
-          ? selectedOrderId
-          : data.orders[0].id;
-      setSelectedOrderId(nextSelectedId);
+      setSelectedOrderId((current) => {
+        if (current && data.orders.some((order) => order.id === current)) return current;
+        return data.orders[0]?.id ?? null;
+      });
+      if (data.orders.length === 0) {
+        setOrderDetail(null);
+      }
     } catch (error) {
       setOrdersData(null);
       showAlert(formatApiError(error, 'Failed to load payment orders'), 'error');
     } finally {
       setLoadingOrders(false);
     }
-  };
+  }, [filters.provider, filters.search, filters.status, filters.subjectType, page, setPage, showAlert]);
 
   const loadOrderDetail = async (orderId: number) => {
     setLoadingOrderDetail(true);
@@ -211,7 +295,7 @@ export default function AdminPayments({ activeTab = 'activity' }: AdminPaymentsP
     }
   };
 
-  const loadEvents = async () => {
+  const loadEvents = useCallback(async () => {
     setLoadingEvents(true);
     try {
       const params: Record<string, string | number> = { limit: 50, offset: 0 };
@@ -225,12 +309,12 @@ export default function AdminPayments({ activeTab = 'activity' }: AdminPaymentsP
     } finally {
       setLoadingEvents(false);
     }
-  };
+  }, [eventProviderFilter, eventStatusFilter, showAlert]);
 
   useEffect(() => {
     if (activeTab !== 'activity') return;
     void loadOrders();
-  }, [activeTab, providerFilter, subjectTypeFilter, statusFilter]);
+  }, [activeTab, loadOrders]);
 
   useEffect(() => {
     if (activeTab !== 'activity' || !selectedOrderId) {
@@ -243,7 +327,7 @@ export default function AdminPayments({ activeTab = 'activity' }: AdminPaymentsP
   useEffect(() => {
     if (activeTab !== 'activity') return;
     void loadEvents();
-  }, [activeTab, eventProviderFilter, eventStatusFilter]);
+  }, [activeTab, loadEvents]);
 
   const selectedOrderSummary = useMemo(
     () => ordersData?.orders.find((order) => order.id === selectedOrderId) ?? null,
@@ -283,11 +367,16 @@ export default function AdminPayments({ activeTab = 'activity' }: AdminPaymentsP
         ),
       },
       {
+        id: 'member',
+        header: 'Member',
+        renderCell: (order) => order.memberName || '—',
+      },
+      {
         id: 'subject',
         header: 'Subject',
         renderCell: (order) => (
           <>
-            {order.subjectType}
+            {order.subjectType.replace(/_/g, ' ')}
             {order.subjectId ? `:${order.subjectId}` : ''}
           </>
         ),
@@ -373,44 +462,62 @@ export default function AdminPayments({ activeTab = 'activity' }: AdminPaymentsP
           <>
         <div className="app-card">
           <h2 className="app-section-title">Payment orders</h2>
-          <div className="mt-3 grid gap-3 md:grid-cols-4">
-            <ChoiceInput<PaymentProvider>
-              ariaLabel="Filter orders by provider"
-              options={PAYMENT_PROVIDER_OPTIONS}
-              value={providerFilter === '' ? null : providerFilter}
-              onChange={(next) =>
-                setProviderFilter(next == null || Array.isArray(next) ? '' : next)
-              }
-              placeholder="All providers"
-              listboxLabel="Provider"
-              inputClassName="app-input"
-            />
-            <ChoiceInput<PaymentSubjectType>
-              ariaLabel="Filter orders by subject"
-              options={PAYMENT_SUBJECT_OPTIONS}
-              value={subjectTypeFilter === '' ? null : subjectTypeFilter}
-              onChange={(next) =>
-                setSubjectTypeFilter(next == null || Array.isArray(next) ? '' : next)
-              }
-              placeholder="All subjects"
-              listboxLabel="Subject"
-              inputClassName="app-input"
-            />
-            <ChoiceInput<PaymentOrderStatus>
-              ariaLabel="Filter orders by status"
-              options={PAYMENT_ORDER_STATUS_OPTIONS}
-              value={statusFilter === '' ? null : statusFilter}
-              onChange={(next) =>
-                setStatusFilter(next == null || Array.isArray(next) ? '' : next)
-              }
-              placeholder="All statuses"
-              listboxLabel="Order status"
-              inputClassName="app-input"
-            />
-            <div className="flex items-center app-section-subtitle">
-              Total: {ordersData?.total ?? 0}
-            </div>
-          </div>
+          <AppPageControlsRow
+            className="mt-3"
+            left={
+              <>
+                <FormField label="Search" htmlFor={`${fieldId}-orders-search`} className="min-w-[16rem] flex-1">
+                  <input
+                    id={`${fieldId}-orders-search`}
+                    type="search"
+                    className="app-input"
+                    value={draftFilters.search}
+                    onChange={(event) => setDraftFilter('search', event.target.value)}
+                    placeholder="Search member, email, or order id"
+                  />
+                </FormField>
+                <FormField label="Provider" htmlFor={`${fieldId}-orders-provider`}>
+                  <ChoiceInput<PaymentProvider>
+                    inputId={`${fieldId}-orders-provider`}
+                    options={PAYMENT_PROVIDER_OPTIONS}
+                    value={filters.provider === '' ? null : filters.provider}
+                    onChange={(next) =>
+                      setFilter('provider', next == null || Array.isArray(next) ? '' : next)
+                    }
+                    placeholder="All providers"
+                    listboxLabel="Provider"
+                    inputClassName="app-input"
+                  />
+                </FormField>
+                <FormField label="Subject" htmlFor={`${fieldId}-orders-subject`}>
+                  <ChoiceInput<PaymentSubjectType>
+                    inputId={`${fieldId}-orders-subject`}
+                    options={PAYMENT_SUBJECT_OPTIONS}
+                    value={filters.subjectType === '' ? null : filters.subjectType}
+                    onChange={(next) =>
+                      setFilter('subjectType', next == null || Array.isArray(next) ? '' : next)
+                    }
+                    placeholder="All subjects"
+                    listboxLabel="Subject"
+                    inputClassName="app-input"
+                  />
+                </FormField>
+                <FormField label="Status" htmlFor={`${fieldId}-orders-status`}>
+                  <ChoiceInput<PaymentOrderStatus>
+                    inputId={`${fieldId}-orders-status`}
+                    options={PAYMENT_ORDER_STATUS_OPTIONS}
+                    value={filters.status === '' ? null : filters.status}
+                    onChange={(next) =>
+                      setFilter('status', next == null || Array.isArray(next) ? '' : next)
+                    }
+                    placeholder="All statuses"
+                    listboxLabel="Order status"
+                    inputClassName="app-input"
+                  />
+                </FormField>
+              </>
+            }
+          />
 
           <DataTable
             className="mt-4"
@@ -418,7 +525,23 @@ export default function AdminPayments({ activeTab = 'activity' }: AdminPaymentsP
             rowKey={(order) => order.id}
             columns={orderColumns}
             loading={loadingOrders}
-            emptyState={<AppStateCard compact title="No payment orders found for current filters." />}
+            pagination={{
+              page,
+              pageSize: PAYMENTS_PAGE_SIZE,
+              totalRecords: ordersData?.total ?? 0,
+              currentCount: ordersData?.orders.length ?? 0,
+              onPageChange: setPage,
+            }}
+            emptyState={
+              <AppStateCard
+                compact
+                title={
+                  filters.search.trim()
+                    ? `No payment orders found matching “${filters.search.trim()}”.`
+                    : 'No payment orders found for current filters.'
+                }
+              />
+            }
             getRowClassName={(order) => (order.id === selectedOrderId ? 'bg-teal-50 dark:bg-teal-900/20' : undefined)}
           />
         </div>

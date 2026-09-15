@@ -7,6 +7,7 @@ import Button from '../components/Button';
 import Footer from '../components/Footer';
 import DeveloperSessionBanner from '../components/DeveloperSessionBanner';
 import { buildContactPageLink } from '../constants/contactRecipients';
+import { resolvePostLoginRedirect } from '../utils/loginRedirect';
 import type { AuthenticatedMember } from '../../../backend/src/types.ts';
 import {
   assertPasskey,
@@ -24,7 +25,7 @@ type MemberOption = {
 };
 
 type LocationState = {
-  from?: { pathname: string };
+  from?: { pathname: string; search?: string; hash?: string };
 };
 
 const normalizeThemePreference = (
@@ -90,7 +91,7 @@ export default function Login() {
   const [accessToken, setAccessToken] = useState('');
   const [tokenError, setTokenError] = useState<ReactNode>(null);
   const [passkeyLoading, setPasskeyLoading] = useState(false);
-  const { login } = useAuth();
+  const { login, member, token, isLikelyAuthenticated } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -98,11 +99,10 @@ export default function Login() {
   const tokenFieldId = useId();
   const tokenErrorId = useId();
 
-  // Get the intended destination from location state
-  const rawRedirectParam = searchParams.get('redirect');
-  const redirectParam = rawRedirectParam?.startsWith('/') ? rawRedirectParam : null;
-  const from = redirectParam || (location.state as LocationState | null)?.from?.pathname || null;
+  const from = resolvePostLoginRedirect(searchParams, location.state as LocationState | null);
   const supportsPasskeys = browserSupportsWebAuthn();
+  const hasExistingSession = Boolean(member && token);
+  const showLoginForm = !isLikelyAuthenticated && !hasExistingSession;
 
   useEffect(() => {
     let isActive = true;
@@ -122,6 +122,11 @@ export default function Login() {
       isActive = false;
     };
   }, [navigate]);
+
+  useEffect(() => {
+    if (!hasExistingSession) return;
+    navigate(from || '/dashboard', { replace: true });
+  }, [from, hasExistingSession, navigate]);
 
   const completeLogin = async (response: { accessToken: string; refreshToken: string; member: AuthenticatedMember }) => {
     const member = normalizeMember({
@@ -164,11 +169,12 @@ export default function Login() {
   };
 
   useEffect(() => {
+    if (isLikelyAuthenticated || hasExistingSession) return;
     if (!supportsPasskeys || !browserSupportsWebAuthnAutofill()) return;
     void handlePasskeyLogin(true);
     // Conditional UI should start once when the login page loads.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [supportsPasskeys]);
+  }, [supportsPasskeys, isLikelyAuthenticated, hasExistingSession]);
 
   const handleTokenLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -307,7 +313,13 @@ export default function Login() {
           </div>
 
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-8">
-            {step === 'contact' && (
+            {isLikelyAuthenticated || hasExistingSession ? (
+              <p className="text-center text-gray-600 dark:text-gray-400" role="status">
+                {from ? "You're already signed in. Taking you there…" : "You're already signed in. Taking you to the app…"}
+              </p>
+            ) : null}
+
+            {showLoginForm && step === 'contact' && (
               <form onSubmit={handleRequestCode} className="space-y-4">
                 <div>
                   <label
@@ -338,7 +350,7 @@ export default function Login() {
               </form>
             )}
 
-            {step === 'code' && (
+            {showLoginForm && step === 'code' && (
               <form onSubmit={handleVerifyCode} className="space-y-4">
                 <div>
                   <label
@@ -385,7 +397,7 @@ export default function Login() {
               </form>
             )}
 
-            {step === 'select' && (
+            {showLoginForm && step === 'select' && (
               <div className="space-y-4">
                 <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
                   Multiple members share this contact. Select your name:
@@ -394,21 +406,21 @@ export default function Login() {
                 {error ? <div className="mb-4"><LoginErrorMessage>{error}</LoginErrorMessage></div> : null}
 
                 <div className="space-y-2">
-                  {multipleMembers.map((member) => (
+                  {multipleMembers.map((option) => (
                     <button
-                      key={member.id}
-                      onClick={() => handleSelectMember(member.id)}
+                      key={option.id}
+                      onClick={() => handleSelectMember(option.id)}
                       disabled={loading}
                       className="w-full px-4 py-3 text-left border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
                     >
-                      {member.name}
+                      {option.name}
                     </button>
                   ))}
                 </div>
               </div>
             )}
 
-            {supportsPasskeys && step === 'contact' ? (
+            {showLoginForm && supportsPasskeys && step === 'contact' ? (
               <div className="mt-6 space-y-4">
                 <div className="relative">
                   <div className="absolute inset-0 flex items-center" aria-hidden="true">
@@ -432,37 +444,39 @@ export default function Login() {
               </div>
             ) : null}
 
-            <details className="mt-6 border-t border-gray-200 pt-4 dark:border-gray-700">
-              <summary className="cursor-pointer text-sm font-medium text-gray-700 dark:text-gray-300">
-                Sign in with access token
-              </summary>
-              <form onSubmit={handleTokenLogin} className="mt-4 space-y-4">
-                <div>
-                  <label
-                    htmlFor={tokenFieldId}
-                    className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
-                  >
-                    Access token
-                  </label>
-                  <input
-                    id={tokenFieldId}
-                    type="password"
-                    value={accessToken}
-                    onChange={(e) => setAccessToken(e.target.value)}
-                    className="w-full rounded-md border border-gray-300 px-4 py-2 focus:border-transparent focus:ring-2 focus:ring-primary-teal dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
-                    autoComplete="off"
-                    spellCheck={false}
-                    required
-                    aria-invalid={tokenError ? true : undefined}
-                    aria-describedby={tokenError ? tokenErrorId : undefined}
-                  />
-                </div>
-                {tokenError ? <LoginErrorMessage id={tokenErrorId}>{tokenError}</LoginErrorMessage> : null}
-                <Button type="submit" disabled={loading} className="w-full">
-                  {loading ? 'Signing in...' : 'Sign in'}
-                </Button>
-              </form>
-            </details>
+            {showLoginForm ? (
+              <details className="mt-6 border-t border-gray-200 pt-4 dark:border-gray-700">
+                <summary className="cursor-pointer text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Sign in with access token
+                </summary>
+                <form onSubmit={handleTokenLogin} className="mt-4 space-y-4">
+                  <div>
+                    <label
+                      htmlFor={tokenFieldId}
+                      className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300"
+                    >
+                      Access token
+                    </label>
+                    <input
+                      id={tokenFieldId}
+                      type="password"
+                      value={accessToken}
+                      onChange={(e) => setAccessToken(e.target.value)}
+                      className="w-full rounded-md border border-gray-300 px-4 py-2 focus:border-transparent focus:ring-2 focus:ring-primary-teal dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                      autoComplete="off"
+                      spellCheck={false}
+                      required
+                      aria-invalid={tokenError ? true : undefined}
+                      aria-describedby={tokenError ? tokenErrorId : undefined}
+                    />
+                  </div>
+                  {tokenError ? <LoginErrorMessage id={tokenErrorId}>{tokenError}</LoginErrorMessage> : null}
+                  <Button type="submit" disabled={loading} className="w-full">
+                    {loading ? 'Signing in...' : 'Sign in'}
+                  </Button>
+                </form>
+              </details>
+            ) : null}
           </div>
 
           <div className="space-y-4 text-center">

@@ -10,8 +10,11 @@ import type {
   CreateRefundInput,
   ExpireHostedCheckoutResult,
   HostedCheckoutSession,
+  ListProviderRefundsInput,
   PaymentOrderStatus,
   PaymentProviderAdapter,
+  PaymentWebhookOrderLookup,
+  ProviderRefundRecord,
   ProviderRefundResult,
   RefundStatus,
   VerifiedWebhookEvent,
@@ -98,9 +101,6 @@ export function resolveSquareWebhookNextStatus(input: {
   if (isRecord(input.orderUpdated)) {
     const fromUpdated = mapSquareOrderState(recordString(input.orderUpdated, ['state']));
     if (fromUpdated) return fromUpdated;
-  }
-  if (isRefundEvent) {
-    return 'refunded';
   }
   return null;
 }
@@ -242,12 +242,38 @@ export function isSquareVersionMismatch(error: unknown): boolean {
   return message.includes('VERSION_MISMATCH') || (error instanceof PaymentServiceError && error.statusCode === 409 && message.includes('CONFLICT'));
 }
 
-export function extractSquareWebhookOrderLookup(payload: unknown): {
-  orderId: number | null;
-  orderToken: string | null;
-  providerOrderId: string | null;
-  providerTransactionId: string | null;
-} {
+export function parseSquareRefundRecord(refund: unknown): ProviderRefundRecord | null {
+  if (!isRecord(refund)) return null;
+  const providerRefundId = recordString(refund, ['id']);
+  if (!providerRefundId) return null;
+  const amountMinor = moneyAmountMinor(refund.amount_money ?? refund.amountMoney);
+  if (amountMinor <= 0) return null;
+  const status = mapSquareRefundStatus(asString(refund.status));
+  const createdAt = recordString(refund, ['created_at', 'createdAt']);
+  const updatedAt = recordString(refund, ['updated_at', 'updatedAt']);
+  const isTerminal = status === 'succeeded' || status === 'failed' || status === 'rejected';
+  return {
+    providerRefundId,
+    amountMinor,
+    currency: moneyCurrency(refund.amount_money ?? refund.amountMoney, 'usd'),
+    status,
+    reason: recordString(refund, ['reason']),
+    createdAt,
+    processedAt: isTerminal ? (updatedAt ?? createdAt) : null,
+    rawResponse: refund,
+  };
+}
+
+function refundIdsFromPayment(payment: unknown): string[] {
+  if (!isRecord(payment)) return [];
+  const ids = payment.refundIds ?? payment.refund_ids;
+  if (!Array.isArray(ids)) return [];
+  return ids
+    .map((id) => asString(id))
+    .filter((id): id is string => id != null);
+}
+
+export function extractSquareWebhookOrderLookup(payload: unknown): PaymentWebhookOrderLookup {
   const root = isRecord(payload) ? payload : {};
   const data = isRecord(root.data) ? root.data : {};
   const object = isRecord(data.object) ? data.object : {};
@@ -274,15 +300,19 @@ export function extractSquareWebhookOrderLookup(payload: unknown): {
     ?? recordString(order, ['id'])
     ?? recordString(orderUpdated, ['order_id', 'orderId'])
     ?? recordString(refund, ['order_id', 'orderId']);
+  const providerPaymentId =
+    recordString(payment, ['id'])
+    ?? recordString(refund, ['payment_id', 'paymentId']);
   const providerTransactionId = isRefundEvent
-    ? (recordString(refund, ['id']) ?? recordString(refund, ['payment_id', 'paymentId']))
-    : recordString(payment, ['id']);
+    ? (recordString(refund, ['id']) ?? providerPaymentId)
+    : providerPaymentId;
 
   return {
     orderId,
     orderToken,
     providerOrderId,
     providerTransactionId,
+    providerPaymentId,
   };
 }
 
@@ -583,7 +613,7 @@ export class SquarePaymentProviderAdapter implements PaymentProviderAdapter {
     const lookup = extractSquareWebhookOrderLookup(payload);
     const isRefundEvent = eventType.toLowerCase().includes('refund');
     const transactionType = isRefundEvent ? 'refund' : 'charge';
-    const { orderToken, orderId, providerOrderId, providerTransactionId } = lookup;
+    const providerTransactionId = lookup.providerTransactionId;
     const orderUpdated = isRecord(object.order_updated)
       ? object.order_updated
       : isRecord(object.orderUpdated)
@@ -617,16 +647,15 @@ export class SquarePaymentProviderAdapter implements PaymentProviderAdapter {
       : (recordString(payment, ['created_at', 'createdAt']) ?? recordString(payment, ['updated_at', 'updatedAt']) ?? eventCreatedAt);
     const processingFee = payment?.processing_fee ?? payment?.processingFee;
 
+    const refundedMinor = moneyAmountMinor(payment?.refunded_money ?? payment?.refundedMoney);
+    const parsedRefund = parseSquareRefundRecord(refund);
+    const shouldReconcileRefunds = isRefundEvent || refundedMinor > 0 || refundIdsFromPayment(payment).length > 0;
+
     return {
       providerEventId,
       eventType,
       eventCreatedAt,
-      orderLookup: {
-        orderId,
-        orderToken,
-        providerOrderId,
-        providerTransactionId: providerTransactionId ?? null,
-      },
+      orderLookup: lookup,
       nextStatus,
       transaction: providerTransactionId
         ? {
@@ -638,11 +667,15 @@ export class SquarePaymentProviderAdapter implements PaymentProviderAdapter {
               Array.isArray(processingFee) && processingFee.length > 0
                 ? moneyAmountMinor(processingFee[0])
                 : null,
-            status: paymentStatus ?? nextStatus ?? 'pending',
+            status: parsedRefund?.status === 'succeeded'
+              ? 'refunded'
+              : paymentStatus ?? nextStatus ?? 'pending',
             occurredAt,
             metadata: isRecord(payment?.note) ? payment.note : null,
           }
         : null,
+      refund: parsedRefund,
+      shouldReconcileRefunds,
       rawPayload: payload,
     };
   }
@@ -827,14 +860,60 @@ export class SquarePaymentProviderAdapter implements PaymentProviderAdapter {
     return mapSquareRefundStatus(asString(response.refund?.status));
   }
 
-  private paymentIdFromTenders(tenders: unknown[]): string | null {
+  async listRefundsForOrder(input: ListProviderRefundsInput): Promise<ProviderRefundRecord[]> {
+    const client = this.requireClient();
+    const paymentIds = new Set<string>();
+    const knownPaymentId = input.providerPaymentId?.trim();
+    if (knownPaymentId) paymentIds.add(knownPaymentId);
+
+    const squareOrderId = await this.resolveSquareOrderId(client, {
+      providerOrderId: input.providerOrderId,
+      metadata: input.metadata ?? null,
+    });
+    if (squareOrderId) {
+      try {
+        const orderResponse = await callSquare(() => client.orders.get({ orderId: squareOrderId }));
+        for (const paymentId of this.paymentIdsFromTenders(orderResponse.order?.tenders ?? [])) {
+          paymentIds.add(paymentId);
+        }
+      } catch {
+        // Fall through to known payment ids or the checkout payment link.
+      }
+    }
+
+    if (paymentIds.size === 0 && input.providerOrderId) {
+      const fromLink = await this.tryResolvePaymentIdFromPaymentLink(client, input.providerOrderId);
+      if (fromLink) paymentIds.add(fromLink);
+    }
+
+    const refunds: ProviderRefundRecord[] = [];
+    const seenRefundIds = new Set<string>();
+    for (const paymentId of paymentIds) {
+      const paymentResponse = await callSquare(() => client.payments.get({ paymentId }));
+      for (const refundId of refundIdsFromPayment(paymentResponse.payment)) {
+        if (seenRefundIds.has(refundId)) continue;
+        seenRefundIds.add(refundId);
+        const refundResponse = await callSquare(() => client.refunds.get({ refundId }));
+        const parsed = parseSquareRefundRecord(refundResponse.refund);
+        if (parsed) refunds.push(parsed);
+      }
+    }
+    return refunds;
+  }
+
+  private paymentIdsFromTenders(tenders: unknown[]): string[] {
+    const ids: string[] = [];
     for (const tender of tenders) {
       if (!isRecord(tender)) continue;
       // Prefer payment_id only — tender.id is not a valid Refunds API paymentId.
       const paymentId = asString(tender.paymentId) ?? asString(tender.payment_id);
-      if (paymentId) return paymentId;
+      if (paymentId) ids.push(paymentId);
     }
-    return null;
+    return ids;
+  }
+
+  private paymentIdFromTenders(tenders: unknown[]): string | null {
+    return this.paymentIdsFromTenders(tenders)[0] ?? null;
   }
 
   private async loadSquareOrderRefundLineItems(

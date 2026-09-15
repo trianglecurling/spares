@@ -30,9 +30,15 @@ import type { RegistrationCollectedDetailsFields } from '../../components/regist
 import { formatClubDateTime } from '../../utils/clubTime';
 import { playInEntryTeamMembersText } from '../../components/registration/RegistrationPlayInEntryPanel';
 import { useAlert } from '../../contexts/AlertContext';
+import { useAuth } from '../../contexts/AuthContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import { useLeagueOptions } from '../../contexts/LeagueOptionsContext';
-import api, { getApiErrorMessage } from '../../utils/api';
+import api, { formatApiError, getApiErrorMessage } from '../../utils/api';
+import { memberHasScope } from '../../utils/permissions';
+import {
+  formatPaymentOrderStatusLabel,
+  type PaymentOrderStatus,
+} from '../../utils/paymentOrderDisplay';
 
 type InvoiceLineItem = {
   id: number;
@@ -317,6 +323,7 @@ export default function AdminRegistrationDetail() {
   const registrationId = segment;
   const numericId = Number(registrationId);
   const navigate = useNavigate();
+  const { member } = useAuth();
   const { confirm } = useConfirm();
   const { showAlert } = useAlert();
   const { leagueProcessingActive } = useLeagueOptions({ autoLoad: true });
@@ -337,6 +344,7 @@ export default function AdminRegistrationDetail() {
   const [reviewAssistanceOpen, setReviewAssistanceOpen] = useState(false);
   const [reviewAssistanceSaving, setReviewAssistanceSaving] = useState(false);
   const [reviewAssistanceError, setReviewAssistanceError] = useState<string | null>(null);
+  const [resyncingOrderId, setResyncingOrderId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     if (!Number.isFinite(numericId)) return;
@@ -357,6 +365,7 @@ export default function AdminRegistrationDetail() {
   }, [load]);
 
   const canEdit = detail?.canEdit ?? false;
+  const canManagePayments = memberHasScope(member, 'payments.manage');
   const priorities = detail?.priorities ?? [];
   const waitlistByLeagueId = new Map((detail?.waitlists ?? []).map((entry) => [entry.leagueId, entry]));
   const invoiceTotals =
@@ -565,6 +574,39 @@ export default function AdminRegistrationDetail() {
     }
   }
 
+  async function resyncPayment(orderId: number) {
+    if (!canManagePayments || resyncingOrderId != null) return;
+    setResyncingOrderId(orderId);
+    try {
+      const { data } = await api.post<{
+        reconciliation: {
+          changed: boolean;
+          previousStatus: PaymentOrderStatus;
+          providerStatus: PaymentOrderStatus | null;
+          currentStatus: PaymentOrderStatus;
+        };
+      }>(`/payments/orders/${orderId}/resync`);
+      const reconciliation = data.reconciliation;
+      if (reconciliation.changed) {
+        showAlert(
+          `Payment order #${orderId} updated from ${formatPaymentOrderStatusLabel(reconciliation.previousStatus)} to ${formatPaymentOrderStatusLabel(reconciliation.currentStatus)}.`,
+          'success',
+        );
+      } else {
+        showAlert(
+          `Payment order #${orderId} remains ${formatPaymentOrderStatusLabel(reconciliation.currentStatus)} (provider status: ${reconciliation.providerStatus ?? 'n/a'}).`,
+          'info',
+        );
+      }
+      const response = await api.get<RegistrationDetail>(`/registration/staff/registrations/${numericId}`);
+      setDetail(response.data);
+    } catch (err) {
+      showAlert(formatApiError(err, `Failed to resync payment order #${orderId}`), 'error');
+    } finally {
+      setResyncingOrderId(null);
+    }
+  }
+
   return (
     <>
       <AppPage>
@@ -759,6 +801,20 @@ export default function AdminRegistrationDetail() {
                                 >
                                   {entry.kind === 'refund' ? 'View refund receipt' : 'View receipt'}
                                 </a>
+                              </p>
+                            ) : null}
+                            {canManagePayments && entry.kind === 'payment' ? (
+                              <p className="mt-2">
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  disabled={resyncingOrderId != null}
+                                  onClick={() => {
+                                    void resyncPayment(entry.orderId);
+                                  }}
+                                >
+                                  {resyncingOrderId === entry.orderId ? 'Resyncing...' : 'Resync with provider'}
+                                </Button>
                               </p>
                             ) : null}
                           </div>

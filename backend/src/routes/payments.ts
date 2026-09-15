@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, or, sql } from 'drizzle-orm';
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { getDrizzleDb } from '../db/drizzle-db.js';
@@ -18,6 +18,7 @@ import { hasScope } from '../utils/rbac.js';
 const listOrdersQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).optional(),
   offset: z.coerce.number().int().min(0).optional(),
+  search: z.string().trim().max(80).optional(),
   provider: z.enum(['stripe', 'paypal', 'square']).optional(),
   subjectType: z.enum(['donation', 'membership', 'event_registration', 'curling_registration']).optional(),
   status: z.enum(['created', 'pending', 'succeeded', 'failed', 'pending_refund', 'refunded', 'partially_refunded']).optional(),
@@ -64,6 +65,27 @@ const registrationItemLineTypeParamSchema = z.object({
   ]),
 });
 
+function memberDisplayName(row: {
+  name?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+}): string | null {
+  const parts = [row.first_name, row.last_name].map((part) => part?.trim()).filter(Boolean);
+  if (parts.length > 0) return parts.join(' ');
+  const name = row.name?.trim();
+  return name || null;
+}
+
+function memberNameMatchesSql(pattern: string) {
+  return sql`(
+    lower(coalesce(m.name, '')) LIKE ${pattern}
+    OR lower(coalesce(m.first_name, '')) LIKE ${pattern}
+    OR lower(coalesce(m.last_name, '')) LIKE ${pattern}
+    OR lower(trim(coalesce(m.first_name, '') || ' ' || coalesce(m.last_name, ''))) LIKE ${pattern}
+    OR lower(coalesce(m.email, '')) LIKE ${pattern}
+  )`;
+}
+
 function tryParseJson(value: string | null): unknown {
   if (!value) return null;
   try {
@@ -106,6 +128,7 @@ export async function paymentRoutes(fastify: FastifyInstance): Promise<void> {
             provider: { type: 'string', enum: ['stripe', 'paypal', 'square'] },
             subjectType: { type: 'string', enum: ['donation', 'membership', 'event_registration', 'curling_registration'] },
             status: { type: 'string', enum: ['created', 'pending', 'succeeded', 'failed', 'pending_refund', 'refunded', 'partially_refunded'] },
+            search: { type: 'string' },
           },
         },
       },
@@ -121,6 +144,38 @@ export async function paymentRoutes(fastify: FastifyInstance): Promise<void> {
       if (query.provider) conditions.push(eq(schema.paymentOrders.provider, query.provider));
       if (query.subjectType) conditions.push(eq(schema.paymentOrders.subject_type, query.subjectType));
       if (query.status) conditions.push(eq(schema.paymentOrders.status, query.status));
+      const search = query.search?.trim().toLowerCase() ?? '';
+      if (search) {
+        const pattern = `%${search}%`;
+        const numericId = Number.parseInt(search, 10);
+        const searchParts = [
+          sql`cast(${schema.paymentOrders.id} as text) LIKE ${pattern}`,
+          sql`lower(coalesce(${schema.paymentOrders.provider_order_id}, '')) LIKE ${pattern}`,
+          sql`lower(coalesce(${schema.paymentOrders.order_token}, '')) LIKE ${pattern}`,
+          sql`EXISTS (
+            SELECT 1 FROM members m
+            WHERE m.id = ${schema.paymentOrders.created_by_member_id}
+              AND ${memberNameMatchesSql(pattern)}
+          )`,
+          sql`EXISTS (
+            SELECT 1 FROM curling_registrations cr
+            INNER JOIN members m ON m.id = cr.curler_member_id
+            WHERE ${schema.paymentOrders.subject_type} = 'curling_registration'
+              AND cr.id = ${schema.paymentOrders.subject_id}
+              AND ${memberNameMatchesSql(pattern)}
+          )`,
+          sql`EXISTS (
+            SELECT 1 FROM registration_invoices ri
+            INNER JOIN members m ON m.id = ri.payer_member_id
+            WHERE ri.payment_order_id = ${schema.paymentOrders.id}
+              AND ${memberNameMatchesSql(pattern)}
+          )`,
+        ];
+        if (Number.isInteger(numericId) && numericId > 0) {
+          searchParts.unshift(eq(schema.paymentOrders.id, numericId));
+        }
+        conditions.push(or(...searchParts)!);
+      }
       const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
       const [rows, totalRows] = await Promise.all([
@@ -153,12 +208,77 @@ export async function paymentRoutes(fastify: FastifyInstance): Promise<void> {
           .where(whereClause),
       ]);
 
+      const createdByIds = [
+        ...new Set(rows.map((row) => row.createdByMemberId).filter((id): id is number => id != null)),
+      ];
+      const registrationIds = [
+        ...new Set(
+          rows
+            .filter((row) => row.subjectType === 'curling_registration' && row.subjectId != null)
+            .map((row) => row.subjectId as number)
+        ),
+      ];
+      const orderIds = rows.map((row) => row.id);
+
+      const [createdByRows, curlerRows, payerRows] = await Promise.all([
+        createdByIds.length > 0
+          ? db
+              .select({
+                id: schema.members.id,
+                name: schema.members.name,
+                first_name: schema.members.first_name,
+                last_name: schema.members.last_name,
+              })
+              .from(schema.members)
+              .where(inArray(schema.members.id, createdByIds))
+          : Promise.resolve([]),
+        registrationIds.length > 0
+          ? db
+              .select({
+                registrationId: schema.curlingRegistrations.id,
+                name: schema.members.name,
+                first_name: schema.members.first_name,
+                last_name: schema.members.last_name,
+              })
+              .from(schema.curlingRegistrations)
+              .innerJoin(schema.members, eq(schema.members.id, schema.curlingRegistrations.curler_member_id))
+              .where(inArray(schema.curlingRegistrations.id, registrationIds))
+          : Promise.resolve([]),
+        orderIds.length > 0
+          ? db
+              .select({
+                paymentOrderId: schema.registrationInvoices.payment_order_id,
+                name: schema.members.name,
+                first_name: schema.members.first_name,
+                last_name: schema.members.last_name,
+              })
+              .from(schema.registrationInvoices)
+              .innerJoin(schema.members, eq(schema.members.id, schema.registrationInvoices.payer_member_id))
+              .where(inArray(schema.registrationInvoices.payment_order_id, orderIds))
+          : Promise.resolve([]),
+      ]);
+
+      const createdByName = new Map(createdByRows.map((row) => [row.id, memberDisplayName(row)]));
+      const curlerName = new Map(curlerRows.map((row) => [row.registrationId, memberDisplayName(row)]));
+      const payerName = new Map(
+        payerRows
+          .filter((row) => row.paymentOrderId != null)
+          .map((row) => [row.paymentOrderId as number, memberDisplayName(row)])
+      );
+
       return {
         total: Number(totalRows[0]?.count ?? 0),
         limit,
         offset,
         orders: rows.map((row) => ({
           ...row,
+          memberName:
+            (row.subjectType === 'curling_registration' && row.subjectId != null
+              ? curlerName.get(row.subjectId)
+              : null)
+            ?? payerName.get(row.id)
+            ?? (row.createdByMemberId != null ? createdByName.get(row.createdByMemberId) : null)
+            ?? null,
           metadata: tryParseJson(row.metadata),
         })),
       };

@@ -174,8 +174,8 @@ export default function EmailSMS() {
                     <ul className="list-disc list-inside space-y-2">
                       <li>Allow you to accept spare requests directly from your email</li>
                       <li>Are personalized and secure - don't share them with others</li>
-                      <li>Work even if you're not logged in</li>
-                      <li>Automatically log you in if needed</li>
+                      <li>Take you to the spare request if you are already signed in</li>
+                      <li>Ask you to sign in first if you are not, then continue to the spare request</li>
                     </ul>
                   </section>
 

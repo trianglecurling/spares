@@ -333,16 +333,37 @@ export interface VerifyWebhookInput {
   parsedBody: unknown;
 }
 
+export type PaymentWebhookOrderLookup = {
+  orderId: number | null;
+  orderToken: string | null;
+  providerOrderId: string | null;
+  providerTransactionId: string | null;
+  /** Original charge/payment id, used to match Square dashboard refunds to our order. */
+  providerPaymentId?: string | null;
+};
+
+export interface ProviderRefundRecord {
+  providerRefundId: string;
+  amountMinor: number;
+  currency: string;
+  status: RefundStatus;
+  reason: string | null;
+  createdAt: string | null;
+  processedAt: string | null;
+  rawResponse: unknown;
+}
+
+export interface ListProviderRefundsInput {
+  providerOrderId: string | null;
+  metadata?: Record<string, unknown> | null;
+  providerPaymentId?: string | null;
+}
+
 export interface VerifiedWebhookEvent {
   providerEventId: string;
   eventType: string;
   eventCreatedAt: string | null;
-  orderLookup: {
-    orderId: number | null;
-    orderToken: string | null;
-    providerOrderId: string | null;
-    providerTransactionId: string | null;
-  };
+  orderLookup: PaymentWebhookOrderLookup;
   nextStatus: PaymentOrderStatus | null;
   transaction: {
     providerTransactionId: string;
@@ -354,6 +375,9 @@ export interface VerifiedWebhookEvent {
     occurredAt: string | null;
     metadata: Record<string, unknown> | null;
   } | null;
+  refund?: ProviderRefundRecord | null;
+  /** Fetch provider refunds into the local refunds table (Square dashboard refunds, Stripe charge.refunded). */
+  shouldReconcileRefunds?: boolean;
   rawPayload: unknown;
 }
 
@@ -402,6 +426,8 @@ export interface PaymentProviderAdapter {
   fetchPaymentStatus(providerOrderId: string): Promise<PaymentOrderStatus>;
   fetchRefundStatus(providerRefundId: string): Promise<RefundStatus | null>;
   createRefund(input: CreateRefundInput): Promise<ProviderRefundResult>;
+  /** Import refunds created outside the app (Square/Stripe dashboard). */
+  listRefundsForOrder?(input: ListProviderRefundsInput): Promise<ProviderRefundRecord[]>;
   expireHostedCheckoutSession?(providerOrderId: string): Promise<ExpireHostedCheckoutResult>;
   /**
    * Mark the provider-side order complete after a full payment.
@@ -444,6 +470,31 @@ function buildStripeCheckoutLineItems(input: CreateCheckoutInput): Stripe.Checko
       },
     };
   });
+}
+
+function mapStripeRefundStatus(status: string | null | undefined): RefundStatus {
+  if (status === 'succeeded') return 'succeeded';
+  if (status === 'failed') return 'failed';
+  if (status === 'canceled' || status === 'cancelled') return 'rejected';
+  return 'processing';
+}
+
+function mapStripeRefundRecord(refund: Stripe.Refund): ProviderRefundRecord | null {
+  const providerRefundId = asString(refund.id);
+  if (!providerRefundId || !Number.isFinite(refund.amount) || refund.amount <= 0) return null;
+  const status = mapStripeRefundStatus(refund.status);
+  const createdAt = refund.created ? new Date(refund.created * 1000).toISOString() : null;
+  const isTerminal = status === 'succeeded' || status === 'failed' || status === 'rejected';
+  return {
+    providerRefundId,
+    amountMinor: refund.amount,
+    currency: (refund.currency || 'usd').toLowerCase(),
+    status,
+    reason: asString(refund.reason),
+    createdAt,
+    processedAt: isTerminal ? createdAt : null,
+    rawResponse: refund,
+  };
 }
 
 class StripePaymentProviderAdapter implements PaymentProviderAdapter {
@@ -592,6 +643,7 @@ class StripePaymentProviderAdapter implements PaymentProviderAdapter {
             metadata: objectMetadata,
           }
         : null,
+      shouldReconcileRefunds: event.type === 'charge.refunded' || event.type === 'charge.refund.updated' || event.type === 'refund.updated',
       rawPayload: event,
     };
   }
@@ -641,18 +693,9 @@ class StripePaymentProviderAdapter implements PaymentProviderAdapter {
       },
     });
 
-    const refundStatus: RefundStatus =
-      refund.status === 'succeeded'
-        ? 'succeeded'
-        : refund.status === 'failed'
-          ? 'failed'
-          : refund.status === 'cancelled'
-            ? 'rejected'
-            : 'processing';
-
     return {
       providerRefundId: refund.id,
-      status: refundStatus,
+      status: mapStripeRefundStatus(refund.status),
       rawResponse: refund,
     };
   }
@@ -660,10 +703,22 @@ class StripePaymentProviderAdapter implements PaymentProviderAdapter {
   async fetchRefundStatus(providerRefundId: string): Promise<RefundStatus | null> {
     const stripe = this.requireClient();
     const refund = await stripe.refunds.retrieve(providerRefundId);
-    if (refund.status === 'succeeded') return 'succeeded';
-    if (refund.status === 'failed') return 'failed';
-    if (refund.status === 'cancelled') return 'rejected';
-    return 'processing';
+    return mapStripeRefundStatus(refund.status);
+  }
+
+  async listRefundsForOrder(input: ListProviderRefundsInput): Promise<ProviderRefundRecord[]> {
+    const stripe = this.requireClient();
+    let paymentIntentId = input.providerPaymentId?.trim() || null;
+    if (!paymentIntentId && input.providerOrderId) {
+      const session = await stripe.checkout.sessions.retrieve(input.providerOrderId);
+      paymentIntentId = asString(session.payment_intent);
+    }
+    if (!paymentIntentId) return [];
+
+    const listed = await stripe.refunds.list({ payment_intent: paymentIntentId, limit: 100 });
+    return listed.data
+      .map((refund) => mapStripeRefundRecord(refund))
+      .filter((refund): refund is ProviderRefundRecord => refund != null);
   }
 }
 
@@ -773,6 +828,7 @@ class HmacPaymentProviderAdapter implements PaymentProviderAdapter {
             metadata: transactionMetadata,
           }
         : null,
+      shouldReconcileRefunds: transactionType === 'refund',
       rawPayload: payload,
     };
   }
@@ -1401,7 +1457,179 @@ export class PaymentService {
     return this.transitionOrderStatus(orderId, targetStatus, 'refund-status-sync');
   }
 
+  private isTerminalRefundStatus(status: RefundStatus): boolean {
+    return status === 'succeeded' || status === 'failed' || status === 'rejected';
+  }
+
+  private async upsertProviderRefund(
+    orderId: number,
+    provider: PaymentProvider,
+    refund: ProviderRefundRecord
+  ): Promise<void> {
+    const providerRefundId = refund.providerRefundId.trim();
+    if (!providerRefundId || refund.amountMinor <= 0) return;
+
+    const [existing] = await this.db
+      .select({
+        id: this.schema.refunds.id,
+        status: this.schema.refunds.status,
+        amount_minor: this.schema.refunds.amount_minor,
+        reason: this.schema.refunds.reason,
+      })
+      .from(this.schema.refunds)
+      .where(
+        and(
+          eq(this.schema.refunds.provider, provider),
+          eq(this.schema.refunds.provider_refund_id, providerRefundId)
+        )
+      )
+      .limit(1);
+
+    const processedAt =
+      this.isTerminalRefundStatus(refund.status)
+        ? (parseTimestamp(refund.processedAt) ?? parseTimestamp(refund.createdAt) ?? sql`CURRENT_TIMESTAMP`)
+        : null;
+    const reason = refund.reason?.trim() || null;
+
+    if (existing) {
+      const nextReason = existing.reason?.trim() || reason;
+      const statusChanged = existing.status !== refund.status;
+      const amountChanged = existing.amount_minor !== refund.amountMinor;
+      const reasonChanged = (existing.reason ?? null) !== nextReason;
+      if (!statusChanged && !amountChanged && !reasonChanged) return;
+
+      await this.db
+        .update(this.schema.refunds)
+        .set({
+          amount_minor: refund.amountMinor,
+          currency: refund.currency,
+          status: refund.status,
+          reason: nextReason,
+          provider_response: safeJsonStringify(refund.rawResponse),
+          ...(this.isTerminalRefundStatus(refund.status) ? { processed_at: processedAt ?? sql`CURRENT_TIMESTAMP` } : {}),
+          updated_at: sql`CURRENT_TIMESTAMP`,
+        })
+        .where(eq(this.schema.refunds.id, existing.id));
+      return;
+    }
+
+    try {
+      await this.db.insert(this.schema.refunds).values(
+        this.isTerminalRefundStatus(refund.status)
+          ? {
+              payment_order_id: orderId,
+              provider,
+              amount_minor: refund.amountMinor,
+              currency: refund.currency,
+              reason,
+              status: refund.status,
+              provider_refund_id: providerRefundId,
+              provider_response: safeJsonStringify(refund.rawResponse),
+              processed_at: processedAt ?? sql`CURRENT_TIMESTAMP`,
+              updated_at: sql`CURRENT_TIMESTAMP`,
+            }
+          : {
+              payment_order_id: orderId,
+              provider,
+              amount_minor: refund.amountMinor,
+              currency: refund.currency,
+              reason,
+              status: refund.status,
+              provider_refund_id: providerRefundId,
+              provider_response: safeJsonStringify(refund.rawResponse),
+              updated_at: sql`CURRENT_TIMESTAMP`,
+            },
+      );
+      await logEvent({
+        eventType: 'payment.refund.imported',
+        relatedId: orderId,
+        meta: {
+          provider,
+          providerRefundId,
+          status: refund.status,
+          amountMinor: refund.amountMinor,
+        },
+      });
+    } catch (error) {
+      if (!isUniqueConstraintError(error)) throw error;
+      const [raced] = await this.db
+        .select({ id: this.schema.refunds.id })
+        .from(this.schema.refunds)
+        .where(
+          and(
+            eq(this.schema.refunds.provider, provider),
+            eq(this.schema.refunds.provider_refund_id, providerRefundId)
+          )
+        )
+        .limit(1);
+      if (!raced) throw error;
+      await this.db
+        .update(this.schema.refunds)
+        .set({
+          amount_minor: refund.amountMinor,
+          currency: refund.currency,
+          status: refund.status,
+          reason: reason ?? undefined,
+          provider_response: safeJsonStringify(refund.rawResponse),
+          ...(this.isTerminalRefundStatus(refund.status) ? { processed_at: processedAt ?? sql`CURRENT_TIMESTAMP` } : {}),
+          updated_at: sql`CURRENT_TIMESTAMP`,
+        })
+        .where(eq(this.schema.refunds.id, raced.id));
+    }
+  }
+
   async reconcileRefundsForOrder(orderId: number): Promise<void> {
+    const [order] = await this.db
+      .select({
+        id: this.schema.paymentOrders.id,
+        provider: this.schema.paymentOrders.provider,
+        provider_order_id: this.schema.paymentOrders.provider_order_id,
+        metadata: this.schema.paymentOrders.metadata,
+      })
+      .from(this.schema.paymentOrders)
+      .where(eq(this.schema.paymentOrders.id, orderId))
+      .limit(1);
+
+    if (order) {
+      const provider = order.provider as PaymentProvider;
+      const adapter = this.adapters[provider];
+      if (adapter?.listRefundsForOrder) {
+        try {
+          const [chargeTransaction] = await this.db
+            .select({
+              provider_transaction_id: this.schema.paymentTransactions.provider_transaction_id,
+            })
+            .from(this.schema.paymentTransactions)
+            .where(
+              and(
+                eq(this.schema.paymentTransactions.payment_order_id, orderId),
+                inArray(this.schema.paymentTransactions.transaction_type, ['charge', 'capture']),
+              )
+            )
+            .orderBy(desc(this.schema.paymentTransactions.occurred_at), desc(this.schema.paymentTransactions.id))
+            .limit(1);
+
+          const providerRefunds = await adapter.listRefundsForOrder({
+            providerOrderId: order.provider_order_id ?? null,
+            metadata: safeJsonParseObject(order.metadata),
+            providerPaymentId: chargeTransaction?.provider_transaction_id ?? null,
+          });
+          for (const refund of providerRefunds) {
+            await this.upsertProviderRefund(orderId, provider, refund);
+          }
+        } catch (error) {
+          await logEvent({
+            eventType: 'payment.refund.list_failed',
+            relatedId: orderId,
+            meta: {
+              provider,
+              error: error instanceof Error ? error.message : 'Unknown error',
+            },
+          });
+        }
+      }
+    }
+
     const pendingRefunds = await this.db
       .select({
         id: this.schema.refunds.id,
@@ -2246,6 +2474,10 @@ export class PaymentService {
         });
       }
 
+      if (verified.refund) {
+        await this.upsertProviderRefund(order.id, input.provider, verified.refund);
+      }
+
       let transitionedToSucceeded = false;
       let transitionedToRefunded = false;
       let transitionedToFailed = false;
@@ -2265,6 +2497,25 @@ export class PaymentService {
         transitionedToSucceeded = transitioned && verified.nextStatus === 'succeeded';
         transitionedToRefunded = transitioned && (verified.nextStatus === 'refunded' || verified.nextStatus === 'partially_refunded');
         transitionedToFailed = transitioned && verified.nextStatus === 'failed';
+      }
+
+      const previousRefundStatus = order.status;
+      if (verified.shouldReconcileRefunds || verified.refund) {
+        await this.reconcileRefundsForOrder(order.id);
+        const [refreshedOrder] = await this.db
+          .select({ status: this.schema.paymentOrders.status })
+          .from(this.schema.paymentOrders)
+          .where(eq(this.schema.paymentOrders.id, order.id))
+          .limit(1);
+        const nextRefundStatus = refreshedOrder?.status as PaymentOrderStatus | undefined;
+        if (
+          nextRefundStatus
+          && (nextRefundStatus === 'refunded' || nextRefundStatus === 'partially_refunded')
+          && previousRefundStatus !== 'refunded'
+          && previousRefundStatus !== 'partially_refunded'
+        ) {
+          transitionedToRefunded = true;
+        }
       }
 
       await this.db
@@ -2908,12 +3159,13 @@ export class PaymentService {
 
   private async findOrderForWebhook(
     provider: PaymentProvider,
-    lookup: { orderId: number | null; orderToken: string | null; providerOrderId: string | null; providerTransactionId: string | null }
-  ): Promise<{ id: number; provider_order_id: string | null; metadata: string | null } | null> {
+    lookup: PaymentWebhookOrderLookup
+  ): Promise<{ id: number; provider_order_id: string | null; metadata: string | null; status: PaymentOrderStatus } | null> {
     const webhookOrderColumns = {
       id: this.schema.paymentOrders.id,
       provider_order_id: this.schema.paymentOrders.provider_order_id,
       metadata: this.schema.paymentOrders.metadata,
+      status: this.schema.paymentOrders.status,
     };
 
     if (lookup.orderId) {
@@ -2922,7 +3174,7 @@ export class PaymentService {
         .from(this.schema.paymentOrders)
         .where(eq(this.schema.paymentOrders.id, lookup.orderId))
         .limit(1);
-      if (orderById) return orderById;
+      if (orderById) return { ...orderById, status: orderById.status as PaymentOrderStatus };
     }
 
     if (lookup.orderToken) {
@@ -2931,7 +3183,7 @@ export class PaymentService {
         .from(this.schema.paymentOrders)
         .where(eq(this.schema.paymentOrders.order_token, lookup.orderToken))
         .limit(1);
-      if (orderByToken) return orderByToken;
+      if (orderByToken) return { ...orderByToken, status: orderByToken.status as PaymentOrderStatus };
     }
 
     if (lookup.providerOrderId) {
@@ -2945,7 +3197,7 @@ export class PaymentService {
           )
         )
         .limit(1);
-      if (orderByProvider) return orderByProvider;
+      if (orderByProvider) return { ...orderByProvider, status: orderByProvider.status as PaymentOrderStatus };
 
       const [orderByNative] = await this.db
         .select(webhookOrderColumns)
@@ -2957,10 +3209,13 @@ export class PaymentService {
           )
         )
         .limit(1);
-      if (orderByNative) return orderByNative;
+      if (orderByNative) return { ...orderByNative, status: orderByNative.status as PaymentOrderStatus };
     }
 
-    if (lookup.providerTransactionId) {
+    const transactionIds = [lookup.providerTransactionId, lookup.providerPaymentId]
+      .map((value) => value?.trim() || null)
+      .filter((value, index, all): value is string => value != null && all.indexOf(value) === index);
+    for (const providerTransactionId of transactionIds) {
       const [orderByTransaction] = await this.db
         .select(webhookOrderColumns)
         .from(this.schema.paymentOrders)
@@ -2971,11 +3226,11 @@ export class PaymentService {
         .where(
           and(
             eq(this.schema.paymentTransactions.provider, provider),
-            eq(this.schema.paymentTransactions.provider_transaction_id, lookup.providerTransactionId)
+            eq(this.schema.paymentTransactions.provider_transaction_id, providerTransactionId)
           )
         )
         .limit(1);
-      if (orderByTransaction) return orderByTransaction;
+      if (orderByTransaction) return { ...orderByTransaction, status: orderByTransaction.status as PaymentOrderStatus };
     }
 
     return null;

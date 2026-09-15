@@ -1,5 +1,6 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { buildUnauthenticatedRedirect } from '../utils/loginRedirect';
 import { memberHasScope } from '../utils/permissions';
 
 interface ProtectedRouteProps {
@@ -40,7 +41,13 @@ export function ProtectedRoute({
   }
 
   if (!token || !member) {
-    return <Navigate to={unauthenticatedRedirectTo} state={{ from: location }} replace />;
+    return (
+      <Navigate
+        to={buildUnauthenticatedRedirect(unauthenticatedRedirectTo, location)}
+        state={{ from: location }}
+        replace
+      />
+    );
   }
 
   if (serverAdminOnly && !member.isServerAdmin) {

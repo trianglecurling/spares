@@ -3,6 +3,7 @@ import { isAccessTokenUsable } from './accessToken';
 import { classifyRefreshFailure, markTransientAuthFailure } from './authRequestFailure';
 import { clearCachedMemberDisplayName } from './memberDisplayCache';
 import { isPublicApiRequestUrl } from './publicApiPaths';
+import { buildLoginPath, isSafeInternalRedirect } from './loginRedirect';
 import { isPublicLightPath } from './publicLightPaths';
 import { getRegistrationEarlyAccessUnlockToken } from './registrationEarlyAccess';
 import type { AccessTokenEnsureResult } from './restoreAuthSession';
@@ -165,7 +166,8 @@ api.interceptors.response.use(
       // Keep in sync with AuthContext + PublicLightThemeOutlet via publicLightPaths.ts.
       if (!currentPath.startsWith('/install') && currentPath !== '/login' && !isPublicLightPath(currentPath)) {
         clearAuthTokens();
-        window.location.href = '/login';
+        const returnTo = `${currentPath}${window.location.search}${window.location.hash}`;
+        window.location.href = isSafeInternalRedirect(returnTo) ? buildLoginPath(returnTo) : '/login';
       }
     }
     return Promise.reject(error);

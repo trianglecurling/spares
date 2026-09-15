@@ -4,6 +4,7 @@ import {
   extractSquareWebhookOrderLookup,
   isSquareOrderFullyPaid,
   isSquareVersionMismatch,
+  parseSquareRefundRecord,
   planSquareOrderCompletion,
   resolveSquareWebhookNextStatus,
 } from './squarePaymentProviderAdapter.js';
@@ -134,6 +135,7 @@ describe('extractSquareWebhookOrderLookup', () => {
       orderToken: null,
       providerOrderId: 'sq-order-99',
       providerTransactionId: 'pay-1',
+      providerPaymentId: 'pay-1',
     });
   });
 
@@ -156,6 +158,7 @@ describe('extractSquareWebhookOrderLookup', () => {
       orderToken: null,
       providerOrderId: 'sq-order-77',
       providerTransactionId: null,
+      providerPaymentId: null,
     });
   });
 
@@ -178,6 +181,7 @@ describe('extractSquareWebhookOrderLookup', () => {
       orderToken: null,
       providerOrderId: 'sq-order-55',
       providerTransactionId: 'refund-1',
+      providerPaymentId: 'pay-1',
     });
   });
 
@@ -200,6 +204,7 @@ describe('extractSquareWebhookOrderLookup', () => {
       orderToken: 'order-token-1',
       providerOrderId: 'sq-order-camel',
       providerTransactionId: 'pay-2',
+      providerPaymentId: 'pay-2',
     });
   });
 });
@@ -303,5 +308,54 @@ describe('resolveSquareWebhookNextStatus', () => {
         orderUpdated: { state: 'CANCELED' },
       }),
     ).toBe('failed');
+  });
+
+  test('refund events leave order status to refund-row sync', () => {
+    expect(
+      resolveSquareWebhookNextStatus({
+        eventType: 'refund.created',
+      }),
+    ).toBeNull();
+    expect(
+      resolveSquareWebhookNextStatus({
+        eventType: 'refund.updated',
+      }),
+    ).toBeNull();
+  });
+});
+
+describe('parseSquareRefundRecord', () => {
+  test('maps a completed Square dashboard refund', () => {
+    expect(
+      parseSquareRefundRecord({
+        id: 'refund-1',
+        status: 'COMPLETED',
+        reason: 'Duplicate payment',
+        created_at: '2026-09-10T12:00:00.000Z',
+        updated_at: '2026-09-10T12:01:00.000Z',
+        amount_money: { amount: 12500, currency: 'USD' },
+      })
+    ).toEqual({
+      providerRefundId: 'refund-1',
+      amountMinor: 12500,
+      currency: 'usd',
+      status: 'succeeded',
+      reason: 'Duplicate payment',
+      createdAt: '2026-09-10T12:00:00.000Z',
+      processedAt: '2026-09-10T12:01:00.000Z',
+      rawResponse: {
+        id: 'refund-1',
+        status: 'COMPLETED',
+        reason: 'Duplicate payment',
+        created_at: '2026-09-10T12:00:00.000Z',
+        updated_at: '2026-09-10T12:01:00.000Z',
+        amount_money: { amount: 12500, currency: 'USD' },
+      },
+    });
+  });
+
+  test('ignores refund payloads without an id or amount', () => {
+    expect(parseSquareRefundRecord({ status: 'COMPLETED', amount_money: { amount: 100 } })).toBeNull();
+    expect(parseSquareRefundRecord({ id: 'refund-2', amount_money: { amount: 0 } })).toBeNull();
   });
 });
