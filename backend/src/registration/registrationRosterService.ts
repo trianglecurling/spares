@@ -285,27 +285,20 @@ async function removeRegistrationRosterRows(
 }
 
 /**
- * Leagues that must keep an existing roster row when a registration is saved
- * or repaired. A later evaluation (especially open registration) may grant
- * nothing even though the registrant still wants those leagues. Non-payment
- * is not a reason to drop them — staff removes people from a league.
+ * Saving, submitting, or paying a registration must never drop a roster seat.
+ * Staff-manual, waitlist, and other placements can exist for leagues that are
+ * not on the current priority list. Staff removes a person from a league, or
+ * cancel uses {@link removeAllRegistrationRosterPlacements}.
  */
 export function shouldRemoveOrphanedRosterRow(
-  row: {
+  _row: {
     league_id: number;
     is_temporary_sabbatical_fill: number;
     placement_type: string | null;
   },
-  keepLeagueIds: Set<number>,
+  _keepLeagueIds: Set<number>,
 ): boolean {
-  if (keepLeagueIds.has(row.league_id)) return false;
-  // Waitlist-accepted temporary fills are not created from the priority list
-  // and must not be removed when registration is saved or submitted.
-  if (row.is_temporary_sabbatical_fill === 1) return false;
-  // Play-in grants are owned by the play-in workflow. Saving a registration
-  // must not drop that seat (or its fee) while the entry is still entered.
-  if (row.placement_type === 'play_in') return false;
-  return true;
+  return false;
 }
 
 export function rosterLeagueIdsToKeep(input: {
@@ -324,19 +317,7 @@ export function rosterLeagueIdsToKeep(input: {
   return keep;
 }
 
-async function loadRegistrationPriorityLeagueIds(
-  executor: DbExecutor,
-  registrationId: number,
-): Promise<number[]> {
-  const { schema } = getDrizzleDb();
-  const rows = await executor
-    .select({ leagueId: schema.registrationLeaguePriorities.league_id })
-    .from(schema.registrationLeaguePriorities)
-    .where(eq(schema.registrationLeaguePriorities.registration_id, registrationId));
-  return rows.map((row) => row.leagueId);
-}
-
-export async function removeOrphanedRegistrationRosterPlacements(input: {
+export async function removeOrphanedRegistrationRosterPlacements(_input: {
   registrationId: number;
   curlerMemberId: number;
   placements: GuaranteedPlacement[];
@@ -344,29 +325,7 @@ export async function removeOrphanedRegistrationRosterPlacements(input: {
   excludeLeagueIds?: Iterable<number>;
   tx?: DbExecutor;
 }): Promise<void> {
-  const { db, schema } = getDrizzleDb();
-  const executor = input.tx ?? db;
-  const keepLeagueIds = rosterLeagueIdsToKeep({
-    selectedLeagueIds: await loadRegistrationPriorityLeagueIds(executor, input.registrationId),
-    placements: input.placements,
-    excludeLeagueIds: input.excludeLeagueIds,
-  });
-
-  const rosterRows = await executor
-    .select()
-    .from(schema.leagueRoster)
-    .where(
-      and(
-        eq(schema.leagueRoster.member_id, input.curlerMemberId),
-        eq(schema.leagueRoster.source_registration_id, input.registrationId),
-        eq(schema.leagueRoster.status, 'active'),
-      ),
-    );
-
-  const rowsToRemove = rosterRows.filter((row: (typeof rosterRows)[number]) =>
-    shouldRemoveOrphanedRosterRow(row, keepLeagueIds),
-  );
-  await removeRegistrationRosterRows(executor, rowsToRemove);
+  // No-op. Registration save/submit/pay must not delete roster seats.
 }
 
 export async function removeAllRegistrationRosterPlacements(input: {
@@ -450,7 +409,7 @@ export async function syncRegistrationRosterPlacements(input: {
   excludeLeagueIds?: Iterable<number>;
   tx?: DbExecutor;
 }): Promise<void> {
-  await removeOrphanedRegistrationRosterPlacements(input);
+  // Add or refresh granted seats only. Never remove existing roster rows.
   if (registrationStatusCommitsRoster(input.registrationStatus)) {
     await persistRegistrationRosterPlacements(input);
   }

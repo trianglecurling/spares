@@ -184,7 +184,7 @@ describe('Junior Recreational roster placement', () => {
 });
 
 describe('shouldRemoveOrphanedRosterRow', () => {
-  test('keeps play-in and temporary-fill seats that registration save did not grant', () => {
+  test('never drops a roster seat when a registration is saved or paid', () => {
     const keep = new Set([34]);
     expect(
       shouldRemoveOrphanedRosterRow(
@@ -200,10 +200,22 @@ describe('shouldRemoveOrphanedRosterRow', () => {
     ).toBe(false);
     expect(
       shouldRemoveOrphanedRosterRow(
+        { league_id: 36, is_temporary_sabbatical_fill: 0, placement_type: 'staff_manual' },
+        keep,
+      ),
+    ).toBe(false);
+    expect(
+      shouldRemoveOrphanedRosterRow(
         { league_id: 27, is_temporary_sabbatical_fill: 0, placement_type: 'new_placement' },
         keep,
       ),
-    ).toBe(true);
+    ).toBe(false);
+    expect(
+      shouldRemoveOrphanedRosterRow(
+        { league_id: 36, is_temporary_sabbatical_fill: 0, placement_type: 'waitlist' },
+        keep,
+      ),
+    ).toBe(false);
   });
 });
 
@@ -217,7 +229,7 @@ describe('rosterLeagueIdsToKeep', () => {
     ).toEqual([27, 34]);
   });
 
-  test('still drops a league that left the priority list', () => {
+  test('keep-set for granted seats does not invent unlisted leagues', () => {
     expect(
       [...rosterLeagueIdsToKeep({
         selectedLeagueIds: [34],

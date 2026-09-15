@@ -5,6 +5,9 @@ import globals from 'globals';
 
 export default [
   {
+    ignores: ['src/scripts/servicing/**'],
+  },
+  {
     files: ['**/*.ts'],
     languageOptions: {
       parser: typescriptParser,

@@ -414,7 +414,7 @@ remains after everyone's higher-priority demand has been satisfied.
 
 Once a seat is committed, later re-evaluation must not drop it because the
 registrant has not paid, the payment deadline has passed, or the window is now
-Open (open evaluation never grants new seats). Staff removes a person from a
-league. Saving a registration only drops a roster row when that league is no
-longer on the priority list, the registration is cancelled, or staff removes
-them from the roster.
+Open (open evaluation never grants new seats). Saving, submitting, or paying a
+registration must not remove anyone from a roster, including staff-manual and
+waitlist seats for leagues that are not on the current priority list. Staff
+removes a person from a league. Cancel uses the dedicated cancel path.
