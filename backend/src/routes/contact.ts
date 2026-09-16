@@ -1,7 +1,10 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { sendEmail } from '../services/email.js';
-import { getPublicContactRecipientBySlug } from '../domains/content/publicContactRecipients.js';
+import {
+  getPublicContactRecipientBySlug,
+  isGroupEventContactRecipient,
+} from '../domains/content/publicContactRecipients.js';
 import { abuseRouteRateLimits } from '../plugins/abuseRateLimits.js';
 import {
   consumeSlidingWindowLimit,
@@ -16,26 +19,139 @@ const EMAIL_LIMIT_WINDOW_MS = 60 * 60 * 1000;
 
 const contactRecipientSlugSchema = z.string().trim().min(1).max(64).regex(/^[a-z0-9-]+$/);
 
-const requestSchema = z.object({
-  recipient: contactRecipientSlugSchema,
-  email: z.string().email().max(320),
-  subject: z.string().trim().min(2).max(160),
-  body: z.string().trim().min(10).max(8000),
-  /** When true, also email a copy of the message to the sender. */
-  sendCopy: z.boolean().optional().default(false),
-  /** Honeypot — must be empty; filled values get silent success after tarpit. */
-  website: z.string().max(200).optional(),
-  captchaToken: z.string().min(1),
-  captchaAnswer: z.union([z.string(), z.number()]),
-});
+const optionalTrimmedText = (max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max)
+    .optional()
+    .transform((value) => (value && value.length > 0 ? value : undefined));
 
-function escapeHtml(input: string): string {
+const requestSchema = z
+  .object({
+    recipient: contactRecipientSlugSchema,
+    email: z.string().email().max(320),
+    subject: optionalTrimmedText(160),
+    body: optionalTrimmedText(8000),
+    fullName: optionalTrimmedText(200),
+    organizationName: optionalTrimmedText(200),
+    estimatedGroupSize: optionalTrimmedText(80),
+    preferredDates: optionalTrimmedText(4000),
+    /** When true, also email a copy of the message to the sender. */
+    sendCopy: z.boolean().optional().default(false),
+    /** Honeypot — must be empty; filled values get silent success after tarpit. */
+    website: z.string().max(200).optional(),
+    captchaToken: z.string().min(1),
+    captchaAnswer: z.union([z.string(), z.number()]),
+  })
+  .superRefine((data, ctx) => {
+    if (isGroupEventContactRecipient(data.recipient)) {
+      if (!data.fullName) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['fullName'], message: 'Full name is required' });
+      }
+      if (!data.organizationName) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['organizationName'],
+          message: 'Company/organization/group name is required',
+        });
+      }
+      return;
+    }
+
+    if (!data.subject || data.subject.length < 2) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['subject'], message: 'Subject is required' });
+    }
+    if (!data.body || data.body.length < 10) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['body'], message: 'Message is required' });
+    }
+  });
+
+export type ContactRequestPayload = z.infer<typeof requestSchema>;
+
+export function parseContactRequest(body: unknown) {
+  return requestSchema.safeParse(body ?? {});
+}
+
+export function escapeHtml(input: string): string {
   return input
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+function paragraphRow(label: string, value: string): string {
+  return `<p><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</p>`;
+}
+
+function preformattedRow(label: string, value: string): string {
+  return `<p><strong>${escapeHtml(label)}:</strong></p>
+      <pre style="white-space: pre-wrap; padding: 12px; background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 8px;">${escapeHtml(value)}</pre>`;
+}
+
+export function resolveContactEmailSubject(payload: ContactRequestPayload): string {
+  if (payload.subject) {
+    return payload.subject;
+  }
+  if (isGroupEventContactRecipient(payload.recipient) && payload.organizationName) {
+    return `Group event inquiry from ${payload.organizationName}`;
+  }
+  if (isGroupEventContactRecipient(payload.recipient)) {
+    return 'Group event inquiry';
+  }
+  return 'Contact form message';
+}
+
+export function buildContactEmailHtml(options: {
+  payload: ContactRequestPayload;
+  recipientLabel: string;
+  isCopy: boolean;
+}): string {
+  const { payload, recipientLabel, isCopy } = options;
+  const isGroupEvent = isGroupEventContactRecipient(payload.recipient);
+  const heading = isCopy
+    ? isGroupEvent
+      ? 'Copy of your group event inquiry to Triangle Curling Club'
+      : 'Copy of your message to Triangle Curling Club'
+    : isGroupEvent
+      ? 'New group event inquiry'
+      : 'New public contact submission';
+  const footer = isCopy
+    ? 'This is a copy of the message you submitted through the public contact form.'
+    : 'Submitted through the public contact form.';
+  const subject = resolveContactEmailSubject(payload);
+
+  const rows: string[] = [
+    `<h2>${escapeHtml(heading)}</h2>`,
+    paragraphRow('Recipient category', recipientLabel),
+  ];
+
+  if (payload.fullName) {
+    rows.push(paragraphRow('Full name', payload.fullName));
+  }
+  if (payload.organizationName) {
+    rows.push(paragraphRow('Company/organization/group name', payload.organizationName));
+  }
+  rows.push(paragraphRow(isCopy ? 'Email' : 'From', payload.email));
+  if (payload.estimatedGroupSize) {
+    rows.push(paragraphRow('Estimated group size', payload.estimatedGroupSize));
+  }
+  if (payload.preferredDates) {
+    rows.push(preformattedRow('Preferred dates', payload.preferredDates));
+  }
+  if (!isGroupEvent) {
+    rows.push(paragraphRow('Subject', subject));
+  }
+  if (payload.body) {
+    rows.push(preformattedRow(isGroupEvent ? 'Additional questions/comments' : 'Message', payload.body));
+  }
+  rows.push(`<p style="font-size: 13px; color: #555;">${escapeHtml(footer)}</p>`);
+
+  return `
+      ${rows.join('\n      ')}
+    `;
 }
 
 export async function contactRoutes(fastify: FastifyInstance) {
@@ -60,7 +176,7 @@ export async function contactRoutes(fastify: FastifyInstance) {
       },
     },
     async (request, reply) => {
-      const parsed = requestSchema.safeParse(request.body ?? {});
+      const parsed = parseContactRequest(request.body);
       if (!parsed.success) {
         return reply.code(400).send({ error: 'Invalid request', details: parsed.error.flatten() });
       }
@@ -93,23 +209,16 @@ export async function contactRoutes(fastify: FastifyInstance) {
         return reply.code(400).send({ error: 'Invalid recipient' });
       }
 
-      const safeSubject = escapeHtml(payload.subject);
-      const safeBody = escapeHtml(payload.body);
-      const safeSenderEmail = escapeHtml(payload.email);
-
-      const htmlContent = `
-      <h2>New public contact submission</h2>
-      <p><strong>Recipient category:</strong> ${escapeHtml(recipientInfo.label)}</p>
-      <p><strong>From:</strong> ${safeSenderEmail}</p>
-      <p><strong>Subject:</strong> ${safeSubject}</p>
-      <p><strong>Message:</strong></p>
-      <pre style="white-space: pre-wrap; padding: 12px; background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 8px;">${safeBody}</pre>
-      <p style="font-size: 13px; color: #555;">Submitted through the public contact form.</p>
-    `;
+      const subject = resolveContactEmailSubject(payload);
+      const htmlContent = buildContactEmailHtml({
+        payload,
+        recipientLabel: recipientInfo.label,
+        isCopy: false,
+      });
 
       const delivery = await sendEmail({
         to: recipientInfo.email,
-        subject: `[Contact Form] ${payload.subject}`,
+        subject: `[Contact Form] ${subject}`,
         htmlContent,
         recipientName: recipientInfo.label,
         replyTo: payload.email,
@@ -122,18 +231,15 @@ export async function contactRoutes(fastify: FastifyInstance) {
       }
 
       if (payload.sendCopy) {
-        const copyHtmlContent = `
-      <h2>Copy of your message to Triangle Curling Club</h2>
-      <p><strong>Recipient category:</strong> ${escapeHtml(recipientInfo.label)}</p>
-      <p><strong>Subject:</strong> ${safeSubject}</p>
-      <p><strong>Message:</strong></p>
-      <pre style="white-space: pre-wrap; padding: 12px; background: #f8fafc; border: 1px solid #e5e7eb; border-radius: 8px;">${safeBody}</pre>
-      <p style="font-size: 13px; color: #555;">This is a copy of the message you submitted through the public contact form.</p>
-    `;
+        const copyHtmlContent = buildContactEmailHtml({
+          payload,
+          recipientLabel: recipientInfo.label,
+          isCopy: true,
+        });
 
         const copyDelivery = await sendEmail({
           to: payload.email,
-          subject: `Copy: ${payload.subject}`,
+          subject: `Copy: ${subject}`,
           htmlContent: copyHtmlContent,
           recipientName: payload.email,
           budgetKind: 'public',

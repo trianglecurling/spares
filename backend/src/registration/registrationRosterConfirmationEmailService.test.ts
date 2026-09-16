@@ -304,7 +304,7 @@ describe('roster confirmation payload', () => {
     expect(payload.paymentUrl).toBeNull();
     expect(payload.paymentLinkPending).toBe(false);
     expect(payload.paymentLinkReuse).toBe(true);
-    expect(rendered.subject).toBe('Payment reminder for your Fall leagues');
+    expect(rendered.subject).toBe('Past due: Payment reminder for your Fall leagues');
     expect(rendered.textBody).toContain('Your existing payment link will be included when this reminder is sent.');
     expect(rendered.textBody).not.toContain('Payment link will be created when this email is sent.');
   });
@@ -349,7 +349,7 @@ describe('roster confirmation payload', () => {
     expect(rendered.subject).toBe('Your Fall leagues');
     expect(rendered.subject).not.toContain('payment link');
     expect(rendered.textBody).toContain('refund will be issued');
-    expect(rendered.textBody).not.toContain('Pay the remaining balance');
+    expect(rendered.textBody).not.toContain('Pay now');
   });
 });
 

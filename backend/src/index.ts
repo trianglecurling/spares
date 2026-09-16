@@ -6,6 +6,7 @@ import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 import fastifyRawBody from 'fastify-raw-body';
 import { config } from './config.js';
+import { rememberPublicFrontendBaseUrlFromRequest } from './utils/frontendUrl.js';
 import { apiErrorPayload } from './api/errors.js';
 import { connectDatabase, resetDatabaseState, verifyDatabaseSchema } from './db/index.js';
 import { authMiddleware } from './middleware/auth.js';
@@ -33,6 +34,10 @@ const fastify = Fastify({
   routerOptions: {
     maxParamLength: FASTIFY_MAX_PARAM_LENGTH,
   },
+});
+
+fastify.addHook('onRequest', async (request) => {
+  rememberPublicFrontendBaseUrlFromRequest(request);
 });
 
 fastify.addHook('onResponse', async (request, reply) => {

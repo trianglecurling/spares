@@ -3,6 +3,13 @@ import type { ChoiceRenderableOption } from '../components/ChoiceInput';
 /** Stable slug used in `/contact?recipient=` links and contact form submissions. */
 export type ContactRecipientSlug = string;
 
+/** Keep in sync with `GROUP_EVENT_CONTACT_RECIPIENT_SLUG` in backend public contact recipients. */
+export const GROUP_EVENT_CONTACT_RECIPIENT_SLUG = 'rentals';
+
+export function isGroupEventContactRecipient(slug: string): boolean {
+  return slug === GROUP_EVENT_CONTACT_RECIPIENT_SLUG;
+}
+
 export type PublicContactRecipientOption = {
   id: number;
   slug: string;

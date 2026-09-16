@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   OUTBOUND_EMAIL_RETENTION_DAYS,
+  outboundEmailRecipientLikePattern,
   serializeOutboundEmailTimestamp,
   shouldLogOutboundEmail,
 } from './outboundEmailLogService.js';
@@ -21,6 +22,19 @@ describe('shouldLogOutboundEmail', () => {
 describe('outbound email retention', () => {
   test('keeps 30 days of mail', () => {
     expect(OUTBOUND_EMAIL_RETENTION_DAYS).toBe(30);
+  });
+});
+
+describe('outboundEmailRecipientLikePattern', () => {
+  test('returns null for empty or whitespace-only input', () => {
+    expect(outboundEmailRecipientLikePattern()).toBeNull();
+    expect(outboundEmailRecipientLikePattern('')).toBeNull();
+    expect(outboundEmailRecipientLikePattern('   ')).toBeNull();
+  });
+
+  test('lowercases and wraps the recipient needle for LIKE matching', () => {
+    expect(outboundEmailRecipientLikePattern('Jane@Club.ORG')).toBe('%jane@club.org%');
+    expect(outboundEmailRecipientLikePattern('  Alex  ')).toBe('%alex%');
   });
 });
 

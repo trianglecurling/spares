@@ -12,6 +12,13 @@ export type PublicContactRecipientRow = {
   updatedAt: string;
 };
 
+/** Stable slug for the group-events / private-rentals contact form. */
+export const GROUP_EVENT_CONTACT_RECIPIENT_SLUG = 'rentals';
+
+export function isGroupEventContactRecipient(slug: string): boolean {
+  return slug === GROUP_EVENT_CONTACT_RECIPIENT_SLUG;
+}
+
 export const DEFAULT_PUBLIC_CONTACT_RECIPIENTS: Array<{
   slug: string;
   label: string;
@@ -21,7 +28,7 @@ export const DEFAULT_PUBLIC_CONTACT_RECIPIENTS: Array<{
   { slug: 'general', label: 'General info and questions', email: 'info@trianglecurling.com', sortOrder: 0 },
   { slug: 'membership', label: 'Leagues and membership inquiries', email: 'membership@trianglecurling.com', sortOrder: 10 },
   { slug: 'marketing', label: 'Media inquiries, advertising, merchandise', email: 'marketing@trianglecurling.com', sortOrder: 20 },
-  { slug: 'rentals', label: 'Private events, team building, corporate outings', email: 'rentals@trianglecurling.com', sortOrder: 30 },
+  { slug: GROUP_EVENT_CONTACT_RECIPIENT_SLUG, label: 'Private events, team building, corporate outings', email: 'rentals@trianglecurling.com', sortOrder: 30 },
   { slug: 'juniors', label: 'Youth & junior programs', email: 'juniors@trianglecurling.com', sortOrder: 40 },
   { slug: 'operations', label: 'Facilities & contractors', email: 'operations@trianglecurling.com', sortOrder: 50 },
   { slug: 'learntocurl', label: 'Learn-to-curl events', email: 'learntocurl@trianglecurling.com', sortOrder: 60 },

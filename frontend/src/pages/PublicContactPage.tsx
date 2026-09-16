@@ -10,12 +10,16 @@ import Modal from '../components/Modal';
 import PublicLayout from '../components/PublicLayout';
 import SeoMeta from '../components/SeoMeta';
 import {
+  isGroupEventContactRecipient,
   isKnownContactRecipientSlug,
   resolveContactRecipientSlug,
   toContactRecipientChoiceOptions,
 } from '../constants/contactRecipients';
 import { usePublicContactRecipients } from '../hooks/usePublicContactRecipients';
 import api, { formatApiError } from '../utils/api';
+
+const publicInputClass =
+  'w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-200';
 
 const facilityDetails: Array<{ title: string; body: string }> = [
   { title: 'Bar', body: 'Beer, wine, cider, soda, juice, sports beverages, water, seltzers (NA & alcoholic). Four-tap draft unit.' },
@@ -43,12 +47,21 @@ export default function PublicContactPage() {
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const captchaAnswerId = useId();
+  const idPrefix = useId();
+  const fullNameId = `${idPrefix}-full-name`;
+  const organizationNameId = `${idPrefix}-organization`;
+  const estimatedGroupSizeId = `${idPrefix}-group-size`;
+  const preferredDatesId = `${idPrefix}-preferred-dates`;
   const recipientParam = searchParams.get('recipient');
   const { recipients, loading: recipientsLoading, error: recipientsError } = usePublicContactRecipients({
     includeRecipient: recipientParam,
   });
   const recipientOptions = useMemo(() => toContactRecipientChoiceOptions(recipients), [recipients]);
   const [recipient, setRecipient] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [organizationName, setOrganizationName] = useState('');
+  const [estimatedGroupSize, setEstimatedGroupSize] = useState('');
+  const [preferredDates, setPreferredDates] = useState('');
   const [email, setEmail] = useState('');
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
@@ -79,11 +92,14 @@ export default function PublicContactPage() {
     }
   }, []);
 
+  const isGroupEvent = isGroupEventContactRecipient(recipient);
+
   const canSubmit =
     recipient.trim().length > 0 &&
     email.trim().length > 0 &&
-    subject.trim().length >= 2 &&
-    body.trim().length >= 10 &&
+    (isGroupEvent
+      ? fullName.trim().length > 0 && organizationName.trim().length > 0
+      : subject.trim().length >= 2 && body.trim().length >= 10) &&
     Boolean(captchaToken) &&
     captchaAnswer.trim().length > 0 &&
     !submitting &&
@@ -123,8 +139,14 @@ export default function PublicContactPage() {
       await api.post('/public/contact/request', {
         recipient,
         email: email.trim(),
-        subject: subject.trim(),
+        subject: isGroupEvent
+          ? `Group event inquiry from ${organizationName.trim()}`
+          : subject.trim(),
         body: body.trim(),
+        fullName: isGroupEvent ? fullName.trim() : undefined,
+        organizationName: isGroupEvent ? organizationName.trim() : undefined,
+        estimatedGroupSize: isGroupEvent ? estimatedGroupSize.trim() : undefined,
+        preferredDates: isGroupEvent ? preferredDates.trim() : undefined,
         sendCopy,
         website: website.trim(),
         captchaToken,
@@ -132,6 +154,10 @@ export default function PublicContactPage() {
       });
 
       setSentModalOpen(true);
+      setFullName('');
+      setOrganizationName('');
+      setEstimatedGroupSize('');
+      setPreferredDates('');
       setSubject('');
       setBody('');
       setWebsite('');
@@ -314,12 +340,48 @@ export default function PublicContactPage() {
                     }}
                     placeholder="Choose a recipient"
                     listboxLabel="Recipient"
-                    inputClassName="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-200"
+                    inputClassName={publicInputClass}
                   />
                 )}
               </FormField>
 
-              <FormField tone="public" label="Your email" htmlFor="email" required labelClassName="font-semibold">
+              {isGroupEvent ? (
+                <>
+                  <FormField tone="public" label="Full name" htmlFor={fullNameId} required labelClassName="font-semibold">
+                    <input
+                      id={fullNameId}
+                      type="text"
+                      value={fullName}
+                      onChange={(event) => setFullName(event.target.value)}
+                      required
+                      autoComplete="name"
+                      maxLength={200}
+                      className={publicInputClass}
+                    />
+                  </FormField>
+
+                  <FormField
+                    tone="public"
+                    label="Company/organization/group name"
+                    htmlFor={organizationNameId}
+                    required
+                    labelClassName="font-semibold"
+                  >
+                    <input
+                      id={organizationNameId}
+                      type="text"
+                      value={organizationName}
+                      onChange={(event) => setOrganizationName(event.target.value)}
+                      required
+                      autoComplete="organization"
+                      maxLength={200}
+                      className={publicInputClass}
+                    />
+                  </FormField>
+                </>
+              ) : null}
+
+              <FormField tone="public" label="Email" htmlFor="email" required labelClassName="font-semibold">
                 <input
                   id="email"
                   type="email"
@@ -328,35 +390,98 @@ export default function PublicContactPage() {
                   required
                   autoComplete="email"
                   placeholder="you@example.com"
-                  className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-200"
+                  className={publicInputClass}
                 />
               </FormField>
 
-              <FormField tone="public" label="Subject" htmlFor="subject" required labelClassName="font-semibold">
-                <input
-                  id="subject"
-                  type="text"
-                  value={subject}
-                  onChange={(event) => setSubject(event.target.value)}
-                  required
-                  maxLength={160}
-                  placeholder="How can we help?"
-                  className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-200"
-                />
-              </FormField>
+              {isGroupEvent ? (
+                <>
+                  <FormField
+                    tone="public"
+                    label="Estimated group size"
+                    htmlFor={estimatedGroupSizeId}
+                    optional
+                    labelClassName="font-semibold"
+                  >
+                    <input
+                      id={estimatedGroupSizeId}
+                      type="text"
+                      value={estimatedGroupSize}
+                      onChange={(event) => setEstimatedGroupSize(event.target.value)}
+                      maxLength={80}
+                      placeholder="16"
+                      className={publicInputClass}
+                    />
+                  </FormField>
 
-              <FormField tone="public" label="Message" htmlFor="body" required labelClassName="font-semibold">
-                <textarea
-                  id="body"
-                  value={body}
-                  onChange={(event) => setBody(event.target.value)}
-                  required
-                  rows={8}
-                  maxLength={8000}
-                  placeholder="Share as much detail as possible."
-                  className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-200"
-                />
-              </FormField>
+                  <FormField
+                    tone="public"
+                    label="What date(s) work for you?"
+                    htmlFor={preferredDatesId}
+                    optional
+                    helperText="We are able to book group events most weekday afternoons and a limited number of Saturday afternoons."
+                    helperPlacement="after-label"
+                    labelClassName="font-semibold"
+                  >
+                    {({ describedBy }) => (
+                      <textarea
+                        id={preferredDatesId}
+                        value={preferredDates}
+                        onChange={(event) => setPreferredDates(event.target.value)}
+                        rows={4}
+                        maxLength={4000}
+                        aria-describedby={describedBy}
+                        className={publicInputClass}
+                      />
+                    )}
+                  </FormField>
+
+                  <FormField
+                    tone="public"
+                    label="Additional questions/comments"
+                    htmlFor="body"
+                    optional
+                    labelClassName="font-semibold"
+                  >
+                    <textarea
+                      id="body"
+                      value={body}
+                      onChange={(event) => setBody(event.target.value)}
+                      rows={6}
+                      maxLength={8000}
+                      className={publicInputClass}
+                    />
+                  </FormField>
+                </>
+              ) : (
+                <>
+                  <FormField tone="public" label="Subject" htmlFor="subject" required labelClassName="font-semibold">
+                    <input
+                      id="subject"
+                      type="text"
+                      value={subject}
+                      onChange={(event) => setSubject(event.target.value)}
+                      required
+                      maxLength={160}
+                      placeholder="How can we help?"
+                      className={publicInputClass}
+                    />
+                  </FormField>
+
+                  <FormField tone="public" label="Message" htmlFor="body" required labelClassName="font-semibold">
+                    <textarea
+                      id="body"
+                      value={body}
+                      onChange={(event) => setBody(event.target.value)}
+                      required
+                      rows={8}
+                      maxLength={8000}
+                      placeholder="Share as much detail as possible."
+                      className={publicInputClass}
+                    />
+                  </FormField>
+                </>
+              )}
 
               <FormCheckbox
                 tone="public"
@@ -394,7 +519,7 @@ export default function PublicContactPage() {
                     inputMode="numeric"
                     autoComplete="off"
                     placeholder="Answer"
-                    className="w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-200"
+                    className={publicInputClass}
                   />
                 </FormField>
               </div>

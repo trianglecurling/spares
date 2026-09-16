@@ -1,5 +1,6 @@
 import twilio from 'twilio';
 import { config } from '../config.js';
+import { shouldForceDevOutbound } from '../utils/devOutbound.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { eq } from 'drizzle-orm';
 import { consumeSendBudget, type SendBudgetKind } from '../utils/abuseProtection.js';
@@ -98,15 +99,20 @@ export async function sendSMS(
   budget?: { kind?: SendBudgetKind; failOpen?: boolean }
 ): Promise<void> {
   const dbConfig = await getConfigFromDatabase();
+  const devOutbound = shouldForceDevOutbound({
+    nodeEnv: config.nodeEnv,
+    frontendUrl: config.frontendUrl,
+  });
 
-  // If SMS is disabled or in test mode, print to console instead of sending
-  if (dbConfig.disableSms || dbConfig.testMode) {
+  // If SMS is disabled, in test mode, or this is a local/dev process, print instead of sending.
+  if (dbConfig.disableSms || dbConfig.testMode || devOutbound) {
+    const reason = dbConfig.disableSms ? 'disabled' : devOutbound ? 'dev_runtime' : 'test_mode';
     console.log('='.repeat(80));
-    console.log('[TEST MODE] SMS would be sent:');
+    console.log(`[${reason === 'dev_runtime' ? 'DEV' : 'TEST MODE'}] SMS would be sent:`);
     console.log('To:', to);
     console.log('Message:', message);
     console.log('='.repeat(80));
-    logEvent({ eventType: 'sms.logged', meta: { reason: dbConfig.disableSms ? 'disabled' : 'test_mode' } }).catch(() => {});
+    logEvent({ eventType: 'sms.logged', meta: { reason } }).catch(() => {});
     return;
   }
 

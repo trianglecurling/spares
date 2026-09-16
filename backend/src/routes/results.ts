@@ -21,6 +21,7 @@ import {
 } from '../api/leagueResultsSchemas.js';
 import type { ApiReply } from '../api/types.js';
 import { hasLeagueSetupAccess } from '../utils/leagueAccess.js';
+import { accumulateStandingSums, hasRecordedResult, outcomeFromFirstTiebreaker, tallyTeamRecord } from '../utils/gameRecord.js';
 
 type DrizzleDb = ReturnType<typeof getDrizzleDb>['db'];
 type DrizzleSchema = ReturnType<typeof getDrizzleDb>['schema'];
@@ -732,10 +733,13 @@ export async function resultsRoutes(fastify: FastifyInstance) {
         .where(eq(schema.games.league_id, leagueId));
 
       const gameIds = Array.from(new Set(gameResultRows.map((r) => r.game_id)));
-      const gameTeamRows = await db
-        .select({ id: schema.games.id, team1_id: schema.games.team1_id, team2_id: schema.games.team2_id })
-        .from(schema.games)
-        .where(inArray(schema.games.id, gameIds));
+      const gameTeamRows =
+        gameIds.length === 0
+          ? []
+          : await db
+              .select({ id: schema.games.id, team1_id: schema.games.team1_id, team2_id: schema.games.team2_id })
+              .from(schema.games)
+              .where(inArray(schema.games.id, gameIds));
       const gameTeamMap = new Map(gameTeamRows.map((g) => [g.id, { team1_id: g.team1_id, team2_id: g.team2_id }]));
 
       const teamResultMap = new Map<number, Map<number, number[]>>(); // game_id -> team_id -> values by order
@@ -756,6 +760,7 @@ export async function resultsRoutes(fastify: FastifyInstance) {
         const gt = gameTeamMap.get(g.id)!;
         const t1v = teamResultMap.get(g.id)?.get(gt.team1_id) ?? [];
         const t2v = teamResultMap.get(g.id)?.get(gt.team2_id) ?? [];
+        if (!hasRecordedResult(t1v, t2v)) continue;
         gamesWithResults.push({
           game_id: g.id,
           team1_id: gt.team1_id,
@@ -781,36 +786,7 @@ export async function resultsRoutes(fastify: FastifyInstance) {
         divisionTeams.set(t.division_id, list);
       }
 
-      const teamSums = new Map<
-        number,
-        { values: number[]; gamesPlayed: number }
-      >();
-      for (const g of gamesWithResults) {
-        const maxOrder = Math.max(
-          g.team1_values.length,
-          g.team2_values.length
-        );
-        for (let o = 0; o < maxOrder; o++) {
-          const v1 = g.team1_values[o] ?? 0;
-          const v2 = g.team2_values[o] ?? 0;
-          for (const [teamId] of [
-            [g.team1_id, g.team1_values] as const,
-            [g.team2_id, g.team2_values] as const,
-          ]) {
-            let cur = teamSums.get(teamId);
-            if (!cur) {
-              cur = { values: [], gamesPlayed: 0 };
-              teamSums.set(teamId, cur);
-            }
-            while (cur.values.length <= o) cur.values.push(0);
-            cur.values[o] = (cur.values[o] ?? 0) + (teamId === g.team1_id ? v1 : v2);
-          }
-        }
-        const cur1 = teamSums.get(g.team1_id);
-        const cur2 = teamSums.get(g.team2_id);
-        if (cur1) cur1.gamesPlayed++;
-        if (cur2) cur2.gamesPlayed++;
-      }
+      const teamSums = accumulateStandingSums(gamesWithResults);
 
       const standings: Array<{
         divisionId: number;
@@ -1093,9 +1069,6 @@ export async function resultsRoutes(fastify: FastifyInstance) {
         .from(schema.gameResults)
         .where(inArray(schema.gameResults.game_id, gameIds));
 
-      let wins = 0;
-      let losses = 0;
-      let ties = 0;
       const byGame = new Map<number, Map<number, number[]>>();
       for (const r of results) {
         let byTeam = byGame.get(r.game_id);
@@ -1107,22 +1080,11 @@ export async function resultsRoutes(fastify: FastifyInstance) {
         arr[r.result_order] = r.value;
         byTeam.set(r.team_id, arr);
       }
-      for (const g of games) {
-        const t1 = byGame.get(g.id)?.get(g.team1_id) ?? [];
-        const t2 = byGame.get(g.id)?.get(g.team2_id) ?? [];
-        const myVal = g.team1_id === teamId ? t1[0] ?? 0 : t2[0] ?? 0;
-        const oppVal = g.team1_id === teamId ? t2[0] ?? 0 : t1[0] ?? 0;
-        if (myVal > oppVal) wins++;
-        else if (myVal < oppVal) losses++;
-        else ties++;
-      }
+      const record = tallyTeamRecord(teamId, games, byGame);
       return {
         teamId,
         teamName: team.name,
-        gamesPlayed: games.length,
-        wins,
-        losses,
-        ties,
+        ...record,
       };
     }
   );
@@ -1195,21 +1157,21 @@ export async function resultsRoutes(fastify: FastifyInstance) {
         { wins: number; losses: number; ties: number }
       >();
       for (const l of lineupFull) {
-        let cur = memberGames.get(l.member_id);
-        if (!cur) {
-          cur = { wins: 0, losses: 0, ties: 0 };
-          memberGames.set(l.member_id, cur);
-        }
         const key = `${l.game_id}_${l.team_id}`;
         const myVals = resultByGameTeam.get(key) ?? [];
         const game = gameTeamMap.get(l.game_id)!;
         const oppTeamId = l.team_id === game.team1_id ? game.team2_id : game.team1_id;
         const oppKey = `${l.game_id}_${oppTeamId}`;
         const oppVals = resultByGameTeam.get(oppKey) ?? [];
-        const myFirst = myVals[0] ?? 0;
-        const oppFirst = oppVals[0] ?? 0;
-        if (myFirst > oppFirst) cur.wins++;
-        else if (myFirst < oppFirst) cur.losses++;
+        const outcome = outcomeFromFirstTiebreaker(myVals, oppVals);
+        if (outcome == null) continue;
+        let cur = memberGames.get(l.member_id);
+        if (!cur) {
+          cur = { wins: 0, losses: 0, ties: 0 };
+          memberGames.set(l.member_id, cur);
+        }
+        if (outcome === 'win') cur.wins++;
+        else if (outcome === 'loss') cur.losses++;
         else cur.ties++;
       }
 

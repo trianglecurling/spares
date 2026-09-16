@@ -340,7 +340,7 @@ describe('Phase 9 registration email rendering', () => {
     expect(rendered.textBody).toContain('keep your waitlist spot');
     expect(rendered.textBody).toContain('Amount paid: $250.00');
     expect(rendered.textBody).toContain('Balance: $0.00');
-    expect(rendered.textBody).not.toContain('Pay the remaining balance');
+    expect(rendered.textBody).not.toContain('Pay now');
     expect(rendered.textBody).not.toContain('refund will be issued');
     expect(rendered.textBody).not.toContain('Why you have a sabbatical');
   });
@@ -416,7 +416,7 @@ describe('Phase 9 registration email rendering', () => {
     expect(rendered.textBody).toContain('Credit: -$50.00');
     expect(rendered.textBody).toContain('A refund will be issued within 5–7 business days');
     expect(rendered.textBody).not.toContain('send it manually');
-    expect(rendered.textBody).not.toContain('Pay the remaining balance');
+    expect(rendered.textBody).not.toContain('Pay now');
   });
 
   test('roster confirmation includes the Square payment URL when one is provided', () => {
@@ -433,10 +433,11 @@ describe('Phase 9 registration email rendering', () => {
     });
 
     expect(rendered.subject).toBe('Your Fall leagues and payment link');
-    expect(rendered.textBody).toContain('Pay the remaining balance: https://squareup.example/pay/abc');
+    expect(rendered.textBody).toContain('Pay now: https://squareup.example/pay/abc');
     expect(rendered.textBody).toContain('Payment is due by Sunday, September 13, 2026');
     expect(rendered.textBody).not.toContain('to secure your league selections');
-    expect(rendered.htmlBody).toContain('https://squareup.example/pay/abc');
+    expect(rendered.htmlBody).toContain('Pay now');
+    expect(rendered.htmlBody).toContain('background-color: #01B9BC');
     expect(rendered.htmlBody).toContain('Payment is due');
   });
 
@@ -493,11 +494,36 @@ describe('Phase 9 registration email rendering', () => {
       deadlineText: 'Sunday, September 13, 2026',
     });
 
-    expect(rendered.subject).toBe('Payment reminder for your Fall leagues');
+    expect(rendered.subject).toBe('Past due: Payment reminder for your Fall leagues');
     expect(rendered.textBody).toContain('This is a reminder that payment is still due for your Fall leagues.');
-    expect(rendered.textBody).toContain('Please use the same payment link from your roster email.');
-    expect(rendered.textBody).toContain('Pay the remaining balance: https://squareup.example/pay/abc');
+    expect(rendered.textBody).not.toContain('Please use the same payment link from your roster email.');
+    expect(rendered.textBody).toContain('Pay now: https://squareup.example/pay/abc');
     expect(rendered.textBody).not.toContain('Payment link will be created when this email is sent.');
+    expect(rendered.textBody).not.toContain('Payment is due upon receipt');
     expect(rendered.htmlBody).toContain('https://squareup.example/pay/abc');
+    expect(rendered.htmlBody).toContain('Pay now');
+    expect(rendered.htmlBody).toContain('background-color: #01B9BC');
+    expect(rendered.htmlBody).toContain('padding: 12px 24px');
+    expect(rendered.htmlBody).not.toContain('Payment is due upon receipt');
+  });
+
+  test('roster payment reminder omits payment due upon receipt', () => {
+    const rendered = renderRegistrationEmail('roster_payment_reminder', {
+      curlerName: 'Alex Curler',
+      seasonName: '2026-27',
+      sessionName: 'Fall',
+      rosterLeagues: [{ leagueName: 'Hump Day', isTemporarySabbaticalFill: false }],
+      receiptLineItems: [{ description: 'Hump Day league fee', amountMinor: 15000 }],
+      amountPaidMinor: 0,
+      billingBalanceMinor: 15000,
+      paymentUrl: 'https://squareup.example/pay/abc',
+      deadlineText: 'upon receipt',
+    });
+
+    expect(rendered.subject).toBe('Past due: Payment reminder for your Fall leagues');
+    expect(rendered.textBody).toContain('Pay now: https://squareup.example/pay/abc');
+    expect(rendered.textBody).not.toContain('Payment is due upon receipt');
+    expect(rendered.htmlBody).not.toContain('Payment is due upon receipt');
+    expect(rendered.htmlBody).not.toContain('Payment is due by');
   });
 });

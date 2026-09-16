@@ -457,9 +457,48 @@ export default function LeagueSchedule({
     setLoadingEditData(false);
   };
 
+  const saveResultForGame = async (gameId: number, team1Values: number[], team2Values: number[]) => {
+    await (
+      put as (path: string, body: unknown, pathParams?: Record<string, string>) => Promise<unknown>
+    )(
+      '/games/{gameId}/results',
+      {
+        team1Results: team1Values.map((value, resultOrder) => ({ resultOrder, value })),
+        team2Results: team2Values.map((value, resultOrder) => ({ resultOrder, value })),
+      },
+      { gameId: String(gameId) }
+    );
+  };
+
   const handleSaveGame = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!canManage) return;
+
+    if (editingGame && editTab === 'results') {
+      if (loadingEditData) return;
+      setSavingResult(true);
+      try {
+        await saveResultForGame(editingGame.id, resultForm.team1Values, resultForm.team2Values);
+        setGames((prev) =>
+          prev.map((g) =>
+            g.id === editingGame.id
+              ? {
+                  ...g,
+                  hasResult: true,
+                  team1Results: resultForm.team1Values,
+                  team2Results: resultForm.team2Values,
+                }
+              : g
+          )
+        );
+        closeGameModal();
+      } catch (err) {
+        showAlert(formatApiError(err, 'Failed to save result'), 'error');
+      } finally {
+        setSavingResult(false);
+      }
+      return;
+    }
 
     const team1Id = Number(gameForm.team1Id);
     const team2Id = Number(gameForm.team2Id);
@@ -519,27 +558,16 @@ export default function LeagueSchedule({
 
       if (editingGame) {
         await patch('/games/{gameId}', payload, { gameId: String(editingGame.id) });
-        setSavingResult(true);
-        try {
-          await saveResultForGame(editingGame.id);
-          setGames((prev) =>
-            prev.map((g) =>
-              g.id === editingGame.id
-                ? {
-                    ...g,
-                    ...payload,
-                    hasResult: true,
-                    team1Results: resultForm.team1Values,
-                    team2Results: resultForm.team2Values,
-                  }
-                : g
-            )
-          );
-        } catch (err) {
-          showAlert(formatApiError(err, 'Failed to save result'), 'error');
-        } finally {
-          setSavingResult(false);
-        }
+        setGames((prev) =>
+          prev.map((g) =>
+            g.id === editingGame.id
+              ? {
+                  ...g,
+                  ...payload,
+                }
+              : g
+          )
+        );
         closeGameModal();
         return;
       } else {
@@ -590,15 +618,47 @@ export default function LeagueSchedule({
     }
   };
 
-  const saveResultForGame = async (gameId: number) => {
-    (put as (path: string, body: unknown, pathParams?: Record<string, string>) => Promise<unknown>)(
-      '/games/{gameId}/results',
-      {
-        team1Results: resultForm.team1Values.map((value, resultOrder) => ({ resultOrder, value })),
-        team2Results: resultForm.team2Values.map((value, resultOrder) => ({ resultOrder, value })),
-      },
-      { gameId: String(gameId) }
-    );
+  const handleClearResult = async () => {
+    if (!canManage || !editingGame) return;
+    const confirmed = await confirm({
+      title: 'Clear result',
+      message: 'Remove the recorded result for this game? It will no longer count in standings.',
+      confirmText: 'Clear result',
+      variant: 'danger',
+    });
+    if (!confirmed) return;
+
+    setSavingResult(true);
+    try {
+      await saveResultForGame(editingGame.id, [], []);
+      setGames((prev) =>
+        prev.map((g) =>
+          g.id === editingGame.id
+            ? {
+                ...g,
+                hasResult: false,
+                team1Results: [],
+                team2Results: [],
+              }
+            : g
+        )
+      );
+      setEditingGame((prev) =>
+        prev
+          ? {
+              ...prev,
+              hasResult: false,
+              team1Results: [],
+              team2Results: [],
+            }
+          : prev
+      );
+      setResultForm({ team1Values: [0], team2Values: [0] });
+    } catch (err) {
+      showAlert(formatApiError(err, 'Failed to clear result'), 'error');
+    } finally {
+      setSavingResult(false);
+    }
   };
 
   const formatResultSummary = (game: Game) => {
@@ -1371,12 +1431,22 @@ export default function LeagueSchedule({
           <div
             className={`flex flex-wrap gap-3 ${editingGame ? 'shrink-0 border-t border-gray-200 pt-4 dark:border-gray-700' : ''}`}
           >
+            {editingGame && editTab === 'results' && editingGame.hasResult && (
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => void handleClearResult()}
+                disabled={savingGame || savingResult || loadingEditData}
+              >
+                Clear result
+              </Button>
+            )}
             {editingGame && (
               <Button
                 type="button"
                 variant="danger"
                 onClick={() => handleDeleteGame(editingGame)}
-                disabled={savingGame}
+                disabled={savingGame || savingResult}
               >
                 Delete game
               </Button>
@@ -1387,12 +1457,14 @@ export default function LeagueSchedule({
                 disabled={
                   savingGame ||
                   savingResult ||
-                  !gameForm.team1Id ||
-                  !gameForm.team2Id ||
-                  (gameForm.status === 'scheduled' &&
-                    (addingDrawTime
-                      ? !extraDrawForm.date || !extraDrawForm.time || !gameForm.sheetId
-                      : !selectedDrawKey || !gameForm.sheetId))
+                  (editTab === 'results'
+                    ? loadingEditData
+                    : !gameForm.team1Id ||
+                      !gameForm.team2Id ||
+                      (gameForm.status === 'scheduled' &&
+                        (addingDrawTime
+                          ? !extraDrawForm.date || !extraDrawForm.time || !gameForm.sheetId
+                          : !selectedDrawKey || !gameForm.sheetId)))
                 }
                 className="flex-1"
               >

@@ -73,6 +73,7 @@ const outboundEmailDetailResponseSchema = {
 const listQuerySchema = z.object({
   page: z.coerce.number().int().min(1).optional(),
   pageSize: z.coerce.number().int().min(1).max(100).optional(),
+  recipient: z.string().trim().max(254).optional(),
 });
 
 const idParamSchema = z.object({
@@ -81,7 +82,7 @@ const idParamSchema = z.object({
 
 export async function observabilityEmailRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.get<{
-    Querystring: { page?: number; pageSize?: number };
+    Querystring: { page?: number; pageSize?: number; recipient?: string };
     Reply: OutboundEmailListResponse | ApiErrorResponse;
   }>(
     '/observability/emails',
@@ -94,6 +95,7 @@ export async function observabilityEmailRoutes(fastify: FastifyInstance): Promis
           properties: {
             page: { type: 'number' },
             pageSize: { type: 'number' },
+            recipient: { type: 'string' },
           },
         },
         response: {
@@ -112,7 +114,11 @@ export async function observabilityEmailRoutes(fastify: FastifyInstance): Promis
       if (!query.success) {
         return sendValidationError(reply, 'Validation failed', query.error.flatten().fieldErrors);
       }
-      return listOutboundEmails({ page: query.data.page, pageSize: query.data.pageSize });
+      return listOutboundEmails({
+        page: query.data.page,
+        pageSize: query.data.pageSize,
+        recipient: query.data.recipient,
+      });
     }
   );
 

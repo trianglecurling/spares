@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, or, sql } from 'drizzle-orm';
 import { getDatabaseConfig } from '../db/config.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import type { SendBudgetKind } from '../utils/abuseProtection.js';
@@ -72,9 +72,15 @@ export async function recordOutboundEmail(input: {
   await purgeExpiredOutboundEmails();
 }
 
+export function outboundEmailRecipientLikePattern(recipient?: string): string | null {
+  const needle = recipient?.trim().toLowerCase();
+  return needle ? `%${needle}%` : null;
+}
+
 export async function listOutboundEmails(input: {
   page?: number;
   pageSize?: number;
+  recipient?: string;
 }): Promise<{ items: OutboundEmailListItem[]; page: number; pageSize: number; total: number }> {
   const pageSize = Math.max(
     1,
@@ -83,11 +89,21 @@ export async function listOutboundEmails(input: {
   const requestedPage = Math.max(1, Math.round(input.page ?? 1));
   const { db, schema } = getDrizzleDb();
   const withinRetention = retentionPredicate(schema.outboundEmails.created_at);
+  const recipientLike = outboundEmailRecipientLikePattern(input.recipient);
+  const where = recipientLike
+    ? and(
+        withinRetention,
+        or(
+          sql`lower(${schema.outboundEmails.recipient_email}) like ${recipientLike}`,
+          sql`lower(coalesce(${schema.outboundEmails.recipient_name}, '')) like ${recipientLike}`
+        )
+      )
+    : withinRetention;
 
   const [totalRow] = await db
     .select({ count: sql<number>`count(*)` })
     .from(schema.outboundEmails)
-    .where(withinRetention);
+    .where(where);
   const total = Number(totalRow?.count ?? 0);
   const maxPage = Math.max(1, Math.ceil(total / pageSize) || 1);
   const page = Math.min(requestedPage, maxPage);
@@ -101,7 +117,7 @@ export async function listOutboundEmails(input: {
       createdAt: schema.outboundEmails.created_at,
     })
     .from(schema.outboundEmails)
-    .where(withinRetention)
+    .where(where)
     .orderBy(desc(schema.outboundEmails.created_at), desc(schema.outboundEmails.id))
     .limit(pageSize)
     .offset((page - 1) * pageSize);

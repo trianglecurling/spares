@@ -85,9 +85,13 @@ export default function useTableQueryState<
 
   const [draftFilters, setDraftFilters] = useState<Filters>(parsedState.filters);
   const debounceTimersRef = useRef<Partial<Record<keyof Filters, number>>>({});
+  const committedFiltersRef = useRef(parsedState.filters);
 
   useEffect(() => {
-    setDraftFilters((current) => (filtersEqual(current, parsedState.filters) ? current : parsedState.filters));
+    // Sync from the URL only when filter values change, not when filterConfig identity changes.
+    if (filtersEqual(committedFiltersRef.current, parsedState.filters)) return;
+    committedFiltersRef.current = parsedState.filters;
+    setDraftFilters(parsedState.filters);
   }, [parsedState.filters]);
 
   useEffect(() => {

@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
+import AppPageControlsRow from '../../components/AppPageControlsRow';
 import AppStateCard from '../../components/AppStateCard';
 import BackButton from '../../components/BackButton';
+import FormField from '../../components/FormField';
 import DataTable from '../../components/table/DataTable';
 import type { DataTableColumn } from '../../components/table/tableTypes';
 import useTableQueryState from '../../hooks/useTableQueryState';
@@ -11,7 +13,9 @@ import { getApiErrorMessage } from '../../utils/api';
 
 const PAGE_SIZE = 50;
 const SORT_KEYS = ['createdAt'] as const;
-const EMPTY_FILTER_CONFIG = {} as const;
+const FILTER_CONFIG = {
+  recipient: { queryKey: 'recipient', defaultValue: '', debounceMs: 300 },
+} as const;
 
 type OutboundEmailRow = {
   id: number;
@@ -29,10 +33,14 @@ function formatSentAt(value: string): string {
 
 export default function AdminObservabilityEmails() {
   const navigate = useNavigate();
-  const { page, setPage } = useTableQueryState<(typeof SORT_KEYS)[number], Record<string, never>>({
+  const recipientId = useId();
+  const { page, filters, draftFilters, setPage, setDraftFilter } = useTableQueryState<
+    (typeof SORT_KEYS)[number],
+    { recipient: string }
+  >({
     defaultSort: { key: 'createdAt', direction: 'desc' },
     sortKeys: SORT_KEYS,
-    filterConfig: EMPTY_FILTER_CONFIG,
+    filterConfig: FILTER_CONFIG,
   });
   const [rows, setRows] = useState<OutboundEmailRow[]>([]);
   const [total, setTotal] = useState(0);
@@ -42,10 +50,13 @@ export default function AdminObservabilityEmails() {
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      setLoading(true);
       setError(null);
       try {
-        const response = await get('/observability/emails', { page, pageSize: PAGE_SIZE });
+        const response = await get('/observability/emails', {
+          page,
+          pageSize: PAGE_SIZE,
+          recipient: filters.recipient || undefined,
+        });
         if (cancelled) return;
         setRows(response.items);
         setTotal(response.total);
@@ -62,7 +73,7 @@ export default function AdminObservabilityEmails() {
     return () => {
       cancelled = true;
     };
-  }, [page]);
+  }, [filters.recipient, page]);
 
   const columns: Array<DataTableColumn<OutboundEmailRow>> = useMemo(
     () => [
@@ -107,13 +118,39 @@ export default function AdminObservabilityEmails() {
         description="Outbound mail from the last 30 days, excluding login codes."
         actions={<BackButton label="Observability" to="/admin/observability" />}
       />
+      <AppPageControlsRow
+        left={
+          <FormField label="Recipient" htmlFor={recipientId}>
+            <input
+              id={recipientId}
+              className="app-input"
+              value={draftFilters.recipient}
+              onChange={(event) => setDraftFilter('recipient', event.target.value)}
+              placeholder="Name or email"
+              autoComplete="off"
+            />
+          </FormField>
+        }
+      />
       <DataTable
         rows={rows}
         rowKey={(row) => row.id}
         columns={columns}
         loading={loading}
         error={error ? <div className="app-alert-error">{error}</div> : undefined}
-        emptyState={<AppStateCard compact title="No sent emails in the last 30 days." />}
+        emptyState={
+          <AppStateCard
+            compact
+            title={
+              filters.recipient
+                ? 'No matching sent emails.'
+                : 'No sent emails in the last 30 days.'
+            }
+            description={
+              filters.recipient ? 'No outbound mail matches this recipient.' : undefined
+            }
+          />
+        }
         onRowClick={(row) => navigate(`/admin/observability/emails/${row.id}`)}
         pagination={{
           page,

@@ -24615,6 +24615,14 @@
             "in": "query",
             "name": "status",
             "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "search",
+            "required": false
           }
         ],
         "responses": {
@@ -38683,6 +38691,14 @@
             },
             "in": "query",
             "name": "pageSize",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "recipient",
             "required": false
           }
         ],

@@ -14652,6 +14652,7 @@ export interface paths {
                     provider?: "stripe" | "paypal" | "square";
                     subjectType?: "donation" | "membership" | "event_registration" | "curling_registration";
                     status?: "created" | "pending" | "succeeded" | "failed" | "pending_refund" | "refunded" | "partially_refunded";
+                    search?: string;
                 };
                 header?: never;
                 path?: never;
@@ -25795,6 +25796,7 @@ export interface paths {
                 query?: {
                     page?: number;
                     pageSize?: number;
+                    recipient?: string;
                 };
                 header?: never;
                 path?: never;

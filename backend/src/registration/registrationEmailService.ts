@@ -232,6 +232,18 @@ function sessionLabel(payload: RegistrationEmailPayload): string {
   return [payload.seasonName, payload.sessionName].map((part) => part?.trim()).filter(Boolean).join(' / ') || 'the season';
 }
 
+const EMAIL_PRIMARY_BUTTON_STYLE =
+  'display: inline-block; background-color: #01B9BC; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; margin-top: 10px;';
+
+function emailPrimaryButtonHtml(href: string, label: string): string {
+  return `<p>
+      <a href="${escapeHtml(href)}"
+         style="${EMAIL_PRIMARY_BUTTON_STYLE}">
+        ${escapeHtml(label)}
+      </a>
+    </p>`;
+}
+
 function paymentLinkHtml(payload: RegistrationEmailPayload): string {
   return payload.paymentUrl
     ? `<p><a href="${escapeHtml(payload.paymentUrl)}">Complete your registration payment</a></p>`
@@ -397,26 +409,33 @@ function billingSummaryTableText(payload: RegistrationEmailPayload): string {
   return lines.join('\n');
 }
 
-function paymentDueSentence(payload: RegistrationEmailPayload): string | null {
+function paymentDueSentence(payload: RegistrationEmailPayload, options?: { omitUponReceipt?: boolean }): string | null {
   const deadlineText = payload.deadlineText?.trim();
   if (!deadlineText) return null;
-  if (deadlineText === ROSTER_PAYMENT_DUE_UPON_RECEIPT) return 'Payment is due upon receipt';
+  if (deadlineText === ROSTER_PAYMENT_DUE_UPON_RECEIPT) {
+    return options?.omitUponReceipt ? null : 'Payment is due upon receipt';
+  }
   return `Payment is due by ${deadlineText}`;
 }
 
-function paymentDueHtml(payload: RegistrationEmailPayload): string {
+function paymentDueHtml(payload: RegistrationEmailPayload, options?: { omitUponReceipt?: boolean }): string {
   const deadlineText = payload.deadlineText?.trim();
   if (!deadlineText) return '';
-  if (deadlineText === ROSTER_PAYMENT_DUE_UPON_RECEIPT) return '<p>Payment is due upon receipt</p>';
+  if (deadlineText === ROSTER_PAYMENT_DUE_UPON_RECEIPT) {
+    return options?.omitUponReceipt ? '' : '<p>Payment is due upon receipt</p>';
+  }
   return `<p>Payment is due by ${escapeHtml(deadlineText)}</p>`;
 }
 
-function rosterPaymentHtml(payload: RegistrationEmailPayload): string {
+function rosterPaymentHtml(
+  payload: RegistrationEmailPayload,
+  options?: { omitUponReceipt?: boolean },
+): string {
   const balance = payload.billingBalanceMinor ?? 0;
   if (balance > 0) {
-    const dueHtml = paymentDueHtml(payload);
+    const dueHtml = paymentDueHtml(payload, options);
     if (payload.paymentUrl) {
-      return `<p><a href="${escapeHtml(payload.paymentUrl)}">Pay the remaining balance</a></p>${dueHtml}`;
+      return `${emailPrimaryButtonHtml(payload.paymentUrl, 'Pay now')}${dueHtml}`;
     }
     if (payload.paymentLinkPending) {
       return `<p>Payment link will be created when this email is sent.</p>${dueHtml}`;
@@ -432,12 +451,15 @@ function rosterPaymentHtml(payload: RegistrationEmailPayload): string {
   return '';
 }
 
-function rosterPaymentText(payload: RegistrationEmailPayload): string {
+function rosterPaymentText(
+  payload: RegistrationEmailPayload,
+  options?: { omitUponReceipt?: boolean },
+): string {
   const balance = payload.billingBalanceMinor ?? 0;
   if (balance > 0) {
-    const due = paymentDueSentence(payload);
+    const due = paymentDueSentence(payload, options);
     const link = payload.paymentUrl
-      ? `Pay the remaining balance: ${payload.paymentUrl}`
+      ? `Pay now: ${payload.paymentUrl}`
       : payload.paymentLinkPending
         ? 'Payment link will be created when this email is sent.'
         : payload.paymentLinkReuse
@@ -1020,21 +1042,21 @@ export function renderRegistrationEmail(messageType: RegistrationMessageType, pa
       const subjectNoun = hasLeagues ? 'leagues' : 'membership';
       const billingHtml = billingSummaryTableHtml(payload);
       const billingText = billingSummaryTableText(payload);
-      const paymentHtml = rosterPaymentHtml(payload);
-      const paymentText = rosterPaymentText(payload);
+      const paymentHtml = rosterPaymentHtml(payload, { omitUponReceipt: true });
+      const paymentText = rosterPaymentText(payload, { omitUponReceipt: true });
       return {
-        subject: `Payment reminder for your ${sessionName} ${subjectNoun}`,
+        subject: `Past due: Payment reminder for your ${sessionName} ${subjectNoun}`,
         htmlBody: `
           <h2>Payment reminder</h2>
           <p>Hi ${escapeHtml(curlerName)},</p>
-          <p>This is a reminder that payment is still due for your ${escapeHtml(sessionName)} ${escapeHtml(subjectNoun)}. Please use the same payment link from your roster email.</p>
+          <p>This is a reminder that payment is still due for your ${escapeHtml(sessionName)} ${escapeHtml(subjectNoun)}.</p>
           <h3>Billing summary</h3>
           ${billingHtml}
           ${paymentHtml}
           ${payload.dashboardUrl ? `<p><a href="${escapeHtml(payload.dashboardUrl)}">View your registration status</a></p>` : ''}
           ${paymentAndMembershipContactHtml}
         `,
-        textBody: `Payment reminder\n\nHi ${curlerName},\n\nThis is a reminder that payment is still due for your ${sessionName} ${subjectNoun}. Please use the same payment link from your roster email.\n\nBilling summary\n${billingText}\n${paymentText ? `\n${paymentText}\n` : ''}${payload.dashboardUrl ? `\nView your registration status: ${payload.dashboardUrl}\n` : ''}\n${paymentAndMembershipContactText}`,
+        textBody: `Payment reminder\n\nHi ${curlerName},\n\nThis is a reminder that payment is still due for your ${sessionName} ${subjectNoun}.\n\nBilling summary\n${billingText}\n${paymentText ? `\n${paymentText}\n` : ''}${payload.dashboardUrl ? `\nView your registration status: ${payload.dashboardUrl}\n` : ''}\n${paymentAndMembershipContactText}`,
       };
     }
     default: {

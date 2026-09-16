@@ -2,6 +2,8 @@ import { EmailClient, EmailMessage } from '@azure/communication-email';
 import nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
 import { config } from '../config.js';
+import { shouldForceDevOutbound } from '../utils/devOutbound.js';
+import { absoluteFrontendUrl } from '../utils/frontendUrl.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { eq } from 'drizzle-orm';
 import { formatDateForEmail, formatTimeForEmail } from '../utils/dateFormat.js';
@@ -191,8 +193,7 @@ function applySendBudgetOrBlock(options: EmailOptions): EmailDeliveryResult | nu
 }
 
 function getAppUrl(pathAndSearch: string): string {
-  const path = pathAndSearch.startsWith('/') ? pathAndSearch : `/${pathAndSearch}`;
-  return `${config.frontendUrl}${path}`;
+  return absoluteFrontendUrl(pathAndSearch);
 }
 
 function buildFullHtmlContent(htmlContent: string, _memberToken?: string): string {
@@ -234,6 +235,44 @@ function persistOutboundEmailIfNeeded(options: EmailOptions, fullHtmlContent: st
   });
 }
 
+function forceDevOutbound(): boolean {
+  return shouldForceDevOutbound({
+    nodeEnv: config.nodeEnv,
+    frontendUrl: config.frontendUrl,
+  });
+}
+
+async function sendViaMailpit(
+  options: EmailOptions,
+  fullHtmlContent: string,
+  senderAddress: string,
+  reason: string
+): Promise<EmailDeliveryResult> {
+  const blocked = applySendBudgetOrBlock(options);
+  if (blocked) return blocked;
+  try {
+    const transporter = getTestModeSmtpTransporter();
+    await sendMailWithTransporter(transporter, options, fullHtmlContent, senderAddress);
+    console.log(
+      `[Email Service] ${reason}: sent via Mailpit SMTP to ${config.testMailer.smtpHost}:${config.testMailer.smtpPort}`
+    );
+    logEvent({ eventType: 'email.sent', meta: { test_mode: true, mailpit: true, reason } }).catch(() => {});
+    return { status: 'sent' };
+  } catch (error) {
+    console.error(
+      '[Email Service] Mailpit SMTP send failed - logging to console instead:',
+      error
+    );
+    logEmail(options, fullHtmlContent, 'MAILPIT SMTP FAILED - LOGGED');
+    logEvent({ eventType: 'email.logged', meta: { reason: 'test_mode_smtp_failed' } }).catch(() => {});
+    return {
+      status: 'failed',
+      reason: 'test_mode_smtp_failed',
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
 export async function sendEmail(options: EmailOptions, memberToken?: string): Promise<EmailDeliveryResult> {
   console.log(`[Email Service] sendEmail called for ${options.to}`);
   const fullHtmlContent = buildFullHtmlContent(options.htmlContent, memberToken);
@@ -247,7 +286,10 @@ export async function sendEmail(options: EmailOptions, memberToken?: string): Pr
   }
 
   const dbConfig = await getConfigFromDatabase();
-  console.log(`[Email Service] Config: disableEmail=${dbConfig.disableEmail}, testMode=${dbConfig.testMode}`);
+  const devOutbound = forceDevOutbound();
+  console.log(
+    `[Email Service] Config: disableEmail=${dbConfig.disableEmail}, testMode=${dbConfig.testMode}, forceDevMailpit=${devOutbound}`
+  );
 
   if (dbConfig.disableEmail) {
     console.log(`[Email Service] Email disabled - logging email instead of sending`);
@@ -258,29 +300,20 @@ export async function sendEmail(options: EmailOptions, memberToken?: string): Pr
 
   const smtpFrom = config.smtp.from || dbConfig.senderEmail;
 
-  if (dbConfig.testMode) {
-    const blocked = applySendBudgetOrBlock(options);
-    if (blocked) return blocked;
-    try {
-      const transporter = getTestModeSmtpTransporter();
-      await sendMailWithTransporter(transporter, options, fullHtmlContent, smtpFrom);
-      console.log(
-        `[Email Service] Test mode: sent via SMTP to ${config.testMailer.smtpHost}:${config.testMailer.smtpPort}`
-      );
-      logEvent({ eventType: 'email.sent', meta: { test_mode: true } }).catch(() => {});
+  if (devOutbound || dbConfig.testMode) {
+    const result = await sendViaMailpit(
+      options,
+      fullHtmlContent,
+      smtpFrom,
+      devOutbound
+        ? `dev runtime (NODE_ENV=${config.nodeEnv})`
+        : 'test mode'
+    );
+    // Local/dev Mailpit must not write into a production outbound_emails table.
+    if (result.status === 'sent' && !devOutbound) {
       persistOutboundEmailIfNeeded(options, fullHtmlContent);
-      return { status: 'sent' };
-    } catch (error) {
-      console.error(
-        '[Email Service] Test mode SMTP send failed - logging to console instead:',
-        error
-      );
-      logEmail(options, fullHtmlContent, 'TEST MODE SMTP FAILED - LOGGED');
-      logEvent({ eventType: 'email.logged', meta: { reason: 'test_mode_smtp_failed' } }).catch(
-        () => {}
-      );
-      return { status: 'failed', reason: 'test_mode_smtp_failed', error: error instanceof Error ? error.message : String(error) };
     }
+    return result;
   }
 
   const useSmtp = Boolean(config.smtp.host);
@@ -402,6 +435,8 @@ export async function sendSpareRequestEmail(
     : '';
   const acceptUrl = getAppUrl(`/spare-request/respond?requestId=${spareRequestId}`);
   const declineUrl = getAppUrl(`/spare-request/decline?requestId=${spareRequestId}`);
+  const acceptHref = escapeHtmlEmail(acceptUrl);
+  const declineHref = escapeHtmlEmail(declineUrl);
 
   const htmlContent = `
     <h2>New Spare Request</h2>
@@ -413,7 +448,7 @@ export async function sendSpareRequestEmail(
     ${invitedMembersList}
     ${messageText}
     <p>
-      <a href="${acceptUrl}" 
+      <a href="${acceptHref}" 
          style="display: inline-block; background-color: #01B9BC; color: white; padding: 12px 24px; text-decoration: none; border-radius: 4px; margin-top: 10px;">
         Accept This Spare
       </a>
@@ -421,7 +456,7 @@ export async function sendSpareRequestEmail(
     ${
       requestDetails.invitedMemberNames && requestDetails.invitedMemberNames.length > 0
         ? `<p>
-      <a href="${declineUrl}"
+      <a href="${declineHref}"
          style="display: inline-block; background-color: #6b7280; color: white; padding: 10px 18px; text-decoration: none; border-radius: 4px; margin-top: 8px;">
         Decline
       </a>
@@ -429,7 +464,7 @@ export async function sendSpareRequestEmail(
     <p style="color: #666; font-size: 14px;">If you decline, you can optionally include a message.</p>`
         : ''
     }
-    <p style="color: #666; font-size: 14px;">Or copy this link: ${acceptUrl}</p>
+    <p style="color: #666; font-size: 14px;">Or copy this link: ${acceptHref}</p>
   `;
 
   await sendEmail(
