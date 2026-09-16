@@ -466,15 +466,20 @@ export default function PublicHomePage() {
     ];
   }, [data?.showcaseImages]);
 
-  const displayedSponsorships = useMemo(
-    () => uniqueLogoSponsorships(data?.currentSponsorships ?? []),
-    [data?.currentSponsorships],
-  );
-
   const premiumSponsorships = useMemo(
     () => premiumSponsorshipsFrom(data?.currentSponsorships ?? []),
     [data?.currentSponsorships],
   );
+
+  const displayedSponsorships = useMemo(() => {
+    const premiumLogoKeys = new Set(
+      premiumSponsorships.map((s) => s.sponsorLogoUrl || `sponsor-${s.sponsorId}`),
+    );
+    return uniqueLogoSponsorships(data?.currentSponsorships ?? []).filter((s) => {
+      const logoKey = s.sponsorLogoUrl || `sponsor-${s.sponsorId}`;
+      return !premiumLogoKeys.has(logoKey);
+    });
+  }, [data?.currentSponsorships, premiumSponsorships]);
 
   useEffect(() => {
     const loadHomeBootstrap = () => {
@@ -637,83 +642,74 @@ export default function PublicHomePage() {
             <HouseRings className="pointer-events-none absolute -bottom-44 -left-36 h-[26rem] w-[26rem] text-primary-teal-link opacity-30" />
             <div className="public-container relative py-10 sm:py-14 lg:py-16">
               <div className="grid items-start gap-10 lg:grid-cols-[1.05fr_1fr]">
-                <div className="max-w-xl">
-                  <p className="text-sm font-medium text-primary-teal-link">{heroBadge}</p>
-                  <h1 className="public-display mt-3 text-4xl font-semibold leading-[1.05] tracking-tight text-gray-900 sm:text-5xl lg:text-6xl">
-                    {heroTitle}
-                  </h1>
-                  <p className="public-body mt-5 text-base sm:text-lg">{heroSubtitle}</p>
+                <div>
+                  <div className="max-w-xl">
+                    <p className="text-sm font-medium text-primary-teal-link">{heroBadge}</p>
+                    <h1 className="public-display mt-3 text-4xl font-semibold leading-[1.05] tracking-tight text-gray-900 sm:text-5xl lg:text-6xl">
+                      {heroTitle}
+                    </h1>
+                    <p className="public-body mt-5 text-base sm:text-lg">{heroSubtitle}</p>
+                  </div>
+                  <div className="mt-8" aria-labelledby="home-pathways-heading">
+                    <p id="home-pathways-heading" className="public-eyebrow">
+                      Start here
+                    </p>
+                    <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      {pathways.map(({ key, eyebrow, title, cta, to }) => {
+                        const cardInner = (
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-gray-500">
+                              {eyebrow}
+                            </span>
+                            <span className="public-display block text-base font-semibold text-gray-900 transition-colors group-hover:text-primary-teal-link motion-reduce:transition-none">
+                              {title}
+                            </span>
+                            <span className="mt-0.5 inline-flex items-center gap-1 text-xs font-semibold text-primary-teal-link">
+                              {cta}
+                              <HiArrowRight
+                                className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none"
+                                aria-hidden
+                              />
+                            </span>
+                          </span>
+                        );
+                        const cardClass =
+                          'group flex h-full items-center rounded-2xl border border-gray-200 bg-white/80 p-4 backdrop-blur transition hover:border-primary-teal/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/50 motion-reduce:transition-none';
+                        return (
+                          <Link key={key} to={to} className={cardClass}>
+                            {cardInner}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
                 <div>
                   <HeroCarousel images={heroImages} />
-                </div>
-              </div>
-              <div
-                className={
-                  premiumSponsorships.length > 0
-                    ? 'mt-10 grid items-stretch gap-6 lg:grid-cols-2 lg:gap-10'
-                    : 'mt-10 max-w-3xl'
-                }
-              >
-                <div aria-labelledby="home-pathways-heading">
-                  <p id="home-pathways-heading" className="public-eyebrow">
-                    Start here
-                  </p>
-                  <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-                    {pathways.map(({ key, eyebrow, title, cta, to }) => {
-                      const cardInner = (
-                        <span className="min-w-0 flex-1">
-                          <span className="block text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-gray-500">
-                            {eyebrow}
-                          </span>
-                          <span className="public-display block text-base font-semibold text-gray-900 transition-colors group-hover:text-primary-teal-link motion-reduce:transition-none">
-                            {title}
-                          </span>
-                          <span className="mt-0.5 inline-flex items-center gap-1 text-xs font-semibold text-primary-teal-link">
-                            {cta}
-                            <HiArrowRight
-                              className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5 motion-reduce:transition-none"
-                              aria-hidden
+                  {premiumSponsorships.length > 0 ? (
+                    <aside className="mt-5" aria-labelledby="home-premium-sponsors-heading">
+                      <p id="home-premium-sponsors-heading" className="text-center text-xs text-gray-600">
+                        Triangle Curling is sponsored by
+                      </p>
+                      <ul className="mt-2.5 flex flex-col items-center justify-center gap-3">
+                        {premiumSponsorships.map((sponsorship, index) => (
+                          <li key={sponsorship.sponsorshipId} className="flex w-full justify-center">
+                            <SponsorLogoLink
+                              sponsorship={sponsorship}
+                              loading={index === 0 ? 'eager' : 'lazy'}
+                              className="flex w-full max-w-full items-center justify-center rounded-lg p-1 transition hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/50 motion-reduce:transition-none"
+                              imgClassName={`h-auto w-auto max-w-full object-contain ${
+                                premiumSponsorships.length === 1
+                                  ? 'max-h-24 sm:max-h-28'
+                                  : 'max-h-16 sm:max-h-20'
+                              }`}
                             />
-                          </span>
-                        </span>
-                      );
-                      const cardClass =
-                        'group flex h-full items-center rounded-2xl border border-gray-200 bg-white/80 p-4 backdrop-blur transition hover:border-primary-teal/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/50 motion-reduce:transition-none';
-                      return (
-                        <Link key={key} to={to} className={cardClass}>
-                          {cardInner}
-                        </Link>
-                      );
-                    })}
-                  </div>
+                          </li>
+                        ))}
+                      </ul>
+                    </aside>
+                  ) : null}
                 </div>
-                {premiumSponsorships.length > 0 ? (
-                  <aside
-                    className="flex h-full min-h-[12rem] flex-col lg:min-h-0"
-                    aria-labelledby="home-premium-sponsors-heading"
-                  >
-                    <p id="home-premium-sponsors-heading" className="text-center text-sm text-gray-600">
-                      Triangle Curling is sponsored by
-                    </p>
-                    <ul className="mt-4 flex flex-1 flex-col items-center justify-center gap-5">
-                      {premiumSponsorships.map((sponsorship, index) => (
-                        <li key={sponsorship.sponsorshipId} className="flex w-full justify-center">
-                          <SponsorLogoLink
-                            sponsorship={sponsorship}
-                            loading={index === 0 ? 'eager' : 'lazy'}
-                            className="flex w-full max-w-full items-center justify-center rounded-lg p-1 transition hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/50 motion-reduce:transition-none"
-                            imgClassName={`h-auto w-auto max-w-full object-contain ${
-                              premiumSponsorships.length === 1
-                                ? 'max-h-40 sm:max-h-52 lg:max-h-56'
-                                : 'max-h-28 sm:max-h-32'
-                            }`}
-                          />
-                        </li>
-                      ))}
-                    </ul>
-                  </aside>
-                ) : null}
               </div>
             </div>
           </section>
