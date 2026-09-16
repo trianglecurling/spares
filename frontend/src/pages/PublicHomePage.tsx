@@ -466,15 +466,20 @@ export default function PublicHomePage() {
     ];
   }, [data?.showcaseImages]);
 
-  const displayedSponsorships = useMemo(
-    () => uniqueLogoSponsorships(data?.currentSponsorships ?? []),
-    [data?.currentSponsorships],
-  );
-
   const premiumSponsorships = useMemo(
     () => premiumSponsorshipsFrom(data?.currentSponsorships ?? []),
     [data?.currentSponsorships],
   );
+
+  const displayedSponsorships = useMemo(() => {
+    const premiumLogoKeys = new Set(
+      premiumSponsorships.map((s) => s.sponsorLogoUrl || `sponsor-${s.sponsorId}`),
+    );
+    return uniqueLogoSponsorships(data?.currentSponsorships ?? []).filter((s) => {
+      const logoKey = s.sponsorLogoUrl || `sponsor-${s.sponsorId}`;
+      return !premiumLogoKeys.has(logoKey);
+    });
+  }, [data?.currentSponsorships, premiumSponsorships]);
 
   useEffect(() => {
     const loadHomeBootstrap = () => {
