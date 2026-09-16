@@ -65,35 +65,92 @@ log() {
   echo "[deploy-cutover] $*"
 }
 
+HEALTH_TIMEOUT_SEC="${DEPLOY_HEALTH_TIMEOUT_SEC:-120}"
+
+normalize_port() {
+  local port="$1"
+  port="${port//$'\r'/}"
+  port="${port%%#*}"
+  port="${port%\"}"
+  port="${port#\"}"
+  port="${port%\'}"
+  port="${port#\'}"
+  port="${port#"${port%%[![:space:]]*}"}"
+  port="${port%"${port##*[![:space:]]}"}"
+  echo "$port"
+}
+
+port_from_line() {
+  local line="$1"
+  line="${line#PORT=}"
+  normalize_port "$line"
+}
+
 read_port() {
   local envfile="$1"
-  local port="3001"
+  local port=""
   local line=""
   if sudo test -f "$envfile"; then
     line="$(sudo grep -E '^PORT=' "$envfile" | tail -n1 || true)"
     if [[ -n "$line" ]]; then
-      port="${line#PORT=}"
-      port="${port%\"}"
-      port="${port#\"}"
-      port="${port%\'}"
-      port="${port#\'}"
+      port="$(port_from_line "$line")"
     fi
   fi
+  if [[ ! "$port" =~ ^[0-9]+$ ]]; then
+    port=""
+  fi
   echo "$port"
+}
+
+read_port_from_service() {
+  local pid=""
+  local line=""
+  local port=""
+  pid="$(sudo "$SYSTEMCTL_BIN" show -p MainPID --value "$UNIT" 2>/dev/null || true)"
+  if [[ -n "$pid" && "$pid" != "0" ]] && sudo test -r "/proc/${pid}/environ"; then
+    line="$(sudo tr '\0' '\n' < "/proc/${pid}/environ" | grep -E '^PORT=' | tail -n1 || true)"
+    if [[ -n "$line" ]]; then
+      port="$(port_from_line "$line")"
+    fi
+  fi
+  if [[ ! "$port" =~ ^[0-9]+$ ]]; then
+    port=""
+  fi
+  echo "$port"
+}
+
+http_health() {
+  local url="$1"
+  if command -v "$CURL_BIN" >/dev/null 2>&1; then
+    "$CURL_BIN" -fsS --max-time 2 "$url"
+  elif command -v wget >/dev/null 2>&1; then
+    wget -q -O - --timeout=2 "$url"
+  else
+    python3 - "$url" << 'PY'
+import sys, urllib.request
+urllib.request.urlopen(sys.argv[1], timeout=2).read()
+PY
+  fi
 }
 
 wait_for_health() {
   local port="$1"
   local url="http://127.0.0.1:${port}/api/health"
+  local attempts="$((HEALTH_TIMEOUT_SEC * 2))"
   local i
-  for i in $(seq 1 60); do
-    if "$CURL_BIN" -fsS --max-time 2 "$url" >/dev/null 2>&1; then
+  local err=""
+  log "Waiting up to ${HEALTH_TIMEOUT_SEC}s for $url"
+  for i in $(seq 1 "$attempts"); do
+    if err="$(http_health "$url" 2>&1)"; then
       log "Health check passed at $url"
       return 0
     fi
+    if (( i == 1 || i % 20 == 0 )); then
+      log "Still waiting for $url (${i}/${attempts}): ${err:-no response}"
+    fi
     sleep 0.5
   done
-  log "Health check failed at $url after 30s"
+  log "Health check failed at $url after ${HEALTH_TIMEOUT_SEC}s: ${err:-no response}"
   return 1
 }
 
@@ -154,44 +211,48 @@ if sudo test -f "$BACKEND_NEXT/.env"; then
   sudo chmod 600 "$BACKEND_NEXT/.env"
 fi
 
-log "Swapping staged release into $APP_ROOT"
-sudo rm -rf "$BACKEND_FAILED" "$DIST_FAILED" "$BACKEND_PREV" "$DIST_PREV"
+log "Swapping staged backend into $APP_ROOT"
+sudo rm -rf "$BACKEND_FAILED" "$BACKEND_PREV"
 
 if [[ -d "$BACKEND" ]]; then
   sudo mv "$BACKEND" "$BACKEND_PREV"
 fi
 sudo mv "$BACKEND_NEXT" "$BACKEND"
 
-if [[ -d "$DIST" ]]; then
-  sudo mv "$DIST" "$DIST_PREV"
-fi
-sudo mv "$DIST_NEXT" "$DIST"
-
 log "Restarting $UNIT"
 sudo "$SYSTEMCTL_BIN" restart "$UNIT"
 
 PORT="$(read_port "$BACKEND/.env")"
+if [[ -z "$PORT" ]]; then
+  PORT="$(read_port_from_service)"
+fi
+if [[ -z "$PORT" ]]; then
+  PORT="3001"
+  log "PORT not found in .env or process environment; defaulting to $PORT"
+fi
+
 if ! wait_for_health "$PORT"; then
-  log "New release failed health checks; rolling back"
+  log "New release failed health checks; rolling back backend"
   sudo "$SYSTEMCTL_BIN" status "$UNIT" --no-pager -l || true
   sudo journalctl -u "$UNIT" -n 80 --no-pager || true
 
-  sudo rm -rf "$BACKEND_FAILED" "$DIST_FAILED"
+  sudo rm -rf "$BACKEND_FAILED"
   if [[ -d "$BACKEND" ]]; then
     sudo mv "$BACKEND" "$BACKEND_FAILED"
   fi
   if [[ -d "$BACKEND_PREV" ]]; then
     sudo mv "$BACKEND_PREV" "$BACKEND"
   fi
-  if [[ -d "$DIST" ]]; then
-    sudo mv "$DIST" "$DIST_FAILED"
-  fi
-  if [[ -d "$DIST_PREV" ]]; then
-    sudo mv "$DIST_PREV" "$DIST"
-  fi
   sudo "$SYSTEMCTL_BIN" restart "$UNIT" || true
   exit 1
 fi
+
+log "Swapping staged frontend into $APP_ROOT"
+sudo rm -rf "$DIST_FAILED" "$DIST_PREV"
+if [[ -d "$DIST" ]]; then
+  sudo mv "$DIST" "$DIST_PREV"
+fi
+sudo mv "$DIST_NEXT" "$DIST"
 
 log "Cutover complete"
 exit 0

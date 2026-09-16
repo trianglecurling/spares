@@ -462,9 +462,9 @@ Monitor deployments in the GitHub Actions tab.
 
 ### Zero-downtime file copy
 
-GitHub Actions no longer stops the systemd unit before copying files. It rsyncs into sibling trees (`backend.next`, `dist.next`) while the current process keeps serving, then `scripts/deploy-cutover.sh` swaps those trees into place and restarts the unit.
+GitHub Actions no longer stops the systemd unit before copying files. It rsyncs into sibling trees (`backend.next`, `dist.next`) while the current process keeps serving, then `scripts/deploy-cutover.sh` swaps the backend tree, restarts the unit, waits for `/api/health` (up to 120s), and only then swaps the frontend.
 
-That removes the 15–30 second outage caused by deleting `node_modules` and rsyncing while the app is down. Remaining downtime is only the process restart (typically a couple of seconds) while Fastify binds the port again.
+That removes the 15–30 second outage caused by deleting `node_modules` and rsyncing while the app is down. Remaining downtime is the process restart until Fastify binds its port. Preview currently takes long enough to load routes and the database that a 30s health timeout was aborting a still-booting (but otherwise good) process and rolling it back.
 
 Persistent files are kept outside the swapped trees:
 
@@ -473,7 +473,7 @@ Persistent files are kept outside the swapped trees:
 
 The first cutover on a host moves the live `backend/data` directory to `shared/data` and replaces it with a symlink while the old process is still running. Do not `systemctl stop` the app for a routine deploy.
 
-If `/api/health` does not succeed after restart, the script moves the new trees aside (`backend.failed`, `dist.failed`), restores the previous trees, and restarts the previous release.
+If `/api/health` does not succeed after restart, the script leaves the frontend in place, moves the new backend aside (`backend.failed`), restores `backend.prev`, and restarts the previous API release.
 
 ## Monitoring
 

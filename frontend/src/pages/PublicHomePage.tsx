@@ -700,8 +700,8 @@ export default function PublicHomePage() {
                               className="flex w-full max-w-full items-center justify-center rounded-lg p-1 transition hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/50 motion-reduce:transition-none"
                               imgClassName={`h-auto w-auto max-w-full object-contain ${
                                 premiumSponsorships.length === 1
-                                  ? 'max-h-24 sm:max-h-28'
-                                  : 'max-h-16 sm:max-h-20'
+                                  ? 'max-h-32 sm:max-h-36 lg:max-h-40'
+                                  : 'max-h-20 sm:max-h-24'
                               }`}
                             />
                           </li>
