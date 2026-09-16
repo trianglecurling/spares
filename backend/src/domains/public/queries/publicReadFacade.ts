@@ -241,6 +241,7 @@ export async function getPublicHomeData() {
         logoChecksumSha256: schema.files.checksum_sha256,
         logoDisplayName: schema.files.display_name,
         logoOriginalFilename: schema.files.original_filename,
+        levelName: schema.sponsorshipLevels.name,
         levelSortOrder: schema.sponsorshipLevels.sort_order,
       })
       .from(schema.sponsorships)
@@ -317,6 +318,7 @@ export async function getPublicHomeData() {
             row.logoChecksumSha256,
           )
         : null,
+      levelName: row.levelName,
       levelSortOrder: row.levelSortOrder,
     })),
     upcomingBonspiels,

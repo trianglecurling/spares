@@ -455,10 +455,25 @@ sudo systemctl start spares-staging
 
 After the initial setup, deployments happen automatically:
 
-1. Push to `main` branch → Deploys to production
-2. Push to `preview` branch → Deploys to staging
+1. Push to `main` branch → Deploys to production (`/srv/tccnc-web-prod`, unit `tccnc-web-prod`)
+2. Push to `preview` branch → Deploys to staging (`/srv/tccnc-web-preview`, unit `tccnc-web-preview`)
 
 Monitor deployments in the GitHub Actions tab.
+
+### Zero-downtime file copy
+
+GitHub Actions no longer stops the systemd unit before copying files. It rsyncs into sibling trees (`backend.next`, `dist.next`) while the current process keeps serving, then `scripts/deploy-cutover.sh` swaps those trees into place and restarts the unit.
+
+That removes the 15–30 second outage caused by deleting `node_modules` and rsyncing while the app is down. Remaining downtime is only the process restart (typically a couple of seconds) while Fastify binds the port again.
+
+Persistent files are kept outside the swapped trees:
+
+- `<app-root>/shared/data` — `db-config.json`, uploads, and other `backend/data` contents (live `backend/data` is a symlink)
+- `<app-root>/backend/.env` — copied into each release so existing `EnvironmentFile=` paths keep working
+
+The first cutover on a host moves the live `backend/data` directory to `shared/data` and replaces it with a symlink while the old process is still running. Do not `systemctl stop` the app for a routine deploy.
+
+If `/api/health` does not succeed after restart, the script moves the new trees aside (`backend.failed`, `dist.failed`), restores the previous trees, and restarts the previous release.
 
 ## Monitoring
 
