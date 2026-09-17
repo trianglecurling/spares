@@ -204,7 +204,16 @@ elif sudo test -f "$SHARED/.env"; then
 fi
 
 # www-data must be able to read the new tree; keep deploy-user ownership.
-sudo chmod -R a+rX "$BACKEND_NEXT" "$DIST_NEXT"
+# Do not chmod node_modules: it may be hard-linked to the live tree.
+sudo chmod a+rX "$BACKEND_NEXT" "$DIST_NEXT"
+sudo chmod -R a+rX "$DIST_NEXT"
+shopt -s nullglob
+for entry in "$BACKEND_NEXT"/*; do
+  if [[ "$(basename "$entry")" != "node_modules" ]]; then
+    sudo chmod -R a+rX "$entry"
+  fi
+done
+shopt -u nullglob
 
 if sudo test -f "$BACKEND_NEXT/.env"; then
   sudo chown "$APP_USER:$APP_USER" "$BACKEND_NEXT/.env"

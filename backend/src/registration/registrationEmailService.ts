@@ -1053,10 +1053,9 @@ export function renderRegistrationEmail(messageType: RegistrationMessageType, pa
           <h3>Billing summary</h3>
           ${billingHtml}
           ${paymentHtml}
-          ${payload.dashboardUrl ? `<p><a href="${escapeHtml(payload.dashboardUrl)}">View your registration status</a></p>` : ''}
           ${paymentAndMembershipContactHtml}
         `,
-        textBody: `Payment reminder\n\nHi ${curlerName},\n\nThis is a reminder that payment is still due for your ${sessionName} ${subjectNoun}.\n\nBilling summary\n${billingText}\n${paymentText ? `\n${paymentText}\n` : ''}${payload.dashboardUrl ? `\nView your registration status: ${payload.dashboardUrl}\n` : ''}\n${paymentAndMembershipContactText}`,
+        textBody: `Payment reminder\n\nHi ${curlerName},\n\nThis is a reminder that payment is still due for your ${sessionName} ${subjectNoun}.\n\nBilling summary\n${billingText}\n${paymentText ? `\n${paymentText}\n` : ''}\n${paymentAndMembershipContactText}`,
       };
     }
     default: {

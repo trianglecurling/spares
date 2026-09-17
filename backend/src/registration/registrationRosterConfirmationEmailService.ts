@@ -771,7 +771,7 @@ export async function getRosterConfirmationEmailPreview(input: {
     paymentUrl,
     paymentLinkPending,
     paymentLinkReuse: isReminder && !paymentUrl,
-    dashboardUrl: await dashboardUrlFor(recipient.registrationId, recipient.memberId),
+    dashboardUrl: isReminder ? null : await dashboardUrlFor(recipient.registrationId, recipient.memberId),
   });
   const rendered = renderRegistrationEmail(isReminder ? 'roster_payment_reminder' : 'roster_confirmation', payload);
   return {
@@ -954,7 +954,7 @@ async function sendOneRosterConfirmationEmail(input: {
   }
   const payload = payloadForRecipient(input.list, recipient, {
     paymentUrl,
-    dashboardUrl: await dashboardUrlFor(recipient.registrationId, recipient.memberId),
+    dashboardUrl: isReminder ? null : await dashboardUrlFor(recipient.registrationId, recipient.memberId),
   });
   const sent = await sendRegistrationEmailForDashboard({
     messageType: isReminder ? 'roster_payment_reminder' : 'roster_confirmation',

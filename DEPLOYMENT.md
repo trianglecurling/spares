@@ -464,6 +464,8 @@ Monitor deployments in the GitHub Actions tab.
 
 GitHub Actions no longer stops the systemd unit before copying files. It rsyncs into sibling trees (`backend.next`, `dist.next`) while the current process keeps serving, then `scripts/deploy-cutover.sh` swaps the backend tree, restarts the unit, waits for `/api/health` (up to 120s), and only then swaps the frontend.
 
+`node_modules` is not rsynced onto the live disk as a tree. If `package.json` matches the running release, the staged tree hard-links the live modules (no copy). Otherwise a tarball is unpacked at idle I/O priority so the live process keeps the disk. Previous-release copies are removed before staging so the VM is not holding three module trees at once.
+
 That removes the 15–30 second outage caused by deleting `node_modules` and rsyncing while the app is down. Remaining downtime is the process restart until Fastify binds its port. Preview currently takes long enough to load routes and the database that a 30s health timeout was aborting a still-booting (but otherwise good) process and rolling it back.
 
 Persistent files are kept outside the swapped trees:

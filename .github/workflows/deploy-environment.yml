@@ -59,6 +59,7 @@ jobs:
           cp backend/package.json /tmp/tccnc-backend-prod/
           cd /tmp/tccnc-backend-prod
           bun install --production --no-save
+          tar -czf /tmp/tccnc-backend-node-modules.tar.gz node_modules
 
       - name: Setup SSH
         run: |
@@ -73,6 +74,17 @@ jobs:
             "APP_ROOT=$(printf '%q' "$APP_ROOT") bash -s" << 'EOF'
             set -euo pipefail
             DEPLOY_USER="$(whoami)"
+            # Drop the previous release before writing a new tree so the live
+            # process is not competing with three copies of node_modules.
+            if command -v ionice >/dev/null 2>&1; then
+              sudo ionice -c 3 nice -n 19 rm -rf "$APP_ROOT/backend.prev" "$APP_ROOT/backend.failed" \
+                "$APP_ROOT/dist.prev" "$APP_ROOT/dist.failed" \
+                "$APP_ROOT/backend.next" "$APP_ROOT/dist.next"
+            else
+              sudo nice -n 19 rm -rf "$APP_ROOT/backend.prev" "$APP_ROOT/backend.failed" \
+                "$APP_ROOT/dist.prev" "$APP_ROOT/dist.failed" \
+                "$APP_ROOT/backend.next" "$APP_ROOT/dist.next"
+            fi
             sudo mkdir -p "$APP_ROOT/dist.next" "$APP_ROOT/backend.next" "$APP_ROOT/shared"
             sudo chown "$DEPLOY_USER:$DEPLOY_USER" "$APP_ROOT" || true
             sudo chown -R "$DEPLOY_USER:$DEPLOY_USER" "$APP_ROOT/dist.next" "$APP_ROOT/backend.next"
@@ -80,7 +92,7 @@ jobs:
 
       - name: Stage frontend
         run: |
-          rsync -avz --delete \
+          rsync -a --delete \
             -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
             --exclude='node_modules' \
             --exclude='.git' \
@@ -88,22 +100,52 @@ jobs:
 
       - name: Stage backend
         run: |
-          rsync -avz --delete \
-            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
+          RSYNC_SSH="ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no"
+          rsync -a --delete \
+            -e "$RSYNC_SSH" \
             --exclude='.git' \
             --exclude='data' \
             --exclude='.env' \
             --exclude='node_modules' \
             backend/dist/ \
             "$SSH_USER@$SSH_HOST:$APP_ROOT/backend.next/"
-          rsync -avz \
-            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
+          rsync -a \
+            -e "$RSYNC_SSH" \
             backend/package.json \
             "$SSH_USER@$SSH_HOST:$APP_ROOT/backend.next/"
-          rsync -avz --delete \
-            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
-            /tmp/tccnc-backend-prod/node_modules/ \
-            "$SSH_USER@$SSH_HOST:$APP_ROOT/backend.next/node_modules/"
+          NODE_MODULES_MODE="$(
+            ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no "$SSH_USER@$SSH_HOST" \
+              "APP_ROOT=$(printf '%q' "$APP_ROOT") bash -s" << 'STAGE_NODE_MODULES'
+            set -euo pipefail
+            rm -rf "$APP_ROOT/backend.next/node_modules"
+            if [[ -f "$APP_ROOT/backend/package.json" \
+              && -d "$APP_ROOT/backend/node_modules" ]] \
+              && cmp -s "$APP_ROOT/backend.next/package.json" "$APP_ROOT/backend/package.json"; then
+              if cp -al "$APP_ROOT/backend/node_modules" "$APP_ROOT/backend.next/node_modules"; then
+                echo HARDLINK
+                exit 0
+              fi
+            fi
+            echo NEED_TAR
+          STAGE_NODE_MODULES
+          )"
+          echo "node_modules staging mode: $NODE_MODULES_MODE"
+          if [[ "$NODE_MODULES_MODE" == *NEED_TAR* ]]; then
+            rsync -a \
+              -e "$RSYNC_SSH" \
+              /tmp/tccnc-backend-node-modules.tar.gz \
+              "$SSH_USER@$SSH_HOST:/tmp/tccnc-backend-node-modules.tar.gz"
+            ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no "$SSH_USER@$SSH_HOST" \
+              "APP_ROOT=$(printf '%q' "$APP_ROOT") bash -s" << 'STAGE_TAR'
+            set -euo pipefail
+            rm -rf "$APP_ROOT/backend.next/node_modules"
+            if command -v ionice >/dev/null 2>&1; then
+              nice -n 19 ionice -c 3 tar -C "$APP_ROOT/backend.next" -xzf /tmp/tccnc-backend-node-modules.tar.gz
+            else
+              nice -n 19 tar -C "$APP_ROOT/backend.next" -xzf /tmp/tccnc-backend-node-modules.tar.gz
+            fi
+          STAGE_TAR
+          fi
 
       - name: Cut over and restart
         run: |
