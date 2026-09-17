@@ -491,6 +491,7 @@ describe('Phase 9 registration email rendering', () => {
       billingBalanceMinor: 15000,
       amountDueMinor: 15000,
       paymentUrl: 'https://squareup.example/pay/abc',
+      dashboardUrl: 'https://example.test/registration/view',
       deadlineText: 'Sunday, September 13, 2026',
     });
 
@@ -500,11 +501,15 @@ describe('Phase 9 registration email rendering', () => {
     expect(rendered.textBody).toContain('Pay now: https://squareup.example/pay/abc');
     expect(rendered.textBody).not.toContain('Payment link will be created when this email is sent.');
     expect(rendered.textBody).not.toContain('Payment is due upon receipt');
+    expect(rendered.textBody).not.toContain('View your registration status');
+    expect(rendered.textBody).not.toContain('https://example.test/registration/view');
     expect(rendered.htmlBody).toContain('https://squareup.example/pay/abc');
     expect(rendered.htmlBody).toContain('Pay now');
     expect(rendered.htmlBody).toContain('background-color: #01B9BC');
     expect(rendered.htmlBody).toContain('padding: 12px 24px');
     expect(rendered.htmlBody).not.toContain('Payment is due upon receipt');
+    expect(rendered.htmlBody).not.toContain('View your registration status');
+    expect(rendered.htmlBody).not.toContain('https://example.test/registration/view');
   });
 
   test('roster payment reminder omits payment due upon receipt', () => {

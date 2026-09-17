@@ -652,10 +652,19 @@ export default function Dashboard() {
     return `${displayHour}:${minutes} ${ampm}`;
   };
 
-  const formatDayOfWeek = (dateStr: string) => {
+  const formatUpcomingGameDate = (dateStr: string) => {
     const [year, month, day] = dateStr.split('-').map(Number);
     const date = new Date(year, month - 1, day);
-    return date.toLocaleDateString('en-US', { weekday: 'long' });
+    const weekday = date.toLocaleDateString('en-US', { weekday: 'long' });
+    const shortMonth = date.toLocaleDateString('en-US', { month: 'short' });
+    const longMonth = date.toLocaleDateString('en-US', { month: 'long' });
+    const monthLabel = shortMonth === longMonth ? shortMonth : `${shortMonth}.`;
+    return (
+      <>
+        <strong>{weekday}</strong>
+        {`, ${monthLabel} ${date.getDate()}`}
+      </>
+    );
   };
 
   const iceLookAheadDays = useMemo(() => {
@@ -1028,8 +1037,8 @@ export default function Dashboard() {
                   >
                     <div className="flex items-center gap-2 text-gray-900 dark:text-gray-100">
                       <HiOutlineCalendarDays className="w-5 h-5 text-primary-teal-link shrinking-0" />
-                      <span className="font-medium">
-                        {game.gameDate ? formatDayOfWeek(game.gameDate) : '—'}
+                      <span>
+                        {game.gameDate ? formatUpcomingGameDate(game.gameDate) : '—'}
                       </span>
                       <span className="text-gray-600 dark:text-gray-400">
                         {game.gameTime ? formatTime(game.gameTime) : '—'}

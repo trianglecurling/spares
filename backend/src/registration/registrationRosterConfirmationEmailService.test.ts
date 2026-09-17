@@ -298,6 +298,7 @@ describe('roster confirmation payload', () => {
       paidMinor: 0,
       balanceMinor: 15000,
       paymentLinkReuse: true,
+      dashboardUrl: 'https://example.test/registration/view',
       deadlineText: 'Sunday, September 13, 2026',
     });
     const rendered = renderRegistrationEmail('roster_payment_reminder', payload);
@@ -307,6 +308,10 @@ describe('roster confirmation payload', () => {
     expect(rendered.subject).toBe('Past due: Payment reminder for your Fall leagues');
     expect(rendered.textBody).toContain('Your existing payment link will be included when this reminder is sent.');
     expect(rendered.textBody).not.toContain('Payment link will be created when this email is sent.');
+    expect(rendered.textBody).not.toContain('View your registration status');
+    expect(rendered.textBody).not.toContain('https://example.test/registration/view');
+    expect(rendered.htmlBody).not.toContain('View your registration status');
+    expect(rendered.htmlBody).not.toContain('https://example.test/registration/view');
   });
 
   test('late roster emails say payment is due upon receipt', () => {
