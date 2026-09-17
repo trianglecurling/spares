@@ -92,9 +92,63 @@ function isGameStillUpcoming(date: string, time: string, now: Date, timeZone: st
   return start.getTime() > now.getTime();
 }
 
+type LeagueRow = {
+  leagueId: number;
+  leagueName: string;
+  dayOfWeek: number;
+  format: string;
+  allowsDropIns: number;
+  teamId: number | null;
+  teamName: string | null;
+  memberName: string;
+};
+
+/**
+ * Active teams in spare-eligible leagues for this session. Being on the team
+ * is enough — do not require a separate active league_roster row.
+ */
+async function loadTeamLeaguesForMember(
+  memberId: number,
+  sessionId: number,
+): Promise<LeagueRow[]> {
+  const { db, schema } = getDrizzleDb();
+  const rows = (await db
+    .select({
+      leagueId: schema.leagues.id,
+      leagueName: schema.leagues.name,
+      dayOfWeek: schema.leagues.day_of_week,
+      format: schema.leagues.format,
+      allowsDropIns: schema.leagues.allows_drop_ins,
+      teamId: schema.leagueTeams.id,
+      teamName: schema.leagueTeams.name,
+      memberName: schema.members.name,
+    })
+    .from(schema.teamMembers)
+    .innerJoin(schema.leagueTeams, eq(schema.teamMembers.team_id, schema.leagueTeams.id))
+    .innerJoin(schema.leagues, eq(schema.leagueTeams.league_id, schema.leagues.id))
+    .innerJoin(schema.members, eq(schema.teamMembers.member_id, schema.members.id))
+    .where(and(eq(schema.teamMembers.member_id, memberId), eq(schema.leagues.session_id, sessionId)))
+    .orderBy(schema.leagues.day_of_week, schema.leagues.name)) as LeagueRow[];
+
+  const byLeague = new Map<number, LeagueRow>();
+  for (const row of rows) {
+    if (!isLeagueEligibleForSpares({ format: row.format, allowsDropIns: row.allowsDropIns })) {
+      continue;
+    }
+    if (!byLeague.has(row.leagueId)) {
+      byLeague.set(row.leagueId, row);
+    }
+  }
+  return [...byLeague.values()];
+}
+
 /**
  * Active, spare-eligible leagues for the member in the relevant session,
  * with teammates and scheduled games for their team.
+ *
+ * Team membership in this session is the source of truth. Active roster rows
+ * without a team are still listed so the form can explain that they need a
+ * team assignment.
  */
 export async function getSpareRequestContextForMember(
   memberId: number,
@@ -107,6 +161,9 @@ export async function getSpareRequestContextForMember(
 
   const { db, schema } = getDrizzleDb();
 
+  const teamLeagues = await loadTeamLeaguesForMember(memberId, sessionId);
+  const teamLeagueIds = new Set(teamLeagues.map((row) => row.leagueId));
+
   const rosterRows = (await db
     .select({
       leagueId: schema.leagues.id,
@@ -114,21 +171,11 @@ export async function getSpareRequestContextForMember(
       dayOfWeek: schema.leagues.day_of_week,
       format: schema.leagues.format,
       allowsDropIns: schema.leagues.allows_drop_ins,
-      teamId: schema.leagueTeams.id,
-      teamName: schema.leagueTeams.name,
       memberName: schema.members.name,
     })
     .from(schema.leagueRoster)
     .innerJoin(schema.leagues, eq(schema.leagueRoster.league_id, schema.leagues.id))
     .innerJoin(schema.members, eq(schema.leagueRoster.member_id, schema.members.id))
-    .leftJoin(schema.teamMembers, eq(schema.leagueRoster.member_id, schema.teamMembers.member_id))
-    .leftJoin(
-      schema.leagueTeams,
-      and(
-        eq(schema.teamMembers.team_id, schema.leagueTeams.id),
-        eq(schema.leagueTeams.league_id, schema.leagueRoster.league_id),
-      ),
-    )
     .where(
       and(
         eq(schema.leagueRoster.member_id, memberId),
@@ -142,25 +189,26 @@ export async function getSpareRequestContextForMember(
     dayOfWeek: number;
     format: string;
     allowsDropIns: number;
-    teamId: number | null;
-    teamName: string | null;
     memberName: string;
   }>;
 
-  const eligible = rosterRows.filter((row) =>
-    isLeagueEligibleForSpares({ format: row.format, allowsDropIns: row.allowsDropIns }),
-  );
-
-  // A member may have team_members rows in other leagues; keep one row per league,
-  // preferring the assignment that matches this league.
-  const dedupedByLeague = new Map<number, (typeof eligible)[number]>();
-  for (const row of eligible) {
-    const existing = dedupedByLeague.get(row.leagueId);
-    if (!existing || (existing.teamId == null && row.teamId != null)) {
-      dedupedByLeague.set(row.leagueId, row);
+  const unassignedRosterLeagues: LeagueRow[] = [];
+  for (const row of rosterRows) {
+    if (teamLeagueIds.has(row.leagueId)) continue;
+    if (!isLeagueEligibleForSpares({ format: row.format, allowsDropIns: row.allowsDropIns })) {
+      continue;
     }
+    unassignedRosterLeagues.push({
+      ...row,
+      teamId: null,
+      teamName: null,
+    });
   }
-  const leaguesForContext = [...dedupedByLeague.values()];
+
+  const leaguesForContext = [...teamLeagues, ...unassignedRosterLeagues].sort((a, b) => {
+    if (a.dayOfWeek !== b.dayOfWeek) return a.dayOfWeek - b.dayOfWeek;
+    return a.leagueName.localeCompare(b.leagueName);
+  });
 
   const teamIds = [
     ...new Set(leaguesForContext.map((row) => row.teamId).filter((id): id is number => id != null)),
@@ -327,8 +375,9 @@ export async function getSpareRequestContextForMember(
 
 /**
  * Resolve teammates for a requester in a league.
- * Returns null when the requester is not on an active roster for that league.
- * Returns { teamId: null, teammates: [] } when rostered but unassigned.
+ * Being on a team in the league is enough; an active roster row is only
+ * required when the member is unassigned.
+ * Returns null when the requester has neither a team nor an active roster row.
  */
 export async function getRequesterTeamContext(
   requesterId: number,
@@ -336,75 +385,77 @@ export async function getRequesterTeamContext(
 ): Promise<{ teamId: number | null; teammates: TeamMateRow[] } | null> {
   const { db, schema } = getDrizzleDb();
 
-  const rosterRows = (await db
+  const [league] = (await db
     .select({
       format: schema.leagues.format,
       allowsDropIns: schema.leagues.allows_drop_ins,
+    })
+    .from(schema.leagues)
+    .where(eq(schema.leagues.id, leagueId))
+    .limit(1)) as Array<{ format: string; allowsDropIns: number }>;
+  if (!league) return null;
+  if (!isLeagueEligibleForSpares({ format: league.format, allowsDropIns: league.allowsDropIns })) {
+    return null;
+  }
+
+  const [assignment] = (await db
+    .select({
       teamId: schema.leagueTeams.id,
     })
-    .from(schema.leagueRoster)
-    .innerJoin(schema.leagues, eq(schema.leagueRoster.league_id, schema.leagues.id))
-    .leftJoin(schema.teamMembers, eq(schema.leagueRoster.member_id, schema.teamMembers.member_id))
-    .leftJoin(
-      schema.leagueTeams,
-      and(
-        eq(schema.teamMembers.team_id, schema.leagueTeams.id),
-        eq(schema.leagueTeams.league_id, schema.leagueRoster.league_id),
-      ),
+    .from(schema.teamMembers)
+    .innerJoin(schema.leagueTeams, eq(schema.teamMembers.team_id, schema.leagueTeams.id))
+    .where(
+      and(eq(schema.teamMembers.member_id, requesterId), eq(schema.leagueTeams.league_id, leagueId)),
     )
+    .limit(1)) as Array<{ teamId: number }>;
+
+  if (assignment?.teamId != null) {
+    const teammates = (await db
+      .select({
+        memberId: schema.teamMembers.member_id,
+        name: schema.members.name,
+        role: schema.teamMembers.role,
+        isSkip: schema.teamMembers.is_skip,
+        isVice: schema.teamMembers.is_vice,
+      })
+      .from(schema.teamMembers)
+      .innerJoin(schema.members, eq(schema.teamMembers.member_id, schema.members.id))
+      .where(eq(schema.teamMembers.team_id, assignment.teamId))) as Array<{
+      memberId: number;
+      name: string;
+      role: string;
+      isSkip: number;
+      isVice: number;
+    }>;
+
+    return {
+      teamId: assignment.teamId,
+      teammates: sortTeammatesByRosterRole(
+        teammates.map((row) => ({
+          memberId: row.memberId,
+          name: row.name,
+          role: row.role || null,
+          sparePosition: sparePositionFromTeamMember({
+            role: row.role,
+            is_skip: row.isSkip,
+            is_vice: row.isVice,
+          }),
+        })),
+      ),
+    };
+  }
+
+  const [roster] = await db
+    .select({ id: schema.leagueRoster.id })
+    .from(schema.leagueRoster)
     .where(
       and(
         eq(schema.leagueRoster.member_id, requesterId),
         eq(schema.leagueRoster.league_id, leagueId),
         eq(schema.leagueRoster.status, 'active'),
       ),
-    )) as Array<{
-    format: string;
-    allowsDropIns: number;
-    teamId: number | null;
-  }>;
-
-  const roster =
-    rosterRows.find((row) => row.teamId != null) ?? rosterRows[0] ?? null;
+    )
+    .limit(1);
   if (!roster) return null;
-  if (!isLeagueEligibleForSpares({ format: roster.format, allowsDropIns: roster.allowsDropIns })) {
-    return null;
-  }
-  if (roster.teamId == null) {
-    return { teamId: null, teammates: [] };
-  }
-
-  const teammates = (await db
-    .select({
-      memberId: schema.teamMembers.member_id,
-      name: schema.members.name,
-      role: schema.teamMembers.role,
-      isSkip: schema.teamMembers.is_skip,
-      isVice: schema.teamMembers.is_vice,
-    })
-    .from(schema.teamMembers)
-    .innerJoin(schema.members, eq(schema.teamMembers.member_id, schema.members.id))
-    .where(eq(schema.teamMembers.team_id, roster.teamId))) as Array<{
-    memberId: number;
-    name: string;
-    role: string;
-    isSkip: number;
-    isVice: number;
-  }>;
-
-  return {
-    teamId: roster.teamId,
-    teammates: sortTeammatesByRosterRole(
-      teammates.map((row) => ({
-        memberId: row.memberId,
-        name: row.name,
-        role: row.role || null,
-        sparePosition: sparePositionFromTeamMember({
-          role: row.role,
-          is_skip: row.isSkip,
-          is_vice: row.isVice,
-        }),
-      })),
-    ),
-  };
+  return { teamId: null, teammates: [] };
 }

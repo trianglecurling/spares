@@ -373,7 +373,7 @@ export default function RequestSpare() {
           description={
             leagueProcessingActive && !memberCanBypassLeagueProcessingHold(member)
               ? LEAGUE_PROCESSING_ROSTER_MESSAGE
-              : 'You need an active roster spot on a team league this session. Instructional and drop-in leagues are not eligible for spare requests.'
+              : 'You need to be on a team in a league this session. Instructional and drop-in leagues are not eligible for spare requests.'
           }
           action={
             <Link to="/dashboard" className="text-sm font-semibold text-primary-teal-link hover:underline">
@@ -387,7 +387,7 @@ export default function RequestSpare() {
         <form onSubmit={handleSubmit} className="app-card space-y-8 p-6">
           <FormSection
             title="Game details"
-            description="Only leagues you are rostered in for this session are listed. Instructional and drop-in leagues are not eligible."
+            description="Only leagues you are on a team for this session are listed. Instructional and drop-in leagues are not eligible."
           >
             {leagues.length === 1 && selectedLeague ? (
               <FormField label="League">

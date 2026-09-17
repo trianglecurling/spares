@@ -84,6 +84,7 @@ import {
 } from '../services/eventTransferService.js';
 import {
   EVENT_CALENDAR_TYPE_IDS,
+  type EventCalendarTypeId,
 } from '../services/eventCalendarTypes.js';
 import {
   EventWaitlistServiceError,
@@ -226,8 +227,15 @@ const registrationFieldSchema = z.object({
 const eventPointOfContactSchema = z.string().trim().min(1).email().max(320);
 
 const eventCalendarTypeIdSchema = z.enum(
-  EVENT_CALENDAR_TYPE_IDS as unknown as [string, ...string[]],
+  EVENT_CALENDAR_TYPE_IDS as unknown as [EventCalendarTypeId, ...EventCalendarTypeId[]],
 );
+
+const publicEventsQuerySchema = z.object({
+  category: z.string().optional(),
+  from: z.string().optional(),
+  to: z.string().optional(),
+  type: eventCalendarTypeIdSchema.optional(),
+});
 
 const tournamentFormatSchema = z.enum(['fours', 'doubles']);
 
@@ -755,14 +763,37 @@ async function getPublicPublishedTournamentDrawEventId(
 // Public routes (no auth required)
 export async function publicEventRoutes(fastify: FastifyInstance): Promise<void> {
   // List published public events
-  fastify.get('/public/events', { schema: { tags: ['events'] } }, async (request, reply) => {
-    const query = request.query as { category?: string; from?: string; to?: string };
+  fastify.get('/public/events', {
+    schema: {
+      tags: ['events'],
+      querystring: {
+        type: 'object',
+        properties: {
+          category: { type: 'string', description: 'Filter by event category slug.' },
+          from: { type: 'string', description: 'Inclusive start of the event date range (ISO).' },
+          to: { type: 'string', description: 'Inclusive end of the event date range (ISO).' },
+          type: {
+            type: 'string',
+            enum: [...EVENT_CALENDAR_TYPE_IDS],
+            description:
+              'Filter to events whose calendar types include this id. Same values as the public events type filter.',
+          },
+        },
+      },
+    },
+  }, async (request, reply) => {
+    const parsedQuery = publicEventsQuerySchema.safeParse(request.query ?? {});
+    if (!parsedQuery.success) {
+      return sendValidationError(reply, 'Invalid event filters', parsedQuery.error.flatten());
+    }
+    const query = parsedQuery.data;
     const events = await listEvents({
       publishedOnly: true,
       visibility: ['public'],
       categorySlug: query.category,
       fromDate: query.from,
       toDate: query.to,
+      calendarTypeId: query.type,
     });
     const capped = events.slice(0, 200);
     reply.header('Cache-Control', 'public, max-age=30');

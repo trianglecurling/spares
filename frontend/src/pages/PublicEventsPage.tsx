@@ -151,42 +151,55 @@ export default function PublicEventsPage() {
   );
 
   useEffect(() => {
-    setLoading(true);
     Promise.allSettled([
-      api.get<EventSummary[]>('/public/events'),
       api.get<PublicSiteConfigResponse>('/public/site-config'),
       api.get<SeasonsWithEventsResponse>('/public/events/seasons'),
       api.get<unknown>('/public/events/categories'),
-    ])
-      .then((results) => {
-        const [evRes, cfgRes, seasonsRes, catRes] = results;
-        if (evRes.status === 'fulfilled' && evRes.value.data) {
-          setEvents(evRes.value.data);
-        } else {
-          setEvents([]);
+    ]).then((results) => {
+      const [cfgRes, seasonsRes, catRes] = results;
+      if (cfgRes.status === 'fulfilled' && cfgRes.value.data) {
+        const m = cfgRes.value.data.fiscalYearStartMmdd;
+        if (typeof m === 'string' && m.trim() !== '') {
+          setFiscalYearStartMmdd(m);
         }
-        if (cfgRes.status === 'fulfilled' && cfgRes.value.data) {
-          const m = cfgRes.value.data.fiscalYearStartMmdd;
-          if (typeof m === 'string' && m.trim() !== '') {
-            setFiscalYearStartMmdd(m);
-          }
-        }
-        if (seasonsRes.status === 'fulfilled' && seasonsRes.value.data?.seasonStartYears) {
-          setSeasonYearsWithEvents(seasonsRes.value.data.seasonStartYears);
-        } else {
-          setSeasonYearsWithEvents([]);
-        }
-        if (catRes.status === 'fulfilled') {
-          const payload = catRes.value.data;
-          const raw = Array.isArray(payload) ? payload : (payload as { data?: unknown } | null)?.data;
-          const rows = normalizeCategoryRows(raw);
-          setCategoryById(new Map(rows.map((c) => [c.id, c.name])));
-        } else {
-          setCategoryById(new Map());
-        }
-      })
-      .finally(() => setLoading(false));
+      }
+      if (seasonsRes.status === 'fulfilled' && seasonsRes.value.data?.seasonStartYears) {
+        setSeasonYearsWithEvents(seasonsRes.value.data.seasonStartYears);
+      } else {
+        setSeasonYearsWithEvents([]);
+      }
+      if (catRes.status === 'fulfilled') {
+        const payload = catRes.value.data;
+        const raw = Array.isArray(payload) ? payload : (payload as { data?: unknown } | null)?.data;
+        const rows = normalizeCategoryRows(raw);
+        setCategoryById(new Map(rows.map((c) => [c.id, c.name])));
+      } else {
+        setCategoryById(new Map());
+      }
+    });
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    const eventsPath = typeFilter
+      ? `/public/events?type=${encodeURIComponent(typeFilter)}`
+      : '/public/events';
+    api
+      .get<EventSummary[]>(eventsPath)
+      .then((res) => {
+        if (!cancelled) setEvents(res.data ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setEvents([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [typeFilter]);
 
   const pastEventOptions: ChoiceOption<PastSeasonValue>[] = useMemo(
     () =>
@@ -201,27 +214,22 @@ export default function PublicEventsPage() {
   const sortedDisplayEvents = useMemo(() => {
     const asOf = Date.now();
 
-    const list = events
-      .filter((e) => {
-        if (!typeFilter) return true;
-        return (e.calendarTypeIds ?? []).includes(typeFilter);
-      })
-      .filter((e) => {
-        if (pastSeasonStartYear === null) {
-          return isUpcomingEventUtc(e.timespans, asOf);
-        }
-        if (!e.timespans || e.timespans.length === 0) {
-          return false;
-        }
-        if (isUpcomingEventUtc(e.timespans, asOf)) {
-          return false;
-        }
-        const { startIso, endIsoExclusive } = getSeasonUtcRangeIso(pastSeasonStartYear, fiscal);
-        return eventOverlapsRangeUtc(e.timespans, startIso, endIsoExclusive);
-      });
+    const list = events.filter((e) => {
+      if (pastSeasonStartYear === null) {
+        return isUpcomingEventUtc(e.timespans, asOf);
+      }
+      if (!e.timespans || e.timespans.length === 0) {
+        return false;
+      }
+      if (isUpcomingEventUtc(e.timespans, asOf)) {
+        return false;
+      }
+      const { startIso, endIsoExclusive } = getSeasonUtcRangeIso(pastSeasonStartYear, fiscal);
+      return eventOverlapsRangeUtc(e.timespans, startIso, endIsoExclusive);
+    });
 
     return list.sort((a, b) => getEarliestStartMs(a.timespans) - getEarliestStartMs(b.timespans));
-  }, [events, pastSeasonStartYear, typeFilter, fiscal]);
+  }, [events, pastSeasonStartYear, fiscal]);
 
   const emptyDescription =
     pastSeasonStartYear === null

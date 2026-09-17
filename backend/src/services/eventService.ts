@@ -12,12 +12,14 @@ import { listConfirmedRegistrationIdsForEvent } from './eventTournamentTeamsServ
 import { sanitizeTournamentDrawJsonForDuplicate } from './eventTournamentDrawService.js';
 import {
   calendarColorTypeId,
+  eventMatchesCalendarType,
   hasBonspielCalendarType,
   isBonspielCalendarType,
   normalizeCalendarTypeIds,
   normalizeTournamentFormat,
   parseCalendarTypeIds,
   serializeCalendarTypeIds,
+  type EventCalendarTypeId,
   type TournamentFormat,
 } from './eventCalendarTypes.js';
 import { EventServiceError } from './eventServiceError.js';
@@ -816,6 +818,7 @@ export async function listEvents(options: {
   categorySlug?: string;
   fromDate?: string;
   toDate?: string;
+  calendarTypeId?: EventCalendarTypeId;
   includeArchived?: boolean;
   eventIds?: number[];
 }) {
@@ -843,6 +846,11 @@ export async function listEvents(options: {
     .from(schema.events)
     .where(conditions.length > 0 ? and(...conditions) : undefined)
     .orderBy(desc(schema.events.created_at));
+
+  const calendarTypeId = options.calendarTypeId;
+  if (calendarTypeId) {
+    eventRows = eventRows.filter((e: any) => eventMatchesCalendarType(e.calendar_type_ids, calendarTypeId));
+  }
 
   if (options.categorySlug) {
     const [cat] = await db

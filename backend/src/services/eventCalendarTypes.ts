@@ -112,6 +112,14 @@ export function parseCalendarTypeIds(raw: string | null | undefined): EventCalen
   return migrateLegacyCalendarTypeId(trimmed).typeIds;
 }
 
+/** True when stored calendar types include `typeId` (JSON array or legacy single id). */
+export function eventMatchesCalendarType(
+  calendarTypeIds: string | null | undefined,
+  typeId: EventCalendarTypeId,
+): boolean {
+  return parseCalendarTypeIds(calendarTypeIds).includes(typeId);
+}
+
 export function hasBonspielCalendarType(ids: readonly string[] | null | undefined): boolean {
   if (!ids || ids.length === 0) return false;
   return ids.includes('bonspiel') || ids.includes('bonspiel-fours') || ids.includes('bonspiel-doubles');

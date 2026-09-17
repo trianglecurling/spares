@@ -960,7 +960,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
     const teamContext = await getRequesterTeamContext(member.id, body.leagueId);
     if (!teamContext) {
       return reply.code(403).send({
-        error: 'You can only request a spare for a league you are actively rostered in.',
+        error: 'You can only request a spare for a league you are on a team in.',
       });
     }
     if (teamContext.teamId == null) {
@@ -1062,17 +1062,13 @@ export async function spareRoutes(fastify: FastifyInstance) {
       const hoursUntilGame = (gameDateTime.getTime() - currentTime.getTime()) / (1000 * 60 * 60);
       isLessThan24Hours = hoursUntilGame < 24;
 
-      // Match based on the selected leagueId (previously inferred by day-of-week, which was too broad)
-      // Parse date string as local date to avoid timezone issues
-      const gameDateObj = new Date(gameYear, gameMonth - 1, gameDay); // month is 0-indexed
+      const gameDateObj = new Date(gameYear, gameMonth - 1, gameDay);
       const dayOfWeekValue = gameDateObj.getDay();
       dayOfWeek = dayOfWeekValue;
 
-      // Validate league exists + matches this date/day
       if (league.day_of_week !== dayOfWeekValue) {
         return reply.code(400).send({ error: 'Selected league does not run on that day' });
       }
-      // Active range check
       const inRangeRows = await db
         .select({ ok: sql<number>`1` })
         .from(schema.leagues)
@@ -1087,7 +1083,6 @@ export async function spareRoutes(fastify: FastifyInstance) {
       if (inRangeRows.length === 0) {
         return reply.code(400).send({ error: 'Selected league is not active on that date' });
       }
-      // Exception date check
       const exceptionRows = await db
         .select({ id: schema.leagueExceptions.id })
         .from(schema.leagueExceptions)
@@ -1321,8 +1316,8 @@ export async function spareRoutes(fastify: FastifyInstance) {
       const publicResult = await startPublicSpareNotifications({
         spareRequestId: requestId,
         leagueId: body.leagueId,
-        gameDate: body.gameDate,
-        gameTime: body.gameTime,
+        gameDate: gameDateValue,
+        gameTime: gameTimeValue,
         position: resolvedPosition,
         requesterId: member.id,
         excludeMemberIds: ccIds,

@@ -2801,6 +2801,49 @@
         "tags": [
           "events"
         ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "category",
+            "required": false,
+            "description": "Filter by event category slug."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "description": "Inclusive start of the event date range (ISO)."
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "description": "Inclusive end of the event date range (ISO)."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "no-experience-necessary",
+                "juniors",
+                "bonspiel"
+              ]
+            },
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "description": "Filter to events whose calendar types include this id. Same values as the public events type filter."
+          }
+        ],
         "responses": {
           "200": {
             "description": "Default Response"

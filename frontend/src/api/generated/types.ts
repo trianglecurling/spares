@@ -2035,7 +2035,16 @@ export interface paths {
         };
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    /** @description Filter by event category slug. */
+                    category?: string;
+                    /** @description Inclusive start of the event date range (ISO). */
+                    from?: string;
+                    /** @description Inclusive end of the event date range (ISO). */
+                    to?: string;
+                    /** @description Filter to events whose calendar types include this id. Same values as the public events type filter. */
+                    type?: "no-experience-necessary" | "juniors" | "bonspiel";
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
