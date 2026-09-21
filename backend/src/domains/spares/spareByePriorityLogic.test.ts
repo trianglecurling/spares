@@ -10,6 +10,7 @@ import {
   decideAfterQueueSend,
   initialPublicListingAt,
   isPublicSpareListable,
+  isPublicSpareVisibleToMember,
   memberIdsForTeams,
 } from './spareByePriorityLogic.js';
 
@@ -223,6 +224,31 @@ describe('initialPublicListingAt / isPublicSpareListable', () => {
         now,
       }),
     ).toBe(false);
+  });
+
+  test('bye-priority recipients see a request before public listing', () => {
+    const hiddenUntil = PUBLIC_LISTING_HIDDEN_UNTIL_BYE_DONE;
+    expect(
+      isPublicSpareVisibleToMember({
+        publicListingAt: hiddenUntil,
+        now,
+        isByePriorityRecipient: true,
+      }),
+    ).toBe(true);
+    expect(
+      isPublicSpareVisibleToMember({
+        publicListingAt: hiddenUntil,
+        now,
+        isByePriorityRecipient: false,
+      }),
+    ).toBe(false);
+    expect(
+      isPublicSpareVisibleToMember({
+        publicListingAt: now,
+        now,
+        isByePriorityRecipient: false,
+      }),
+    ).toBe(true);
   });
 });
 

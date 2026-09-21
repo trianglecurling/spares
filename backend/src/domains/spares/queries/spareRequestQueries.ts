@@ -152,8 +152,19 @@ export async function listAvailableSpareRequestsForMember(member: Member) {
       isNull(schema.spareRequests.requested_for_member_id),
       ne(schema.spareRequests.requested_for_member_id, member.id),
     )!,
-    // Hide during bye-priority window; null = legacy requests (treat as visible).
-    or(isNull(schema.spareRequests.public_listing_at), lte(schema.spareRequests.public_listing_at, now))!,
+    // Hide from the general dashboard during the bye-priority window (null = legacy, visible).
+    // Bye-priority queue members still see it so the email Accept link can open it.
+    or(
+      isNull(schema.spareRequests.public_listing_at),
+      lte(schema.spareRequests.public_listing_at, now),
+      sql`EXISTS (
+        SELECT 1
+        FROM ${schema.spareRequestNotificationQueue}
+        WHERE ${schema.spareRequestNotificationQueue.spare_request_id} = ${schema.spareRequests.id}
+          AND ${schema.spareRequestNotificationQueue.member_id} = ${member.id}
+          AND ${schema.spareRequestNotificationQueue.is_bye_priority} = 1
+      )`,
+    )!,
   ];
 
   if (!canSkip) {

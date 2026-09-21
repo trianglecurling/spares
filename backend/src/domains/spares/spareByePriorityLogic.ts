@@ -119,7 +119,7 @@ export function initialPublicListingAt(params: {
   return params.now;
 }
 
-/** Whether a public spare should appear on member dashboards. */
+/** Whether a public spare should appear on the general dashboard. */
 export function isPublicSpareListable(params: {
   publicListingAt: Date | string | null | undefined;
   now: Date;
@@ -136,6 +136,20 @@ export function isPublicSpareListable(params: {
     return true;
   }
   return listingAt.getTime() <= params.now.getTime();
+}
+
+/**
+ * Dashboard visibility for one member.
+ * Bye-priority recipients can see and accept the request during the exclusive window.
+ * Everyone else waits until public listing.
+ */
+export function isPublicSpareVisibleToMember(params: {
+  publicListingAt: Date | string | null | undefined;
+  now: Date;
+  isByePriorityRecipient: boolean;
+}): boolean {
+  if (params.isByePriorityRecipient) return true;
+  return isPublicSpareListable(params);
 }
 
 export type AfterQueueSendDecision =
