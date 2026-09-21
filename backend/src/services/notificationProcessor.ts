@@ -5,10 +5,16 @@ import { getCurrentTimeAsync } from '../utils/time.js';
 import { eq, and, or, sql, asc, isNull, lte, lt } from 'drizzle-orm';
 import { sendOnceWithDeliveryClaim } from './spareRequestDelivery.js';
 import { BYE_PRIORITY_WAIT_MS } from '../domains/spares/spareNotificationConstants.js';
-import { decideAfterQueueSend } from '../domains/spares/spareByePriorityLogic.js';
+import {
+  decideAfterQueueSend,
+  generalPoolEmailsAllowed,
+  isByeBatchListingPlaceholder,
+} from '../domains/spares/spareByePriorityLogic.js';
 
 let lastDbErrorLogAt = 0;
 const DB_ERROR_LOG_THROTTLE_MS = 30_000;
+/** One queue email at a time in this process, so the bye hold is saved before the next row is claimed. */
+let notificationProcessorActive = false;
 
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
@@ -51,6 +57,7 @@ interface SpareRequest {
   notification_status: string | null;
   next_notification_at: string | null;
   notification_generation?: number | null;
+  public_listing_at?: Date | string | null;
 }
 
 type QueueMemberRow = {
@@ -295,10 +302,95 @@ async function scheduleAfterQueueSend(params: {
     nextNotificationTime = new Date();
   }
 
+  if (decision.kind === 'continue_bye_immediately') {
+    // Keep the bye batch due now, including when an earlier hold was saved before the last bye-priority email.
+    await db
+      .update(schema.spareRequests)
+      .set({ next_notification_at: nextNotificationTime })
+      .where(eq(schema.spareRequests.id, spareRequestId));
+    return;
+  }
+
+  // Do not let this stagger replace a bye hold that is already further in the future.
   await db
     .update(schema.spareRequests)
     .set({ next_notification_at: nextNotificationTime })
-    .where(eq(schema.spareRequests.id, spareRequestId));
+    .where(
+      and(
+        eq(schema.spareRequests.id, spareRequestId),
+        or(
+          isNull(schema.spareRequests.next_notification_at),
+          lte(schema.spareRequests.next_notification_at, nextNotificationTime),
+        )!,
+      ),
+    );
+}
+
+/**
+ * The recipient query found nobody it is allowed to email.
+ * General-pool members are omitted from that query until public_listing_at.
+ * If they are the only people left, save the one-hour hold instead of treating the list as finished.
+ */
+async function whenNoEligibleRecipient(spareRequestId: number, nowDate: Date): Promise<void> {
+  const { db, schema } = getDrizzleDb();
+  const remaining = await db
+    .select({ is_bye_priority: schema.spareRequestNotificationQueue.is_bye_priority })
+    .from(schema.spareRequestNotificationQueue)
+    .where(
+      and(
+        eq(schema.spareRequestNotificationQueue.spare_request_id, spareRequestId),
+        isNull(schema.spareRequestNotificationQueue.notified_at),
+      ),
+    );
+
+  if (remaining.length === 0) {
+    await markRequestNotificationsCompleted(spareRequestId, nowDate);
+    return;
+  }
+
+  if (remaining.some((row) => row.is_bye_priority === 1)) {
+    return;
+  }
+
+  const listingRows = await db
+    .select({ public_listing_at: schema.spareRequests.public_listing_at })
+    .from(schema.spareRequests)
+    .where(eq(schema.spareRequests.id, spareRequestId))
+    .limit(1);
+  const listingAt = listingRows[0]?.public_listing_at ?? null;
+
+  if (listingAt == null || isByeBatchListingPlaceholder(listingAt)) {
+    const holdEndsAt = new Date(nowDate.getTime() + BYE_PRIORITY_WAIT_MS);
+    await db
+      .update(schema.spareRequests)
+      .set({
+        next_notification_at: holdEndsAt,
+        public_listing_at: holdEndsAt,
+      })
+      .where(eq(schema.spareRequests.id, spareRequestId));
+    console.log(
+      `[Notification Processor] General-pool emails for request ${spareRequestId} wait until ${holdEndsAt.toISOString()}`,
+    );
+    return;
+  }
+
+  const listingDate = listingAt instanceof Date ? listingAt : new Date(listingAt);
+  if (Number.isNaN(listingDate.getTime()) || listingDate.getTime() <= nowDate.getTime()) {
+    return;
+  }
+
+  await db
+    .update(schema.spareRequests)
+    .set({ next_notification_at: listingDate })
+    .where(
+      and(
+        eq(schema.spareRequests.id, spareRequestId),
+        or(
+          isNull(schema.spareRequests.next_notification_at),
+          lte(schema.spareRequests.next_notification_at, listingDate),
+        )!,
+      ),
+    );
 }
 
 /**
@@ -306,6 +398,10 @@ async function scheduleAfterQueueSend(params: {
  * This function should be called periodically (e.g., every minute) to process pending notifications.
  */
 export async function processNextNotification(): Promise<void> {
+  if (notificationProcessorActive) {
+    return;
+  }
+  notificationProcessorActive = true;
   try {
     const { db, schema } = getDrizzleDb();
     const now = await getCurrentTimeAsync();
@@ -335,6 +431,10 @@ export async function processNextNotification(): Promise<void> {
     const spareRequest = pendingRequests[0];
     const claimTimeoutMs = 10 * 60 * 1000;
     const claimExpiredBefore = new Date(nowDate.getTime() - claimTimeoutMs);
+    const generalPoolAllowed = generalPoolEmailsAllowed({
+      publicListingAt: spareRequest.public_listing_at,
+      now: nowDate,
+    });
 
     const nextInQueueResults = await db
       .select({
@@ -363,7 +463,8 @@ export async function processNextNotification(): Promise<void> {
           or(
             isNull(schema.spareRequestNotificationQueue.claimed_at),
             lt(schema.spareRequestNotificationQueue.claimed_at, claimExpiredBefore)
-          )!
+          )!,
+          generalPoolAllowed ? undefined : eq(schema.spareRequestNotificationQueue.is_bye_priority, 1),
         )
       )
       .orderBy(asc(schema.spareRequestNotificationQueue.queue_order))
@@ -372,7 +473,7 @@ export async function processNextNotification(): Promise<void> {
     const nextInQueue = nextInQueueResults[0] as QueueMemberRow | undefined;
 
     if (!nextInQueue) {
-      await markRequestNotificationsCompleted(spareRequest.id, nowDate);
+      await whenNoEligibleRecipient(spareRequest.id, nowDate);
       return;
     }
 
@@ -407,6 +508,8 @@ export async function processNextNotification(): Promise<void> {
       return;
     }
 
+    const recipientIsByePriority = nextInQueue.is_bye_priority === 1;
+
     console.log(
       `[Notification Processor] Sending notification to member ${nextInQueue.member_id} (${nextInQueue.name}) for request ${spareRequest.id}`
     );
@@ -428,7 +531,7 @@ export async function processNextNotification(): Promise<void> {
 
     await scheduleAfterQueueSend({
       spareRequestId: spareRequest.id,
-      processedWasByePriority: nextInQueue.is_bye_priority === 1,
+      processedWasByePriority: recipientIsByePriority,
       nowDate,
     });
   } catch (error) {
@@ -442,6 +545,8 @@ export async function processNextNotification(): Promise<void> {
     }
 
     throw error;
+  } finally {
+    notificationProcessorActive = false;
   }
 }
 
@@ -467,6 +572,11 @@ export async function processAllNotificationsForRequest(spareRequestId: number):
       if (!spareRequest) {
         return;
       }
+
+      const generalPoolAllowed = generalPoolEmailsAllowed({
+        publicListingAt: spareRequest.public_listing_at,
+        now: nowDate,
+      });
 
       if (spareRequest.status !== 'open') {
         await db
@@ -509,7 +619,8 @@ export async function processAllNotificationsForRequest(spareRequestId: number):
             or(
               isNull(schema.spareRequestNotificationQueue.claimed_at),
               lt(schema.spareRequestNotificationQueue.claimed_at, claimExpiredBefore)
-            )!
+            )!,
+            generalPoolAllowed ? undefined : eq(schema.spareRequestNotificationQueue.is_bye_priority, 1),
           )
         )
         .orderBy(asc(schema.spareRequestNotificationQueue.queue_order))
@@ -518,7 +629,7 @@ export async function processAllNotificationsForRequest(spareRequestId: number):
       const nextInQueue = nextInQueueResults[0] as QueueMemberRow | undefined;
 
       if (!nextInQueue) {
-        await markRequestNotificationsCompleted(spareRequest.id, nowDate);
+        await whenNoEligibleRecipient(spareRequest.id, nowDate);
         return;
       }
 

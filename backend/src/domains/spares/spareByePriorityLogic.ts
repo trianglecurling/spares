@@ -119,7 +119,7 @@ export function initialPublicListingAt(params: {
   return params.now;
 }
 
-/** Whether a public spare should appear on member dashboards. */
+/** Whether a public spare should appear on the general dashboard. */
 export function isPublicSpareListable(params: {
   publicListingAt: Date | string | null | undefined;
   now: Date;
@@ -136,6 +136,20 @@ export function isPublicSpareListable(params: {
     return true;
   }
   return listingAt.getTime() <= params.now.getTime();
+}
+
+/**
+ * Dashboard visibility for one member.
+ * Bye-priority recipients can see and accept the request during the exclusive window.
+ * Everyone else waits until public listing.
+ */
+export function isPublicSpareVisibleToMember(params: {
+  publicListingAt: Date | string | null | undefined;
+  now: Date;
+  isByePriorityRecipient: boolean;
+}): boolean {
+  if (params.isByePriorityRecipient) return true;
+  return isPublicSpareListable(params);
 }
 
 export type AfterQueueSendDecision =
@@ -178,4 +192,42 @@ export function decideAfterQueueSend(params: {
     kind: 'stagger_delay',
     delaySeconds: params.staggerDelaySeconds,
   };
+}
+
+/**
+ * True when `proposed` is the same instant or later than `current`.
+ * A general-pool stagger must not replace a one-hour bye hold that is already saved.
+ */
+export function canReplaceNextNotificationAt(current: Date | null, proposed: Date): boolean {
+  if (current == null || Number.isNaN(current.getTime())) return true;
+  if (Number.isNaN(proposed.getTime())) return false;
+  return proposed.getTime() >= current.getTime();
+}
+
+function toListingDate(value: Date | string | null | undefined): Date | null {
+  if (value == null) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date;
+}
+
+/** The far-future listing timestamp means the bye batch has not finished scheduling the hold. */
+export function isByeBatchListingPlaceholder(value: Date | string | null | undefined): boolean {
+  const listingAt = toListingDate(value);
+  if (listingAt == null) return false;
+  return listingAt.getUTCFullYear() >= 2099 || listingAt.getFullYear() >= 2099;
+}
+
+/**
+ * General-pool emails wait until `public_listing_at`.
+ * For a bye hold, that timestamp is one hour after the last bye-priority email.
+ * Null is a legacy row with no hold, so those emails can go out.
+ */
+export function generalPoolEmailsAllowed(params: {
+  publicListingAt: Date | string | null | undefined;
+  now: Date;
+}): boolean {
+  const listingAt = toListingDate(params.publicListingAt);
+  if (listingAt == null) return true;
+  return listingAt.getTime() <= params.now.getTime();
 }
