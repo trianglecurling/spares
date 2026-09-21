@@ -6,8 +6,10 @@ import {
   PUBLIC_LISTING_HIDDEN_UNTIL_BYE_DONE,
   buildPublicSpareRecipientPools,
   buildUnavailableMemberIds,
+  canReplaceNextNotificationAt,
   computeByeTeamIds,
   decideAfterQueueSend,
+  generalPoolEmailsAllowed,
   initialPublicListingAt,
   isPublicSpareListable,
   isPublicSpareVisibleToMember,
@@ -310,5 +312,43 @@ describe('decideAfterQueueSend', () => {
 
   test('bye wait defaults to one hour', () => {
     expect(BYE_PRIORITY_WAIT_MS).toBe(60 * 60 * 1000);
+  });
+});
+
+describe('canReplaceNextNotificationAt', () => {
+  const hourLater = new Date('2026-09-22T02:49:00.000Z');
+  const tenSecondsLater = new Date('2026-09-22T01:49:40.000Z');
+
+  test('allows a one-hour bye hold to replace an immediate next-email time', () => {
+    expect(canReplaceNextNotificationAt(new Date('2026-09-22T01:49:30.000Z'), hourLater)).toBe(true);
+    expect(canReplaceNextNotificationAt(null, hourLater)).toBe(true);
+  });
+
+  test('refuses a general-pool stagger that would replace a later bye hold', () => {
+    expect(canReplaceNextNotificationAt(hourLater, tenSecondsLater)).toBe(false);
+  });
+});
+
+describe('generalPoolEmailsAllowed', () => {
+  const now = new Date('2026-09-22T01:49:35.000Z');
+
+  test('blocks general-pool emails until the listing time, including the bye-batch placeholder', () => {
+    expect(
+      generalPoolEmailsAllowed({
+        publicListingAt: PUBLIC_LISTING_HIDDEN_UNTIL_BYE_DONE,
+        now,
+      }),
+    ).toBe(false);
+    expect(
+      generalPoolEmailsAllowed({
+        publicListingAt: new Date(now.getTime() + BYE_PRIORITY_WAIT_MS),
+        now,
+      }),
+    ).toBe(false);
+  });
+
+  test('allows general-pool emails once the listing time has arrived', () => {
+    expect(generalPoolEmailsAllowed({ publicListingAt: now, now })).toBe(true);
+    expect(generalPoolEmailsAllowed({ publicListingAt: null, now })).toBe(true);
   });
 });

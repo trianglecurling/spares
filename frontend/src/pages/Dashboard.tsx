@@ -34,6 +34,10 @@ import { useLeagueOptions } from '../contexts/LeagueOptionsContext';
 import { formatPhone } from '../utils/phone';
 import { renderMe } from '../utils/me';
 import {
+  spareRequestDeepLinkAlert,
+  spareRequestDeepLinkLoadErrorAlert,
+} from '../utils/spareRequestDeepLinkMessage';
+import {
   LEAGUE_PROCESSING_ROSTER_MESSAGE,
   memberCanBypassLeagueProcessingHold,
 } from '../utils/leagueProcessing';
@@ -368,28 +372,10 @@ export default function Dashboard() {
         (async () => {
           try {
             const res = await get('/spares/{id}/status', undefined, { id: String(requestId) });
-            const status = res?.status || 'unknown';
-
-            const message =
-              status === 'filled'
-                ? 'Sorry, this spare request has already been filled. See your dashboard for any unfilled spare requests.'
-                : 'Sorry, this spare request has been deleted and is no longer available. See your dashboard for any unfilled spare requests.';
-
-            showAlert(message, 'error');
+            showAlert(spareRequestDeepLinkAlert(res?.status), 'error');
           } catch (error: unknown) {
             const status = axios.isAxiosError(error) ? error.response?.status : undefined;
-            // 404 -> deleted; 403 -> not available to this user (treat as deleted for UX)
-            if (status === 404 || status === 403) {
-              showAlert(
-                'Sorry, this spare request has been deleted and is no longer available. See your dashboard for any unfilled spare requests.',
-                'error'
-              );
-            } else {
-              showAlert(
-                'Sorry, we could not load that spare request. See your dashboard for any unfilled spare requests.',
-                'error'
-              );
-            }
+            showAlert(spareRequestDeepLinkLoadErrorAlert(status), 'error');
           } finally {
             searchParams.delete('requestId');
             setSearchParams(searchParams, { replace: true });
