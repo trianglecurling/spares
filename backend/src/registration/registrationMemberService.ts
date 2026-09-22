@@ -35,6 +35,8 @@ import {
   waitlistEntryRosterMemberIds,
   waitlistRosterEntries,
 } from './waitlistTeamRoster.js';
+import { remainingDueMinor } from './registrationBillingMath.js';
+import { computeRegistrationNetPaidMinor } from './registrationBillingService.js';
 
 export class RegistrationMemberValidationError extends Error {
   constructor(public details: Record<string, string>) {
@@ -196,6 +198,33 @@ export function registrationAmountPaidMinor(input: {
     return input.invoiceTotalMinor ?? null;
   }
   return null;
+}
+
+/** Prefer settled payment activity, then a paid invoice snapshot, for display totals. */
+export function registrationDisplayedPaymentAmounts(input: {
+  invoiceStatus?: string | null;
+  invoiceTotalMinor?: number | null;
+  registrationStatus?: string | null;
+  paidMinor?: number | null;
+}): { amountDueMinor: number | null; amountPaidMinor: number | null } {
+  const paidMinor = Math.max(0, Math.round(input.paidMinor ?? 0));
+  const invoicePaidMinor = registrationAmountPaidMinor(input);
+  const amountPaidMinor = paidMinor > 0 ? paidMinor : invoicePaidMinor;
+  const amountDueMinor = registrationAmountDueMinor(input);
+  if (
+    amountDueMinor == null ||
+    input.invoiceTotalMinor == null ||
+    input.registrationStatus === 'cancelled' ||
+    input.invoiceStatus === 'cancelled' ||
+    input.invoiceStatus === 'refunded' ||
+    input.invoiceStatus === 'paid'
+  ) {
+    return { amountDueMinor, amountPaidMinor };
+  }
+  return {
+    amountDueMinor: remainingDueMinor(input.invoiceTotalMinor, paidMinor),
+    amountPaidMinor,
+  };
 }
 
 async function resolveMemberFacingPaymentLink(input: {
@@ -691,6 +720,15 @@ export async function getMemberRegistrationDetail(registrationId: number, actor:
   const order = invoice?.payment_order_id
     ? (await db.select().from(schema.paymentOrders).where(eq(schema.paymentOrders.id, invoice.payment_order_id)).limit(1))[0]
     : null;
+  const paidMinor = await computeRegistrationNetPaidMinor(registrationId);
+  const displayedPayment = registrationDisplayedPaymentAmounts({
+    invoiceStatus: invoice?.status,
+    invoiceTotalMinor: invoice?.total_minor,
+    registrationStatus: registration.status,
+    paidMinor,
+  });
+  const remainingDue =
+    displayedPayment.amountDueMinor == null ? 0 : displayedPayment.amountDueMinor;
   const canEditDuringPriority = await canEditRegistrationDuringPriority(actor, shellRegistration);
   const canCancelDuringPriority = await canCancelRegistrationDuringPriority(actor, shellRegistration);
   const playInEntry: Record<number, Awaited<ReturnType<typeof evaluateRegistrantPlayInEntry>>> = {};
@@ -776,20 +814,19 @@ export async function getMemberRegistrationDetail(registrationId: number, actor:
     byotEntry,
     waitlists: waitlistDetails,
     payment: {
-      status: invoice?.status ?? (registration.status === 'confirmed' ? 'paid' : 'not_required'),
-      amountDueMinor: registrationAmountDueMinor({
-        invoiceStatus: invoice?.status,
-        invoiceTotalMinor: invoice?.total_minor,
-        registrationStatus: registration.status,
-      }),
-      amountPaidMinor: registrationAmountPaidMinor({
-        invoiceStatus: invoice?.status,
-        invoiceTotalMinor: invoice?.total_minor,
-      }),
-      paymentLink: await resolveMemberFacingPaymentLink({
-        registrationStatus: registration.status,
-        paymentLink: order?.status === 'pending' ? hostedCheckoutUrl(order.metadata) : null,
-      }),
+      status:
+        remainingDue <= 0 && paidMinor > 0
+          ? 'paid'
+          : invoice?.status ?? (registration.status === 'confirmed' ? 'paid' : 'not_required'),
+      amountDueMinor: displayedPayment.amountDueMinor,
+      amountPaidMinor: displayedPayment.amountPaidMinor,
+      paymentLink:
+        remainingDue > 0
+          ? await resolveMemberFacingPaymentLink({
+              registrationStatus: registration.status,
+              paymentLink: order?.status === 'pending' ? hostedCheckoutUrl(order.metadata) : null,
+            })
+          : null,
       deferredReason: invoice?.deferred_reason ?? null,
     },
     communications: await listRegistrationOutboundMessages({ registrationId, limit: 25 }),

@@ -1,5 +1,81 @@
 import { describe, expect, test } from 'bun:test';
-import { groupPaymentActivityByRegistration } from './paymentSummaries.js';
+import {
+  groupPaymentActivityByRegistration,
+  mapCanceledSiblingPaymentsToLiveRegistrations,
+  remapPaymentOrderSubjectToRequestedRegistrations,
+} from './paymentSummaries.js';
+
+describe('mapCanceledSiblingPaymentsToLiveRegistrations', () => {
+  test('credits a canceled payment onto the unique live registration in the same session', () => {
+    const mapped = mapCanceledSiblingPaymentsToLiveRegistrations({
+      requestedRegistrations: [
+        { id: 20, curlerMemberId: 7, sessionId: 3, status: 'awaiting_payment' },
+      ],
+      canceledSiblings: [{ id: 10, curlerMemberId: 7, sessionId: 3, cancelledAt: '2026-08-23T14:51:11Z' }],
+    });
+    expect(mapped.get(10)).toBe(20);
+  });
+
+  test('only credits the most recently canceled sibling, not earlier test checkouts', () => {
+    const mapped = mapCanceledSiblingPaymentsToLiveRegistrations({
+      requestedRegistrations: [
+        { id: 20, curlerMemberId: 7, sessionId: 3, status: 'confirmed' },
+      ],
+      canceledSiblings: [
+        { id: 10, curlerMemberId: 7, sessionId: 3, cancelledAt: '2026-06-06T15:40:55Z' },
+        { id: 16, curlerMemberId: 7, sessionId: 3, cancelledAt: '2026-08-23T14:51:11Z' },
+      ],
+    });
+    expect(mapped.get(16)).toBe(20);
+    expect(mapped.has(10)).toBe(false);
+  });
+
+  test('does not credit when two live registrations share the curler and session', () => {
+    const mapped = mapCanceledSiblingPaymentsToLiveRegistrations({
+      requestedRegistrations: [
+        { id: 20, curlerMemberId: 7, sessionId: 3, status: 'confirmed' },
+        { id: 21, curlerMemberId: 7, sessionId: 3, status: 'awaiting_payment' },
+      ],
+      canceledSiblings: [{ id: 10, curlerMemberId: 7, sessionId: 3 }],
+    });
+    expect(mapped.has(10)).toBe(false);
+  });
+
+  test('does not credit a different curler or session', () => {
+    const mapped = mapCanceledSiblingPaymentsToLiveRegistrations({
+      requestedRegistrations: [
+        { id: 20, curlerMemberId: 7, sessionId: 3, status: 'confirmed' },
+      ],
+      canceledSiblings: [
+        { id: 10, curlerMemberId: 8, sessionId: 3 },
+        { id: 11, curlerMemberId: 7, sessionId: 4 },
+      ],
+    });
+    expect(mapped.size).toBe(0);
+  });
+});
+
+describe('remapPaymentOrderSubjectToRequestedRegistrations', () => {
+  test('keeps a direct live link and adds the remapped canceled sibling', () => {
+    expect(
+      remapPaymentOrderSubjectToRequestedRegistrations({
+        subjectId: 10,
+        requestedIds: new Set([20]),
+        canceledToLive: new Map([[10, 20]]),
+      }),
+    ).toEqual([20]);
+  });
+
+  test('still shows activity on the canceled registration itself', () => {
+    expect(
+      remapPaymentOrderSubjectToRequestedRegistrations({
+        subjectId: 10,
+        requestedIds: new Set([10]),
+        canceledToLive: new Map([[10, 20]]),
+      }),
+    ).toEqual([10]);
+  });
+});
 
 describe('groupPaymentActivityByRegistration', () => {
   test('assigns subject and invoice-linked orders to the matching registration only', () => {

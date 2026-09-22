@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { registrationAmountDueMinor, registrationAmountPaidMinor } from './registrationMemberService.js';
+import {
+  registrationAmountDueMinor,
+  registrationAmountPaidMinor,
+  registrationDisplayedPaymentAmounts,
+} from './registrationMemberService.js';
 
 describe('registrationAmountDueMinor', () => {
   test('returns the invoice total while payment is still outstanding', () => {
@@ -57,5 +61,29 @@ describe('registrationAmountPaidMinor', () => {
         invoiceTotalMinor: 12500,
       }),
     ).toBeNull();
+  });
+});
+
+describe('registrationDisplayedPaymentAmounts', () => {
+  test('uses settled activity so a sibling payment covers an unpaid invoice', () => {
+    expect(
+      registrationDisplayedPaymentAmounts({
+        invoiceStatus: 'awaiting_payment',
+        invoiceTotalMinor: 45800,
+        registrationStatus: 'awaiting_payment',
+        paidMinor: 45800,
+      }),
+    ).toEqual({ amountDueMinor: 0, amountPaidMinor: 45800 });
+  });
+
+  test('keeps a remaining balance when activity only covers part of the invoice', () => {
+    expect(
+      registrationDisplayedPaymentAmounts({
+        invoiceStatus: 'awaiting_payment',
+        invoiceTotalMinor: 45800,
+        registrationStatus: 'awaiting_payment',
+        paidMinor: 20800,
+      }),
+    ).toEqual({ amountDueMinor: 25000, amountPaidMinor: 20800 });
   });
 });
