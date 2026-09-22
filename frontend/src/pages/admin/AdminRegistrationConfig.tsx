@@ -22,6 +22,7 @@ import AdminRegistrationQa from './AdminRegistrationQa';
 import AdminRegistrationQaRequestedLeagues from './AdminRegistrationQaRequestedLeagues';
 import AdminRegistrationQaReturningMembers from './AdminRegistrationQaReturningMembers';
 import AdminRegistrationQaSabbaticals from './AdminRegistrationQaSabbaticals';
+import AdminRegistrationSpecialLinks from './AdminRegistrationSpecialLinks';
 import type { paths } from '../../api/generated/types';
 
 type RegistrationState = 'closed' | 'priority' | 'open';
@@ -102,7 +103,7 @@ interface PaymentDeadline {
   paymentDeadlineAt: string;
 }
 
-type PrimaryTab = 'summary' | 'list' | 'billing' | 'roster-emails' | 'qa' | 'settings';
+type PrimaryTab = 'summary' | 'list' | 'billing' | 'roster-emails' | 'qa' | 'special-links' | 'settings';
 type TabKey = 'seasons' | 'sessions' | 'periods' | 'prices' | 'discounts';
 type QaTabKey = 'returning-members' | 'league-return' | 'requested-leagues' | 'sabbaticals';
 
@@ -291,6 +292,13 @@ export default function AdminRegistrationConfig() {
         primaryTab: 'qa' as PrimaryTab,
         activeTab: 'seasons' as TabKey,
         qaTab: isQaTabKey(next) ? next : ('returning-members' as QaTabKey),
+      };
+    }
+    if (after[0] === 'special-links') {
+      return {
+        primaryTab: 'special-links' as PrimaryTab,
+        activeTab: 'seasons' as TabKey,
+        qaTab: 'returning-members' as QaTabKey,
       };
     }
     if (after[0] === 'settings') {
@@ -816,6 +824,15 @@ export default function AdminRegistrationConfig() {
           : `/admin/registrations/qa/returning-members${sessionQuery}`,
       isActive: primaryTab === 'qa',
     },
+    {
+      key: 'special-links',
+      label: 'Special links',
+      to:
+        primaryTab === 'special-links'
+          ? `${location.pathname}${location.search}`
+          : `/admin/registrations/special-links${sessionQuery}`,
+      isActive: primaryTab === 'special-links',
+    },
     ...(canManageConfig
       ? [
           {
@@ -856,6 +873,8 @@ export default function AdminRegistrationConfig() {
           ? 'Preview and send league roster confirmation emails, payment links, and unpaid payment reminders.'
           : primaryTab === 'qa'
           ? QA_TAB_DESCRIPTIONS[qaTab]
+          : primaryTab === 'special-links'
+            ? 'Create one-time registration invites that work even when registration is closed.'
           : 'Configure seasons, sessions, registration schedule, and pricing.';
 
   return (
@@ -874,6 +893,7 @@ export default function AdminRegistrationConfig() {
         {primaryTab === 'qa' && qaTab === 'league-return' ? <AdminRegistrationQa /> : null}
         {primaryTab === 'qa' && qaTab === 'requested-leagues' ? <AdminRegistrationQaRequestedLeagues /> : null}
         {primaryTab === 'qa' && qaTab === 'sabbaticals' ? <AdminRegistrationQaSabbaticals /> : null}
+        {primaryTab === 'special-links' ? <AdminRegistrationSpecialLinks /> : null}
 
         {isConfigTab ? <PageTabs items={settingsTabs} ariaLabel="Registration settings" /> : null}
 

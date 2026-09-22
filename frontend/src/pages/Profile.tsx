@@ -11,6 +11,7 @@ import FormSection from '../components/FormSection';
 import FormCheckbox from '../components/FormCheckbox';
 import MemberMultiSelect from '../components/MemberMultiSelect';
 import MemberDemographicsFields from '../components/MemberDemographicsFields';
+import RegistrationParentAssociationFields from '../components/registration/RegistrationParentAssociationFields';
 import PageTabs, { type PageTabItem } from '../components/PageTabs';
 import InlineStateMessage from '../components/InlineStateMessage';
 import ProfilePaymentHistoryTab from '../components/profile/ProfilePaymentHistoryTab';
@@ -36,6 +37,11 @@ import {
   type MemberGuardianFormFields,
 } from '../utils/memberGuardianForm';
 import { dateOfBirthValidationMessage } from '../utils/memberAge';
+import {
+  defaultUsaCurlingMembershipOptIn,
+  resolveUsaCurlingMembershipOptIn,
+  resolveUswcaMembershipOptIn,
+} from '../utils/parentAssociationMemberships';
 
 const PROFILE_BASE_PATH = '/profile';
 
@@ -43,6 +49,7 @@ const PROFILE_TAB_SLUGS = [
   'preferences',
   'security',
   'personal-information',
+  'parent-organizations',
   'emergency-contact',
   'parent-information',
   'delegated-access',
@@ -78,6 +85,8 @@ export default function Profile() {
     emailVisible: member?.emailVisible || false,
     phoneVisible: member?.phoneVisible || false,
   });
+  const [usaCurlingMembershipOptIn, setUsaCurlingMembershipOptIn] = useState(defaultUsaCurlingMembershipOptIn);
+  const [uswcaMembershipOptIn, setUswcaMembershipOptIn] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const accessFieldId = useId();
   const [delegateIds, setDelegateIds] = useState<number[]>([]);
@@ -118,6 +127,10 @@ export default function Profile() {
       emailVisible: profile.emailVisible,
       phoneVisible: profile.phoneVisible,
     });
+    setUsaCurlingMembershipOptIn(resolveUsaCurlingMembershipOptIn(profile.usaCurlingMembershipOptIn));
+    setUswcaMembershipOptIn(
+      resolveUswcaMembershipOptIn(profile.uswcaMembershipOptIn, profile.preferredPronouns),
+    );
   };
 
   useEffect(() => {
@@ -160,6 +173,9 @@ export default function Profile() {
               emergencyContactPhone: null,
               preferredPronouns: null,
               usaCurlingCompetitionGender: null,
+              usaCurlingMembershipOptIn: null,
+              uswcaMembershipOptIn: null,
+              usaCurlingMembershipNumber: null,
               guardianFirstName: null,
               guardianLastName: null,
               guardianEmail: null,
@@ -354,6 +370,38 @@ export default function Profile() {
     }
   };
 
+  const saveParentOrganizations = async (e: FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setMessage(null);
+    try {
+      const response = await patch('/members/me', {
+        usaCurlingMembershipOptIn,
+        uswcaMembershipOptIn,
+      });
+      updateMember({
+        ...member!,
+        name: response.name,
+        email: response.email,
+        phone: response.phone,
+        themePreference: normalizeThemePreference(response.themePreference),
+        optedInSms: response.optedInSms,
+        emailVisible: response.emailVisible,
+        phoneVisible: response.phoneVisible,
+      } as import('../../../backend/src/types').AuthenticatedMember);
+      applyProfileToForm(response);
+      setMessage({ type: 'success', text: 'Parent organization options updated.' });
+    } catch (error) {
+      console.error('Failed to update parent organizations:', error);
+      setMessage({
+        type: 'error',
+        text: getApiErrorMessage(error, 'Could not update parent organization options. Please try again.'),
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const profileTabs: PageTabItem[] = [
     {
       key: 'preferences',
@@ -372,6 +420,12 @@ export default function Profile() {
       label: 'Personal information',
       to: `${PROFILE_BASE_PATH}/personal-information`,
       isActive: activeTab === 'personal-information',
+    },
+    {
+      key: 'parent-organizations',
+      label: 'Parent organizations',
+      to: `${PROFILE_BASE_PATH}/parent-organizations`,
+      isActive: activeTab === 'parent-organizations',
     },
     ...(!profileIsMinor
       ? [
@@ -612,6 +666,30 @@ export default function Profile() {
               </FormSection>
               <div>
                 <Button type="submit" disabled={loading}>
+                  {loading ? 'Saving…' : 'Save changes'}
+                </Button>
+              </div>
+            </form>
+          ) : activeTab === 'parent-organizations' ? (
+            <form
+              onSubmit={(e) => {
+                void saveParentOrganizations(e);
+              }}
+              className="space-y-6"
+            >
+              {profileLoading ? (
+                <InlineStateMessage title="Loading parent organization options…" />
+              ) : (
+                <RegistrationParentAssociationFields
+                  usaCurlingOptIn={usaCurlingMembershipOptIn}
+                  uswcaOptIn={uswcaMembershipOptIn}
+                  onUsaCurlingChange={setUsaCurlingMembershipOptIn}
+                  onUswcaChange={setUswcaMembershipOptIn}
+                  tone="app"
+                />
+              )}
+              <div>
+                <Button type="submit" disabled={loading || profileLoading}>
                   {loading ? 'Saving…' : 'Save changes'}
                 </Button>
               </div>

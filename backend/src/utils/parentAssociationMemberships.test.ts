@@ -4,6 +4,8 @@ import {
   defaultUsaCurlingMembershipOptIn,
   defaultUswcaMembershipOptIn,
   membershipAppliesParentAssociations,
+  resolveUsaCurlingMembershipOptIn,
+  resolveUswcaMembershipOptIn,
   shouldCollectParentAssociationOptIns,
   sqliteFlagFromBoolean,
 } from './parentAssociationMemberships.js';
@@ -45,5 +47,13 @@ describe('parent association memberships', () => {
     expect(booleanFromSqliteFlag(1)).toBe(true);
     expect(booleanFromSqliteFlag(0)).toBe(false);
     expect(booleanFromSqliteFlag(null)).toBeNull();
+  });
+
+  test('stored opt-ins win over defaults', () => {
+    expect(resolveUsaCurlingMembershipOptIn(false)).toBe(false);
+    expect(resolveUsaCurlingMembershipOptIn(null)).toBe(true);
+    expect(resolveUswcaMembershipOptIn(false, 'She/Her')).toBe(false);
+    expect(resolveUswcaMembershipOptIn(null, 'She/Her')).toBe(true);
+    expect(resolveUswcaMembershipOptIn(null, 'He/Him')).toBe(false);
   });
 });

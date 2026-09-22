@@ -32,6 +32,8 @@ import {
   staffReturningMembersQaResponseSchema,
   staffReturningPlayersQaResponseSchema,
   staffSabbaticalsQaResponseSchema,
+  registrationSpecialLinkStaffListResponseSchema,
+  registrationSpecialLinkStaffRowSchema,
 } from '../api/schemas.js';
 import {
   getStaffRequestedLeaguesQa,
@@ -56,6 +58,14 @@ import {
 import { RegistrationShellValidationError } from '../registration/registrationShellService.js';
 import type { Member } from '../types.js';
 import { memberCanManageRegistrations } from '../utils/registrationStaffAccess.js';
+import {
+  RegistrationSpecialLinkValidationError,
+  createRegistrationSpecialLink,
+  formatStaffSpecialLinkRow,
+  invalidateRegistrationSpecialLink,
+  listRegistrationSpecialLinks,
+  listSessionLeaguesForSpecialLinkPicker,
+} from '../registration/registrationSpecialLinks.js';
 
 interface AuthenticatedRequest extends FastifyRequest {
   member: Member;
@@ -100,6 +110,10 @@ function handleStaffRegistrationError(reply: FastifyReply, error: unknown): bool
     return true;
   }
   if (error instanceof RegistrationPriorityEditValidationError) {
+    sendValidationError(reply, error.message, error.details);
+    return true;
+  }
+  if (error instanceof RegistrationSpecialLinkValidationError) {
     sendValidationError(reply, error.message, error.details);
     return true;
   }
@@ -185,12 +199,116 @@ const exportRegistrationsSchema = listQuerySchema
   .extend({
     columns: z.array(z.string().min(1)).min(1).max(80),
   });
+const specialLinksQuerySchema = z.object({
+  sessionId: z.coerce.number().int().positive(),
+});
+const createSpecialLinkStaffSchema = z
+  .object({
+    sessionId: z.number().int().positive(),
+    email: z.string().trim().email(),
+    label: z.string().trim().max(120).optional().nullable(),
+    allowLeagueRegistration: z.boolean(),
+    allowedLeagueIds: z.array(z.number().int().positive()).optional().nullable(),
+  })
+  .superRefine((body, ctx) => {
+    if (body.allowLeagueRegistration && (!body.allowedLeagueIds || body.allowedLeagueIds.length === 0)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['allowedLeagueIds'],
+        message: 'Select at least one league when league registration is allowed.',
+      });
+    }
+  });
+const specialLinkIdParamsSchema = z.object({ linkId: z.coerce.number().int().positive() });
 
 export async function protectedRegistrationStaffRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.get('/registration/staff/sessions', async (request, reply) => {
     if (!requireRegistrationManage(request, reply)) return;
     try {
       return await listStaffRegistrationSessions();
+    } catch (error) {
+      if (handleStaffRegistrationError(reply, error)) return;
+      throw error;
+    }
+  });
+
+  fastify.get('/registration/staff/special-links', {
+    schema: {
+      tags: ['registration-staff'],
+      querystring: {
+        type: 'object',
+        properties: { sessionId: { type: 'number' } },
+        required: ['sessionId'],
+      },
+      response: { 200: registrationSpecialLinkStaffListResponseSchema },
+    },
+  }, async (request, reply) => {
+    if (!requireRegistrationManage(request, reply)) return;
+    try {
+      const query = specialLinksQuerySchema.parse(request.query);
+      const [links, leagues] = await Promise.all([
+        listRegistrationSpecialLinks(query.sessionId, request),
+        listSessionLeaguesForSpecialLinkPicker(query.sessionId),
+      ]);
+      return { links, leagues };
+    } catch (error) {
+      if (handleStaffRegistrationError(reply, error)) return;
+      throw error;
+    }
+  });
+
+  fastify.post('/registration/staff/special-links', {
+    schema: {
+      tags: ['registration-staff'],
+      body: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          sessionId: { type: 'number' },
+          email: { type: 'string' },
+          label: { type: ['string', 'null'] },
+          allowLeagueRegistration: { type: 'boolean' },
+          allowedLeagueIds: { type: 'array', items: { type: 'number' }, nullable: true },
+        },
+        required: ['sessionId', 'email', 'allowLeagueRegistration'],
+      },
+      response: { 201: registrationSpecialLinkStaffRowSchema },
+    },
+  }, async (request, reply) => {
+    if (!requireRegistrationManage(request, reply)) return;
+    try {
+      const body = createSpecialLinkStaffSchema.parse(request.body);
+      const created = await createRegistrationSpecialLink({
+        sessionId: body.sessionId,
+        email: body.email,
+        label: body.label,
+        allowLeagueRegistration: body.allowLeagueRegistration,
+        allowedLeagueIds: body.allowedLeagueIds,
+        createdByMemberId: (request as AuthenticatedRequest).member.id,
+      });
+      return reply.code(201).send(formatStaffSpecialLinkRow(created, null, request));
+    } catch (error) {
+      if (handleStaffRegistrationError(reply, error)) return;
+      throw error;
+    }
+  });
+
+  fastify.delete('/registration/staff/special-links/:linkId', {
+    schema: {
+      tags: ['registration-staff'],
+      params: {
+        type: 'object',
+        properties: { linkId: { type: 'string' } },
+        required: ['linkId'],
+      },
+      response: { 200: { type: 'object', properties: { success: { type: 'boolean' } }, required: ['success'] } },
+    },
+  }, async (request, reply) => {
+    if (!requireRegistrationManage(request, reply)) return;
+    try {
+      const params = specialLinkIdParamsSchema.parse(request.params);
+      await invalidateRegistrationSpecialLink(params.linkId);
+      return { success: true };
     } catch (error) {
       if (handleStaffRegistrationError(reply, error)) return;
       throw error;

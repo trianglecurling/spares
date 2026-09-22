@@ -4867,6 +4867,100 @@
         }
       }
     },
+    "/registration/special-links/{token}": {
+      "get": {
+        "tags": [
+          "registration"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "token",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "valid": {
+                      "type": "boolean"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "enum": [
+                        "used",
+                        "invalidated",
+                        "not_found"
+                      ]
+                    },
+                    "email": {
+                      "type": "string"
+                    },
+                    "allowLeagueRegistration": {
+                      "type": "boolean"
+                    },
+                    "allowedLeagueIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "number"
+                      },
+                      "nullable": true
+                    },
+                    "requiresLogin": {
+                      "type": "boolean"
+                    },
+                    "seasonId": {
+                      "type": "number"
+                    },
+                    "sessionId": {
+                      "type": "number"
+                    },
+                    "seasonName": {
+                      "type": "string"
+                    },
+                    "sessionName": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "valid"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/registration/early-access/status": {
       "get": {
         "tags": [
@@ -6800,6 +6894,24 @@
                         "string"
                       ]
                     },
+                    "usaCurlingMembershipOptIn": {
+                      "type": [
+                        "null",
+                        "boolean"
+                      ]
+                    },
+                    "uswcaMembershipOptIn": {
+                      "type": [
+                        "null",
+                        "boolean"
+                      ]
+                    },
+                    "usaCurlingMembershipNumber": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
                     "guardianFirstName": {
                       "type": [
                         "null",
@@ -6865,6 +6977,9 @@
                     "emergencyContactPhone",
                     "preferredPronouns",
                     "usaCurlingCompetitionGender",
+                    "usaCurlingMembershipOptIn",
+                    "uswcaMembershipOptIn",
+                    "usaCurlingMembershipNumber",
                     "guardianFirstName",
                     "guardianLastName",
                     "guardianEmail",
@@ -6941,6 +7056,12 @@
                       "Female",
                       "Unspecified"
                     ]
+                  },
+                  "usaCurlingMembershipOptIn": {
+                    "type": "boolean"
+                  },
+                  "uswcaMembershipOptIn": {
+                    "type": "boolean"
                   },
                   "guardianFirstName": {
                     "type": "string",
@@ -7054,6 +7175,24 @@
                         "string"
                       ]
                     },
+                    "usaCurlingMembershipOptIn": {
+                      "type": [
+                        "null",
+                        "boolean"
+                      ]
+                    },
+                    "uswcaMembershipOptIn": {
+                      "type": [
+                        "null",
+                        "boolean"
+                      ]
+                    },
+                    "usaCurlingMembershipNumber": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
                     "guardianFirstName": {
                       "type": [
                         "null",
@@ -7119,6 +7258,9 @@
                     "emergencyContactPhone",
                     "preferredPronouns",
                     "usaCurlingCompetitionGender",
+                    "usaCurlingMembershipOptIn",
+                    "uswcaMembershipOptIn",
+                    "usaCurlingMembershipNumber",
                     "guardianFirstName",
                     "guardianLastName",
                     "guardianEmail",
@@ -8786,6 +8928,176 @@
         }
       }
     },
+    "/members/org-rosters": {
+      "get": {
+        "tags": [
+          "members"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "generatedOn": {
+                      "type": "string"
+                    },
+                    "currentMemberCount": {
+                      "type": "number"
+                    },
+                    "usaCurlingCount": {
+                      "type": "number"
+                    },
+                    "uswcaCount": {
+                      "type": "number"
+                    },
+                    "missingUsaCurlingNumberCount": {
+                      "type": "number"
+                    },
+                    "members": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "firstName": {
+                            "type": "string"
+                          },
+                          "lastName": {
+                            "type": "string"
+                          },
+                          "email": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "usaCurlingOptIn": {
+                            "type": "boolean"
+                          },
+                          "uswcaOptIn": {
+                            "type": "boolean"
+                          },
+                          "usaCurlingMembershipNumber": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "usaCurlingMembershipType": {
+                            "type": "string",
+                            "enum": [
+                              "Basic",
+                              "Youth"
+                            ]
+                          },
+                          "usaCurlingFromAnotherClub": {
+                            "type": "boolean"
+                          },
+                          "missingUsaCurlingNumber": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name",
+                          "firstName",
+                          "lastName",
+                          "email",
+                          "usaCurlingOptIn",
+                          "uswcaOptIn",
+                          "usaCurlingMembershipNumber",
+                          "usaCurlingMembershipType",
+                          "usaCurlingFromAnotherClub",
+                          "missingUsaCurlingNumber"
+                        ]
+                      }
+                    },
+                    "usaCurlingTsv": {
+                      "type": "string"
+                    },
+                    "uswcaTsv": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "generatedOn",
+                    "currentMemberCount",
+                    "usaCurlingCount",
+                    "uswcaCount",
+                    "missingUsaCurlingNumberCount",
+                    "members",
+                    "usaCurlingTsv",
+                    "uswcaTsv"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/members/org-rosters/confirmation-emails": {
+      "post": {
+        "tags": [
+          "members"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "confirmByDate": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "confirmByDate"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "queued": {
+                      "type": "number"
+                    },
+                    "skippedNoEmail": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "queued",
+                    "skippedNoEmail"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/members/{id}/profile": {
       "get": {
         "tags": [
@@ -8876,6 +9188,24 @@
                         "string"
                       ]
                     },
+                    "usaCurlingMembershipOptIn": {
+                      "type": [
+                        "null",
+                        "boolean"
+                      ]
+                    },
+                    "uswcaMembershipOptIn": {
+                      "type": [
+                        "null",
+                        "boolean"
+                      ]
+                    },
+                    "usaCurlingMembershipNumber": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
                     "guardianFirstName": {
                       "type": [
                         "null",
@@ -8941,6 +9271,9 @@
                     "emergencyContactPhone",
                     "preferredPronouns",
                     "usaCurlingCompetitionGender",
+                    "usaCurlingMembershipOptIn",
+                    "uswcaMembershipOptIn",
+                    "usaCurlingMembershipNumber",
                     "guardianFirstName",
                     "guardianLastName",
                     "guardianEmail",
@@ -9014,6 +9347,18 @@
                       "Male",
                       "Female",
                       "Unspecified"
+                    ]
+                  },
+                  "usaCurlingMembershipOptIn": {
+                    "type": "boolean"
+                  },
+                  "uswcaMembershipOptIn": {
+                    "type": "boolean"
+                  },
+                  "usaCurlingMembershipNumber": {
+                    "type": [
+                      "string",
+                      "null"
                     ]
                   },
                   "lifetimeMember": {
@@ -30113,6 +30458,293 @@
         "responses": {
           "200": {
             "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/registration/staff/special-links": {
+      "get": {
+        "tags": [
+          "registration-staff"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "number"
+            },
+            "in": "query",
+            "name": "sessionId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "links": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "token": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "email": {
+                            "type": "string"
+                          },
+                          "allowLeagueRegistration": {
+                            "type": "boolean"
+                          },
+                          "allowedLeagueIds": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            },
+                            "nullable": true
+                          },
+                          "used": {
+                            "type": "boolean"
+                          },
+                          "invalidated": {
+                            "type": "boolean"
+                          },
+                          "usedByRegistrationId": {
+                            "type": [
+                              "null",
+                              "number"
+                            ]
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "usedAt": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "registrationUrl": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "token",
+                          "label",
+                          "email",
+                          "allowLeagueRegistration",
+                          "allowedLeagueIds",
+                          "used",
+                          "invalidated",
+                          "usedByRegistrationId",
+                          "createdAt",
+                          "usedAt",
+                          "registrationUrl"
+                        ]
+                      }
+                    },
+                    "leagues": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "name"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "links",
+                    "leagues"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "registration-staff"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "sessionId": {
+                    "type": "number"
+                  },
+                  "email": {
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "allowLeagueRegistration": {
+                    "type": "boolean"
+                  },
+                  "allowedLeagueIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    },
+                    "nullable": true
+                  }
+                },
+                "required": [
+                  "sessionId",
+                  "email",
+                  "allowLeagueRegistration"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "number"
+                    },
+                    "token": {
+                      "type": "string"
+                    },
+                    "label": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "email": {
+                      "type": "string"
+                    },
+                    "allowLeagueRegistration": {
+                      "type": "boolean"
+                    },
+                    "allowedLeagueIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "number"
+                      },
+                      "nullable": true
+                    },
+                    "used": {
+                      "type": "boolean"
+                    },
+                    "invalidated": {
+                      "type": "boolean"
+                    },
+                    "usedByRegistrationId": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "usedAt": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "registrationUrl": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "token",
+                    "label",
+                    "email",
+                    "allowLeagueRegistration",
+                    "allowedLeagueIds",
+                    "used",
+                    "invalidated",
+                    "usedByRegistrationId",
+                    "createdAt",
+                    "usedAt",
+                    "registrationUrl"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/registration/staff/special-links/{linkId}": {
+      "delete": {
+        "tags": [
+          "registration-staff"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "linkId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
           }
         }
       }

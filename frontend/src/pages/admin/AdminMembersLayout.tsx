@@ -9,7 +9,13 @@ import {
   memberCanManageMembersAdmin,
 } from '../../utils/credentialAccess';
 
-type MembersAreaTab = 'members' | 'credentials';
+type MembersAreaTab = 'members' | 'credentials' | 'org-rosters';
+
+function membersAreaTab(pathname: string): MembersAreaTab {
+  if (pathname.includes('/credentials')) return 'credentials';
+  if (pathname.includes('/org-rosters')) return 'org-rosters';
+  return 'members';
+}
 
 export default function AdminMembersLayout() {
   const location = useLocation();
@@ -17,10 +23,7 @@ export default function AdminMembersLayout() {
   const canManageMembers = memberCanManageMembersAdmin(member);
   const canManageCredentials = memberCanManageCredentials(member);
   const canAccessArea = memberCanAccessMembersArea(member);
-
-  const activeTab: MembersAreaTab = location.pathname.endsWith('/credentials')
-    ? 'credentials'
-    : 'members';
+  const activeTab = membersAreaTab(location.pathname);
 
   const tabs = useMemo(
     () => [
@@ -31,6 +34,12 @@ export default function AdminMembersLayout() {
               label: 'Members',
               to: '/admin/members',
               isActive: activeTab === 'members',
+            },
+            {
+              key: 'org-rosters',
+              label: 'Org rosters',
+              to: '/admin/members/org-rosters',
+              isActive: activeTab === 'org-rosters',
             },
           ]
         : []),
@@ -52,7 +61,7 @@ export default function AdminMembersLayout() {
     return <Navigate to="/dashboard" replace />;
   }
 
-  if (activeTab === 'members' && !canManageMembers) {
+  if ((activeTab === 'members' || activeTab === 'org-rosters') && !canManageMembers) {
     return <Navigate to="/admin/members/credentials" replace />;
   }
 
@@ -60,16 +69,22 @@ export default function AdminMembersLayout() {
     return <Navigate to="/admin/members" replace />;
   }
 
+  const title =
+    activeTab === 'credentials'
+      ? 'Manage credentials'
+      : activeTab === 'org-rosters'
+        ? 'Org rosters'
+        : 'Manage members';
+  const description =
+    activeTab === 'credentials'
+      ? 'Credentials held by members, who manages them, and who holds them.'
+      : activeTab === 'org-rosters'
+        ? 'Copy current-member rows into USA Curling and USWCA templates, and ask members to confirm parent org options.'
+        : undefined;
+
   return (
     <AppPage>
-      <AppPageHeader
-        title={activeTab === 'credentials' ? 'Manage credentials' : 'Manage members'}
-        description={
-          activeTab === 'credentials'
-            ? 'Credentials held by members, who manages them, and who holds them.'
-            : undefined
-        }
-      />
+      <AppPageHeader title={title} description={description} />
       {tabs.length > 1 ? <PageTabs items={tabs} /> : null}
       <Outlet />
     </AppPage>

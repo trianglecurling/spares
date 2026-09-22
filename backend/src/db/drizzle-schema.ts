@@ -30,6 +30,9 @@ export const membersSqlite = sqliteTable('members', {
   emergency_contact_phone: text('emergency_contact_phone'),
   preferred_pronouns: text('preferred_pronouns'),
   usa_curling_competition_gender: text('usa_curling_competition_gender').default('Unspecified'),
+  usa_curling_membership_opt_in: integer('usa_curling_membership_opt_in'),
+  uswca_membership_opt_in: integer('uswca_membership_opt_in'),
+  usa_curling_membership_number: text('usa_curling_membership_number'),
   name_tag_name: text('name_tag_name'),
   name_tag_include_pronouns: integer('name_tag_include_pronouns'),
   guardian_first_name: text('guardian_first_name'),
@@ -538,6 +541,7 @@ export const curlingRegistrationsSqlite = sqliteTable('curling_registrations', {
   name_tag_replacement_quantity: integer('name_tag_replacement_quantity'),
   usa_curling_membership_opt_in: integer('usa_curling_membership_opt_in'),
   uswca_membership_opt_in: integer('uswca_membership_opt_in'),
+  special_link_id: integer('special_link_id'),
   status: text('status').notNull().default('identity_incomplete').$type<CurlingRegistrationStatusSqlite>(),
   shell_completed_at: text('shell_completed_at'),
   submitted_at: text('submitted_at'),
@@ -551,6 +555,31 @@ export const curlingRegistrationsSqlite = sqliteTable('curling_registrations', {
   submitterIdx: index('idx_curling_registrations_submitted_by_member_id').on(table.submitted_by_member_id),
   statusIdx: index('idx_curling_registrations_status').on(table.status),
   resumeIdx: index('idx_curling_registrations_resume').on(table.season_id, table.session_id, table.curler_member_id, table.status),
+  specialLinkIdx: index('idx_curling_registrations_special_link_id').on(table.special_link_id),
+}));
+
+/** Staff-issued membership registration invites that work when registration is closed. */
+export const registrationSpecialLinksSqlite = sqliteTable('registration_special_links', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  season_id: integer('season_id')
+    .notNull()
+    .references(() => curlingSeasonsSqlite.id, { onDelete: 'restrict' }),
+  session_id: integer('session_id')
+    .notNull()
+    .references(() => curlingSessionsSqlite.id, { onDelete: 'restrict' }),
+  token: text('token').notNull(),
+  label: text('label'),
+  registrant_email: text('registrant_email').notNull(),
+  allow_league_registration: integer('allow_league_registration').default(0).notNull(),
+  allowed_league_ids: text('allowed_league_ids'),
+  used: integer('used').default(0).notNull(),
+  invalidated: integer('invalidated').default(0).notNull(),
+  created_by_member_id: integer('created_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
+  used_at: text('used_at'),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  sessionIdx: index('idx_registration_special_links_session_id').on(table.session_id),
+  tokenIdx: uniqueIndex('registration_special_links_token_unique').on(table.token),
 }));
 
 export const curlingLeagueSabbaticalsSqlite = sqliteTable('curling_league_sabbaticals', {
@@ -2681,6 +2710,9 @@ export const membersPg = pgTable('members', {
   emergency_contact_phone: textPg('emergency_contact_phone'),
   preferred_pronouns: textPg('preferred_pronouns'),
   usa_curling_competition_gender: textPg('usa_curling_competition_gender').default('Unspecified'),
+  usa_curling_membership_opt_in: integerPg('usa_curling_membership_opt_in'),
+  uswca_membership_opt_in: integerPg('uswca_membership_opt_in'),
+  usa_curling_membership_number: textPg('usa_curling_membership_number'),
   name_tag_name: textPg('name_tag_name'),
   name_tag_include_pronouns: integerPg('name_tag_include_pronouns'),
   guardian_first_name: textPg('guardian_first_name'),
@@ -2986,6 +3018,7 @@ export const curlingRegistrationsPg = pgTable('curling_registrations', {
   name_tag_replacement_quantity: integerPg('name_tag_replacement_quantity'),
   usa_curling_membership_opt_in: integerPg('usa_curling_membership_opt_in'),
   uswca_membership_opt_in: integerPg('uswca_membership_opt_in'),
+  special_link_id: integerPg('special_link_id'),
   status: textPg('status').notNull().default('identity_incomplete').$type<CurlingRegistrationStatusSqlite>(),
   shell_completed_at: timestamp('shell_completed_at', { withTimezone: false }),
   submitted_at: timestamp('submitted_at', { withTimezone: false }),
@@ -2999,6 +3032,31 @@ export const curlingRegistrationsPg = pgTable('curling_registrations', {
   submitterIdx: indexPg('idx_curling_registrations_submitted_by_member_id').on(table.submitted_by_member_id),
   statusIdx: indexPg('idx_curling_registrations_status').on(table.status),
   resumeIdx: indexPg('idx_curling_registrations_resume').on(table.season_id, table.session_id, table.curler_member_id, table.status),
+  specialLinkIdx: indexPg('idx_curling_registrations_special_link_id').on(table.special_link_id),
+}));
+
+/** Staff-issued membership registration invites that work when registration is closed. */
+export const registrationSpecialLinksPg = pgTable('registration_special_links', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  season_id: integerPg('season_id')
+    .notNull()
+    .references(() => curlingSeasonsPg.id, { onDelete: 'restrict' }),
+  session_id: integerPg('session_id')
+    .notNull()
+    .references(() => curlingSessionsPg.id, { onDelete: 'restrict' }),
+  token: textPg('token').notNull(),
+  label: textPg('label'),
+  registrant_email: textPg('registrant_email').notNull(),
+  allow_league_registration: integerPg('allow_league_registration').default(0).notNull(),
+  allowed_league_ids: jsonb('allowed_league_ids'),
+  used: integerPg('used').default(0).notNull(),
+  invalidated: integerPg('invalidated').default(0).notNull(),
+  created_by_member_id: integerPg('created_by_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
+  used_at: timestamp('used_at', { withTimezone: false }),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  sessionIdx: indexPg('idx_registration_special_links_session_id').on(table.session_id),
+  tokenIdx: uniqueIndexPg('registration_special_links_token_unique_pg').on(table.token),
 }));
 
 export const curlingLeagueSabbaticalsPg = pgTable('curling_league_sabbaticals', {
@@ -5056,6 +5114,7 @@ export const sqliteSchema = {
   leagues: leaguesSqlite,
   registrationStateTransitions: registrationStateTransitionsSqlite,
   curlingRegistrations: curlingRegistrationsSqlite,
+  registrationSpecialLinks: registrationSpecialLinksSqlite,
   curlingLeagueSabbaticals: curlingLeagueSabbaticalsSqlite,
   registrationPolicyAcceptances: registrationPolicyAcceptancesSqlite,
   registrationSelections: registrationSelectionsSqlite,
@@ -5186,6 +5245,7 @@ export const pgSchema = {
   leagues: leaguesPg,
   registrationStateTransitions: registrationStateTransitionsPg,
   curlingRegistrations: curlingRegistrationsPg,
+  registrationSpecialLinks: registrationSpecialLinksPg,
   curlingLeagueSabbaticals: curlingLeagueSabbaticalsPg,
   registrationPolicyAcceptances: registrationPolicyAcceptancesPg,
   registrationSelections: registrationSelectionsPg,

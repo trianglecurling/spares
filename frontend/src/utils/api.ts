@@ -6,6 +6,7 @@ import { isPublicApiRequestUrl } from './publicApiPaths';
 import { buildLoginPath, isSafeInternalRedirect } from './loginRedirect';
 import { isPublicLightPath } from './publicLightPaths';
 import { getRegistrationEarlyAccessUnlockToken } from './registrationEarlyAccess';
+import { getRegistrationSpecialLinkToken } from './registrationSpecialLink';
 import type { AccessTokenEnsureResult } from './restoreAuthSession';
 
 type RetriableRequestConfig = AxiosRequestConfig & { _retry?: boolean };
@@ -105,6 +106,18 @@ api.interceptors.request.use((config) => {
       );
     } else if (headers) {
       (headers as Record<string, string>)['X-Registration-Early-Access'] = earlyAccessToken;
+    }
+  }
+  const specialLinkToken = getRegistrationSpecialLinkToken();
+  if (specialLinkToken) {
+    const headers = config.headers;
+    if (headers && typeof (headers as { set?: unknown }).set === 'function') {
+      (headers as { set: (key: string, value: string) => void }).set(
+        'X-Registration-Special-Link',
+        specialLinkToken,
+      );
+    } else if (headers) {
+      (headers as Record<string, string>)['X-Registration-Special-Link'] = specialLinkToken;
     }
   }
   return config;

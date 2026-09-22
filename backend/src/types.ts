@@ -41,6 +41,9 @@ export interface Member {
   emergency_contact_phone?: string | null;
   preferred_pronouns?: string | null;
   usa_curling_competition_gender?: string | null;
+  usa_curling_membership_opt_in?: number | null;
+  uswca_membership_opt_in?: number | null;
+  usa_curling_membership_number?: string | null;
   name_tag_name?: string | null;
   name_tag_include_pronouns?: number | null;
   guardian_first_name?: string | null;

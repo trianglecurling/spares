@@ -439,6 +439,24 @@ const memberDemographicColumnsSQLite: { name: string; ddl: string }[] = [
   { name: 'guardian_phone', ddl: 'guardian_phone TEXT' },
 ];
 
+const memberParentOrgColumnsSQLite: { name: string; ddl: string; pgType: string }[] = [
+  {
+    name: 'usa_curling_membership_opt_in',
+    ddl: 'usa_curling_membership_opt_in INTEGER CHECK(usa_curling_membership_opt_in IN (0, 1))',
+    pgType: 'INTEGER',
+  },
+  {
+    name: 'uswca_membership_opt_in',
+    ddl: 'uswca_membership_opt_in INTEGER CHECK(uswca_membership_opt_in IN (0, 1))',
+    pgType: 'INTEGER',
+  },
+  {
+    name: 'usa_curling_membership_number',
+    ddl: 'usa_curling_membership_number TEXT',
+    pgType: 'TEXT',
+  },
+];
+
 function curlingRegistrationDDLForDialect(isPostgres: boolean): string {
   const merged = curlingRegistrationDDLBase + curlingRegistrationExtendedDDL;
   if (!isPostgres) return merged;
@@ -710,11 +728,47 @@ function ensureMemberExperienceBaselineColumnsSync(
   }
 }
 
+async function ensureMemberParentOrgColumns(
+  db: DatabaseAdapter,
+  execSQL: (d: DatabaseAdapter, s: string) => Promise<void>
+): Promise<void> {
+  if (db.isAsync()) {
+    for (const col of memberParentOrgColumnsSQLite) {
+      await execSQL(db, `ALTER TABLE members ADD COLUMN IF NOT EXISTS ${col.name} ${col.pgType}`);
+    }
+    return;
+  }
+
+  const stmt = db.prepare<{ name?: string | null }>(`PRAGMA table_info(members)`);
+  const rows = await allMaybe(stmt.all());
+  const names = new Set(rows.map((c) => String(c.name)));
+  for (const col of memberParentOrgColumnsSQLite) {
+    if (!names.has(col.name)) {
+      await execSQL(db, `ALTER TABLE members ADD COLUMN ${col.ddl}`);
+    }
+  }
+}
+
+function ensureMemberParentOrgColumnsSync(
+  db: DatabaseAdapter,
+  execSQLSync: (d: DatabaseAdapter, s: string) => void
+): void {
+  const stmt = db.prepare<{ name?: string | null }>(`PRAGMA table_info(members)`);
+  const rows = stmt.all() as { name?: string | null }[];
+  const names = new Set(rows.map((c) => String(c.name)));
+  for (const col of memberParentOrgColumnsSQLite) {
+    if (!names.has(col.name)) {
+      execSQLSync(db, `ALTER TABLE members ADD COLUMN ${col.ddl}`);
+    }
+  }
+}
+
 async function ensureMemberDemographicColumns(
   db: DatabaseAdapter,
   execSQL: (d: DatabaseAdapter, s: string) => Promise<void>
 ): Promise<void> {
   await ensureMemberExperienceBaselineColumns(db, execSQL);
+  await ensureMemberParentOrgColumns(db, execSQL);
   if (db.isAsync()) {
     for (const col of memberDemographicColumnsSQLite) {
       const pgType = col.name === 'date_of_birth' ? 'DATE' : 'TEXT';
@@ -738,6 +792,7 @@ function ensureMemberDemographicColumnsSync(
   execSQLSync: (d: DatabaseAdapter, s: string) => void
 ): void {
   ensureMemberExperienceBaselineColumnsSync(db, execSQLSync);
+  ensureMemberParentOrgColumnsSync(db, execSQLSync);
   const stmt = db.prepare<{ name?: string | null }>(`PRAGMA table_info(members)`);
   const rows = stmt.all() as { name?: string | null }[];
   const names = new Set(rows.map((c) => String(c.name)));

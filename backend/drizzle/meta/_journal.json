@@ -575,6 +575,20 @@
       "when": 1788490200000,
       "tag": "0082_add_leagues_teams_published",
       "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1788490800000,
+      "tag": "0083_add_registration_special_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1788491400000,
+      "tag": "0084_add_member_parent_org_rosters",
+      "breakpoints": true
     }
   ]
 }

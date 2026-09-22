@@ -22,6 +22,7 @@ type PgSchema = {
   leagues: typeof pgSchema.leaguesPg;
   registrationStateTransitions: typeof pgSchema.registrationStateTransitionsPg;
   curlingRegistrations: typeof pgSchema.curlingRegistrationsPg;
+  registrationSpecialLinks: typeof pgSchema.registrationSpecialLinksPg;
   curlingLeagueSabbaticals: typeof pgSchema.curlingLeagueSabbaticalsPg;
   registrationPolicyAcceptances: typeof pgSchema.registrationPolicyAcceptancesPg;
   registrationSelections: typeof pgSchema.registrationSelectionsPg;
@@ -181,6 +182,7 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       leagues: sqliteSchema.leaguesSqlite,
       registrationStateTransitions: sqliteSchema.registrationStateTransitionsSqlite,
       curlingRegistrations: sqliteSchema.curlingRegistrationsSqlite,
+      registrationSpecialLinks: sqliteSchema.registrationSpecialLinksSqlite,
       curlingLeagueSabbaticals: sqliteSchema.curlingLeagueSabbaticalsSqlite,
       registrationPolicyAcceptances: sqliteSchema.registrationPolicyAcceptancesSqlite,
       registrationSelections: sqliteSchema.registrationSelectionsSqlite,
@@ -329,6 +331,7 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       leagues: pgSchema.leaguesPg,
       registrationStateTransitions: pgSchema.registrationStateTransitionsPg,
       curlingRegistrations: pgSchema.curlingRegistrationsPg,
+      registrationSpecialLinks: pgSchema.registrationSpecialLinksPg,
       curlingLeagueSabbaticals: pgSchema.curlingLeagueSabbaticalsPg,
       registrationPolicyAcceptances: pgSchema.registrationPolicyAcceptancesPg,
       registrationSelections: pgSchema.registrationSelectionsPg,

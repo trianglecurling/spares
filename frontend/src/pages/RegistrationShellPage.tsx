@@ -99,6 +99,16 @@ import {
   registrationPaymentFailedMessage,
   registrationPaymentPendingMessage,
 } from '../utils/paymentProcessorCopy';
+import {
+  clearRegistrationSpecialLink,
+  emailsMatchForSpecialLink,
+  getRegistrationSpecialLinkToken,
+  specialLinkLoginSearch,
+  specialLinkTokenFromSearch,
+  storeRegistrationSpecialLinkSnapshot,
+  storeRegistrationSpecialLinkToken,
+  type RegistrationSpecialLinkSnapshot,
+} from '../utils/registrationSpecialLink';
 type RegistrationPriorityEditLocationState = {
   priorityEdit?: boolean;
   returnTo?: string;
@@ -166,7 +176,53 @@ type RegistrationShellPayload = {
   policies: Array<{ type: string; url: string; accepted: boolean }>;
   policiesComplete: boolean;
   isMinor: boolean;
+  specialLink?: {
+    email: string;
+    allowLeagueRegistration: boolean;
+    allowedLeagueIds: number[] | null;
+  } | null;
 };
+
+type PublicRegistrationSpecialLinkStatus =
+  | {
+      valid: true;
+      email: string;
+      allowLeagueRegistration: boolean;
+      allowedLeagueIds: number[] | null;
+      requiresLogin: boolean;
+      seasonId: number;
+      sessionId: number;
+      seasonName: string;
+      sessionName: string;
+    }
+  | { valid: false; reason: 'used' | 'invalidated' | 'not_found' };
+
+function specialLinkErrorCopy(reason: 'used' | 'invalidated' | 'not_found'): { title: string; description: string } {
+  if (reason === 'used') {
+    return {
+      title: 'Link already used',
+      description: 'This registration link has already been used. Each link can only be used once.',
+    };
+  }
+  if (reason === 'invalidated') {
+    return {
+      title: 'Link no longer valid',
+      description: 'This registration link has been invalidated and can no longer be used.',
+    };
+  }
+  return {
+    title: 'Link not found',
+    description: 'This registration link was not found. If you were given this invite, check with club staff.',
+  };
+}
+
+function draftMatchesSpecialLink(
+  draft: { specialLink?: { email: string } | null } | null | undefined,
+  snapshot: RegistrationSpecialLinkSnapshot | null,
+): boolean {
+  if (!snapshot) return true;
+  return emailsMatchForSpecialLink(snapshot.email, draft?.specialLink?.email);
+}
 
 type RegistrationWindow = {
   state: 'closed' | 'priority' | 'open';
@@ -911,6 +967,10 @@ export default function RegistrationShellPage() {
   const { showAlert } = useAlert();
   const memberOptions = useMemberOptions({ autoLoad: Boolean(member) });
   const [windowState, setWindowState] = useState<RegistrationWindow | null>(null);
+  const [specialLinkSnapshot, setSpecialLinkSnapshot] = useState<RegistrationSpecialLinkSnapshot | null>(null);
+  const [specialLinkErrorReason, setSpecialLinkErrorReason] = useState<'used' | 'invalidated' | 'not_found' | null>(
+    null,
+  );
   const [payload, setPayload] = useState<RegistrationShellPayload | null>(null);
   const [registrationId, setRegistrationId] = useState<number | null>(null);
   const [profiles, setProfiles] = useState<MemberSummary[]>([]);
@@ -1157,6 +1217,17 @@ export default function RegistrationShellPage() {
   const identityRegisteringForOther =
     registeringForSomeoneElse || registeringForSelf === 'other' || Boolean(member);
 
+  const specialLinkLockedEmail = payload?.specialLink?.email || specialLinkSnapshot?.email || '';
+  const specialLinkAllowLeagueRegistration =
+    payload?.specialLink?.allowLeagueRegistration ?? specialLinkSnapshot?.allowLeagueRegistration ?? true;
+  const specialLinkMemberEmailMatches = Boolean(
+    specialLinkLockedEmail &&
+      member?.email &&
+      emailsMatchForSpecialLink(specialLinkLockedEmail, member.email),
+  );
+  const specialLinkRequiresLogin = Boolean(specialLinkSnapshot?.requiresLogin);
+  const specialLinkInviteActive = Boolean(specialLinkSnapshot) && !specialLinkErrorReason;
+
   /**
    * Server-truth priority list re-labeled locally so the review screen shows the
    * same guarantee chips the priority page did. Teammate return rights must be
@@ -1300,10 +1371,14 @@ export default function RegistrationShellPage() {
           renderMembershipChoiceContent('Junior Recreational', juniorDescription, fees?.juniorRecreationalMinor),
       });
     }
+    if (!specialLinkAllowLeagueRegistration) {
+      return options.filter((option) => option.value === 'regular' || option.value === 'social');
+    }
     return options;
   }, [
     juniorRecreationalEligible,
     membershipPayment?.noMembershipEligible,
+    specialLinkAllowLeagueRegistration,
     windowState?.membershipFees,
     windowState?.availableDiscounts,
     studentDiscountClaimed,
@@ -1460,17 +1535,69 @@ export default function RegistrationShellPage() {
   const persistGuestDraftRef = useRef(persistGuestDraft);
   persistGuestDraftRef.current = persistGuestDraft;
 
+  const specialLinkSearchToken = specialLinkTokenFromSearch(location.search);
+
   useEffect(() => {
-    api
-      .get('/registration/window')
-      .then((response) => setWindowState(response.data))
-      .catch((err) => setError(errorMessage(err, 'Registration is not available.')));
-  }, []);
+    let cancelled = false;
+    void (async () => {
+      const fromSearch = specialLinkSearchToken;
+      if (fromSearch) {
+        storeRegistrationSpecialLinkToken(fromSearch);
+      }
+      const token = fromSearch ?? getRegistrationSpecialLinkToken();
+      if (token) {
+        try {
+          const { data } = await api.get<PublicRegistrationSpecialLinkStatus>(
+            `/registration/special-links/${encodeURIComponent(token)}`,
+          );
+          if (cancelled) return;
+          if (data.valid) {
+            const snapshot: RegistrationSpecialLinkSnapshot = {
+              token,
+              email: data.email,
+              allowLeagueRegistration: data.allowLeagueRegistration,
+              allowedLeagueIds: data.allowedLeagueIds,
+              requiresLogin: data.requiresLogin,
+              seasonId: data.seasonId,
+              sessionId: data.sessionId,
+              seasonName: data.seasonName,
+              sessionName: data.sessionName,
+            };
+            storeRegistrationSpecialLinkSnapshot(snapshot);
+            setSpecialLinkSnapshot(snapshot);
+            setSpecialLinkErrorReason(null);
+            setDemographics((current) => ({ ...current, email: snapshot.email }));
+          } else {
+            clearRegistrationSpecialLink();
+            setSpecialLinkSnapshot(null);
+            setSpecialLinkErrorReason(fromSearch ? data.reason : null);
+          }
+        } catch {
+          if (cancelled) return;
+          clearRegistrationSpecialLink();
+          setSpecialLinkSnapshot(null);
+          setSpecialLinkErrorReason(fromSearch ? 'not_found' : null);
+        }
+      } else {
+        setSpecialLinkSnapshot(null);
+        setSpecialLinkErrorReason(null);
+      }
+      try {
+        const response = await api.get('/registration/window');
+        if (!cancelled) setWindowState(response.data);
+      } catch (err) {
+        if (!cancelled) setError(errorMessage(err, 'Registration is not available.'));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [specialLinkSearchToken]);
 
   const startBootstrapKey = useMemo(() => {
     if (!windowState) return '';
-    return `${windowState.season.id}:${windowState.session.id}:${member?.id ?? 'guest'}`;
-  }, [windowState, member?.id]);
+    return `${windowState.season.id}:${windowState.session.id}:${member?.id ?? 'guest'}:${specialLinkSnapshot?.token ?? ''}`;
+  }, [windowState, member?.id, specialLinkSnapshot?.token]);
 
   useEffect(() => {
     if (currentStep !== 'start') {
@@ -1527,6 +1654,7 @@ export default function RegistrationShellPage() {
         const local = loadLocalDraft();
         if (generation !== resumeCheckGenerationRef.current) return;
         if (
+          !specialLinkSnapshot &&
           local &&
           local.seasonId === windowState.season.id &&
           local.sessionId === windowState.session.id &&
@@ -1543,7 +1671,7 @@ export default function RegistrationShellPage() {
     return () => {
       resumeCheckGenerationRef.current += 1;
     };
-  }, [currentStep, member, windowState, authLoading, startBootstrapKey, staffRegistrationId]);
+  }, [currentStep, member, windowState, authLoading, startBootstrapKey, staffRegistrationId, specialLinkSnapshot]);
 
   useEffect(() => {
     if (!isPriorityEdit || !member || currentStep === 'start' || currentStep === 'success' || currentStep === 'cancel') return;
@@ -1694,6 +1822,23 @@ export default function RegistrationShellPage() {
     returningIdentityAuxMode,
     windowState?.season.id,
     windowState?.session.id,
+  ]);
+
+  useEffect(() => {
+    if (!specialLinkLockedEmail || currentStep !== 'identity') return;
+    if (payload?.registration.returning_member_answer !== 1) return;
+    if (returningProfilesFetchStatus !== 'ready') return;
+    const match = profiles.find((profile) => emailsMatchForSpecialLink(specialLinkLockedEmail, profile.email));
+    const id = match?.id ?? member?.id;
+    if (!id) return;
+    setReturningRegistrarProfileChoice(returningEligibleProfileChoiceValue(id));
+  }, [
+    specialLinkLockedEmail,
+    currentStep,
+    payload?.registration.returning_member_answer,
+    returningProfilesFetchStatus,
+    profiles,
+    member?.id,
   ]);
 
   useEffect(() => {
@@ -2448,7 +2593,15 @@ export default function RegistrationShellPage() {
       resetReturningGuestLoginFlow();
       navigate('/registration/identity');
     } catch (err) {
-      if (isRegistrationInProgressConflict(err) && (await continueExistingServerDraftFromMe().catch(() => false))) {
+      if (isRegistrationInProgressConflict(err)) {
+        if (await continueExistingServerDraftFromMe().catch(() => false)) {
+          return;
+        }
+        setError(
+          specialLinkSnapshot
+            ? 'You already have a registration in progress. Discard it on the start page to use this invite.'
+            : errorMessage(err, 'Unable to finish signing you in.'),
+        );
         return;
       }
       setError(errorMessage(err, 'Unable to finish signing you in.'));
@@ -2631,7 +2784,14 @@ export default function RegistrationShellPage() {
       resetReturningGuestLoginFlow();
       setReturningIdentityAuxMode(null);
       setReturningRegistrarProfileChoice(null);
-      navigate(isStaffCreate ? '/admin/registrations/list' : '/registration/start', { replace: true });
+      navigate(
+        isStaffCreate
+          ? '/admin/registrations/list'
+          : specialLinkSnapshot
+            ? `/registration/start${specialLinkLoginSearch(specialLinkSnapshot.token)}`
+            : '/registration/start',
+        { replace: true },
+      );
     } catch (err) {
       setError(errorMessage(err, 'Unable to clear registration.'));
     } finally {
@@ -2648,7 +2808,11 @@ export default function RegistrationShellPage() {
     resetReturningGuestLoginFlow();
     setReturningIdentityAuxMode(null);
     setReturningRegistrarProfileChoice(null);
-    logout('/registration/start');
+    logout(
+      specialLinkSnapshot
+        ? `/registration/start${specialLinkLoginSearch(specialLinkSnapshot.token)}`
+        : '/registration/start',
+    );
   }
 
   const navigateRegistrationBack = useCallback(
@@ -2693,14 +2857,19 @@ export default function RegistrationShellPage() {
       setReturningIdentityAuxMode(null);
       setReturningRegistrarProfileChoice(null);
       setReturningProfilesFetchStatus('idle');
-      navigate('/registration/start', { replace: true });
+      navigate(
+        specialLinkSnapshot
+          ? `/registration/start${specialLinkLoginSearch(specialLinkSnapshot.token)}`
+          : '/registration/start',
+        { replace: true },
+      );
     } catch (err) {
       setError(errorMessage(err, 'Unable to go back.'));
     } finally {
       backToStartInFlightRef.current = false;
       setLoading(false);
     }
-  }, [member, navigate, registrationId, resetRegistrationFormState]);
+  }, [member, navigate, registrationId, resetRegistrationFormState, specialLinkSnapshot]);
 
   async function handleResumeLocalContinue() {
     const local = loadLocalDraft();
@@ -2763,6 +2932,7 @@ export default function RegistrationShellPage() {
       '/registration/drafts/me',
     );
     if (!data.draft) return false;
+    if (!draftMatchesSpecialLink(data.draft, specialLinkSnapshot)) return false;
     hydrateFromServerPayload(data.draft);
     const target = await resolveResumeStepForDraft(data.draft);
     resetReturningGuestLoginFlow();
@@ -2810,7 +2980,15 @@ export default function RegistrationShellPage() {
       );
       navigate('/registration/identity');
     } catch (err) {
-      if (member && isRegistrationInProgressConflict(err) && (await continueExistingServerDraftFromMe().catch(() => false))) {
+      if (member && isRegistrationInProgressConflict(err)) {
+        if (await continueExistingServerDraftFromMe().catch(() => false)) {
+          return;
+        }
+        setError(
+          specialLinkSnapshot
+            ? 'You already have a registration in progress. Discard it on the start page to use this invite.'
+            : errorMessage(err, 'Unable to start registration.'),
+        );
         return;
       }
       setError(errorMessage(err, 'Unable to start registration.'));
@@ -2884,10 +3062,14 @@ export default function RegistrationShellPage() {
       }
       if (member && registrationId !== null) {
         await api.patch(`/registration/drafts/${registrationId}/identity-new`, {
-          registeringForSelf: identityRegisteringForOther ? false : registeringForSelf === 'self',
+          registeringForSelf: specialLinkMemberEmailMatches
+            ? true
+            : identityRegisteringForOther
+              ? false
+              : registeringForSelf === 'self',
           curler: demographicsPayloadForIdentityApi(form, curlerStoredDateOfBirth),
           submitter: member ? undefined : demographicsPayloadForIdentityApi(form, curlerStoredDateOfBirth),
-          useSubmitterEmailForCurler,
+          useSubmitterEmailForCurler: specialLinkLockedEmail ? false : useSubmitterEmailForCurler,
         });
         const { data } = await api.get<RegistrationShellPayload>(`/registration/drafts/${registrationId}`);
         hydrateFromServerPayload({ id: registrationId, ...data });
@@ -3558,7 +3740,7 @@ export default function RegistrationShellPage() {
 
   const showStartOver =
     windowState &&
-    windowState.state !== 'closed' &&
+    (windowState.state !== 'closed' || specialLinkInviteActive) &&
     !isPriorityEdit &&
     !['start', 'success'].includes(currentStep) &&
     !(currentStep === 'cancel' && !member);
@@ -3801,6 +3983,7 @@ export default function RegistrationShellPage() {
         curlerDateOfBirth={curlerStoredDateOfBirth}
         lockCurlerEmailToSubmitter={syncCurlerEmailChoice && lockCurlerEmailToSubmitter}
         submitterEmailForCurler={submitterEmailForCurler}
+        lockedEmail={specialLinkLockedEmail}
         onSubmitterEmailMatch={syncCurlerEmailChoice ? handleSubmitterEmailMatch : undefined}
         onCommit={commitDemographicsDraft}
       />
@@ -3898,34 +4081,65 @@ export default function RegistrationShellPage() {
               Checking for saved progress…
             </p>
           </>
+        ) : specialLinkErrorReason ? (
+          <>
+            <h1 className="mt-3 text-3xl font-bold text-[#121033]">{specialLinkErrorCopy(specialLinkErrorReason).title}</h1>
+            <p className="mt-3 min-h-[280px] text-gray-600">
+              {specialLinkErrorCopy(specialLinkErrorReason).description}
+            </p>
+          </>
         ) : resumeOffer !== 'none' ? (
           <>
-            <h1 className="mt-3 text-3xl font-bold text-[#121033]">Resume registration?</h1>
+            <h1 className="mt-3 text-3xl font-bold text-[#121033]">
+              {specialLinkInviteActive && !draftMatchesSpecialLink(serverResume, specialLinkSnapshot)
+                ? 'Another registration is in progress'
+                : 'Resume registration?'}
+            </h1>
             <p className="mt-3 text-gray-600">
-              You have an in-progress registration for {seasonSessionLabel}
-              {resumeCurlerName ? (
+              {specialLinkInviteActive && !draftMatchesSpecialLink(serverResume, specialLinkSnapshot) ? (
                 <>
-                  {' '}
-                  for <strong>{resumeCurlerName}</strong>
+                  You have a different in-progress registration for {seasonSessionLabel}. Discard it to use this invite
+                  for <strong>{specialLinkLockedEmail}</strong>.
                 </>
-              ) : null}
-              .
+              ) : (
+                <>
+                  You have an in-progress registration for {seasonSessionLabel}
+                  {resumeCurlerName ? (
+                    <>
+                      {' '}
+                      for <strong>{resumeCurlerName}</strong>
+                    </>
+                  ) : null}
+                  .
+                </>
+              )}
             </p>
             <div className="mt-8 flex min-h-[280px] flex-col gap-3 sm:flex-row sm:flex-wrap sm:content-start">
+              {!(specialLinkInviteActive && !draftMatchesSpecialLink(serverResume, specialLinkSnapshot)) ? (
+                <Button
+                  onClick={() => {
+                    if (resumeOffer === 'server') void handleResumeServerContinue();
+                    else void handleResumeLocalContinue();
+                  }}
+                >
+                  Continue where you left off
+                </Button>
+              ) : null}
               <Button
-                onClick={() => {
-                  if (resumeOffer === 'server') void handleResumeServerContinue();
-                  else void handleResumeLocalContinue();
-                }}
+                variant={
+                  specialLinkInviteActive && !draftMatchesSpecialLink(serverResume, specialLinkSnapshot)
+                    ? undefined
+                    : 'secondary'
+                }
+                onClick={() => void handleResumeDiscard()}
               >
-                Continue where you left off
-              </Button>
-              <Button variant="secondary" onClick={() => void handleResumeDiscard()}>
-                Start from the beginning
+                {specialLinkInviteActive && !draftMatchesSpecialLink(serverResume, specialLinkSnapshot)
+                  ? 'Discard and use this invite'
+                  : 'Start from the beginning'}
               </Button>
             </div>
           </>
-        ) : completedSelfRegistrationId && !registeringForSomeoneElse ? (
+        ) : completedSelfRegistrationId && !registeringForSomeoneElse && !(specialLinkInviteActive && !specialLinkMemberEmailMatches) ? (
           <>
             <h1 className="mt-3 text-3xl font-bold text-[#121033]">You have already registered</h1>
             <p className="mt-3 text-gray-600">
@@ -3941,12 +4155,68 @@ export default function RegistrationShellPage() {
               </Button>
             </div>
           </>
-        ) : windowState?.state === 'closed' ? (
+        ) : windowState?.state === 'closed' && !specialLinkInviteActive ? (
           <>
             <h1 className="mt-3 text-3xl font-bold text-[#121033]">Registration is closed</h1>
             <p className="mt-3 min-h-[280px] text-gray-600">
               Registration for {seasonSessionLabel} is not open yet.
             </p>
+          </>
+        ) : specialLinkInviteActive ? (
+          <>
+            <h1 className="mt-3 text-3xl font-bold text-[#121033]">You&apos;re invited to register</h1>
+            <p className="mt-3 text-gray-600">
+              This invite is for <strong>{specialLinkLockedEmail}</strong> for the {seasonSessionLabel} session.
+              {specialLinkAllowLeagueRegistration
+                ? ' League registration is included, with the leagues chosen by club staff.'
+                : ' This invite is for membership only: basic ice, regular with no ice, or social membership.'}
+            </p>
+            <div className="mt-8 min-h-[280px]">
+              {specialLinkRequiresLogin && !member ? (
+                <>
+                  <p className="text-gray-600">This email already belongs to a club member, so you need to log in first.</p>
+                  {error ? <p className="mt-4 text-sm text-red-600">{error}</p> : null}
+                  <Button
+                    className="mt-6"
+                    onClick={() =>
+                      navigate('/login', {
+                        state: {
+                          from: {
+                            pathname: '/registration/start',
+                            search: specialLinkLoginSearch(specialLinkSnapshot?.token ?? ''),
+                          },
+                        },
+                      })
+                    }
+                  >
+                    Log in to continue
+                  </Button>
+                </>
+              ) : specialLinkRequiresLogin && member && !specialLinkMemberEmailMatches ? (
+                <>
+                  <p className="text-gray-600">
+                    You are signed in as a different account. Log out and sign in as {specialLinkLockedEmail} to use this
+                    invite.
+                  </p>
+                  {error ? <p className="mt-4 text-sm text-red-600">{error}</p> : null}
+                  <Button className="mt-6" onClick={handleIdentityLogout}>
+                    Log out
+                  </Button>
+                </>
+              ) : (
+                <>
+                  {error ? <p className="text-sm text-red-600">{error}</p> : null}
+                  <Button
+                    className="mt-6"
+                    disabled={loading}
+                    type="button"
+                    onClick={() => void startDraft(specialLinkRequiresLogin ? 'yes' : 'no')}
+                  >
+                    Continue
+                  </Button>
+                </>
+              )}
+            </div>
           </>
         ) : (
           <>
@@ -4167,7 +4437,11 @@ export default function RegistrationShellPage() {
         </div>
       </RegistrationCard>
     );
-  } else if (windowState.state === 'closed' && !isRegistrationCheckoutReturnStep(currentStep)) {
+  } else if (
+    windowState.state === 'closed' &&
+    !specialLinkInviteActive &&
+    !isRegistrationCheckoutReturnStep(currentStep)
+  ) {
     content = (
       <RegistrationCard>
         <RegistrationFlowHeader />
@@ -4219,23 +4493,42 @@ export default function RegistrationShellPage() {
           </RegistrationCard>
         );
       } else {
-        const returningRegistrarOptions = [
-          ...profiles.map((profile) => ({
-            value: returningEligibleProfileChoiceValue(profile.id),
-            label: profile.name,
-            description: profile.email?.trim() || undefined,
-          })),
-          {
-            value: RETURNING_IDENTITY_OTHER_RETURNING_VALUE,
-            label: 'Someone else who is a returning member from Winter 2026',
-            description: 'They will need to give you permission to register on their behalf.',
-          },
-          {
-            value: RETURNING_IDENTITY_OTHER_NEW_VALUE,
-            label: 'Someone else who is joining as a new member or returning from a previous season',
-            description: 'The curler needs a new club member account.',
-          },
-        ];
+        const matchingProfiles = specialLinkLockedEmail
+          ? profiles.filter((profile) => emailsMatchForSpecialLink(specialLinkLockedEmail, profile.email))
+          : profiles;
+        const returningRegistrarOptions = specialLinkLockedEmail
+          ? matchingProfiles.length > 0
+            ? matchingProfiles.map((profile) => ({
+                value: returningEligibleProfileChoiceValue(profile.id),
+                label: profile.name,
+                description: profile.email?.trim() || undefined,
+              }))
+            : member
+              ? [
+                  {
+                    value: returningEligibleProfileChoiceValue(member.id),
+                    label: signedInMemberFullName(member, payload.submitter),
+                    description: specialLinkLockedEmail,
+                  },
+                ]
+              : []
+          : [
+              ...profiles.map((profile) => ({
+                value: returningEligibleProfileChoiceValue(profile.id),
+                label: profile.name,
+                description: profile.email?.trim() || undefined,
+              })),
+              {
+                value: RETURNING_IDENTITY_OTHER_RETURNING_VALUE,
+                label: 'Someone else who is a returning member from Winter 2026',
+                description: 'They will need to give you permission to register on their behalf.',
+              },
+              {
+                value: RETURNING_IDENTITY_OTHER_NEW_VALUE,
+                label: 'Someone else who is joining as a new member or returning from a previous season',
+                description: 'The curler needs a new club member account.',
+              },
+            ];
 
       content = (
         <RegistrationCard>
@@ -4255,7 +4548,7 @@ export default function RegistrationShellPage() {
             </p>
           ) : null}
           {!member ? (
-            <Button className="mt-6" onClick={() => navigate('/login', { state: { from: { pathname: '/registration/identity' } } })}>
+            <Button className="mt-6" onClick={() => navigate('/login', { state: { from: { pathname: '/registration/identity', search: specialLinkSnapshot ? specialLinkLoginSearch(specialLinkSnapshot.token) : undefined } } })}>
               Log in to continue
             </Button>
           ) : returningIdentityAuxMode === 'delegation_instructions' ? (
@@ -4279,6 +4572,7 @@ export default function RegistrationShellPage() {
             <form onSubmit={submitReturningOtherNewMemberIdentity} className="mt-8 space-y-6">
               <h2 className="text-xl font-semibold text-[#121033]">New club member details</h2>
               <p className="text-gray-600">Enter details for someone else who doesn&apos;t have a club account yet.</p>
+              {!specialLinkLockedEmail ? (
               <FormField label="Curler email" required tone="public">
                 <ChoiceInput
                   layout="block"
@@ -4290,6 +4584,7 @@ export default function RegistrationShellPage() {
                   ]}
                 />
               </FormField>
+              ) : null}
               {renderIdentityDemographicFields('other-new-member')}
               {error ? <p className="text-sm text-red-600">{error}</p> : null}
               <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:gap-3">
@@ -4455,7 +4750,7 @@ export default function RegistrationShellPage() {
         <h1 className="text-3xl font-bold text-[#121033]">Account and curler setup</h1>
         <p className="mt-3 text-gray-600">Enter information for the person being registered.</p>
         <form onSubmit={submitNewIdentity} className="mt-6 space-y-6">
-          {!member && !registeringForSomeoneElse ? (
+          {!member && !registeringForSomeoneElse && !specialLinkLockedEmail ? (
             <FormField label="Who are you registering?" required tone="public">
               <ChoiceInput
                 layout="block"
@@ -4468,7 +4763,7 @@ export default function RegistrationShellPage() {
               />
             </FormField>
           ) : null}
-          {identityRegisteringForOther ? (
+          {identityRegisteringForOther && !specialLinkLockedEmail ? (
             <FormField label="Curler email" required tone="public">
               <ChoiceInput
                 layout="block"
@@ -4544,6 +4839,7 @@ export default function RegistrationShellPage() {
         onStartOver={handleStartOver}
         onCommitDraft={commitDemographicsDraft}
         onSubmit={submitDemographics}
+        lockedEmail={specialLinkLockedEmail}
       />
     );
   } else if (currentStep === 'name-tag') {
@@ -4867,24 +5163,28 @@ export default function RegistrationShellPage() {
                   setError('');
                 }}
                 options={[
-                  {
-                    value: 'league_play',
-                    label: 'League play or instructional programs',
-                    description: recommendSaturdayInstructional
-                      ? 'Evening and weekend leagues. Includes Saturday Instructional and Junior Advanced Commitment programs.'
-                      : 'Evening and weekend leagues and instructional programs.',
-                  },
+                  ...(specialLinkAllowLeagueRegistration
+                    ? [
+                        {
+                          value: 'league_play' as const,
+                          label: 'League play or instructional programs',
+                          description: recommendSaturdayInstructional
+                            ? 'Evening and weekend leagues. Includes Saturday Instructional and Junior Advanced Commitment programs.'
+                            : 'Evening and weekend leagues and instructional programs.',
+                        },
+                      ]
+                    : []),
                   ...(!skipsIcePrivileges
                     ? [
                         {
-                          value: 'basic_ice',
+                          value: 'basic_ice' as const,
                           label: 'Basic ice privileges',
                           description: 'Sparing, practice, and daytime leagues.',
                         },
                       ]
                     : []),
                   {
-                    value: 'none',
+                    value: 'none' as const,
                     label: 'No ice privileges',
                     description: 'Full membership without on-ice access.',
                   },

@@ -19,6 +19,7 @@ import {
   defaultUswcaMembershipOptIn,
   sqliteFlagFromBoolean,
 } from '../utils/parentAssociationMemberships.js';
+import { loadMemberParentAssociationOptIns, saveMemberParentAssociationOptIns } from '../utils/memberParentAssociationOptIns.js';
 import { paymentDetailsUrl } from '../utils/paymentDetailsUrl.js';
 import { evaluateRegistrationDraft } from './evaluateRegistrationDraft.js';
 import { defaultSabbaticalDurationLimitYears } from './sabbaticalDurationLimit.js';
@@ -668,6 +669,22 @@ function membershipPaymentFieldsFromRegistrationRow(row: RegistrationMembershipP
   };
 }
 
+async function overlayMemberParentAssociationOptIns(
+  selection: RegistrationMembershipPaymentSelection,
+  memberId: number | null | undefined,
+): Promise<RegistrationMembershipPaymentSelection> {
+  if (!memberId) return selection;
+  if (selection.usaCurlingMembershipOptIn != null && selection.uswcaMembershipOptIn != null) {
+    return selection;
+  }
+  const stored = await loadMemberParentAssociationOptIns(memberId);
+  return {
+    ...selection,
+    usaCurlingMembershipOptIn: selection.usaCurlingMembershipOptIn ?? stored.usaCurlingMembershipOptIn,
+    uswcaMembershipOptIn: selection.uswcaMembershipOptIn ?? stored.uswcaMembershipOptIn,
+  };
+}
+
 async function requireRegistrationAccess(registrationId: number, actor: Member) {
   const registration = await getRegistrationById(registrationId);
   if (!registration) {
@@ -985,6 +1002,7 @@ type RegistrationMembershipPaymentSourceRow = {
   name_tag_replacement_quantity?: number | null;
   usa_curling_membership_opt_in?: number | null;
   uswca_membership_opt_in?: number | null;
+  special_link_id?: number | null;
 };
 
 async function buildRegistrationContextFromSourceRow(
@@ -1000,8 +1018,15 @@ async function buildRegistrationContextFromSourceRow(
   },
 ): Promise<RegistrationContext> {
   const { isEarlyAccessUnlockedInRequest } = await import('./registrationEarlyAccess.js');
+  const { filterLeaguesForSpecialLink, resolveSpecialLinkConstraints } = await import('./registrationSpecialLinks.js');
+  const specialLinkConstraints = await resolveSpecialLinkConstraints({
+    specialLinkId: registration.special_link_id,
+    seasonId: registration.season_id,
+    sessionId: registration.session_id,
+  });
   const window = await getEffectiveRegistrationWindow(registration.season_id, registration.session_id, {
     earlyAccessUnlocked: isEarlyAccessUnlockedInRequest(),
+    specialLinkId: registration.special_link_id,
   });
   if (!window) {
     throw new RegistrationMembershipPaymentValidationError({ registration: 'Registration window not found.' });
@@ -1044,7 +1069,7 @@ async function buildRegistrationContextFromSourceRow(
         options.registrationId ? loadJuniorAssistance(options.registrationId) : Promise.resolve(undefined),
       ])
     : emptyContextState;
-  const leagues = loadedLeagues;
+  const leagues = filterLeaguesForSpecialLink(loadedLeagues, specialLinkConstraints);
   const selections = omitLeaveBehindSelectionsForListedLeagues(loadedSelections, priorities);
   const participatedLeagueIds = Array.from(
     new Set([...options.completedSessions.map((session) => session.leagueId), ...activeLeagueIds])
@@ -1210,6 +1235,7 @@ function guestSyntheticSourceRow(input: GuestMembershipPaymentPreviewInput): Reg
     desired_league_count: skipLeaguePlay ? null : input.desiredLeagueCount ?? null,
     usa_curling_membership_opt_in: sqliteFlagFromBoolean(input.usaCurlingMembershipOptIn),
     uswca_membership_opt_in: sqliteFlagFromBoolean(input.uswcaMembershipOptIn),
+    special_link_id: null,
   };
 }
 
@@ -1229,6 +1255,14 @@ export async function getGuestMembershipPaymentPreview(input: GuestMembershipPay
   if (!window) {
     throw new RegistrationMembershipPaymentValidationError({ registration: 'Registration window not found.' });
   }
+  const { assertSpecialLinkMembership, resolveSpecialLinkConstraints } = await import('./registrationSpecialLinks.js');
+  const constraints = await resolveSpecialLinkConstraints({
+    seasonId: input.seasonId,
+    sessionId: input.sessionId,
+  });
+  const membershipOption =
+    input.membershipChoice === 'regular' && input.basicIcePrivileges ? 'regular_spare_only' : input.membershipChoice;
+  assertSpecialLinkMembership(constraints, membershipOption);
 
   const base = await buildGuestRegistrationContext(input, { includeSessionLeagues: true });
   const skipLeaguePlay = guestMembershipSkipsLeaguePlay(input.membershipChoice);
@@ -1278,7 +1312,10 @@ export async function getRegistrationMembershipPaymentPayload(
   );
 
   return {
-    selection: membershipPaymentFieldsFromRegistrationRow(registration),
+    selection: await overlayMemberParentAssociationOptIns(
+      membershipPaymentFieldsFromRegistrationRow(registration),
+      registration.curler_member_id,
+    ),
     icePrivilegesChoice: (registration.ice_privileges_choice ?? 'none') as CurlingIcePrivilegesChoiceSqlite,
     isFirstSessionOfSeason: context.isFirstSessionOfSeason,
     knownExperienceYears: effectiveExperienceYears(context),
@@ -1324,6 +1361,23 @@ export async function updateMembership(registrationId: number, actor: Member, in
   await requireRegistrationAccess(registrationId, actor);
   const registration = await loadFullRegistration(registrationId);
   await assertEditableForMembershipPayment(registration, actor);
+  const { assertSpecialLinkMembership, resolveSpecialLinkConstraints } = await import('./registrationSpecialLinks.js');
+  const constraints = await resolveSpecialLinkConstraints({
+    specialLinkId: registration.special_link_id,
+    seasonId: registration.season_id,
+    sessionId: registration.session_id,
+  });
+  const requestedMembership =
+    input.membershipOption === 'none'
+      ? 'none'
+      : input.membershipOption === 'social'
+        ? 'social'
+        : input.membershipOption === 'junior_recreational'
+          ? 'junior_recreational'
+          : input.basicIcePrivileges
+            ? 'regular_spare_only'
+            : 'regular';
+  assertSpecialLinkMembership(constraints, requestedMembership);
 
   if (input.membershipOption === 'junior_recreational') {
     const payload = await getRegistrationShellPayload(registrationId);
@@ -1364,28 +1418,37 @@ export async function updateMembership(registrationId: number, actor: Member, in
   const existingUsaCurlingOptIn = booleanFromSqliteFlag(registration.usa_curling_membership_opt_in);
   const existingUswcaOptIn = booleanFromSqliteFlag(registration.uswca_membership_opt_in);
   let uswcaDefaultPronouns: string | null = null;
-  if (
-    appliesParentAssociations &&
-    input.uswcaMembershipOptIn == null &&
-    existingUswcaOptIn == null &&
-    registration.curler_member_id
-  ) {
+  let memberUsaCurlingOptIn: boolean | null = null;
+  let memberUswcaOptIn: boolean | null = null;
+  if (registration.curler_member_id) {
     const { db: pronounDb, schema: pronounSchema } = getDrizzleDb();
     const [curler] = await pronounDb
-      .select({ preferred_pronouns: pronounSchema.members.preferred_pronouns })
+      .select({
+        preferred_pronouns: pronounSchema.members.preferred_pronouns,
+        usa_curling_membership_opt_in: pronounSchema.members.usa_curling_membership_opt_in,
+        uswca_membership_opt_in: pronounSchema.members.uswca_membership_opt_in,
+      })
       .from(pronounSchema.members)
       .where(eq(pronounSchema.members.id, registration.curler_member_id))
       .limit(1);
     uswcaDefaultPronouns = curler?.preferred_pronouns ?? null;
+    memberUsaCurlingOptIn = booleanFromSqliteFlag(curler?.usa_curling_membership_opt_in);
+    memberUswcaOptIn = booleanFromSqliteFlag(curler?.uswca_membership_opt_in);
   }
   const usaCurlingMembershipOptIn = appliesParentAssociations
     ? sqliteFlagFromBoolean(
-        input.usaCurlingMembershipOptIn ?? existingUsaCurlingOptIn ?? defaultUsaCurlingMembershipOptIn(),
+        input.usaCurlingMembershipOptIn ??
+          existingUsaCurlingOptIn ??
+          memberUsaCurlingOptIn ??
+          defaultUsaCurlingMembershipOptIn(),
       )
     : null;
   const uswcaMembershipOptIn = appliesParentAssociations
     ? sqliteFlagFromBoolean(
-        input.uswcaMembershipOptIn ?? existingUswcaOptIn ?? defaultUswcaMembershipOptIn(uswcaDefaultPronouns),
+        input.uswcaMembershipOptIn ??
+          existingUswcaOptIn ??
+          memberUswcaOptIn ??
+          defaultUswcaMembershipOptIn(uswcaDefaultPronouns),
       )
     : null;
   const { db, schema } = getDrizzleDb();
@@ -1482,6 +1545,13 @@ export async function updateMembership(registrationId: number, actor: Member, in
       });
     }
   });
+  if (registration.curler_member_id && appliesParentAssociations) {
+    await saveMemberParentAssociationOptIns(registration.curler_member_id, {
+      usaCurlingMembershipOptIn: booleanFromSqliteFlag(usaCurlingMembershipOptIn) ?? undefined,
+      uswcaMembershipOptIn: booleanFromSqliteFlag(uswcaMembershipOptIn) ?? undefined,
+      syncLatestRegistration: false,
+    });
+  }
   return getRegistrationMembershipPaymentPayload(registrationId, actor);
 }
 
@@ -1494,6 +1564,13 @@ export async function updateIcePrivileges(registrationId: number, actor: Member,
       icePrivileges: 'Ice privileges only apply to regular membership.',
     });
   }
+  const { assertSpecialLinkIcePrivileges, resolveSpecialLinkConstraints } = await import('./registrationSpecialLinks.js');
+  const iceConstraints = await resolveSpecialLinkConstraints({
+    specialLinkId: registration.special_link_id,
+    seasonId: registration.season_id,
+    sessionId: registration.session_id,
+  });
+  assertSpecialLinkIcePrivileges(iceConstraints, input.choice);
   if (input.choice === 'basic_ice') {
     const experienceType = registration.experience_type;
     const years = registration.experience_self_reported_years;
@@ -2650,6 +2727,10 @@ export async function submitRegistrationMembershipPayment(input: SubmitRegistrat
         updated_at: sql`CURRENT_TIMESTAMP`,
       })
       .where(eq(schema.curlingRegistrations.id, input.registrationId));
+    if (registration.special_link_id != null && registration.submitted_at == null) {
+      const { markRegistrationSpecialLinkUsed } = await import('./registrationSpecialLinks.js');
+      await markRegistrationSpecialLinkUsed(registration.special_link_id, tx);
+    }
     await syncRegistrationRosterPlacements({
       tx,
       registrationId: input.registrationId,

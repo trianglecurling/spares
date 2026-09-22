@@ -10,6 +10,7 @@ import Modal from '../../components/Modal';
 import PageTabs from '../../components/PageTabs';
 import PhysicalAddressCollect from '../../components/PhysicalAddressCollect';
 import PreferredPronounsField from '../../components/PreferredPronounsField';
+import RegistrationParentAssociationFields from '../../components/registration/RegistrationParentAssociationFields';
 import UsaCurlingCompetitionGenderField from '../../components/UsaCurlingCompetitionGenderField';
 import ProfilePaymentHistoryTab from '../../components/profile/ProfilePaymentHistoryTab';
 import api, { formatApiError } from '../../utils/api';
@@ -33,6 +34,11 @@ import {
   serializeRegistrationMailingAddress,
 } from '../../utils/registrationMailingAddress';
 import { resolveUsaCurlingCompetitionGenderForSave } from '../../utils/usaCurlingCompetitionGender';
+import {
+  defaultUsaCurlingMembershipOptIn,
+  resolveUsaCurlingMembershipOptIn,
+  resolveUswcaMembershipOptIn,
+} from '../../utils/parentAssociationMemberships';
 import { dateOfBirthValidationMessage, localDateOnly } from '../../utils/memberAge';
 
 function memberNameParts(member: Pick<Member, 'name' | 'firstName' | 'lastName'>): {
@@ -60,6 +66,9 @@ type MemberUpdatePayload = {
   emergencyContactPhone?: string;
   preferredPronouns?: string;
   usaCurlingCompetitionGender?: 'Male' | 'Female' | 'Unspecified';
+  usaCurlingMembershipOptIn?: boolean;
+  uswcaMembershipOptIn?: boolean;
+  usaCurlingMembershipNumber?: string | null;
   emailVisible: boolean;
   phoneVisible: boolean;
   lifetimeMember?: boolean;
@@ -197,6 +206,7 @@ export default function AdminMemberEditorModal({
   const dateOfBirthInputId = useId();
   const preferredPronounsInputId = useId();
   const usaCurlingCompetitionGenderInputId = useId();
+  const usaCurlingMembershipNumberInputId = useId();
   const emergencyContactNameInputId = useId();
   const emergencyContactPhoneInputId = useId();
   const baselineOtherClubExperienceInputId = useId();
@@ -231,6 +241,9 @@ export default function AdminMemberEditorModal({
   const addMembershipTypeInputId = useId();
   const [demographics, setDemographics] = useState<MemberDemographicsFormFields>(emptyMemberDemographicsForm);
   const [guardian, setGuardian] = useState<MemberGuardianFormFields>(emptyMemberGuardianForm);
+  const [usaCurlingMembershipOptIn, setUsaCurlingMembershipOptIn] = useState(defaultUsaCurlingMembershipOptIn);
+  const [uswcaMembershipOptIn, setUswcaMembershipOptIn] = useState(false);
+  const [usaCurlingMembershipNumber, setUsaCurlingMembershipNumber] = useState('');
   const [profileLoading, setProfileLoading] = useState(false);
 
   const resetFormClosed = () => {
@@ -260,6 +273,9 @@ export default function AdminMemberEditorModal({
     setMembershipActionSubmitting(false);
     setDemographics(emptyMemberDemographicsForm());
     setGuardian(emptyMemberGuardianForm());
+    setUsaCurlingMembershipOptIn(defaultUsaCurlingMembershipOptIn());
+    setUswcaMembershipOptIn(false);
+    setUsaCurlingMembershipNumber('');
     setProfileLoading(false);
   };
 
@@ -324,10 +340,18 @@ export default function AdminMemberEditorModal({
         if (canceled) return;
         setDemographics(memberDemographicsFormFromProfile(profile.data));
         setGuardian(memberGuardianFormFromProfile(profile.data));
+        setUsaCurlingMembershipOptIn(resolveUsaCurlingMembershipOptIn(profile.data.usaCurlingMembershipOptIn));
+        setUswcaMembershipOptIn(
+          resolveUswcaMembershipOptIn(profile.data.uswcaMembershipOptIn, profile.data.preferredPronouns),
+        );
+        setUsaCurlingMembershipNumber(profile.data.usaCurlingMembershipNumber ?? '');
       } catch {
         if (!canceled) {
           setDemographics(emptyMemberDemographicsForm());
           setGuardian(emptyMemberGuardianForm());
+          setUsaCurlingMembershipOptIn(defaultUsaCurlingMembershipOptIn());
+          setUswcaMembershipOptIn(false);
+          setUsaCurlingMembershipNumber('');
         }
       } finally {
         if (!canceled) setProfileLoading(false);
@@ -606,6 +630,9 @@ export default function AdminMemberEditorModal({
           usaCurlingCompetitionGender: resolveUsaCurlingCompetitionGenderForSave(
             demographics.usaCurlingCompetitionGender,
           ),
+          usaCurlingMembershipOptIn,
+          uswcaMembershipOptIn,
+          usaCurlingMembershipNumber: usaCurlingMembershipNumber.trim() || null,
           emailVisible: formData.emailVisible,
           phoneVisible: formData.phoneVisible,
           guardianFirstName: guardian.guardianFirstName.trim(),
@@ -882,6 +909,30 @@ export default function AdminMemberEditorModal({
                   alwaysShowSelect
                 />
               </div>
+
+              <RegistrationParentAssociationFields
+                usaCurlingOptIn={usaCurlingMembershipOptIn}
+                uswcaOptIn={uswcaMembershipOptIn}
+                onUsaCurlingChange={setUsaCurlingMembershipOptIn}
+                onUswcaChange={setUswcaMembershipOptIn}
+                tone="app"
+                audience="staff"
+              />
+
+              <FormField
+                label="USA Curling membership number"
+                htmlFor={usaCurlingMembershipNumberInputId}
+                helperText="Staff only. Used on the USA Curling roster export."
+              >
+                <input
+                  id={usaCurlingMembershipNumberInputId}
+                  type="text"
+                  value={usaCurlingMembershipNumber}
+                  onChange={(event) => setUsaCurlingMembershipNumber(event.target.value)}
+                  className="app-input"
+                  autoComplete="off"
+                />
+              </FormField>
 
               <PhysicalAddressCollect
                 value={mailingStructuredAddress}

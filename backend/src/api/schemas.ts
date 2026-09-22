@@ -23,6 +23,9 @@ export const memberProfileResponseSchema = {
     emergencyContactPhone: { type: ['string', 'null'] },
     preferredPronouns: { type: ['string', 'null'] },
     usaCurlingCompetitionGender: { type: ['string', 'null'] },
+    usaCurlingMembershipOptIn: { type: ['boolean', 'null'] },
+    uswcaMembershipOptIn: { type: ['boolean', 'null'] },
+    usaCurlingMembershipNumber: { type: ['string', 'null'] },
     guardianFirstName: { type: ['string', 'null'] },
     guardianLastName: { type: ['string', 'null'] },
     guardianEmail: { type: ['string', 'null'] },
@@ -50,6 +53,9 @@ export const memberProfileResponseSchema = {
     'emergencyContactPhone',
     'preferredPronouns',
     'usaCurlingCompetitionGender',
+    'usaCurlingMembershipOptIn',
+    'uswcaMembershipOptIn',
+    'usaCurlingMembershipNumber',
     'guardianFirstName',
     'guardianLastName',
     'guardianEmail',
@@ -341,6 +347,81 @@ export const bulkDeleteResponseSchema = {
     deletedCount: { type: 'number' },
   },
   required: ['success', 'deletedCount'],
+} as const;
+
+export const orgRosterMemberSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    id: { type: 'number' },
+    name: { type: 'string' },
+    firstName: { type: 'string' },
+    lastName: { type: 'string' },
+    email: { type: ['string', 'null'] },
+    usaCurlingOptIn: { type: 'boolean' },
+    uswcaOptIn: { type: 'boolean' },
+    usaCurlingMembershipNumber: { type: ['string', 'null'] },
+    usaCurlingMembershipType: { type: 'string', enum: ['Basic', 'Youth'] },
+    usaCurlingFromAnotherClub: { type: 'boolean' },
+    missingUsaCurlingNumber: { type: 'boolean' },
+  },
+  required: [
+    'id',
+    'name',
+    'firstName',
+    'lastName',
+    'email',
+    'usaCurlingOptIn',
+    'uswcaOptIn',
+    'usaCurlingMembershipNumber',
+    'usaCurlingMembershipType',
+    'usaCurlingFromAnotherClub',
+    'missingUsaCurlingNumber',
+  ],
+} as const;
+
+export const orgRostersResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    generatedOn: { type: 'string' },
+    currentMemberCount: { type: 'number' },
+    usaCurlingCount: { type: 'number' },
+    uswcaCount: { type: 'number' },
+    missingUsaCurlingNumberCount: { type: 'number' },
+    members: { type: 'array', items: orgRosterMemberSchema },
+    usaCurlingTsv: { type: 'string' },
+    uswcaTsv: { type: 'string' },
+  },
+  required: [
+    'generatedOn',
+    'currentMemberCount',
+    'usaCurlingCount',
+    'uswcaCount',
+    'missingUsaCurlingNumberCount',
+    'members',
+    'usaCurlingTsv',
+    'uswcaTsv',
+  ],
+} as const;
+
+export const orgRosterConfirmationEmailBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    confirmByDate: { type: 'string', minLength: 1 },
+  },
+  required: ['confirmByDate'],
+} as const;
+
+export const orgRosterConfirmationEmailResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    queued: { type: 'number' },
+    skippedNoEmail: { type: 'number' },
+  },
+  required: ['queued', 'skippedNoEmail'],
 } as const;
 
 export const bulkSendWelcomeResponseSchema = {
@@ -947,6 +1028,78 @@ export const registrationEarlyAccessUnlockResponseSchema = {
     expiresAt: { type: 'string' },
   },
   required: ['unlockToken', 'expiresAt'],
+} as const;
+
+export const registrationSpecialLinkPublicResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    valid: { type: 'boolean' },
+    reason: { type: 'string', enum: ['used', 'invalidated', 'not_found'] },
+    email: { type: 'string' },
+    allowLeagueRegistration: { type: 'boolean' },
+    allowedLeagueIds: { type: 'array', items: { type: 'number' }, nullable: true },
+    requiresLogin: { type: 'boolean' },
+    seasonId: { type: 'number' },
+    sessionId: { type: 'number' },
+    seasonName: { type: 'string' },
+    sessionName: { type: 'string' },
+  },
+  required: ['valid'],
+} as const;
+
+export const registrationSpecialLinkStaffRowSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    id: { type: 'number' },
+    token: { type: 'string' },
+    label: { type: ['string', 'null'] },
+    email: { type: 'string' },
+    allowLeagueRegistration: { type: 'boolean' },
+    allowedLeagueIds: { type: 'array', items: { type: 'number' }, nullable: true },
+    used: { type: 'boolean' },
+    invalidated: { type: 'boolean' },
+    usedByRegistrationId: { type: ['number', 'null'] },
+    createdAt: { type: 'string' },
+    usedAt: { type: ['string', 'null'] },
+    registrationUrl: { type: 'string' },
+  },
+  required: [
+    'id',
+    'token',
+    'label',
+    'email',
+    'allowLeagueRegistration',
+    'allowedLeagueIds',
+    'used',
+    'invalidated',
+    'usedByRegistrationId',
+    'createdAt',
+    'usedAt',
+    'registrationUrl',
+  ],
+} as const;
+
+export const registrationSpecialLinkStaffListResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    links: { type: 'array', items: registrationSpecialLinkStaffRowSchema },
+    leagues: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          id: { type: 'number' },
+          name: { type: 'string' },
+        },
+        required: ['id', 'name'],
+      },
+    },
+  },
+  required: ['links', 'leagues'],
 } as const;
 
 export const registrationSeasonListResponseSchema = {
