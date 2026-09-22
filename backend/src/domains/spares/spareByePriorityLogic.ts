@@ -57,9 +57,6 @@ export function buildPublicSpareRecipientPools<T extends { id: number }>(params:
   requesterId: number;
   excludeMemberIds?: Iterable<number>;
   unavailableMemberIds: Iterable<number>;
-  position?: string | null;
-  /** Required when position is skip: bye members must be able to skip unless already in availableMembers. */
-  canSkipMemberIds?: Iterable<number>;
   shuffle?: <U>(items: U[]) => U[];
 }): {
   byeRecipients: T[];
@@ -70,15 +67,10 @@ export function buildPublicSpareRecipientPools<T extends { id: number }>(params:
   const exclude = new Set<number>([params.requesterId, ...(params.excludeMemberIds ?? [])]);
   const unavailable = new Set(params.unavailableMemberIds);
   const availableById = new Map(params.availableMembers.map((row) => [row.id, row]));
-  const canSkip = new Set(params.canSkipMemberIds ?? []);
 
-  let byeCandidateIds = [...params.byeMemberIds].filter(
+  const byeCandidateIds = [...params.byeMemberIds].filter(
     (id) => !exclude.has(id) && !unavailable.has(id),
   );
-
-  if (params.position === 'skip') {
-    byeCandidateIds = byeCandidateIds.filter((id) => canSkip.has(id) || availableById.has(id));
-  }
 
   const memberById = new Map<number, T>(availableById);
   for (const row of params.extraByeMembers ?? []) {
