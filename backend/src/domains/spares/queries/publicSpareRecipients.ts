@@ -249,27 +249,12 @@ export async function getPublicSpareRecipients(params: {
   const availableById = new Map(availableRows.map((row) => [row.id, row]));
   const exclude = new Set<number>([params.requesterId, ...(params.excludeMemberIds ?? [])]);
 
-  let byeCandidateIds = [...byeIds].filter((id) => !exclude.has(id) && !unavailableMemberIds.has(id));
-  let canSkipMemberIds: Set<number> | undefined;
-  if (params.position === 'skip') {
-    const canSkipRows =
-      byeCandidateIds.length === 0
-        ? []
-        : await db
-            .select({ member_id: schema.memberAvailability.member_id })
-            .from(schema.memberAvailability)
-            .where(
-              and(
-                eq(schema.memberAvailability.league_id, params.leagueId),
-                eq(schema.memberAvailability.can_skip, 1),
-                inArray(schema.memberAvailability.member_id, byeCandidateIds),
-              ),
-            );
-    canSkipMemberIds = new Set(canSkipRows.map((r) => r.member_id));
-    byeCandidateIds = byeCandidateIds.filter(
-      (id) => canSkipMemberIds!.has(id) || availableById.has(id),
-    );
-  }
+  // A scheduled bye overrides all spare-availability preferences. Every otherwise
+  // eligible player on a bye team receives the priority notification, including
+  // players who did not opt into general spare notifications or cannot skip.
+  const byeCandidateIds = [...byeIds].filter(
+    (id) => !exclude.has(id) && !unavailableMemberIds.has(id),
+  );
 
   const byeMembersToLoad = byeCandidateIds.filter((id) => !availableById.has(id));
   const byeExtraRows =
@@ -294,8 +279,6 @@ export async function getPublicSpareRecipients(params: {
     requesterId: params.requesterId,
     excludeMemberIds: params.excludeMemberIds,
     unavailableMemberIds,
-    position: params.position,
-    canSkipMemberIds,
   });
 }
 

@@ -147,34 +147,18 @@ describe('buildPublicSpareRecipientPools', () => {
     expect(pools.otherRecipients.map((m) => m.id)).toEqual([10]);
   });
 
-  test('for skip requests, only includes bye members who can skip (or are already available)', () => {
+  test('includes every eligible bye member regardless of spare availability or skip preference', () => {
     const pools = buildPublicSpareRecipientPools({
       availableMembers: [{ id: 10 }],
       byeMemberIds: [20, 21, 22],
       extraByeMembers: [{ id: 20 }, { id: 21 }, { id: 22 }],
       requesterId: 1,
       unavailableMemberIds: [],
-      position: 'skip',
-      canSkipMemberIds: [20],
       shuffle: identityShuffle,
     });
 
-    // 20 can skip; 21/22 cannot and are not in available pool
-    expect(pools.byeRecipients.map((m) => m.id)).toEqual([20]);
-  });
-
-  test('for skip requests, available bye members remain even without can_skip row lookup', () => {
-    const pools = buildPublicSpareRecipientPools({
-      availableMembers: [{ id: 20 }],
-      byeMemberIds: [20],
-      requesterId: 1,
-      unavailableMemberIds: [],
-      position: 'skip',
-      canSkipMemberIds: [],
-      shuffle: identityShuffle,
-    });
-
-    expect(pools.byeRecipients.map((m) => m.id)).toEqual([20]);
+    expect(pools.byeRecipients.map((m) => m.id)).toEqual([20, 21, 22]);
+    expect(pools.otherRecipients.map((m) => m.id)).toEqual([10]);
   });
 });
 
