@@ -101,8 +101,10 @@ export const abuseRouteRateLimits = {
   },
   contact: {
     hook: 'preHandler' as const,
-    max: 5,
-    timeWindow: '1 hour' as const,
+    // Coarse flood cap only. The contact route applies the real 5/hour IP limit
+    // after CAPTCHA so failed/honeypot posts do not lock the form.
+    max: 30,
+    timeWindow: '15 minutes' as const,
     allowList: shouldBypassIpLimit,
     keyGenerator: (request: FastifyRequest) => `contact:${clientIp(request)}`,
     errorResponseBuilder: rateLimitError('Too many contact requests. Please try again later.'),
