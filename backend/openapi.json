@@ -8957,6 +8957,30 @@
                     "missingUsaCurlingNumberCount": {
                       "type": "number"
                     },
+                    "lastConfirmationEmailsQueuedAt": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "lastConfirmationEmailsQueuedCount": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "lastConfirmationEmailsSkippedNoEmail": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "lastConfirmationEmailsConfirmByDate": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
                     "members": {
                       "type": "array",
                       "items": {
@@ -9035,6 +9059,10 @@
                     "usaCurlingCount",
                     "uswcaCount",
                     "missingUsaCurlingNumberCount",
+                    "lastConfirmationEmailsQueuedAt",
+                    "lastConfirmationEmailsQueuedCount",
+                    "lastConfirmationEmailsSkippedNoEmail",
+                    "lastConfirmationEmailsConfirmByDate",
                     "members",
                     "usaCurlingTsv",
                     "uswcaTsv"

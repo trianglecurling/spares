@@ -1,5 +1,5 @@
 import { ageInYearsOnDate } from './memberAge.js';
-import { USA_CURLING_CLUB_VALUE, USA_CURLING_YOUTH_MAX_AGE } from './parentOrganizations.js';
+import { USA_CURLING_CLUB_VALUE, USA_CURLING_YOUTH_UNDER_AGE } from './parentOrganizations.js';
 
 export type UsaCurlingMembershipType = 'Basic' | 'Youth';
 
@@ -12,7 +12,7 @@ export type UsaCurlingRosterRow = {
   membershipNumber: string | null;
   validFrom: string;
   membershipType: UsaCurlingMembershipType;
-  fromAnotherClub: boolean;
+  primaryContactNumber: string;
 };
 
 export type UswcaRosterRow = {
@@ -29,18 +29,24 @@ export function formatUsaSpreadsheetDate(isoDate: string | null | undefined): st
 }
 
 export function usaCurlingMembershipType(input: {
-  membershipType: 'regular' | 'social' | 'junior_recreational' | null;
   dateOfBirth: string | null;
   asOfDate: string;
 }): UsaCurlingMembershipType {
-  if (input.membershipType === 'junior_recreational') return 'Youth';
   const age = ageInYearsOnDate(input.dateOfBirth, input.asOfDate);
-  if (age != null && age <= USA_CURLING_YOUTH_MAX_AGE) return 'Youth';
+  if (age != null && age < USA_CURLING_YOUTH_UNDER_AGE) return 'Youth';
   return 'Basic';
 }
 
 export function usaCurlingFromAnotherClub(otherClubExperienceYears: number | null | undefined): boolean {
   return (otherClubExperienceYears ?? 0) > 0;
+}
+
+export function formatUsaCurlingPhone(phone: string | null | undefined): string {
+  const digits = (phone ?? '').replace(/\D/g, '');
+  const national =
+    digits.length === 11 && digits.startsWith('1') ? digits.slice(1) : digits;
+  if (national.length !== 10) return '';
+  return `(${national.slice(0, 3)}) ${national.slice(3, 6)}-${national.slice(6)}`;
 }
 
 export function tsvCell(value: string | number | null | undefined): string {
@@ -64,9 +70,9 @@ export function buildUsaCurlingRosterTsv(rows: UsaCurlingRosterRow[]): string {
         tsvCell(formatUsaSpreadsheetDate(row.validFrom)),
         tsvCell(USA_CURLING_CLUB_VALUE),
         tsvCell(row.membershipType),
+        tsvCell(formatUsaCurlingPhone(row.primaryContactNumber)),
         '',
         '',
-        tsvCell(row.fromAnotherClub ? 'Yes' : 'No'),
       ].join('\t'),
     )
     .join('\n');

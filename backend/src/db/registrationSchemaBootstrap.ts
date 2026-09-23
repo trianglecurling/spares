@@ -588,6 +588,21 @@ INSERT INTO registration_league_processing_settings (scope, enabled)
 VALUES ('singleton', 0)
 ON CONFLICT (scope) DO NOTHING`));
     await db.execute(sql.raw(`
+CREATE TABLE IF NOT EXISTS parent_org_confirmation_email_state (
+  scope TEXT PRIMARY KEY NOT NULL DEFAULT 'singleton',
+  last_queued_at TIMESTAMP,
+  last_queued_count INTEGER NOT NULL DEFAULT 0,
+  last_skipped_no_email INTEGER NOT NULL DEFAULT 0,
+  last_confirm_by_date TEXT,
+  last_actor_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+)`));
+    await db.execute(sql.raw(`
+INSERT INTO parent_org_confirmation_email_state (scope)
+VALUES ('singleton')
+ON CONFLICT (scope) DO NOTHING`));
+    await db.execute(sql.raw(`
 CREATE TABLE IF NOT EXISTS registration_payment_deadlines (
   id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   season_id INTEGER NOT NULL REFERENCES curling_seasons(id) ON DELETE CASCADE,
@@ -664,6 +679,20 @@ CREATE TABLE IF NOT EXISTS registration_league_processing_settings (
   await db.execute(sql.raw(`
 INSERT OR IGNORE INTO registration_league_processing_settings (scope, enabled)
 VALUES ('singleton', 0)`));
+  await db.execute(sql.raw(`
+CREATE TABLE IF NOT EXISTS parent_org_confirmation_email_state (
+  scope TEXT PRIMARY KEY NOT NULL DEFAULT 'singleton',
+  last_queued_at DATETIME,
+  last_queued_count INTEGER NOT NULL DEFAULT 0,
+  last_skipped_no_email INTEGER NOT NULL DEFAULT 0,
+  last_confirm_by_date TEXT,
+  last_actor_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`));
+  await db.execute(sql.raw(`
+INSERT OR IGNORE INTO parent_org_confirmation_email_state (scope)
+VALUES ('singleton')`));
   await db.execute(sql.raw(`
 CREATE TABLE IF NOT EXISTS registration_payment_deadlines (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

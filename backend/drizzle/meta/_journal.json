@@ -596,6 +596,13 @@
       "when": 1788492000000,
       "tag": "0085_add_league_settings_points_possible",
       "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1788492600000,
+      "tag": "0086_add_parent_org_confirmation_email_state",
+      "breakpoints": true
     }
   ]
 }

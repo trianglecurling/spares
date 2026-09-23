@@ -3,6 +3,7 @@ import { USA_CURLING_CLUB_VALUE } from './parentOrganizations.js';
 import {
   buildUsaCurlingRosterTsv,
   buildUswcaRosterTsv,
+  formatUsaCurlingPhone,
   formatUsaSpreadsheetDate,
   tsvCell,
   usaCurlingFromAnotherClub,
@@ -16,26 +17,29 @@ describe('org roster format', () => {
     expect(formatUsaSpreadsheetDate(null)).toBe('');
   });
 
-  test('maps junior recreational and age 21 and under to Youth', () => {
+  test('maps members under 18 on the roster date to Youth', () => {
     expect(
       usaCurlingMembershipType({
-        membershipType: 'junior_recreational',
+        dateOfBirth: '2008-09-24',
+        asOfDate: '2026-09-23',
+      }),
+    ).toBe('Youth');
+    expect(
+      usaCurlingMembershipType({
+        dateOfBirth: '2008-09-23',
+        asOfDate: '2026-09-23',
+      }),
+    ).toBe('Basic');
+    expect(
+      usaCurlingMembershipType({
         dateOfBirth: '1990-01-01',
-        asOfDate: '2026-09-22',
+        asOfDate: '2026-09-23',
       }),
-    ).toBe('Youth');
+    ).toBe('Basic');
     expect(
       usaCurlingMembershipType({
-        membershipType: 'regular',
-        dateOfBirth: '2005-09-22',
-        asOfDate: '2026-09-22',
-      }),
-    ).toBe('Youth');
-    expect(
-      usaCurlingMembershipType({
-        membershipType: 'regular',
-        dateOfBirth: '2004-09-21',
-        asOfDate: '2026-09-22',
+        dateOfBirth: null,
+        asOfDate: '2026-09-23',
       }),
     ).toBe('Basic');
   });
@@ -44,6 +48,18 @@ describe('org roster format', () => {
     expect(usaCurlingFromAnotherClub(0)).toBe(false);
     expect(usaCurlingFromAnotherClub(0.5)).toBe(true);
     expect(usaCurlingFromAnotherClub(null)).toBe(false);
+  });
+
+  test('formats USA Curling phones as 10-digit US numbers', () => {
+    expect(formatUsaCurlingPhone('919-555-0100')).toBe('(919) 555-0100');
+    expect(formatUsaCurlingPhone('(919) 555-0100')).toBe('(919) 555-0100');
+    expect(formatUsaCurlingPhone('19195550100')).toBe('(919) 555-0100');
+    expect(formatUsaCurlingPhone('+1 (919) 555-0100')).toBe('(919) 555-0100');
+    expect(formatUsaCurlingPhone('555-0100')).toBe('');
+    expect(formatUsaCurlingPhone('29195550100')).toBe('');
+    expect(formatUsaCurlingPhone('91955501001')).toBe('');
+    expect(formatUsaCurlingPhone('')).toBe('');
+    expect(formatUsaCurlingPhone(null)).toBe('');
   });
 
   test('quotes TSV cells that contain tabs or quotes', () => {
@@ -63,7 +79,7 @@ describe('org roster format', () => {
         membershipNumber: '12345',
         validFrom: '2026-09-22',
         membershipType: 'Basic',
-        fromAnotherClub: true,
+        primaryContactNumber: '919-555-0100',
       },
     ]);
     expect(tsv.startsWith('Email')).toBe(false);
@@ -78,9 +94,9 @@ describe('org roster format', () => {
         '09/22/2026',
         USA_CURLING_CLUB_VALUE,
         'Basic',
+        '(919) 555-0100',
         '',
         '',
-        'Yes',
       ].join('\t'),
     );
   });

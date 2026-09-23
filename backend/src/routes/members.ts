@@ -1805,7 +1805,10 @@ export async function memberRoutes(fastify: FastifyInstance) {
       }
       const body = z.object({ confirmByDate: z.string().min(1) }).parse(request.body);
       try {
-        return await queueOrgRosterConfirmationEmails({ confirmByDate: body.confirmByDate });
+        return await queueOrgRosterConfirmationEmails({
+          confirmByDate: body.confirmByDate,
+          actorMemberId: member.id,
+        });
       } catch (error) {
         if (error instanceof OrgRosterValidationError) {
           return sendValidationError(reply, error.message, error.details);

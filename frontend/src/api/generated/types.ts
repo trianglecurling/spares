@@ -5541,6 +5541,10 @@ export interface paths {
                             usaCurlingCount: number;
                             uswcaCount: number;
                             missingUsaCurlingNumberCount: number;
+                            lastConfirmationEmailsQueuedAt: null | string;
+                            lastConfirmationEmailsQueuedCount: null | number;
+                            lastConfirmationEmailsSkippedNoEmail: null | number;
+                            lastConfirmationEmailsConfirmByDate: null | string;
                             members: {
                                 id: number;
                                 name: string;

@@ -1,6 +1,7 @@
-import { and, desc, eq, gte, inArray } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { OrgRosterConfirmationEmailResponse, OrgRostersResponse } from '../api/types.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
+import { getDatabaseConfig } from '../db/config.js';
 import { sendParentOrgConfirmationEmail } from './email.js';
 import { ACCOUNT_KIND_PERSON } from '../utils/accountKind.js';
 import { isValidDateOnly } from '../utils/memberAge.js';
@@ -22,7 +23,9 @@ import {
 } from '../utils/parentAssociationMemberships.js';
 import { memberHasActiveMembershipCondition } from './memberMembershipStatusService.js';
 import { getCurrentDateStringAsync } from '../utils/time.js';
-import { getDatabaseConfig } from '../db/config.js';
+import { toIsoTimestamp } from '../utils/clubOperatingDay.js';
+
+const SINGLETON_SCOPE = 'singleton';
 
 function normalizeDateString(value: unknown): string | null {
   if (value === null || value === undefined) return null;
@@ -31,11 +34,11 @@ function normalizeDateString(value: unknown): string | null {
   return String(value).split('T')[0] || null;
 }
 
-function dateColumnBindValue(dateString: string): Date | string {
+function timestampBindValue(date: Date): Date | string {
   if (getDatabaseConfig()?.type === 'postgres') {
-    return new Date(`${dateString}T00:00:00`);
+    return date;
   }
-  return dateString;
+  return date.toISOString();
 }
 
 function competitionGender(value: string | null | undefined): string {
@@ -52,6 +55,77 @@ export class OrgRosterValidationError extends Error {
   }
 }
 
+async function loadLastConfirmationEmailSend(): Promise<{
+  lastConfirmationEmailsQueuedAt: string | null;
+  lastConfirmationEmailsQueuedCount: number | null;
+  lastConfirmationEmailsSkippedNoEmail: number | null;
+  lastConfirmationEmailsConfirmByDate: string | null;
+}> {
+  const { db, schema } = getDrizzleDb();
+  const [row] = await db
+    .select({
+      lastQueuedAt: schema.parentOrgConfirmationEmailState.last_queued_at,
+      lastQueuedCount: schema.parentOrgConfirmationEmailState.last_queued_count,
+      lastSkippedNoEmail: schema.parentOrgConfirmationEmailState.last_skipped_no_email,
+      lastConfirmByDate: schema.parentOrgConfirmationEmailState.last_confirm_by_date,
+    })
+    .from(schema.parentOrgConfirmationEmailState)
+    .where(eq(schema.parentOrgConfirmationEmailState.scope, SINGLETON_SCOPE))
+    .limit(1);
+  if (!row?.lastQueuedAt) {
+    return {
+      lastConfirmationEmailsQueuedAt: null,
+      lastConfirmationEmailsQueuedCount: null,
+      lastConfirmationEmailsSkippedNoEmail: null,
+      lastConfirmationEmailsConfirmByDate: null,
+    };
+  }
+  return {
+    lastConfirmationEmailsQueuedAt: toIsoTimestamp(row.lastQueuedAt),
+    lastConfirmationEmailsQueuedCount: row.lastQueuedCount,
+    lastConfirmationEmailsSkippedNoEmail: row.lastSkippedNoEmail,
+    lastConfirmationEmailsConfirmByDate: row.lastConfirmByDate,
+  };
+}
+
+async function recordConfirmationEmailSend(input: {
+  queued: number;
+  skippedNoEmail: number;
+  confirmByDate: string;
+  actorMemberId: number;
+}): Promise<void> {
+  const now = new Date();
+  const queuedAtValue = timestampBindValue(now);
+  const { db, schema } = getDrizzleDb();
+  const [existing] = await db
+    .select({ scope: schema.parentOrgConfirmationEmailState.scope })
+    .from(schema.parentOrgConfirmationEmailState)
+    .where(eq(schema.parentOrgConfirmationEmailState.scope, SINGLETON_SCOPE))
+    .limit(1);
+  if (!existing) {
+    await db.insert(schema.parentOrgConfirmationEmailState).values({
+      scope: SINGLETON_SCOPE,
+      last_queued_at: queuedAtValue as never,
+      last_queued_count: input.queued,
+      last_skipped_no_email: input.skippedNoEmail,
+      last_confirm_by_date: input.confirmByDate,
+      last_actor_member_id: input.actorMemberId,
+    });
+    return;
+  }
+  await db
+    .update(schema.parentOrgConfirmationEmailState)
+    .set({
+      last_queued_at: queuedAtValue as never,
+      last_queued_count: input.queued,
+      last_skipped_no_email: input.skippedNoEmail,
+      last_confirm_by_date: input.confirmByDate,
+      last_actor_member_id: input.actorMemberId,
+      updated_at: sql`CURRENT_TIMESTAMP`,
+    })
+    .where(eq(schema.parentOrgConfirmationEmailState.scope, SINGLETON_SCOPE));
+}
+
 export async function getOrgRosters(): Promise<OrgRostersResponse> {
   const today = await getCurrentDateStringAsync();
   const { db, schema } = getDrizzleDb();
@@ -60,6 +134,7 @@ export async function getOrgRosters(): Promise<OrgRostersResponse> {
       id: schema.members.id,
       name: schema.members.name,
       email: schema.members.email,
+      phone: schema.members.phone,
       first_name: schema.members.first_name,
       last_name: schema.members.last_name,
       date_of_birth: schema.members.date_of_birth,
@@ -79,32 +154,7 @@ export async function getOrgRosters(): Promise<OrgRostersResponse> {
     )
     .orderBy(schema.members.last_name, schema.members.first_name, schema.members.name);
 
-  const memberIds = rows.map((row) => row.id);
-  const membershipTypeByMemberId = new Map<number, 'regular' | 'social' | 'junior_recreational'>();
-  if (memberIds.length > 0) {
-    const todayValue = dateColumnBindValue(today);
-    const memberships = await db
-      .select({
-        memberId: schema.seasonMemberships.member_id,
-        membershipType: schema.seasonMemberships.membership_type,
-        endsAt: schema.seasonMemberships.ends_at,
-      })
-      .from(schema.seasonMemberships)
-      .where(
-        and(
-          inArray(schema.seasonMemberships.member_id, memberIds),
-          inArray(schema.seasonMemberships.status, ['pending', 'active']),
-          gte(schema.seasonMemberships.ends_at, todayValue as never),
-        ),
-      )
-      .orderBy(desc(schema.seasonMemberships.ends_at));
-    for (const membership of memberships) {
-      if (!membershipTypeByMemberId.has(membership.memberId)) {
-        membershipTypeByMemberId.set(membership.memberId, membership.membershipType);
-      }
-    }
-  }
-
+  const lastSend = await loadLastConfirmationEmailSend();
   const usaCurlingRows: UsaCurlingRosterRow[] = [];
   const uswcaRows: UswcaRosterRow[] = [];
   const members = rows.map((row) => {
@@ -122,7 +172,6 @@ export async function getOrgRosters(): Promise<OrgRostersResponse> {
     );
     const membershipNumber = row.usa_curling_membership_number?.trim() || null;
     const membershipType = usaCurlingMembershipType({
-      membershipType: membershipTypeByMemberId.get(row.id) ?? null,
       dateOfBirth: normalizeDateString(row.date_of_birth),
       asOfDate: today,
     });
@@ -137,7 +186,7 @@ export async function getOrgRosters(): Promise<OrgRostersResponse> {
         membershipNumber,
         validFrom: today,
         membershipType,
-        fromAnotherClub,
+        primaryContactNumber: row.phone?.trim() || '',
       });
     }
     if (uswcaOptIn) {
@@ -168,6 +217,10 @@ export async function getOrgRosters(): Promise<OrgRostersResponse> {
     usaCurlingCount: usaCurlingRows.length,
     uswcaCount: uswcaRows.length,
     missingUsaCurlingNumberCount: members.filter((member) => member.missingUsaCurlingNumber).length,
+    lastConfirmationEmailsQueuedAt: lastSend.lastConfirmationEmailsQueuedAt,
+    lastConfirmationEmailsQueuedCount: lastSend.lastConfirmationEmailsQueuedCount,
+    lastConfirmationEmailsSkippedNoEmail: lastSend.lastConfirmationEmailsSkippedNoEmail,
+    lastConfirmationEmailsConfirmByDate: lastSend.lastConfirmationEmailsConfirmByDate,
     members,
     usaCurlingTsv: buildUsaCurlingRosterTsv(usaCurlingRows),
     uswcaTsv: buildUswcaRosterTsv(uswcaRows),
@@ -176,6 +229,7 @@ export async function getOrgRosters(): Promise<OrgRostersResponse> {
 
 export async function queueOrgRosterConfirmationEmails(input: {
   confirmByDate: string;
+  actorMemberId: number;
 }): Promise<OrgRosterConfirmationEmailResponse> {
   const today = await getCurrentDateStringAsync();
   const confirmByDate = input.confirmByDate.trim();
@@ -246,6 +300,12 @@ export async function queueOrgRosterConfirmationEmails(input: {
     );
   }
 
+  await recordConfirmationEmailSend({
+    queued,
+    skippedNoEmail,
+    confirmByDate,
+    actorMemberId: input.actorMemberId,
+  });
   void Promise.all(tasks);
   return { queued, skippedNoEmail };
 }

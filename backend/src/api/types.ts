@@ -854,6 +854,10 @@ export type OrgRostersResponse = {
   usaCurlingCount: number;
   uswcaCount: number;
   missingUsaCurlingNumberCount: number;
+  lastConfirmationEmailsQueuedAt: string | null;
+  lastConfirmationEmailsQueuedCount: number | null;
+  lastConfirmationEmailsSkippedNoEmail: number | null;
+  lastConfirmationEmailsConfirmByDate: string | null;
   members: OrgRosterMember[];
   usaCurlingTsv: string;
   uswcaTsv: string;

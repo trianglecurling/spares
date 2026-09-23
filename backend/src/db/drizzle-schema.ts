@@ -844,6 +844,18 @@ export const registrationLeagueProcessingSettingsSqlite = sqliteTable('registrat
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
 });
 
+/** Singleton: last parent-org confirmation email blast started from Org rosters. */
+export const parentOrgConfirmationEmailStateSqlite = sqliteTable('parent_org_confirmation_email_state', {
+  scope: text('scope').primaryKey().notNull().default('singleton'),
+  last_queued_at: text('last_queued_at'),
+  last_queued_count: integer('last_queued_count').default(0).notNull(),
+  last_skipped_no_email: integer('last_skipped_no_email').default(0).notNull(),
+  last_confirm_by_date: text('last_confirm_by_date'),
+  last_actor_member_id: integer('last_actor_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+});
+
 export type RosterConfirmationEmailJobStatusSqlite = 'running' | 'completed' | 'failed';
 
 /** Background send job for roster confirmation emails. */
@@ -3291,6 +3303,18 @@ export const registrationLeagueProcessingSettingsPg = pgTable('registration_leag
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
 });
 
+/** Singleton: last parent-org confirmation email blast started from Org rosters. */
+export const parentOrgConfirmationEmailStatePg = pgTable('parent_org_confirmation_email_state', {
+  scope: textPg('scope').primaryKey().notNull().default('singleton'),
+  last_queued_at: timestamp('last_queued_at', { withTimezone: false }),
+  last_queued_count: integerPg('last_queued_count').default(0).notNull(),
+  last_skipped_no_email: integerPg('last_skipped_no_email').default(0).notNull(),
+  last_confirm_by_date: textPg('last_confirm_by_date'),
+  last_actor_member_id: integerPg('last_actor_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+});
+
 export const rosterConfirmationEmailJobsPg = pgTable('roster_confirmation_email_jobs', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
   session_id: integerPg('session_id')
@@ -5131,6 +5155,7 @@ export const sqliteSchema = {
   registrationDiscountSettings: registrationDiscountSettingsSqlite,
   registrationEarlyAccessSettings: registrationEarlyAccessSettingsSqlite,
   registrationLeagueProcessingSettings: registrationLeagueProcessingSettingsSqlite,
+  parentOrgConfirmationEmailState: parentOrgConfirmationEmailStateSqlite,
   rosterConfirmationEmailJobs: rosterConfirmationEmailJobsSqlite,
   registrationPaymentDeadlines: registrationPaymentDeadlinesSqlite,
   seasonMemberships: seasonMembershipsSqlite,
@@ -5262,6 +5287,7 @@ export const pgSchema = {
   registrationDiscountSettings: registrationDiscountSettingsPg,
   registrationEarlyAccessSettings: registrationEarlyAccessSettingsPg,
   registrationLeagueProcessingSettings: registrationLeagueProcessingSettingsPg,
+  parentOrgConfirmationEmailState: parentOrgConfirmationEmailStatePg,
   rosterConfirmationEmailJobs: rosterConfirmationEmailJobsPg,
   registrationPaymentDeadlines: registrationPaymentDeadlinesPg,
   seasonMemberships: seasonMembershipsPg,

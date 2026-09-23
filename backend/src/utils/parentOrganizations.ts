@@ -8,4 +8,5 @@ export const PARENT_ORG_URLS = {
 /** Exact club value required by the USA Curling roster template. */
 export const USA_CURLING_CLUB_VALUE = 'Triangle Curling Club (NC - 689401)';
 
-export const USA_CURLING_YOUTH_MAX_AGE = 21;
+/** USA Curling Youth membership type when age is strictly less than this on the roster date. */
+export const USA_CURLING_YOUTH_UNDER_AGE = 18;

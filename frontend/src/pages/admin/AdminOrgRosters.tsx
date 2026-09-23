@@ -13,7 +13,8 @@ import { useAlert } from '../../contexts/AlertContext';
 import { useConfirm } from '../../contexts/ConfirmContext';
 import useTableQueryState from '../../hooks/useTableQueryState';
 import { getApiErrorMessage } from '../../utils/api';
-import { PARENT_ORG_URLS, USA_CURLING_CLUB_VALUE } from '../../utils/parentOrganizations';
+import { formatClubDateTime } from '../../utils/clubTime';
+import { PARENT_ORG_URLS } from '../../utils/parentOrganizations';
 
 type OrgRostersPayload = paths['/members/org-rosters']['get']['responses']['200']['content']['application/json'];
 type OrgRosterMember = OrgRostersPayload['members'][number];
@@ -33,17 +34,17 @@ const ROSTER_FILTER_OPTIONS: Array<{ value: RosterFilter; label: string }> = [
 
 const USA_CURLING_COLUMNS = [
   'Email',
-  'First name',
-  'Last name',
+  'First Name',
+  'Last Name',
   'Gender',
   'DOB',
-  'Membership number look up',
-  'Valid from',
+  'Membership Number Look Up',
+  'Valid From',
   'Clubs',
-  'Membership type',
+  'Membership Type',
+  'Primary Contact Number',
   'Are you currently serving in the US Military?',
   'Branch?',
-  'From another curling club?',
 ];
 
 const USWCA_COLUMNS = ['Last name', 'First name', 'Email'];
@@ -57,6 +58,22 @@ function matchesRosterFilter(member: OrgRosterMember, filter: RosterFilter): boo
   if (filter === 'uswca') return member.uswcaOptIn;
   if (filter === 'missing-number') return member.missingUsaCurlingNumber;
   return true;
+}
+
+function formatDateOnlyLabel(value: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return value;
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(date);
+}
+
+function lastSendSummary(payload: OrgRostersPayload): string | null {
+  if (!payload.lastConfirmationEmailsQueuedAt) return null;
+  const sentAt = formatClubDateTime(payload.lastConfirmationEmailsQueuedAt);
+  const queued = payload.lastConfirmationEmailsQueuedCount;
+  const queuedLabel = queued == null ? sentAt : `${sentAt} (${queued} queued)`;
+  if (!payload.lastConfirmationEmailsConfirmByDate) return queuedLabel;
+  return `${queuedLabel}. Confirm by was ${formatDateOnlyLabel(payload.lastConfirmationEmailsConfirmByDate)}`;
 }
 
 export default function AdminOrgRosters() {
@@ -91,17 +108,21 @@ export default function AdminOrgRosters() {
   const [exportTsv, setExportTsv] = useState('');
   const [exportOpen, setExportOpen] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const load = useCallback(async (options?: { silent?: boolean }) => {
+    if (!options?.silent) {
+      setLoading(true);
+      setError(null);
+    }
     try {
       const data = await get('/members/org-rosters');
       setPayload(data);
       setConfirmByDate((current) => current || data.generatedOn);
     } catch (loadError) {
-      setError(getApiErrorMessage(loadError, 'Could not load org rosters.'));
+      if (!options?.silent) {
+        setError(getApiErrorMessage(loadError, 'Could not load org rosters.'));
+      }
     } finally {
-      setLoading(false);
+      if (!options?.silent) setLoading(false);
     }
   }, []);
 
@@ -202,9 +223,13 @@ export default function AdminOrgRosters() {
       return;
     }
     const currentCount = payload?.currentMemberCount ?? 0;
+    const lastSent = payload ? lastSendSummary(payload) : null;
+    const lastSentLine = lastSent
+      ? ` Last sent ${lastSent}.`
+      : ' These confirmation emails have not been sent yet.';
     const confirmed = await confirm({
       title: 'Send parent org confirmation emails',
-      message: `Send this email to all ${currentCount} current members? Each message includes their current USA Curling and USWCA choices and asks them to confirm by ${confirmByDate}.`,
+      message: `Send this email to all ${currentCount} current members? Each message includes their current USA Curling and USWCA choices and asks them to confirm by ${confirmByDate}.${lastSentLine} Emails send in the background after you confirm.`,
       variant: 'info',
       confirmText: 'Send emails',
     });
@@ -214,7 +239,11 @@ export default function AdminOrgRosters() {
       const result = await post('/members/org-rosters/confirmation-emails', { confirmByDate });
       const skipped =
         result.skippedNoEmail > 0 ? ` ${result.skippedNoEmail} without an email were skipped.` : '';
-      showAlert(`Queued ${result.queued} confirmation emails.${skipped}`, 'success');
+      showAlert(
+        `Queued ${result.queued} confirmation emails.${skipped} They send in the background; this page records the send time.`,
+        'success',
+      );
+      await load({ silent: true });
     } catch (sendError) {
       showAlert(getApiErrorMessage(sendError, 'Could not send confirmation emails.'), 'error');
     } finally {
@@ -249,36 +278,11 @@ export default function AdminOrgRosters() {
     );
   }
 
+  const lastSent = lastSendSummary(payload);
+
   return (
     <>
       <AppPageControlsRow
-        left={
-          <div className="flex w-full flex-col gap-3 lg:flex-row lg:items-end lg:gap-4">
-            <FormField label="Filter members" htmlFor={searchFieldId} className="min-w-[16rem] flex-1">
-              <input
-                id={searchFieldId}
-                type="search"
-                className="app-input"
-                value={draftFilters.search}
-                onChange={(event) => setDraftFilter('search', event.target.value)}
-                placeholder="Search name, email, or membership number"
-              />
-            </FormField>
-            <FormField label="Roster" htmlFor={rosterFilterFieldId} className="min-w-[16rem]">
-              <ChoiceInput
-                inputId={rosterFilterFieldId}
-                layout="popover"
-                value={rosterFilter}
-                onChange={(value) => {
-                  const next = Array.isArray(value) ? value[0] : value;
-                  setFilter('roster', next || 'all');
-                  setPage(1);
-                }}
-                options={ROSTER_FILTER_OPTIONS}
-              />
-            </FormField>
-          </div>
-        }
         right={
           <>
             <Button
@@ -306,6 +310,13 @@ export default function AdminOrgRosters() {
             Emails all current members with their current USA Curling and USWCA choices and a link to{' '}
             <span className="whitespace-nowrap">Profile → Parent organizations</span>. GNCC is listed as required.
           </p>
+          <p className="text-sm text-gray-600 dark:text-gray-400">
+            Messages are queued and sent in the background. There is no completion notice; use the last-sent time
+            below so this is not sent too often.
+          </p>
+          <p className="text-sm text-gray-700 dark:text-gray-300">
+            {lastSent ? `Last sent ${lastSent}.` : 'These confirmation emails have not been sent yet.'}
+          </p>
           <FormField label="Confirm by" htmlFor={confirmByFieldId} required>
             <input
               id={confirmByFieldId}
@@ -332,10 +343,6 @@ export default function AdminOrgRosters() {
             <li>{payload.uswcaCount} opted in to USWCA</li>
             <li>{payload.missingUsaCurlingNumberCount} USA Curling rows missing a membership number</li>
           </ul>
-          <p className="text-sm text-gray-600 dark:text-gray-400">
-            USA Curling club value for every row: {USA_CURLING_CLUB_VALUE}. Military columns are left blank. Valid from
-            is {payload.generatedOn}.
-          </p>
         </section>
       </div>
 
@@ -385,6 +392,40 @@ export default function AdminOrgRosters() {
         </a>
         .
       </p>
+
+      <AppPageControlsRow
+        left={
+          <div className="flex w-full flex-col gap-3 lg:flex-row lg:items-end lg:gap-4">
+            <FormField label="Filter members" htmlFor={searchFieldId} className="min-w-[16rem] flex-1">
+              <input
+                id={searchFieldId}
+                type="search"
+                className="app-input"
+                value={draftFilters.search}
+                onChange={(event) => setDraftFilter('search', event.target.value)}
+                placeholder="Search name, email, or membership number"
+              />
+            </FormField>
+            <FormField label="Roster" htmlFor={rosterFilterFieldId} className="min-w-[16rem]">
+              <ChoiceInput
+                inputId={rosterFilterFieldId}
+                layout="popover"
+                value={
+                  ROSTER_FILTER_OPTIONS.some((option) => option.value === rosterFilter)
+                    ? rosterFilter
+                    : 'all'
+                }
+                onChange={(value) => {
+                  const next = Array.isArray(value) ? value[0] : value;
+                  if (!next) return;
+                  setFilter('roster', next);
+                }}
+                options={ROSTER_FILTER_OPTIONS}
+              />
+            </FormField>
+          </div>
+        }
+      />
 
       <DataTable
         rows={pagedMembers}
