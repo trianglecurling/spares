@@ -16045,13 +16045,32 @@
                     },
                     "collectByeRequests": {
                       "type": "boolean"
+                    },
+                    "pointsPossiblePerGame": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "rankBy": {
+                      "type": "string",
+                      "enum": [
+                        "total",
+                        "percentage"
+                      ]
+                    },
+                    "maxAssignedPrimaryPoints": {
+                      "type": "number"
                     }
                   },
                   "required": [
                     "leagueId",
                     "headToHeadFirst",
                     "resultLabels",
-                    "collectByeRequests"
+                    "collectByeRequests",
+                    "pointsPossiblePerGame",
+                    "rankBy",
+                    "maxAssignedPrimaryPoints"
                   ]
                 }
               }
@@ -16085,6 +16104,19 @@
                   },
                   "collectByeRequests": {
                     "type": "boolean"
+                  },
+                  "pointsPossiblePerGame": {
+                    "type": [
+                      "number",
+                      "null"
+                    ]
+                  },
+                  "rankBy": {
+                    "type": "string",
+                    "enum": [
+                      "total",
+                      "percentage"
+                    ]
                   }
                 }
               }
@@ -16127,13 +16159,32 @@
                     },
                     "collectByeRequests": {
                       "type": "boolean"
+                    },
+                    "pointsPossiblePerGame": {
+                      "type": [
+                        "null",
+                        "number"
+                      ]
+                    },
+                    "rankBy": {
+                      "type": "string",
+                      "enum": [
+                        "total",
+                        "percentage"
+                      ]
+                    },
+                    "maxAssignedPrimaryPoints": {
+                      "type": "number"
                     }
                   },
                   "required": [
                     "leagueId",
                     "headToHeadFirst",
                     "resultLabels",
-                    "collectByeRequests"
+                    "collectByeRequests",
+                    "pointsPossiblePerGame",
+                    "rankBy",
+                    "maxAssignedPrimaryPoints"
                   ]
                 }
               }
@@ -16794,6 +16845,19 @@
                           "type": "string"
                         }
                       },
+                      "pointsPossiblePerGame": {
+                        "type": [
+                          "null",
+                          "number"
+                        ]
+                      },
+                      "rankBy": {
+                        "type": "string",
+                        "enum": [
+                          "total",
+                          "percentage"
+                        ]
+                      },
                       "rows": {
                         "type": "array",
                         "items": {
@@ -16826,6 +16890,38 @@
                             },
                             "gamesPlayed": {
                               "type": "number"
+                            },
+                            "wins": {
+                              "type": "number"
+                            },
+                            "losses": {
+                              "type": "number"
+                            },
+                            "ties": {
+                              "type": "number"
+                            },
+                            "h2hResult": {
+                              "type": [
+                                "null",
+                                "string"
+                              ],
+                              "enum": [
+                                "win",
+                                "loss",
+                                null
+                              ]
+                            },
+                            "h2hOpponentName": {
+                              "type": [
+                                "null",
+                                "string"
+                              ]
+                            },
+                            "h2hPairIndex": {
+                              "type": [
+                                "null",
+                                "number"
+                              ]
                             }
                           },
                           "required": [
@@ -16835,7 +16931,13 @@
                             "divisionId",
                             "divisionName",
                             "tiebreakerValues",
-                            "gamesPlayed"
+                            "gamesPlayed",
+                            "wins",
+                            "losses",
+                            "ties",
+                            "h2hResult",
+                            "h2hOpponentName",
+                            "h2hPairIndex"
                           ]
                         }
                       }
@@ -16845,6 +16947,8 @@
                       "divisionName",
                       "headToHeadFirst",
                       "resultLabels",
+                      "pointsPossiblePerGame",
+                      "rankBy",
                       "rows"
                     ]
                   }

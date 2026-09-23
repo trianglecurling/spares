@@ -9197,6 +9197,10 @@ export interface paths {
                             headToHeadFirst: boolean;
                             resultLabels: null | string[];
                             collectByeRequests: boolean;
+                            pointsPossiblePerGame: null | number;
+                            /** @enum {string} */
+                            rankBy: "total" | "percentage";
+                            maxAssignedPrimaryPoints: number;
                         };
                     };
                 };
@@ -9217,6 +9221,9 @@ export interface paths {
                         headToHeadFirst?: boolean;
                         resultLabels?: string[] | null;
                         collectByeRequests?: boolean;
+                        pointsPossiblePerGame?: number | null;
+                        /** @enum {string} */
+                        rankBy?: "total" | "percentage";
                     };
                 };
             };
@@ -9232,6 +9239,10 @@ export interface paths {
                             headToHeadFirst: boolean;
                             resultLabels: null | string[];
                             collectByeRequests: boolean;
+                            pointsPossiblePerGame: null | number;
+                            /** @enum {string} */
+                            rankBy: "total" | "percentage";
+                            maxAssignedPrimaryPoints: number;
                         };
                     };
                 };
@@ -9489,6 +9500,9 @@ export interface paths {
                             divisionName: string;
                             headToHeadFirst: boolean;
                             resultLabels: null | string[];
+                            pointsPossiblePerGame: null | number;
+                            /** @enum {string} */
+                            rankBy: "total" | "percentage";
                             rows: {
                                 rank: number;
                                 teamId: number;
@@ -9497,6 +9511,13 @@ export interface paths {
                                 divisionName: string;
                                 tiebreakerValues: number[];
                                 gamesPlayed: number;
+                                wins: number;
+                                losses: number;
+                                ties: number;
+                                /** @enum {null|string} */
+                                h2hResult: "win" | "loss" | null;
+                                h2hOpponentName: null | string;
+                                h2hPairIndex: null | number;
                             }[];
                         }[];
                     };

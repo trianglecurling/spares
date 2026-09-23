@@ -152,6 +152,7 @@ export default function LeagueSchedule({
     team2Values: [0],
   });
   const [resultLabels, setResultLabels] = useState<string[]>([]);
+  const [pointsPossiblePerGame, setPointsPossiblePerGame] = useState<number | null>(null);
   const [savingResult, setSavingResult] = useState(false);
   const [editTab, setEditTab] = useState<'details' | 'results' | null>(null);
   const [loadingEditData, setLoadingEditData] = useState(false);
@@ -375,8 +376,12 @@ export default function LeagueSchedule({
             team1Results: Array<{ resultOrder: number; value: number }>;
             team2Results: Array<{ resultOrder: number; value: number }>;
           };
-          const settings = settingsRes as { resultLabels: string[] | null };
+          const settings = settingsRes as {
+            resultLabels: string[] | null;
+            pointsPossiblePerGame?: number | null;
+          };
           setResultLabels(settings?.resultLabels ?? []);
+          setPointsPossiblePerGame(settings?.pointsPossiblePerGame ?? null);
           const len = Math.max(
             results?.team1Results?.length ?? 0,
             results?.team2Results?.length ?? 0,
@@ -395,6 +400,7 @@ export default function LeagueSchedule({
         .catch(() => {
           setResultForm({ team1Values: [0], team2Values: [0] });
           setResultLabels([]);
+          setPointsPossiblePerGame(null);
         })
         .finally(() => setLoadingEditData(false));
     } else {
@@ -1363,6 +1369,9 @@ export default function LeagueSchedule({
                   <p className="text-xs text-gray-500 dark:text-gray-400">
                     Enter a single point value for each team. Add tiebreakers (e.g. ends, total
                     score) if needed.
+                    {pointsPossiblePerGame != null
+                      ? ` Primary points can be at most ${pointsPossiblePerGame} per game.`
+                      : ''}
                   </p>
                   {resultForm.team1Values.map((_, i) => (
                     <div key={i} className="grid grid-cols-2 gap-4">
@@ -1374,6 +1383,7 @@ export default function LeagueSchedule({
                         <input
                           type="number"
                           min={0}
+                          max={i === 0 && pointsPossiblePerGame != null ? pointsPossiblePerGame : undefined}
                           value={resultForm.team1Values[i] ?? 0}
                           onChange={(e) => {
                             const v = parseInt(e.target.value, 10) || 0;
@@ -1394,6 +1404,7 @@ export default function LeagueSchedule({
                         <input
                           type="number"
                           min={0}
+                          max={i === 0 && pointsPossiblePerGame != null ? pointsPossiblePerGame : undefined}
                           value={resultForm.team2Values[i] ?? 0}
                           onChange={(e) => {
                             const v = parseInt(e.target.value, 10) || 0;

@@ -589,6 +589,13 @@
       "when": 1788491400000,
       "tag": "0084_add_member_parent_org_rosters",
       "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1788492000000,
+      "tag": "0085_add_league_settings_points_possible",
+      "breakpoints": true
     }
   ]
 }

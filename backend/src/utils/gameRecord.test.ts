@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { accumulateStandingSums, outcomeFromFirstTiebreaker, tallyTeamRecord } from './gameRecord.js';
+import {
+  accumulateStandingSums,
+  outcomeFromFirstTiebreaker,
+  tallyRecordsFromGames,
+  tallyTeamRecord,
+} from './gameRecord.js';
 
 describe('outcomeFromFirstTiebreaker', () => {
   test('returns null when neither team has a recorded result', () => {
@@ -49,6 +54,18 @@ describe('tallyTeamRecord', () => {
       losses: 0,
       ties: 1,
     });
+  });
+});
+
+describe('tallyRecordsFromGames', () => {
+  test('counts wins and losses from the first tiebreaker', () => {
+    const records = tallyRecordsFromGames([
+      { team1_id: 10, team2_id: 20, team1_values: [1], team2_values: [0] },
+      { team1_id: 10, team2_id: 30, team1_values: [0], team2_values: [1] },
+    ]);
+    expect(records.get(10)).toEqual({ gamesPlayed: 2, wins: 1, losses: 1, ties: 0 });
+    expect(records.get(20)).toEqual({ gamesPlayed: 1, wins: 0, losses: 1, ties: 0 });
+    expect(records.get(30)).toEqual({ gamesPlayed: 1, wins: 1, losses: 0, ties: 0 });
   });
 });
 

@@ -1215,6 +1215,8 @@ export const leagueSettingsSqlite = sqliteTable('league_settings', {
   head_to_head_first: integer('head_to_head_first').default(0).notNull(),
   result_labels: text('result_labels'), // JSON array of strings, e.g. ["Win/Loss", "Score"]
   collect_bye_requests: integer('collect_bye_requests').default(1).notNull(),
+  points_possible_per_game: integer('points_possible_per_game'),
+  rank_by_points_percentage: integer('rank_by_points_percentage').default(0).notNull(),
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
 }, (table) => ({
@@ -3657,6 +3659,8 @@ export const leagueSettingsPg = pgTable('league_settings', {
   head_to_head_first: integerPg('head_to_head_first').default(0).notNull(),
   result_labels: textPg('result_labels'),
   collect_bye_requests: integerPg('collect_bye_requests').default(1).notNull(),
+  points_possible_per_game: integerPg('points_possible_per_game'),
+  rank_by_points_percentage: integerPg('rank_by_points_percentage').default(0).notNull(),
   created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
 }, (table) => ({
