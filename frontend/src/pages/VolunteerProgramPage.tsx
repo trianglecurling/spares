@@ -7,6 +7,7 @@ import BackButton from '../components/BackButton';
 import ChoiceInput from '../components/ChoiceInput';
 import FormField from '../components/FormField';
 import VolunteerProgramShiftsBody, {
+  VolunteerProgramRolesSummary,
   type VolunteerProgramGroupBy,
 } from '../components/volunteering/VolunteerProgramShiftsBody';
 import { ArticleMarkdown } from '../components/ArticleMarkdown';
@@ -34,6 +35,7 @@ export default function VolunteerProgramPage() {
   const [program, setProgram] = useState<VolunteerProgramView | null>(null);
   const [heldCredentialIds, setHeldCredentialIds] = useState<Set<number> | undefined>(undefined);
   const [groupBy, setGroupBy] = useState<VolunteerProgramGroupBy>('shift');
+  const [showIneligibleRoles, setShowIneligibleRoles] = useState(false);
 
   const slug = slugParam?.trim() || '';
 
@@ -119,11 +121,14 @@ export default function VolunteerProgramPage() {
   }
 
   const visibleShifts = volunteerProgramShiftsForCaller(program);
+  const displayShifts = showIneligibleRoles
+    ? volunteerProgramShiftsForCaller(program, { includeIneligible: true })
+    : visibleShifts;
   const hasHiddenCredentialRoles =
     !program.canManage && volunteerProgramHasIneligibleCredentialRoles(program);
   const hasShifts = visibleShifts.length > 0 || hasHiddenCredentialRoles;
   const shiftless = program.roles.length === 0 && !volunteerProgramHasOpenShifts(program);
-  const showGroupBy = volunteerShiftsDistinctRoleCount(visibleShifts) > 1;
+  const showGroupBy = volunteerShiftsDistinctRoleCount(displayShifts) > 1;
   const terms = volunteerProgramUiTerms(parseVolunteerSignupKind(program.signupKind));
 
   return (
@@ -152,6 +157,7 @@ export default function VolunteerProgramPage() {
             <span>Contact: {program.pointOfContact}</span>
           </div>
           {program.description ? <ArticleMarkdown markdown={program.description} /> : null}
+          <VolunteerProgramRolesSummary shifts={displayShifts} terms={terms} />
         </div>
 
         {hasShifts ? (
@@ -159,9 +165,9 @@ export default function VolunteerProgramPage() {
             {showGroupBy ? (
               <AppPageControlsRow
                 left={
-                  <FormField label="Group by" htmlFor={groupById} className="mb-0">
+                  <FormField label="Group by" labelId={groupById} className="mb-0">
                     <ChoiceInput<VolunteerProgramGroupBy>
-                      inputId={groupById}
+                      ariaLabelledBy={groupById}
                       listboxLabel="Group by"
                       layout="inline"
                       name="volunteer-program-group-by"
@@ -184,12 +190,16 @@ export default function VolunteerProgramPage() {
                 }
               />
             ) : null}
-            <div className="app-card space-y-4 p-5">
+            <div className="app-card p-5">
               <VolunteerProgramShiftsBody
                 program={program}
-                groupBy={groupBy}
+                shifts={displayShifts}
+                groupBy={showGroupBy ? groupBy : 'shift'}
                 onChanged={load}
                 heldCredentialIds={heldCredentialIds}
+                onShowIneligibleRoles={
+                  showIneligibleRoles ? undefined : () => setShowIneligibleRoles(true)
+                }
               />
             </div>
           </>

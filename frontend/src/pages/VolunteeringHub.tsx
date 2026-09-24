@@ -1,15 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, useSearchParams } from 'react-router-dom';
-import { HiChevronDown } from 'react-icons/hi2';
+import { HiCheckCircle, HiChevronRight } from 'react-icons/hi2';
 import { AppPage, AppPageHeader } from '../components/AppPage';
-import AppPageControlsRow from '../components/AppPageControlsRow';
 import AppStateCard from '../components/AppStateCard';
-import ChoiceInput from '../components/ChoiceInput';
-import FormField from '../components/FormField';
 import PageTabs from '../components/PageTabs';
-import VolunteerProgramShiftsBody, {
-  type VolunteerProgramGroupBy,
-} from '../components/volunteering/VolunteerProgramShiftsBody';
+import VolunteerSpotsStatusBadge from '../components/volunteering/VolunteerSpotsStatusBadge';
 import { ArticleMarkdown } from '../components/ArticleMarkdown';
 import { get } from '../api/client';
 import { useAlert } from '../contexts/AlertContext';
@@ -26,6 +21,7 @@ import {
   volunteerProgramUiTerms,
   volunteerProgramVisibleGivenCredentials,
   type VolunteerHubCredential,
+  type VolunteerProgramUiTerms,
   type VolunteerProgramView,
 } from '../utils/volunteering';
 import { MyVolunteerShiftsPanel } from './MyVolunteerShifts';
@@ -57,9 +53,6 @@ export default function VolunteeringHub() {
   const [loading, setLoading] = useState(true);
   const [programs, setPrograms] = useState<VolunteerProgramView[]>([]);
   const [credentials, setCredentials] = useState<VolunteerHubCredential[]>([]);
-  const [expandedPrograms, setExpandedPrograms] = useState<Set<number>>(new Set());
-  const [groupBy, setGroupBy] = useState<VolunteerProgramGroupBy>('shift');
-
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -67,17 +60,8 @@ export default function VolunteeringHub() {
         programs: VolunteerProgramView[];
         credentials?: VolunteerHubCredential[];
       };
-      const nextPrograms = data.programs || [];
-      setPrograms(nextPrograms);
+      setPrograms(data.programs || []);
       setCredentials(data.credentials || []);
-      // Expand the first program with shifts so Group by is visible without an extra click.
-      const firstWithShifts = nextPrograms.find(
-        (p) => volunteerProgramShiftsForCaller(p).length > 0
-      );
-      setExpandedPrograms((prev) => {
-        if (prev.size > 0 || !firstWithShifts) return prev;
-        return new Set([firstWithShifts.id]);
-      });
     } catch (err) {
       showAlert(formatApiError(err, 'Failed to load sign-up opportunities'), 'error');
     } finally {
@@ -106,10 +90,6 @@ export default function VolunteeringHub() {
       ),
     [programs, heldCredentialIds, activeTab]
   );
-  const hasAnyOpenShifts = useMemo(
-    () => visiblePrograms.some((program) => volunteerProgramShiftsForCaller(program).length > 0),
-    [visiblePrograms]
-  );
   const terms = volunteerProgramUiTerms(activeTab === 'other' ? 'general' : 'volunteering');
 
   const hasClubCredentials = credentials.length > 0;
@@ -123,13 +103,6 @@ export default function VolunteeringHub() {
     if (tab === 'programs') next.delete('tab');
     else next.set('tab', tab);
     setSearchParams(next, { replace: true });
-  };
-
-  const toggleInSet = <T,>(prev: Set<T>, key: T): Set<T> => {
-    const next = new Set(prev);
-    if (next.has(key)) next.delete(key);
-    else next.add(key);
-    return next;
   };
 
   return (
@@ -211,118 +184,102 @@ export default function VolunteeringHub() {
               }
             />
           ) : (
-            <>
-              {hasAnyOpenShifts && activeTab !== 'other' ? (
-                <AppPageControlsRow
-                  left={
-                    <FormField label="Group by" htmlFor="volunteer-group-by" className="mb-0">
-                      <ChoiceInput<VolunteerProgramGroupBy>
-                        inputId="volunteer-group-by"
-                        listboxLabel="Group by"
-                        layout="inline"
-                        name="volunteer-group-by"
-                        options={[
-                          { value: 'shift', label: 'Shift time' },
-                          { value: 'role', label: 'Role' },
-                        ]}
-                        value={groupBy}
-                        onChange={(v) => {
-                          if (v === 'shift' || v === 'role') setGroupBy(v);
-                        }}
-                      />
-                    </FormField>
-                  }
-                />
-              ) : null}
-
-              <div className="space-y-5">
-                {visiblePrograms.map((program) => {
-                  const visibleShifts = volunteerProgramShiftsForCaller(program);
-                  const hasHiddenCredentialRoles =
-                    !program.canManage && volunteerProgramHasIneligibleCredentialRoles(program);
-                  const hasShifts = visibleShifts.length > 0 || hasHiddenCredentialRoles;
-                  const programHref = `/volunteering/programs/${program.slug}`;
-                  const programTitleLinkClass =
-                    'relative z-10 rounded-sm font-medium text-gray-900 hover:text-primary-teal-link hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/50 dark:text-gray-100';
-                  if (!hasShifts) {
-                    return (
-                      <div key={program.id} className="app-card space-y-3 p-5">
-                        <Link to={programHref} className={programTitleLinkClass}>
-                          {program.title}
-                        </Link>
-                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600 dark:text-gray-400">
-                          {program.location ? <span>{program.location}</span> : null}
-                          <span>Contact: {program.pointOfContact}</span>
-                        </div>
-                        {program.description ? (
-                          <ArticleMarkdown markdown={program.description} />
-                        ) : null}
-                      </div>
-                    );
-                  }
-
-                  const expanded = expandedPrograms.has(program.id);
-                  return (
-                    <div key={program.id} className="app-card overflow-hidden p-0">
-                      <div className="relative px-5 py-4 hover:bg-gray-50 dark:hover:bg-gray-800/60">
-                        <button
-                          type="button"
-                          onClick={() => setExpandedPrograms((prev) => toggleInSet(prev, program.id))}
-                          className="absolute inset-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-teal/50"
-                          aria-expanded={expanded}
-                          aria-label={
-                            expanded
-                              ? `Hide ${terms.shiftPlural} for ${program.title}`
-                              : `Show ${terms.shiftPlural} for ${program.title}`
-                          }
-                        />
-                        <div className="relative flex items-start justify-between gap-3 pointer-events-none">
-                          <div className="min-w-0 space-y-1">
-                            <Link
-                              to={programHref}
-                              className={`${programTitleLinkClass} pointer-events-auto`}
-                            >
-                              {program.title}
-                            </Link>
-                            {visibleShifts.length > 0 ? (
-                              <div className="text-sm text-gray-600 dark:text-gray-400">
-                                {formatProgramShiftDateSpan(visibleShifts)}
-                              </div>
-                            ) : null}
-                            <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600 dark:text-gray-400">
-                              {program.location ? <span>{program.location}</span> : null}
-                              <span>Contact: {program.pointOfContact}</span>
-                            </div>
-                          </div>
-                          <HiChevronDown
-                            className={`mt-1 h-5 w-5 shrink-0 text-gray-500 transition-transform ${expanded ? 'rotate-180' : ''}`}
-                            aria-hidden="true"
-                          />
-                        </div>
-                      </div>
-
-                      {expanded ? (
-                        <div className="border-t border-gray-200 dark:border-gray-700 px-5 py-4 space-y-4">
-                          {program.description ? (
-                            <ArticleMarkdown markdown={program.description} />
-                          ) : null}
-                          <VolunteerProgramShiftsBody
-                            program={program}
-                            groupBy={activeTab === 'other' ? 'shift' : groupBy}
-                            onChanged={load}
-                            heldCredentialIds={heldCredentialIds}
-                          />
-                        </div>
-                      ) : null}
-                    </div>
-                  );
-                })}
-              </div>
-            </>
+            <ul className="space-y-4">
+              {visiblePrograms.map((program) => (
+                <li key={program.id}>
+                  <ProgramSummaryCard program={program} terms={terms} />
+                </li>
+              ))}
+            </ul>
           )}
         </div>
       )}
     </AppPage>
+  );
+}
+
+function ProgramSummaryCard({
+  program,
+  terms,
+}: {
+  program: VolunteerProgramView;
+  terms: VolunteerProgramUiTerms;
+}) {
+  const programHref = `/volunteering/programs/${program.slug}`;
+  const visibleShifts = volunteerProgramShiftsForCaller(program);
+  const visibleRoles = visibleShifts.flatMap((shift) => shift.roles);
+  const hasHiddenCredentialRoles =
+    !program.canManage && volunteerProgramHasIneligibleCredentialRoles(program);
+  const hasShifts = visibleShifts.length > 0 || hasHiddenCredentialRoles;
+  const roleNames = [...new Set(visibleRoles.map((role) => role.roleName.trim()).filter(Boolean))].sort(
+    (a, b) => a.localeCompare(b)
+  );
+  const maxRolesShown = 4;
+  const rolePreview =
+    roleNames.length > maxRolesShown
+      ? `${roleNames.slice(0, maxRolesShown).join(' · ')} · +${roleNames.length - maxRolesShown} more`
+      : roleNames.join(' · ');
+  const callerSignupCount = program.shifts.reduce(
+    (count, shift) => count + shift.roles.filter((role) => role.callerIsSignedUp).length,
+    0
+  );
+  const signedUpLabel =
+    callerSignupCount === 0
+      ? null
+      : parseVolunteerSignupKind(program.signupKind) === 'general'
+        ? callerSignupCount === 1
+          ? "You're signed up"
+          : `You have ${callerSignupCount} sign-ups`
+        : `You're signed up for ${callerSignupCount} ${callerSignupCount === 1 ? terms.shiftSingular : terms.shiftPlural}`;
+
+  return (
+    <article
+      className={`app-card relative space-y-2 ${hasShifts ? 'transition-colors hover:border-primary-teal/60 hover:bg-gray-50 dark:hover:bg-gray-800/60' : ''}`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <h2 className="min-w-0 text-lg font-semibold text-gray-900 dark:text-gray-100">
+          <Link
+            to={programHref}
+            className={`rounded-sm hover:text-primary-teal-link hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/50 ${hasShifts ? 'after:absolute after:inset-0 after:rounded-xl' : ''}`}
+          >
+            {program.title}
+          </Link>
+        </h2>
+        {hasShifts ? (
+          <div className="flex shrink-0 items-center gap-2">
+            {visibleRoles.length > 0 ? <VolunteerSpotsStatusBadge roles={visibleRoles} /> : null}
+            <HiChevronRight className="h-5 w-5 text-gray-400" aria-hidden="true" />
+          </div>
+        ) : null}
+      </div>
+      {visibleShifts.length > 0 ? (
+        <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+          {formatProgramShiftDateSpan(visibleShifts)}
+        </p>
+      ) : null}
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600 dark:text-gray-400">
+        {program.location ? <span>{program.location}</span> : null}
+        <span>Contact: {program.pointOfContact}</span>
+      </div>
+      {rolePreview ? (
+        <p className="text-sm text-gray-600 dark:text-gray-400">
+          <span className="font-medium text-gray-700 dark:text-gray-300">{terms.roleTab}:</span>{' '}
+          {rolePreview}
+        </p>
+      ) : null}
+      {hasHiddenCredentialRoles && visibleRoles.length === 0 ? (
+        <p className="text-sm text-gray-500 dark:text-gray-400">
+          These {terms.shiftPlural} require credentials you don&apos;t have yet.
+        </p>
+      ) : null}
+      {signedUpLabel ? (
+        <p className="inline-flex items-center gap-1.5 text-sm font-medium text-emerald-700 dark:text-emerald-300">
+          <HiCheckCircle className="h-4 w-4" aria-hidden="true" />
+          {signedUpLabel}
+        </p>
+      ) : null}
+      {!hasShifts && program.description ? <ArticleMarkdown markdown={program.description} /> : null}
+    </article>
   );
 }
 

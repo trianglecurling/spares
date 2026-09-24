@@ -9924,6 +9924,129 @@
         }
       }
     },
+    "/members/me/contact-settings-nudge": {
+      "get": {
+        "tags": [
+          "members"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "visible": {
+                      "type": "boolean"
+                    },
+                    "emailVisible": {
+                      "type": "boolean"
+                    },
+                    "phoneVisible": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "visible",
+                    "emailVisible",
+                    "phoneVisible"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/members/me/contact-settings-nudge/confirm": {
+      "post": {
+        "tags": [
+          "members"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "emailVisible": {
+                    "type": "boolean"
+                  },
+                  "phoneVisible": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "emailVisible",
+                  "phoneVisible"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "emailVisible": {
+                      "type": "boolean"
+                    },
+                    "phoneVisible": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "emailVisible",
+                    "phoneVisible"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/members/me/contact-settings-nudge/dismiss": {
+      "post": {
+        "tags": [
+          "members"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/members/admin/credentials": {
       "get": {
         "tags": [

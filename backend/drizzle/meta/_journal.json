@@ -603,6 +603,13 @@
       "when": 1788492600000,
       "tag": "0086_add_parent_org_confirmation_email_state",
       "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1788493200000,
+      "tag": "0087_add_contact_settings_nudge_dismissed",
+      "breakpoints": true
     }
   ]
 }

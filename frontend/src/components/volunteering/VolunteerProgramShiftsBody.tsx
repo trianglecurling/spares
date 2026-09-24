@@ -1,7 +1,10 @@
-import { useMemo, useState, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
-import { HiChevronDown } from 'react-icons/hi2';
+import { useId, useMemo, useState, type ReactNode } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { HiChevronLeft, HiChevronRight, HiInformationCircle } from 'react-icons/hi2';
 import Button from '../Button';
+import ChoiceInput from '../ChoiceInput';
+import FormField from '../FormField';
+import HelpCallout from '../HelpCallout';
 import VolunteerSignupDialog, {
   type VolunteerSignupTarget,
 } from './VolunteerSignupDialog';
@@ -14,14 +17,15 @@ import {
   formatVolunteerDayHeading,
   formatVolunteerDuration,
   formatVolunteerRange,
-  formatVolunteerRoleShiftPreview,
   formatVolunteerTimeRange,
   parseVolunteerSignupKind,
   volunteerProgramHasIneligibleCredentialRoles,
   volunteerProgramMissingCredentialNames,
-  volunteerProgramShiftsForCaller,
   volunteerProgramUiTerms,
   volunteerShiftDayKey,
+  volunteerSpotsStatusLabel,
+  volunteerSpotsTotals,
+  type VolunteerCredentialSummary,
   type VolunteerProgramUiTerms,
   type VolunteerProgramView,
   type VolunteerShiftRoleView,
@@ -33,38 +37,145 @@ export type VolunteerProgramGroupBy = 'shift' | 'role';
 
 type VolunteerProgramShiftsBodyProps = {
   program: VolunteerProgramView;
+  /** Shifts already filtered for the caller (see `volunteerProgramShiftsForCaller`). */
+  shifts: VolunteerShiftView[];
   groupBy: VolunteerProgramGroupBy;
   onChanged: () => Promise<void>;
   heldCredentialIds?: Iterable<number>;
+  /** Omit once ineligible roles are already shown. */
+  onShowIneligibleRoles?: () => void;
 };
+
+type SignUpHandler = (
+  role: VolunteerShiftRoleView,
+  shift: VolunteerShiftView,
+  manageForOthers?: boolean
+) => void;
+type CancelHandler = (shiftRoleId: number, roleName: string) => void;
+
+type RoleSummary = {
+  roleId: number;
+  roleName: string;
+  roleDescription: string | null;
+  requiredCredentials: VolunteerCredentialSummary[];
+};
+
+/** Above this many days the day picker collapses from radios to a dropdown. */
+const MAX_INLINE_DAY_OPTIONS = 5;
+
+const agendaRowClass = 'grid gap-x-6 gap-y-2 py-4 sm:grid-cols-[11rem_minmax(0,1fr)]';
+
+/** Distinct roles across shifts, sorted by name. */
+function volunteerShiftRoleSummaries(shifts: VolunteerShiftView[]): RoleSummary[] {
+  const map = new Map<number, RoleSummary>();
+  for (const shift of shifts) {
+    for (const role of shift.roles) {
+      if (map.has(role.roleId)) continue;
+      map.set(role.roleId, {
+        roleId: role.roleId,
+        roleName: role.roleName,
+        roleDescription: role.roleDescription?.trim() || null,
+        requiredCredentials: role.requiredCredentials,
+      });
+    }
+  }
+  return [...map.values()].sort((a, b) => a.roleName.localeCompare(b.roleName));
+}
+
+function RoleDescriptionTip({ roleName, description }: { roleName: string; description: string | null }) {
+  if (!description) return null;
+  return (
+    <HelpCallout
+      text={<span className="whitespace-pre-wrap">{description}</span>}
+      label={`About ${roleName}`}
+      triggerClassName="inline-flex h-5 w-5 items-center justify-center rounded-full text-gray-400 transition-colors hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300"
+    >
+      <HiInformationCircle className="h-5 w-5" aria-hidden="true" />
+    </HelpCallout>
+  );
+}
+
+/**
+ * Role descriptions and credential requirements, collapsed by default so the program
+ * details stay short. A single role is named inline because shift rows omit its name.
+ */
+export function VolunteerProgramRolesSummary({
+  shifts,
+  terms,
+}: {
+  shifts: VolunteerShiftView[];
+  terms: VolunteerProgramUiTerms;
+}) {
+  const listId = useId();
+  const [expanded, setExpanded] = useState(false);
+  const roles = volunteerShiftRoleSummaries(shifts);
+  const hasDetails = roles.some(
+    (role) => role.roleDescription || role.requiredCredentials.length > 0
+  );
+  if (roles.length === 0) return null;
+
+  if (roles.length === 1) {
+    const [role] = roles;
+    return (
+      <p className="flex flex-wrap items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+        <span>
+          <span className="font-medium">{terms.roleTitle}:</span> {role.roleName}
+        </span>
+        <RoleDescriptionTip roleName={role.roleName} description={role.roleDescription} />
+        <CredentialPills credentials={role.requiredCredentials} />
+      </p>
+    );
+  }
+
+  if (!hasDetails) return null;
+
+  return (
+    <div>
+      <button
+        type="button"
+        className="rounded-sm text-sm font-medium text-primary-teal-link hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/50"
+        aria-expanded={expanded}
+        aria-controls={listId}
+        onClick={() => setExpanded((current) => !current)}
+      >
+        {expanded
+          ? `Hide ${terms.roleSingular} descriptions`
+          : `Show ${terms.roleSingular} descriptions`}
+      </button>
+      <dl id={listId} className="mt-3 space-y-3" hidden={!expanded}>
+        {roles.map((role) => (
+          <div key={role.roleId} className="space-y-1">
+            <dt className="flex flex-wrap items-center gap-2 font-medium text-gray-900 dark:text-gray-100">
+              {role.roleName}
+              <CredentialPills credentials={role.requiredCredentials} />
+            </dt>
+            {role.roleDescription ? (
+              <dd className="text-sm text-gray-600 dark:text-gray-400 whitespace-pre-wrap">
+                {role.roleDescription}
+              </dd>
+            ) : null}
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
 
 export default function VolunteerProgramShiftsBody({
   program,
+  shifts,
   groupBy,
   onChanged,
   heldCredentialIds,
+  onShowIneligibleRoles,
 }: VolunteerProgramShiftsBodyProps) {
   const { showAlert } = useAlert();
   const { confirm } = useConfirm();
   const terms = volunteerProgramUiTerms(parseVolunteerSignupKind(program.signupKind));
-  const [expandedDays, setExpandedDays] = useState<Set<string>>(new Set());
-  const [expandedRoles, setExpandedRoles] = useState<Set<string>>(new Set());
   const [busyShiftRoleId, setBusyShiftRoleId] = useState<number | null>(null);
   const [signupTarget, setSignupTarget] = useState<VolunteerSignupTarget | null>(null);
-  const [showIneligibleRoles, setShowIneligibleRoles] = useState(false);
 
-  const toggleInSet = <T,>(prev: Set<T>, key: T): Set<T> => {
-    const next = new Set(prev);
-    if (next.has(key)) next.delete(key);
-    else next.add(key);
-    return next;
-  };
-
-  const openSignUp = (
-    role: VolunteerShiftRoleView,
-    shift: VolunteerShiftView,
-    manageForOthers = false
-  ) => {
+  const openSignUp: SignUpHandler = (role, shift, manageForOthers = false) => {
     const remaining = Math.max(0, role.volunteersNeeded - role.volunteersRegistered);
     setSignupTarget({
       shiftRoleId: role.id,
@@ -81,7 +192,7 @@ export default function VolunteerProgramShiftsBody({
     });
   };
 
-  const handleCancel = async (shiftRoleId: number, roleName: string) => {
+  const handleCancel: CancelHandler = async (shiftRoleId, roleName) => {
     const ok = await confirm({
       title: 'Cancel signup',
       message: `Cancel your signup for ${roleName}?`,
@@ -100,39 +211,31 @@ export default function VolunteerProgramShiftsBody({
     }
   };
 
-  const displayProgram = useMemo(
-    () => ({
-      ...program,
-      shifts: volunteerProgramShiftsForCaller(program, {
-        includeIneligible: showIneligibleRoles,
-      }),
-    }),
-    [program, showIneligibleRoles]
-  );
+  const shiftsWithRoles = useMemo(() => shifts.filter((shift) => shift.roles.length > 0), [shifts]);
   const hasHiddenCredentialRoles =
     !program.canManage && volunteerProgramHasIneligibleCredentialRoles(program);
-  const hasVisibleShifts = displayProgram.shifts.some((shift) => shift.roles.length > 0);
+  const singleRole = volunteerShiftRoleSummaries(shiftsWithRoles).length === 1;
 
   return (
     <>
-      <div className="space-y-4">
-        {hasVisibleShifts ? (
+      <div className="space-y-6">
+        {shiftsWithRoles.length > 0 ? (
           groupBy === 'shift' ? (
             <ProgramByShiftView
-              program={displayProgram}
+              programId={program.id}
+              shifts={shiftsWithRoles}
               terms={terms}
-              expandedDays={expandedDays}
-              onToggleDay={(key) => setExpandedDays((prev) => toggleInSet(prev, key))}
+              canManage={program.canManage}
+              showRoleNames={!singleRole}
               busyShiftRoleId={busyShiftRoleId}
               onSignUp={openSignUp}
               onCancel={handleCancel}
             />
           ) : (
             <ProgramByRoleView
-              program={displayProgram}
+              shifts={shiftsWithRoles}
               terms={terms}
-              expandedRoles={expandedRoles}
-              onToggleRole={(key) => setExpandedRoles((prev) => toggleInSet(prev, key))}
+              canManage={program.canManage}
               busyShiftRoleId={busyShiftRoleId}
               onSignUp={openSignUp}
               onCancel={handleCancel}
@@ -144,7 +247,7 @@ export default function VolunteerProgramShiftsBody({
           <MissingCredentialsNote
             shiftPlural={terms.shiftPlural}
             credentialNames={volunteerProgramMissingCredentialNames(program, heldCredentialIds)}
-            onShowAnyway={showIneligibleRoles ? undefined : () => setShowIneligibleRoles(true)}
+            onShowAnyway={onShowIneligibleRoles}
           />
         ) : null}
       </div>
@@ -204,127 +307,172 @@ function MissingCredentialsNote({
   );
 }
 
+function formatShortDayLabel(dayKey: string): string {
+  const [y, m, d] = dayKey.split('-').map(Number);
+  if (!y || !m || !d) return dayKey;
+  return new Date(y, m - 1, d).toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
 function ProgramByShiftView({
-  program,
+  programId,
+  shifts,
   terms,
-  expandedDays,
-  onToggleDay,
+  canManage,
+  showRoleNames,
   busyShiftRoleId,
   onSignUp,
   onCancel,
 }: {
-  program: VolunteerProgramView;
+  programId: number;
+  shifts: VolunteerShiftView[];
   terms: VolunteerProgramUiTerms;
-  expandedDays: Set<string>;
-  onToggleDay: (key: string) => void;
+  canManage: boolean;
+  showRoleNames: boolean;
   busyShiftRoleId: number | null;
-  onSignUp: (role: VolunteerShiftRoleView, shift: VolunteerShiftView, manageForOthers?: boolean) => void;
-  onCancel: (shiftRoleId: number, roleName: string) => void;
+  onSignUp: SignUpHandler;
+  onCancel: CancelHandler;
 }) {
-  const shiftsWithRoles = useMemo(
-    () => program.shifts.filter((s) => s.roles.length > 0),
-    [program.shifts]
-  );
+  const dayPickerId = useId();
+  const [searchParams, setSearchParams] = useSearchParams();
   const dayGroups = useMemo(() => {
     const map = new Map<string, VolunteerShiftView[]>();
-    for (const shift of shiftsWithRoles) {
+    for (const shift of shifts) {
       const key = volunteerShiftDayKey(shift.startDt);
       const list = map.get(key) ?? [];
       list.push(shift);
       map.set(key, list);
     }
-    return [...map.entries()].sort(([a], [b]) => a.localeCompare(b));
-  }, [shiftsWithRoles]);
+    return [...map.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([dayKey, dayShifts]) => ({
+        dayKey,
+        shifts: dayShifts,
+        roles: dayShifts.flatMap((shift) => shift.roles),
+      }));
+  }, [shifts]);
 
+  if (dayGroups.length === 0) return null;
+
+  const dayParam = searchParams.get('day');
+  const defaultDay =
+    dayGroups.find((group) => volunteerSpotsTotals(group.roles).remaining > 0) ?? dayGroups[0];
+  const selectedDay = dayGroups.find((group) => group.dayKey === dayParam) ?? defaultDay;
+  const selectedIndex = dayGroups.indexOf(selectedDay);
   const multiDay = dayGroups.length > 1;
+  const dayPickerInline = dayGroups.length <= MAX_INLINE_DAY_OPTIONS;
+  const previousDay = selectedIndex > 0 ? dayGroups[selectedIndex - 1] : null;
+  const nextDay = selectedIndex < dayGroups.length - 1 ? dayGroups[selectedIndex + 1] : null;
 
-  if (!multiDay) {
-    return (
-      <div className="space-y-3">
-        {shiftsWithRoles.map((shift) => (
-          <ShiftRolesBlock
-            key={shift.id}
-            shift={shift}
-            terms={terms}
-            headingMode="full"
-            canManage={program.canManage}
-            busyShiftRoleId={busyShiftRoleId}
-            onSignUp={onSignUp}
-            onCancel={onCancel}
-          />
-        ))}
-      </div>
-    );
-  }
+  const selectDay = (dayKey: string) => {
+    const next = new URLSearchParams(searchParams);
+    next.set('day', dayKey);
+    setSearchParams(next, { replace: true });
+  };
 
   return (
-    <div className="space-y-3">
-      {dayGroups.map(([dayKey, shifts]) => {
-        const dayExpanded = expandedDays.has(`${program.id}:${dayKey}`);
-        const rolePreview = uniqueSorted(
-          shifts.flatMap((shift) => shift.roles.map((role) => role.roleName))
-        );
-        return (
-          <div key={dayKey} className="rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden">
-            <button
-              type="button"
-              onClick={() => onToggleDay(`${program.id}:${dayKey}`)}
-              className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-800/60"
-              aria-expanded={dayExpanded}
-            >
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <div className="font-medium text-gray-900 dark:text-gray-100">
-                    {formatVolunteerDayHeading(dayKey)}
-                  </div>
-                  <VolunteerSpotsStatusBadge roles={shifts.flatMap((shift) => shift.roles)} />
-                </div>
-                {!dayExpanded ? <AccordionPreview items={rolePreview} /> : null}
-              </div>
-              <HiChevronDown
-                className={`mt-1 h-4 w-4 shrink-0 text-gray-500 transition-transform ${dayExpanded ? 'rotate-180' : ''}`}
-              />
-            </button>
-            {dayExpanded ? (
-              <div className="space-y-3 border-t border-gray-200 dark:border-gray-700 px-4 py-3">
-                {shifts.map((shift) => (
-                  <ShiftRolesBlock
-                    key={shift.id}
-                    shift={shift}
-                    terms={terms}
-                    headingMode="time"
-                    canManage={program.canManage}
-                    busyShiftRoleId={busyShiftRoleId}
-                    onSignUp={onSignUp}
-                    onCancel={onCancel}
-                  />
-                ))}
-              </div>
-            ) : null}
-          </div>
-        );
-      })}
+    <div className="space-y-6">
+      {multiDay ? (
+        <div className="flex flex-wrap items-end gap-2">
+          <FormField
+            label="Day"
+            htmlFor={dayPickerInline ? undefined : dayPickerId}
+            labelId={`${dayPickerId}-label`}
+            className="mb-0 min-w-0"
+          >
+            <ChoiceInput<string>
+              inputId={dayPickerId}
+              ariaLabelledBy={dayPickerInline ? `${dayPickerId}-label` : undefined}
+              listboxLabel="Day"
+              name={`volunteer-program-${programId}-day`}
+              layout={dayPickerInline ? 'inline' : 'popover'}
+              options={dayGroups.map((group) => {
+                const { remaining, needed } = volunteerSpotsTotals(group.roles);
+                return {
+                  value: group.dayKey,
+                  label: formatShortDayLabel(group.dayKey),
+                  description: volunteerSpotsStatusLabel(remaining, needed),
+                };
+              })}
+              value={selectedDay.dayKey}
+              onChange={(value) => {
+                if (typeof value === 'string') selectDay(value);
+              }}
+            />
+          </FormField>
+          {dayPickerInline ? null : (
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={!previousDay}
+                onClick={() => previousDay && selectDay(previousDay.dayKey)}
+                aria-label="Previous day"
+              >
+                <HiChevronLeft className="h-5 w-5" aria-hidden="true" />
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={!nextDay}
+                onClick={() => nextDay && selectDay(nextDay.dayKey)}
+                aria-label="Next day"
+              >
+                <HiChevronRight className="h-5 w-5" aria-hidden="true" />
+              </Button>
+            </div>
+          )}
+        </div>
+      ) : null}
+
+      <section aria-labelledby={`${dayPickerId}-heading`}>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-gray-300 pb-2 dark:border-gray-600">
+          <h2
+            id={`${dayPickerId}-heading`}
+            className="text-lg font-semibold text-gray-900 dark:text-gray-100"
+          >
+            {formatVolunteerDayHeading(selectedDay.dayKey)}
+          </h2>
+          {multiDay ? null : <VolunteerSpotsStatusBadge roles={selectedDay.roles} />}
+        </div>
+        <ul className="divide-y divide-gray-200 dark:divide-gray-700">
+          {selectedDay.shifts.map((shift) => (
+            <ShiftAgendaRow
+              key={shift.id}
+              shift={shift}
+              terms={terms}
+              canManage={canManage}
+              showRoleNames={showRoleNames}
+              busyShiftRoleId={busyShiftRoleId}
+              onSignUp={onSignUp}
+              onCancel={onCancel}
+            />
+          ))}
+        </ul>
+      </section>
     </div>
   );
 }
 
 function ProgramByRoleView({
-  program,
+  shifts,
   terms,
-  expandedRoles,
-  onToggleRole,
+  canManage,
   busyShiftRoleId,
   onSignUp,
   onCancel,
 }: {
-  program: VolunteerProgramView;
+  shifts: VolunteerShiftView[];
   terms: VolunteerProgramUiTerms;
-  expandedRoles: Set<string>;
-  onToggleRole: (key: string) => void;
+  canManage: boolean;
   busyShiftRoleId: number | null;
-  onSignUp: (role: VolunteerShiftRoleView, shift: VolunteerShiftView, manageForOthers?: boolean) => void;
-  onCancel: (shiftRoleId: number, roleName: string) => void;
+  onSignUp: SignUpHandler;
+  onCancel: CancelHandler;
 }) {
+  const headingIdBase = useId();
   const roleGroups = useMemo(() => {
     const map = new Map<
       number,
@@ -332,11 +480,10 @@ function ProgramByRoleView({
         roleId: number;
         roleName: string;
         roleDescription: string | null;
-        requiredCredentials: VolunteerShiftRoleView['requiredCredentials'];
         entries: Array<{ shift: VolunteerShiftView; role: VolunteerShiftRoleView }>;
       }
     >();
-    for (const shift of program.shifts) {
+    for (const shift of shifts) {
       for (const role of shift.roles) {
         const existing = map.get(role.roleId);
         if (existing) {
@@ -345,171 +492,148 @@ function ProgramByRoleView({
           map.set(role.roleId, {
             roleId: role.roleId,
             roleName: role.roleName,
-            roleDescription: role.roleDescription,
-            requiredCredentials: role.requiredCredentials,
+            roleDescription: role.roleDescription?.trim() || null,
             entries: [{ shift, role }],
           });
         }
       }
     }
     return [...map.values()].sort((a, b) => a.roleName.localeCompare(b.roleName));
-  }, [program.shifts]);
+  }, [shifts]);
 
   if (roleGroups.length === 0) {
     return <p className="text-sm text-gray-500 dark:text-gray-400">No {terms.rolePlural} available.</p>;
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-8">
       {roleGroups.map((group) => {
-        const key = `${program.id}:role:${group.roleId}`;
-        const expanded = expandedRoles.has(key);
-        const timePreview = formatVolunteerRoleShiftPreview(
-          group.entries.map(({ shift }) => ({ startDt: shift.startDt, endDt: shift.endDt }))
-        );
+        const headingId = `${headingIdBase}-role-${group.roleId}`;
         return (
-          <div key={group.roleId} className="rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden">
-            <button
-              type="button"
-              onClick={() => onToggleRole(key)}
-              className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-800/60"
-              aria-expanded={expanded}
-            >
-              <div className="min-w-0 space-y-1">
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                  <div className="font-medium text-gray-900 dark:text-gray-100">{group.roleName}</div>
-                  <VolunteerSpotsStatusBadge roles={group.entries.map(({ role }) => role)} />
-                </div>
-                {group.roleDescription ? (
-                  <p className="text-sm text-gray-600 dark:text-gray-400 whitespace-pre-wrap">
-                    {group.roleDescription}
-                  </p>
-                ) : null}
-                {group.requiredCredentials.length > 0 ? (
-                  <div className="flex flex-wrap gap-2 pt-1">
-                    {group.requiredCredentials.map((cred) => (
-                      <span
-                        key={cred.id}
-                        className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-800 dark:bg-gray-700 dark:text-gray-200"
-                      >
-                        {cred.name}
-                      </span>
-                    ))}
-                  </div>
-                ) : null}
-                {!expanded && timePreview ? (
-                  <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{timePreview}</p>
-                ) : null}
-              </div>
-              <HiChevronDown
-                className={`mt-1 h-4 w-4 shrink-0 text-gray-500 transition-transform ${expanded ? 'rotate-180' : ''}`}
-              />
-            </button>
-            {expanded ? (
-              <div className="divide-y divide-gray-200 dark:divide-gray-700 border-t border-gray-200 dark:border-gray-700">
-                {group.entries.map(({ shift, role }) => (
-                  <RoleSignupRow
-                    key={role.id}
+          <section key={group.roleId} aria-labelledby={headingId}>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-gray-300 pb-2 dark:border-gray-600">
+              <span className="inline-flex items-center gap-1">
+                <h2 id={headingId} className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                  {group.roleName}
+                </h2>
+                <RoleDescriptionTip roleName={group.roleName} description={group.roleDescription} />
+              </span>
+              <VolunteerSpotsStatusBadge roles={group.entries.map(({ role }) => role)} />
+            </div>
+            <ul className="divide-y divide-gray-200 dark:divide-gray-700">
+              {group.entries.map(({ shift, role }) => (
+                <li key={role.id} className={agendaRowClass}>
+                  <ShiftTimeCell shift={shift} showDay />
+                  <RoleSignupEntry
                     role={role}
                     terms={terms}
-                    heading={formatVolunteerRange(shift.startDt, shift.endDt)}
-                    subheading={formatVolunteerDuration(shift.startDt, shift.endDt)}
-                    canManage={program.canManage}
+                    showRoleName={false}
+                    canManage={canManage}
                     busy={busyShiftRoleId === role.id}
                     onSignUp={(manageForOthers) => onSignUp(role, shift, manageForOthers)}
                     onCancel={() => onCancel(role.id, role.roleName)}
                   />
-                ))}
-              </div>
-            ) : null}
-          </div>
+                </li>
+              ))}
+            </ul>
+          </section>
         );
       })}
     </div>
   );
 }
 
-function uniqueSorted(values: string[]): string[] {
-  return [...new Set(values.map((value) => value.trim()).filter(Boolean))].sort((a, b) =>
-    a.localeCompare(b)
+function ShiftTimeCell({ shift, showDay = false }: { shift: VolunteerShiftView; showDay?: boolean }) {
+  const duration = formatVolunteerDuration(shift.startDt, shift.endDt);
+  return (
+    <div className="space-y-0.5">
+      {showDay ? (
+        <div className="text-sm font-medium text-gray-600 dark:text-gray-400">
+          {formatShortDayLabel(volunteerShiftDayKey(shift.startDt))}
+        </div>
+      ) : null}
+      <div className="font-semibold tabular-nums text-gray-900 dark:text-gray-100">
+        {formatVolunteerTimeRange(shift.startDt, shift.endDt)}
+      </div>
+      {duration ? <div className="text-sm text-gray-500 dark:text-gray-400">{duration}</div> : null}
+    </div>
   );
 }
 
-function AccordionPreview({ items }: { items: string[] }) {
-  if (items.length === 0) return null;
-  const maxVisible = 4;
-  const visible = items.slice(0, maxVisible);
-  const extra = items.length - visible.length;
-  const label = extra > 0 ? `${visible.join(' · ')} · +${extra} more` : visible.join(' · ');
-  return <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">{label}</p>;
-}
-
-function ShiftRolesBlock({
+function ShiftAgendaRow({
   shift,
   terms,
-  headingMode,
   canManage,
+  showRoleNames,
   busyShiftRoleId,
   onSignUp,
   onCancel,
 }: {
   shift: VolunteerShiftView;
   terms: VolunteerProgramUiTerms;
-  headingMode: 'full' | 'time';
   canManage: boolean;
+  showRoleNames: boolean;
   busyShiftRoleId: number | null;
-  onSignUp: (role: VolunteerShiftRoleView, shift: VolunteerShiftView, manageForOthers?: boolean) => void;
-  onCancel: (shiftRoleId: number, roleName: string) => void;
+  onSignUp: SignUpHandler;
+  onCancel: CancelHandler;
 }) {
-  const duration = formatVolunteerDuration(shift.startDt, shift.endDt);
-  const heading =
-    headingMode === 'full'
-      ? formatVolunteerRange(shift.startDt, shift.endDt)
-      : formatVolunteerTimeRange(shift.startDt, shift.endDt);
+  const entries = shift.roles.map((role) => (
+    <RoleSignupEntry
+      key={role.id}
+      role={role}
+      terms={terms}
+      showRoleName={showRoleNames}
+      canManage={canManage}
+      busy={busyShiftRoleId === role.id}
+      onSignUp={(manageForOthers) => onSignUp(role, shift, manageForOthers)}
+      onCancel={() => onCancel(role.id, role.roleName)}
+    />
+  ));
 
   return (
-    <div className="rounded-md border border-gray-200 dark:border-gray-700 overflow-hidden">
-      <div className="border-b border-gray-200 dark:border-gray-700 px-4 py-3">
-        <div className="font-medium text-gray-900 dark:text-gray-100">{heading}</div>
-        {duration ? <div className="mt-1 text-sm text-gray-600 dark:text-gray-400">Duration: {duration}</div> : null}
-      </div>
-      <div className="divide-y divide-gray-200 dark:divide-gray-700">
-        {shift.roles.map((role) => (
-          <RoleSignupRow
-            key={role.id}
-            role={role}
-            terms={terms}
-            heading={role.roleName}
-            subheading={role.roleDescription}
-            showCredentials
-            canManage={canManage}
-            busy={busyShiftRoleId === role.id}
-            onSignUp={(manageForOthers) => onSignUp(role, shift, manageForOthers)}
-            onCancel={() => onCancel(role.id, role.roleName)}
-          />
-        ))}
-      </div>
-    </div>
+    <li className={agendaRowClass}>
+      <ShiftTimeCell shift={shift} />
+      {entries.length === 1 ? (
+        entries[0]
+      ) : (
+        <div className="divide-y divide-dashed divide-gray-200 dark:divide-gray-700 [&>*]:py-3 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
+          {entries}
+        </div>
+      )}
+    </li>
   );
 }
 
-function RoleSignupRow({
+function CredentialPills({ credentials }: { credentials: VolunteerCredentialSummary[] }) {
+  if (credentials.length === 0) return null;
+  return (
+    <span className="inline-flex flex-wrap gap-2">
+      {credentials.map((cred) => (
+        <span
+          key={cred.id}
+          className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-800 dark:bg-gray-700 dark:text-gray-200"
+          title={cred.description || undefined}
+        >
+          {cred.name}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function RoleSignupEntry({
   role,
   terms,
-  heading,
-  subheading,
-  showCredentials = false,
-  canManage = false,
+  showRoleName,
+  canManage,
   busy,
   onSignUp,
   onCancel,
 }: {
   role: VolunteerShiftRoleView;
   terms: VolunteerProgramUiTerms;
-  heading: string;
-  subheading?: string | null;
-  showCredentials?: boolean;
-  canManage?: boolean;
+  showRoleName: boolean;
+  canManage: boolean;
   busy: boolean;
   onSignUp: (manageForOthers?: boolean) => void;
   onCancel: () => void;
@@ -549,65 +673,81 @@ function RoleSignupRow({
     );
   }
 
+  const signedUpPill = role.callerIsSignedUp ? (
+    <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">
+      You&apos;re signed up
+    </span>
+  ) : null;
+
   return (
-    <div className="px-4 py-3 space-y-3">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 flex-1 space-y-1">
-          <div className="font-medium text-gray-900 dark:text-gray-100">{heading}</div>
-          {subheading ? (
-            <p className="text-sm text-gray-600 dark:text-gray-400 whitespace-pre-wrap">{subheading}</p>
-          ) : null}
-          <p className="text-sm text-gray-600 dark:text-gray-400">
-            {terms.signedUpCountLabel}: {role.volunteersRegistered}/{role.volunteersNeeded}
-          </p>
-          {showCredentials && role.requiredCredentials.length > 0 ? (
-            <div className="flex flex-wrap gap-2 pt-1">
-              {role.requiredCredentials.map((cred) => (
-                <span
-                  key={cred.id}
-                  className="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-800 dark:bg-gray-700 dark:text-gray-200"
-                  title={cred.description || undefined}
-                >
-                  {cred.name}
-                </span>
-              ))}
-            </div>
-          ) : null}
-        </div>
-        <div className="shrink-0">{action}</div>
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="min-w-0 flex-1 space-y-1">
+        {showRoleName || signedUpPill ? (
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            {showRoleName ? (
+              <span className="inline-flex items-center gap-1">
+                <span className="font-medium text-gray-900 dark:text-gray-100">{role.roleName}</span>
+                <RoleDescriptionTip
+                  roleName={role.roleName}
+                  description={role.roleDescription?.trim() || null}
+                />
+              </span>
+            ) : null}
+            {signedUpPill}
+          </div>
+        ) : null}
+        <RoleSignupsSummary
+          signups={role.signups}
+          label={terms.signedUpCountLabel}
+          registered={role.volunteersRegistered}
+          needed={role.volunteersNeeded}
+        />
       </div>
-      <RoleSignupsList signups={role.signups} noneSignedUp={terms.noneSignedUp} />
+      <div className="shrink-0">{action}</div>
     </div>
   );
 }
 
-function RoleSignupsList({
+function RoleSignupsSummary({
   signups,
-  noneSignedUp,
+  label,
+  registered,
+  needed,
 }: {
   signups: VolunteerSignupView[];
-  noneSignedUp: string;
+  label: string;
+  registered: number;
+  needed: number;
 }) {
-  if (signups.length === 0) {
-    return <p className="text-sm text-gray-500 dark:text-gray-400">{noneSignedUp}</p>;
+  const nameFor = (signup: VolunteerSignupView) =>
+    `${signup.memberName}${signup.memberId ? '' : ' (non-member)'}`;
+  const anyComments = signups.some((signup) => signup.comments?.trim());
+  const countLabel = (
+    <span className="font-medium text-gray-700 dark:text-gray-300">
+      {label}: {registered}/{needed}
+    </span>
+  );
+
+  if (!anyComments) {
+    return (
+      <p className="text-sm text-gray-600 dark:text-gray-400">
+        {countLabel}
+        {signups.length > 0 ? <> · {signups.map(nameFor).join(', ')}</> : null}
+      </p>
+    );
   }
 
   return (
-    <div className="app-card-subtle">
-      <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Signed up</h3>
-      <ul className="mt-2 space-y-2">
+    <div className="text-sm text-gray-600 dark:text-gray-400">
+      <p>{countLabel}</p>
+      <ul className="mt-1 space-y-0.5">
         {signups.map((signup) => {
           const comments = signup.comments?.trim();
           return (
-            <li key={signup.id}>
-              <div className="font-medium text-gray-900 dark:text-gray-100">
-                {signup.memberName}
-                {!signup.memberId ? ' (non-member)' : ''}
-              </div>
+            <li key={signup.id} className="whitespace-pre-wrap">
+              <span className="text-gray-800 dark:text-gray-200">{nameFor(signup)}</span>
               {comments ? (
-                <p className="mt-0.5 text-sm text-gray-600 dark:text-gray-400 whitespace-pre-wrap">
-                  {comments}
-                </p>
+                <span className="text-gray-500 dark:text-gray-400"> — {comments}</span>
               ) : null}
             </li>
           );

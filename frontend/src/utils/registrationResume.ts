@@ -164,6 +164,23 @@ export function membershipSkipsLeaguePlay(
   return membershipOption === 'social' || membershipOption === 'junior_recreational';
 }
 
+/** Special-link invites without league registration skip league selection entirely. */
+export function specialLinkSkipsLeagueSelection(
+  allowLeagueRegistration: boolean | null | undefined,
+): boolean {
+  return allowLeagueRegistration === false;
+}
+
+export function registrationSkipsLeagueSelection(input: {
+  membershipOption?: RegistrationMembershipPaymentResumeShape['selection']['membershipOption'] | null;
+  allowLeagueRegistration?: boolean | null;
+}): boolean {
+  return (
+    membershipSkipsLeaguePlay(input.membershipOption) ||
+    specialLinkSkipsLeagueSelection(input.allowLeagueRegistration)
+  );
+}
+
 export type GuestApiMembershipChoice = 'regular' | 'social' | 'junior_recreational';
 
 /** Guest APIs only persist a billable membership. Sabbatical-only is not a guest path. */
@@ -221,8 +238,10 @@ export function shouldRecommendSaturdayInstructional(
 
 export function resolvePostShellResumeStepFromPayment(
   payment: RegistrationMembershipPaymentResumeShape,
+  options?: { allowLeagueRegistration?: boolean | null },
 ): string {
   const option = payment.selection.membershipOption;
+  const skipLeagues = specialLinkSkipsLeagueSelection(options?.allowLeagueRegistration);
 
   if (option === 'none') return 'discounts';
   if (option === 'social') {
@@ -234,7 +253,7 @@ export function resolvePostShellResumeStepFromPayment(
       : 'review';
   }
   if (option === 'junior_recreational') return 'review';
-  if (option === 'regular_spare_only') return 'league-priority';
+  if (option === 'regular_spare_only') return skipLeagues ? 'review' : 'league-priority';
 
   const ice = payment.icePrivilegesChoice;
   if (
@@ -244,10 +263,10 @@ export function resolvePostShellResumeStepFromPayment(
       payment.selection.experienceSelfReportedYears,
     )
   ) {
-    return 'league-priority-intro';
+    return skipLeagues ? 'basic-ice' : 'league-priority-intro';
   }
   if (ice === 'basic_ice') {
-    return 'league-priority';
+    return skipLeagues ? 'review' : 'league-priority';
   }
 
   if (payment.selection.experienceType) {
@@ -265,6 +284,7 @@ export function resolveResumeStepFromDraft(input: {
   draft: RegistrationShellResumePayload;
   pointer: RegistrationResumePointerV1 | null;
   membershipPayment?: RegistrationMembershipPaymentResumeShape | null;
+  allowLeagueRegistration?: boolean | null;
 }): string {
   if (input.pointer && resumePointerMatchesDraft(input.pointer, input.draft)) {
     return input.pointer.step;
@@ -276,7 +296,9 @@ export function resolveResumeStepFromDraft(input: {
   }
 
   if (input.membershipPayment) {
-    return resolvePostShellResumeStepFromPayment(input.membershipPayment);
+    return resolvePostShellResumeStepFromPayment(input.membershipPayment, {
+      allowLeagueRegistration: input.allowLeagueRegistration,
+    });
   }
 
   return shellStep;

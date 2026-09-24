@@ -6,6 +6,8 @@ import {
   guestApiMembershipChoice,
   membershipNeedsSabbaticalStep,
   membershipSkipsLeaguePlay,
+  specialLinkSkipsLeagueSelection,
+  registrationSkipsLeagueSelection,
   experienceSkipsIcePrivilegesStep,
   shouldRecommendSaturdayInstructional,
   nextStepFor,
@@ -344,6 +346,36 @@ describe('registration resume targeting', () => {
     expect(membershipSkipsLeaguePlay('regular')).toBe(false);
     expect(membershipSkipsLeaguePlay('none')).toBe(false);
     expect(membershipSkipsLeaguePlay('regular_spare_only')).toBe(false);
+  });
+
+  test('special-link invites without leagues skip league selection after ice privileges', () => {
+    expect(specialLinkSkipsLeagueSelection(false)).toBe(true);
+    expect(specialLinkSkipsLeagueSelection(true)).toBe(false);
+    expect(specialLinkSkipsLeagueSelection(null)).toBe(false);
+    expect(
+      registrationSkipsLeagueSelection({ membershipOption: 'regular', allowLeagueRegistration: false }),
+    ).toBe(true);
+    expect(
+      registrationSkipsLeagueSelection({ membershipOption: 'regular', allowLeagueRegistration: true }),
+    ).toBe(false);
+    expect(
+      resolvePostShellResumeStepFromPayment(
+        {
+          selection: { membershipOption: 'regular_spare_only', experienceType: null },
+          icePrivilegesChoice: 'basic_ice',
+        },
+        { allowLeagueRegistration: false },
+      ),
+    ).toBe('review');
+    expect(
+      resolvePostShellResumeStepFromPayment(
+        {
+          selection: { membershipOption: 'regular', experienceType: 'none_or_minimal' },
+          icePrivilegesChoice: 'none',
+        },
+        { allowLeagueRegistration: false },
+      ),
+    ).toBe('basic-ice');
   });
 
   test('guestApiMembershipChoice keeps Junior Recreational instead of coercing to regular', () => {

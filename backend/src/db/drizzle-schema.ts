@@ -49,6 +49,8 @@ export const membersSqlite = sqliteTable('members', {
   email_subscribed: integer('email_subscribed').default(1).notNull(),
   email_visible: integer('email_visible').default(0).notNull(),
   phone_visible: integer('phone_visible').default(0).notNull(),
+  // Set when the member dismisses or confirms the dashboard contact-settings nudge.
+  contact_settings_nudge_dismissed: integer('contact_settings_nudge_dismissed').default(0).notNull(),
   theme_preference: text('theme_preference').default('system'),
   // Session for which the member last dismissed or visited the availability reminder.
   availability_reminder_acked_session_id: integer('availability_reminder_acked_session_id').references(
@@ -2742,6 +2744,8 @@ export const membersPg = pgTable('members', {
   email_subscribed: integerPg('email_subscribed').default(1).notNull(),
   email_visible: integerPg('email_visible').default(0).notNull(),
   phone_visible: integerPg('phone_visible').default(0).notNull(),
+  // Set when the member dismisses or confirms the dashboard contact-settings nudge.
+  contact_settings_nudge_dismissed: integerPg('contact_settings_nudge_dismissed').default(0).notNull(),
   theme_preference: textPg('theme_preference').default('system'),
   // Session for which the member last dismissed or visited the availability reminder.
   availability_reminder_acked_session_id: integerPg('availability_reminder_acked_session_id').references(

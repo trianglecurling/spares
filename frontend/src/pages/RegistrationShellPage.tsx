@@ -84,6 +84,8 @@ import {
   guestApiMembershipChoice,
   membershipNeedsSabbaticalStep,
   membershipSkipsLeaguePlay,
+  specialLinkSkipsLeagueSelection,
+  registrationSkipsLeagueSelection,
   experienceSkipsIcePrivilegesStep,
   shouldRecommendSaturdayInstructional,
   resolvePostShellResumeStepFromPayment,
@@ -465,6 +467,14 @@ function membershipOptionTextValue(label: string, feeMinor: number | undefined):
   return `${label}, ${formatCurrency(feeMinor)}`;
 }
 
+function noProgramsForNewCurlersMessage(socialFeeMinor: number | undefined): string {
+  const instead =
+    socialFeeMinor == null
+      ? 'Want to be a social member instead?'
+      : `Want to be a social member instead (${formatCurrency(socialFeeMinor)})?`;
+  return `Unfortunately, we are not currently offering any programs for new curlers. ${instead} Click Back and choose "Social membership".`;
+}
+
 function renderMembershipChoiceContent(label: string, description: string, feeMinor: number | undefined) {
   return (
     <div className="flex min-w-0 flex-1 items-center gap-4">
@@ -823,9 +833,12 @@ function rememberRegistrationCurlerNameForSuccess(registrationId: number | null 
   persistSuccessCurlerName(registrationId, name);
 }
 
-async function resolvePostShellResumeStep(registrationId: number): Promise<string> {
+async function resolvePostShellResumeStep(
+  registrationId: number,
+  options?: { allowLeagueRegistration?: boolean | null },
+): Promise<string> {
   const { data: paymentData } = await api.get(`/registration/drafts/${registrationId}/membership-payment`);
-  return resolvePostShellResumeStepFromPayment(paymentData as RegistrationMembershipPaymentPayload);
+  return resolvePostShellResumeStepFromPayment(paymentData as RegistrationMembershipPaymentPayload, options);
 }
 
 function shellResumePayload(
@@ -857,7 +870,9 @@ async function resolveResumeStepForDraft(draft: RegistrationShellPayload & { id:
   }
 
   try {
-    return await resolvePostShellResumeStep(draft.id);
+    return await resolvePostShellResumeStep(draft.id, {
+      allowLeagueRegistration: draft.specialLink?.allowLeagueRegistration,
+    });
   } catch {
     return shellStep;
   }
@@ -1126,11 +1141,50 @@ export default function RegistrationShellPage() {
   const curlerStoredDateOfBirth = payload?.curler?.dateOfBirth || null;
   const registeringCurlerDateOfBirth = curlerStoredDateOfBirth || demographics.dateOfBirth || null;
   const experienceYearsNumeric = reportedExperienceYears(experienceChoice, experienceYears, membershipPayment);
-  const skipsIcePrivileges = experienceSkipsIcePrivilegesStep(experienceChoice, experienceYearsNumeric);
+  const belowBasicIceExperience = experienceSkipsIcePrivilegesStep(experienceChoice, experienceYearsNumeric);
+  const specialLinkAllowLeagueRegistration =
+    payload?.specialLink?.allowLeagueRegistration ?? specialLinkSnapshot?.allowLeagueRegistration ?? true;
+  const skipsIcePrivileges = specialLinkAllowLeagueRegistration && belowBasicIceExperience;
+  const skipsLeagueSelection = registrationSkipsLeagueSelection({
+    membershipOption: membershipPayment?.selection.membershipOption ?? membershipChoice,
+    allowLeagueRegistration: specialLinkAllowLeagueRegistration,
+  });
   const recommendSaturdayInstructional = shouldRecommendSaturdayInstructional(
     experienceChoice,
     experienceYearsNumeric,
   );
+  const icePrivilegesOptions = useMemo(
+    () => [
+      ...(specialLinkAllowLeagueRegistration
+        ? [
+            {
+              value: 'league_play' as const,
+              label: 'League play or instructional programs',
+              description: recommendSaturdayInstructional
+                ? 'Evening and weekend leagues. Includes Saturday Instructional and Junior Advanced Commitment programs.'
+                : 'Evening and weekend leagues and instructional programs.',
+            },
+          ]
+        : []),
+      ...(!belowBasicIceExperience
+        ? [
+            {
+              value: 'basic_ice' as const,
+              label: 'Basic ice privileges',
+              description: 'Sparing, practice, and daytime leagues.',
+            },
+          ]
+        : []),
+      {
+        value: 'none' as const,
+        label: 'No ice privileges',
+        description: 'Full membership without on-ice access.',
+      },
+    ],
+    [belowBasicIceExperience, recommendSaturdayInstructional, specialLinkAllowLeagueRegistration],
+  );
+  const onlyNoIcePrivilegesChoice =
+    icePrivilegesOptions.length === 1 && icePrivilegesOptions[0]?.value === 'none';
   const leagueEligibilityInput = useMemo((): LeagueEligibilityInput => {
     const membershipOption =
       membershipPayment?.selection.membershipOption ??
@@ -1218,8 +1272,6 @@ export default function RegistrationShellPage() {
     registeringForSomeoneElse || registeringForSelf === 'other' || Boolean(member);
 
   const specialLinkLockedEmail = payload?.specialLink?.email || specialLinkSnapshot?.email || '';
-  const specialLinkAllowLeagueRegistration =
-    payload?.specialLink?.allowLeagueRegistration ?? specialLinkSnapshot?.allowLeagueRegistration ?? true;
   const specialLinkMemberEmailMatches = Boolean(
     specialLinkLockedEmail &&
       member?.email &&
@@ -2131,7 +2183,19 @@ export default function RegistrationShellPage() {
   ]);
 
   useEffect(() => {
+    if (currentStep !== 'league-priority-intro' && currentStep !== 'league-priority') return;
+    if (!specialLinkSkipsLeagueSelection(specialLinkAllowLeagueRegistration)) return;
+    if (registrationNavigationIntentRef.current === 'back') {
+      registrationNavigationIntentRef.current = null;
+      navigate(skipsIcePrivileges ? '/registration/experience' : '/registration/basic-ice', { replace: true });
+      return;
+    }
+    navigate('/registration/review', { replace: true });
+  }, [currentStep, navigate, skipsIcePrivileges, specialLinkAllowLeagueRegistration]);
+
+  useEffect(() => {
     if (currentStep !== 'league-priority-intro') return;
+    if (specialLinkSkipsLeagueSelection(specialLinkAllowLeagueRegistration)) return;
     if (!leaguePayload || shouldShowLeaguePriorityIntro(leaguePayload.leagues, leagueEligibilityInput)) return;
     if (registrationNavigationIntentRef.current === 'back') {
       registrationNavigationIntentRef.current = null;
@@ -2142,7 +2206,7 @@ export default function RegistrationShellPage() {
       return;
     }
     navigate('/registration/league-priority', { replace: true });
-  }, [currentStep, leagueEligibilityInput, leaguePayload, skipsIcePrivileges, navigate]);
+  }, [currentStep, leagueEligibilityInput, leaguePayload, skipsIcePrivileges, navigate, specialLinkAllowLeagueRegistration]);
 
   useEffect(() => {
     const leagueSteps = ['experience', 'basic-ice', 'league-priority-intro', 'league-priority', 'review'];
@@ -2193,8 +2257,8 @@ export default function RegistrationShellPage() {
         uswcaMembershipOptIn: membershipAppliesParentAssociations(membershipChoice)
           ? uswcaMembershipOptIn
           : null,
-        desiredLeagueCount: membershipSkipsLeaguePlay(membershipChoice) ? null : saved?.desiredLeagueCount ?? null,
-        priorities: membershipSkipsLeaguePlay(membershipChoice) ? [] : saved?.priorities ?? [],
+        desiredLeagueCount: skipsLeagueSelection ? null : saved?.desiredLeagueCount ?? null,
+        priorities: skipsLeagueSelection ? [] : saved?.priorities ?? [],
       })
       .then((response) => {
         if (canceled) return;
@@ -2229,6 +2293,7 @@ export default function RegistrationShellPage() {
     experienceYears,
     usaCurlingMembershipOptIn,
     uswcaMembershipOptIn,
+    skipsLeagueSelection,
   ]);
 
   useEffect(() => {
@@ -2269,10 +2334,10 @@ export default function RegistrationShellPage() {
             : null,
           juniorAssistancePercent:
             membershipChoice === 'junior_recreational' ? Number(juniorAssistancePercent) : 0,
-          desiredLeagueCount: membershipSkipsLeaguePlay(membershipChoice)
+          desiredLeagueCount: skipsLeagueSelection
             ? null
             : guestLeagueSelectionRef.current?.desiredLeagueCount ?? leaguePayload?.desiredLeagueCount ?? null,
-          priorities: membershipSkipsLeaguePlay(membershipChoice)
+          priorities: skipsLeagueSelection
             ? []
             : guestLeagueSelectionRef.current?.priorities ?? leaguePayload?.priorities ?? [],
         });
@@ -2307,6 +2372,7 @@ export default function RegistrationShellPage() {
     experienceYears,
     usaCurlingMembershipOptIn,
     uswcaMembershipOptIn,
+    skipsLeagueSelection,
     leaguePayload?.desiredLeagueCount,
     leaguePayload?.priorities,
   ]);
@@ -3428,9 +3494,12 @@ export default function RegistrationShellPage() {
       }
       setIcePrivilegesChoice(choice);
       setBasicIcePrivileges(choice === 'basic_ice');
-      if (choice === 'none') {
+      if (choice === 'none' || specialLinkSkipsLeagueSelection(specialLinkAllowLeagueRegistration)) {
         setNoIceConfirm(false);
-        if (!member) persistGuestDraft('review', { icePrivilegesChoice: 'none', basicIcePrivileges: false });
+        if (!member) {
+          guestLeagueSelectionRef.current = { desiredLeagueCount: 0, priorities: [] };
+          persistGuestDraft('review', { icePrivilegesChoice: choice, basicIcePrivileges: choice === 'basic_ice' });
+        }
         navigate('/registration/review');
         return;
       }
@@ -3683,10 +3752,10 @@ export default function RegistrationShellPage() {
             membershipChoice === 'junior_recreational' ? Number(juniorAssistancePercent) : 0,
           payLater: options?.payLater ?? false,
           membershipCommitteeComments: membershipCommitteeComments.trim() || null,
-          desiredLeagueCount: membershipSkipsLeaguePlay(membershipChoice)
+          desiredLeagueCount: skipsLeagueSelection
             ? null
             : guestLeagueSelectionRef.current?.desiredLeagueCount ?? leaguePayload?.desiredLeagueCount ?? null,
-          priorities: membershipSkipsLeaguePlay(membershipChoice)
+          priorities: skipsLeagueSelection
             ? []
             : guestLeagueSelectionRef.current?.priorities ?? leaguePayload?.priorities ?? [],
           basicIceFallbackInterest: leaguePayload?.basicIceFallbackInterest ?? null,
@@ -3884,7 +3953,10 @@ export default function RegistrationShellPage() {
           return { label: 'Back', onClick: () => navigateRegistrationBack('/registration/membership') };
         }
         const iceChoice = membershipPayment?.icePrivilegesChoice ?? icePrivilegesChoice;
-        if (iceChoice === 'none' && membershipOption !== 'none') {
+        if (
+          (iceChoice === 'none' && membershipOption !== 'none') ||
+          specialLinkSkipsLeagueSelection(specialLinkAllowLeagueRegistration)
+        ) {
           return { label: 'Back', onClick: () => navigateRegistrationBack('/registration/basic-ice') };
         }
         return {
@@ -3910,6 +3982,7 @@ export default function RegistrationShellPage() {
     guardian.email,
     icePrivilegesChoice,
     skipsIcePrivileges,
+    specialLinkAllowLeagueRegistration,
     isPriorityEdit,
     leagueEligibilityInput,
     leaguePayload?.leagues,
@@ -5152,6 +5225,11 @@ export default function RegistrationShellPage() {
           <RegistrationFlowHeader />
           <h1 className="text-3xl font-bold text-[#121033]">Ice privileges</h1>
           <p className="mt-3 text-gray-600">Choose how this curler wants to be on the ice for {seasonSessionLabel}.</p>
+          {onlyNoIcePrivilegesChoice ? (
+            <p className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+              {noProgramsForNewCurlersMessage(windowState?.membershipFees?.socialMinor)}
+            </p>
+          ) : null}
           <div className="mt-6 space-y-6">
             <FormField label="Ice privileges" htmlFor={icePrivilegesInputId} required tone="public">
               <ChoiceInput
@@ -5162,33 +5240,7 @@ export default function RegistrationShellPage() {
                   setIcePrivilegesChoice((raw as IcePrivilegesChoice | null) ?? null);
                   setError('');
                 }}
-                options={[
-                  ...(specialLinkAllowLeagueRegistration
-                    ? [
-                        {
-                          value: 'league_play' as const,
-                          label: 'League play or instructional programs',
-                          description: recommendSaturdayInstructional
-                            ? 'Evening and weekend leagues. Includes Saturday Instructional and Junior Advanced Commitment programs.'
-                            : 'Evening and weekend leagues and instructional programs.',
-                        },
-                      ]
-                    : []),
-                  ...(!skipsIcePrivileges
-                    ? [
-                        {
-                          value: 'basic_ice' as const,
-                          label: 'Basic ice privileges',
-                          description: 'Sparing, practice, and daytime leagues.',
-                        },
-                      ]
-                    : []),
-                  {
-                    value: 'none' as const,
-                    label: 'No ice privileges',
-                    description: 'Full membership without on-ice access.',
-                  },
-                ]}
+                options={icePrivilegesOptions}
               />
             </FormField>
             {error ? <p className="text-sm text-red-600">{error}</p> : null}
