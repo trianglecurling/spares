@@ -1075,6 +1075,12 @@ function EndsResultEntry({
   const logicalForVisual = (visualRow: 0 | 1): 0 | 1 =>
     visualRow === 0 ? (swap ? 1 : 0) : swap ? 0 : 1;
 
+  const stoneColorForVisual = (visualRow: 0 | 1): string | null => {
+    if (!sheetColors) return null;
+    if (rockColor1Slot !== 0 && rockColor1Slot !== 1) return null;
+    return visualRow === 0 ? sheetColors.stoneColor1 : sheetColors.stoneColor2;
+  };
+
   const rockLeading = (visualRow: 0 | 1): ReactNode => {
     if (!sheetColors) return null;
     if (showManualColor) {
@@ -1107,6 +1113,8 @@ function EndsResultEntry({
       powerPlayEndSide1={powerPlayEndSide1}
       team0Leading={rockLeading(0)}
       team1Leading={rockLeading(1)}
+      team0StoneColor={stoneColorForVisual(0)}
+      team1StoneColor={stoneColorForVisual(1)}
       onChangeEntries={handleEntriesChange}
       onGameCompleteChange={handleCompleteChange}
       onFirstEndHammerChange={handleHammerChange}

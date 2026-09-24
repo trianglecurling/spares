@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { IoHammer } from 'react-icons/io5';
+import PublicTeamRosterDialog from './PublicTeamRosterDialog';
+import type { PublicTournamentDrawTeamRef } from './PublicTournamentDrawBracket';
 import { RockColorSwatch } from './tournament/ScorekeeperRockColorControl';
 import {
   consecutiveFilledEndCount,
@@ -86,6 +88,21 @@ export default function PublicEventLiveScores({
     () => new Map(teams.map((t) => [t.id, { teamName: t.teamName, sortOrder: t.sortOrder }])),
     [teams],
   );
+  const rosterTeamsById = useMemo(() => {
+    const map = new Map<number, PublicTournamentDrawTeamRef>();
+    for (const team of teams) {
+      map.set(team.id, {
+        teamName: team.teamName,
+        sortOrder: team.sortOrder,
+        homeClub: team.homeClub,
+        viceSlotCode: team.viceSlotCode,
+        skipSlotCode: team.skipSlotCode,
+        roster: team.roster.map((row) => ({ slotCode: row.slotCode, playerName: row.playerName })),
+      });
+    }
+    return map;
+  }, [teams]);
+  const [openTeamId, setOpenTeamId] = useState<number | null>(null);
   const resultType = resolveDrawResultType(draw);
 
   if (rows.length === 0) {
@@ -95,20 +112,35 @@ export default function PublicEventLiveScores({
   }
 
   return (
-    <div className="flex flex-col gap-3" role="list" aria-label="Live scores">
-      {rows.map((row) => (
-        <LiveScoreGameCard
-          key={row.game.id}
-          row={row}
-          draw={draw}
-          teamsById={teamsById}
-          resultType={resultType}
-          tournamentFormat={tournamentFormat}
-          nowMs={nowMs}
-        />
-      ))}
-    </div>
+    <>
+      <div className="flex flex-col gap-3" role="list" aria-label="Live scores">
+        {rows.map((row) => (
+          <LiveScoreGameCard
+            key={row.game.id}
+            row={row}
+            draw={draw}
+            teamsById={teamsById}
+            resultType={resultType}
+            tournamentFormat={tournamentFormat}
+            nowMs={nowMs}
+            onOpenTeam={setOpenTeamId}
+          />
+        ))}
+      </div>
+      <PublicTeamRosterDialog
+        teamId={openTeamId}
+        teamsById={rosterTeamsById}
+        format={tournamentFormat}
+        onClose={() => setOpenTeamId(null)}
+      />
+    </>
   );
+}
+
+function registrationIdForSlot(game: TournamentGameNode, slotIndex: number): number | null {
+  const slot = game.slots[slotIndex];
+  if (!slot || slot.sourceType !== 'registration' || slot.registrationId == null) return null;
+  return slot.registrationId;
 }
 
 function LiveScoreGameCard({
@@ -118,6 +150,7 @@ function LiveScoreGameCard({
   resultType,
   tournamentFormat,
   nowMs,
+  onOpenTeam,
 }: {
   row: TournamentResultsTableRow;
   draw: TournamentDrawState;
@@ -125,6 +158,7 @@ function LiveScoreGameCard({
   resultType: ReturnType<typeof resolveDrawResultType>;
   tournamentFormat: TournamentFormat;
   nowMs: number;
+  onOpenTeam: (teamId: number) => void;
 }) {
   const { game } = row;
   const multi = game.slots.length >= 3;
@@ -189,8 +223,11 @@ function LiveScoreGameCard({
           game={game}
           label0={row.comp0}
           label1={row.comp1}
+          teamId0={registrationIdForSlot(game, 0)}
+          teamId1={registrationIdForSlot(game, 1)}
           tournamentFormat={tournamentFormat}
           sheetColors={sheetColors}
+          onOpenTeam={onOpenTeam}
         />
       ) : resultType === 'score' || game.result?.entryKind === 'final_score' ? (
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -216,9 +253,12 @@ function LiveScoreGameCard({
               >
                 <div className="flex items-start gap-2">
                   {rockLeading(logical)}
-                  <span className="block min-w-0 flex-1 text-base leading-snug">
-                    {labelFor(logical)}
-                  </span>
+                  <ScoreTeamName
+                    label={labelFor(logical)}
+                    teamId={registrationIdForSlot(game, logical)}
+                    onOpenTeam={onOpenTeam}
+                    className="block min-w-0 flex-1 text-base leading-snug"
+                  />
                 </div>
                 <div className="mt-1 text-lg font-semibold tabular-nums text-gray-900 dark:text-gray-100">
                   {score != null ? score : '—'}
@@ -256,9 +296,12 @@ function LiveScoreGameCard({
               >
                 <div className="flex items-center justify-center gap-2">
                   {rockLeading(logical)}
-                  <span className="min-w-0 text-base leading-snug">
-                    {labelFor(logical)}
-                  </span>
+                  <ScoreTeamName
+                    label={labelFor(logical)}
+                    teamId={registrationIdForSlot(game, logical)}
+                    onOpenTeam={onOpenTeam}
+                    className="min-w-0 text-base leading-snug"
+                  />
                 </div>
                 {scoreHint ? (
                   <span className="mt-1 text-sm tabular-nums text-gray-500 dark:text-gray-400">
@@ -288,20 +331,28 @@ function ReadOnlyEndsBoard({
   game,
   label0,
   label1,
+  teamId0,
+  teamId1,
   tournamentFormat,
   sheetColors,
+  onOpenTeam,
 }: {
   game: TournamentGameNode;
   label0: string;
   label1: string;
+  teamId0: number | null;
+  teamId1: number | null;
   tournamentFormat: TournamentFormat;
   sheetColors: ReturnType<typeof sheetColorsForGame>;
+  onOpenTeam: (teamId: number) => void;
 }) {
   const result = game.result?.entryKind === 'ends' ? game.result : null;
   /** Same as scorekeeper: keep sheet color1 on top; swap teams + scores together. */
   const swap = game.rockColor1Slot === 1;
   const visualLabel0 = swap ? label1 : label0;
   const visualLabel1 = swap ? label0 : label1;
+  const visualTeamId0 = swap ? teamId1 : teamId0;
+  const visualTeamId1 = swap ? teamId0 : teamId1;
   const toVisualEntries = (logical: Array<EndScoreEntry | null>) =>
     swap
       ? logical.map((e) => (e ? { side0: e.side1, side1: e.side0 } : null))
@@ -345,18 +396,82 @@ function ReadOnlyEndsBoard({
     return <RockColorSwatch color={color} />;
   };
 
-  if (filled === 0) {
+  if (filled === 0 && firstEndHammerSlot == null) {
     return (
       <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">No scores yet.</p>
     );
   }
 
+  const sides = [0, 1] as const;
+
   return (
-    <div className="mt-4 overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
-      <table className="min-w-full border-collapse text-sm">
+    <>
+      <div className="mt-4 divide-y divide-gray-200 overflow-hidden rounded-xl border border-gray-200 dark:divide-gray-700 dark:border-gray-700 sm:hidden">
+        {sides.map((side) => {
+          const label = side === 0 ? visualLabel0 : visualLabel1;
+          const total = side === 0 ? total0 : total1;
+          const ppEnd = side === 0 ? pp0 : pp1;
+          return (
+            <div key={side}>
+              <div className="px-2 py-1.5 text-sm font-medium text-gray-800 dark:text-gray-100">
+                <TeamNameLine
+                  label={label}
+                  teamId={side === 0 ? visualTeamId0 : visualTeamId1}
+                  onOpenTeam={onOpenTeam}
+                  leading={rockLeading(side)}
+                  hasHammer={firstEndHammerSlot === side}
+                />
+              </div>
+              <div
+                className="grid items-center bg-gray-50 px-1 py-1 dark:bg-gray-900/60"
+                style={{ gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr)) 2.75rem` }}
+              >
+                {Array.from({ length: columnCount }, (_, i) => (
+                  <div
+                    key={i}
+                    className="px-0.5 text-center text-xs font-medium tabular-nums text-gray-700 dark:text-gray-200"
+                  >
+                    {i + 1}
+                  </div>
+                ))}
+                <div className="text-center text-xs font-semibold text-gray-900 dark:text-gray-100">
+                  Total
+                </div>
+                {Array.from({ length: columnCount }, (_, i) => (
+                  <EndScoreValue
+                    key={`score-${i}`}
+                    entry={entries[i] ?? null}
+                    side={side}
+                    isX={xColumnIndex === i}
+                    hasPowerPlay={isDoubles && ppEnd === i + 1}
+                    showHammerPlaceholder={
+                      (entries[i] ?? null) == null &&
+                      nextEndHammerSlot === side &&
+                      i === nextUnplayedEndIndex
+                    }
+                  />
+                ))}
+                <div className="text-center text-sm font-semibold tabular-nums text-gray-900 dark:text-gray-100">
+                  {total}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+    <div className="mt-4 hidden w-full overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700 sm:block">
+      <table className="w-full table-fixed border-collapse text-sm">
+        <colgroup>
+          <col className="w-[24em]" />
+          {Array.from({ length: columnCount }, (_, i) => (
+            <col key={i} />
+          ))}
+          <col />
+        </colgroup>
         <thead>
           <tr className="bg-gray-50 dark:bg-gray-900/60">
-            <th className="sticky left-0 z-[1] bg-gray-50 px-2 py-2 text-left font-medium text-gray-600 dark:bg-gray-900/60 dark:text-gray-300">
+            <th className="sticky left-0 z-[1] w-[24em] bg-gray-50 px-2 py-2 text-left font-medium text-gray-600 dark:bg-gray-900/60 dark:text-gray-300">
               End
             </th>
             {Array.from({ length: columnCount }, (_, i) => (
@@ -388,24 +503,14 @@ function ReadOnlyEndsBoard({
                     : 'border-t border-gray-100 dark:border-gray-800'
                 }
               >
-                <th className="sticky left-0 z-[1] bg-white px-2 py-1.5 text-left font-medium text-gray-800 dark:bg-gray-900 dark:text-gray-100">
-                  <span className="inline-flex max-w-[12rem] items-center gap-2">
-                    {leading}
-                    <span className="line-clamp-2" title={label}>
-                      {label}
-                    </span>
-                    {hasHammer ? (
-                      <span
-                        className="inline-flex h-7 w-7 shrink-0 items-center justify-center"
-                        title="Last stone in first end"
-                        aria-label={`${label} has last stone in first end`}
-                      >
-                        <IoHammer className="h-3.5 w-3.5 text-primary-teal" aria-hidden />
-                      </span>
-                    ) : (
-                      <span className="inline-flex h-7 w-7 shrink-0" aria-hidden />
-                    )}
-                  </span>
+                <th className="sticky left-0 z-[1] w-[24em] bg-white px-2 py-1.5 text-left font-medium text-gray-800 dark:bg-gray-900 dark:text-gray-100">
+                  <TeamNameLine
+                    label={label}
+                    teamId={side === 0 ? visualTeamId0 : visualTeamId1}
+                    onOpenTeam={onOpenTeam}
+                    leading={leading}
+                    hasHammer={hasHammer}
+                  />
                 </th>
                 {Array.from({ length: columnCount }, (_, i) => {
                   const entry = entries[i] ?? null;
@@ -432,7 +537,7 @@ function ReadOnlyEndsBoard({
                             </span>
                           ) : null}
                           <span
-                            className={`inline-flex h-9 w-full min-w-[2.5rem] items-center justify-center rounded-md border border-gray-200 bg-gray-50 text-sm tabular-nums dark:border-gray-600 dark:bg-gray-800 ${
+                            className={`inline-flex h-9 w-full min-w-0 items-center justify-center rounded-md border border-gray-200 bg-gray-50 text-sm tabular-nums dark:border-gray-600 dark:bg-gray-800 ${
                               isBlank ? 'text-gray-400' : 'text-gray-900 dark:text-gray-100'
                             }`}
                           >
@@ -457,6 +562,125 @@ function ReadOnlyEndsBoard({
           })}
         </tbody>
       </table>
+    </div>
+    </>
+  );
+}
+
+function ScoreTeamName({
+  label,
+  teamId,
+  onOpenTeam,
+  className,
+}: {
+  label: string;
+  teamId: number | null;
+  onOpenTeam: (teamId: number) => void;
+  className?: string;
+}) {
+  if (teamId == null) {
+    return (
+      <span className={className} title={label}>
+        {label}
+      </span>
+    );
+  }
+  return (
+    <button
+      type="button"
+      className={[
+        className ?? '',
+        'cursor-pointer rounded-sm text-left hover:underline underline-offset-2',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40',
+      ].join(' ')}
+      title={label}
+      aria-label={`Show roster for ${label}`}
+      onClick={() => onOpenTeam(teamId)}
+    >
+      {label}
+    </button>
+  );
+}
+
+function TeamNameLine({
+  label,
+  teamId,
+  onOpenTeam,
+  leading,
+  hasHammer,
+}: {
+  label: string;
+  teamId: number | null;
+  onOpenTeam: (teamId: number) => void;
+  leading: ReactNode;
+  hasHammer: boolean;
+}) {
+  return (
+    <span className="flex min-w-0 items-center gap-2">
+      {leading}
+      <ScoreTeamName
+        label={label}
+        teamId={teamId}
+        onOpenTeam={onOpenTeam}
+        className="min-w-0 break-words"
+      />
+      {hasHammer ? (
+        <span
+          className="inline-flex h-7 w-7 shrink-0 items-center justify-center"
+          title="Last stone in first end"
+          aria-label={`${label} has last stone in first end`}
+        >
+          <IoHammer className="h-3.5 w-3.5 text-primary-teal" aria-hidden />
+        </span>
+      ) : (
+        <span className="inline-flex h-7 w-7 shrink-0" aria-hidden />
+      )}
+    </span>
+  );
+}
+
+function EndScoreValue({
+  entry,
+  side,
+  isX,
+  hasPowerPlay,
+  showHammerPlaceholder,
+}: {
+  entry: EndScoreEntry | null;
+  side: 0 | 1;
+  isX: boolean;
+  hasPowerPlay: boolean;
+  showHammerPlaceholder: boolean;
+}) {
+  const display = entry == null ? '' : side === 0 ? String(entry.side0) : String(entry.side1);
+  const isBlank = entry != null && entry.side0 === 0 && entry.side1 === 0;
+  if (isX) {
+    return (
+      <span className="inline-flex h-9 w-full items-center justify-center font-semibold text-gray-400">
+        X
+      </span>
+    );
+  }
+  return (
+    <div className="flex flex-col items-center gap-0.5 px-0.5">
+      {hasPowerPlay ? (
+        <span className="text-[0.65rem] font-medium leading-none text-primary-teal" title="Power play">
+          PP
+        </span>
+      ) : null}
+      <span
+        className={`inline-flex h-9 w-full min-w-0 items-center justify-center rounded-md border border-gray-200 bg-gray-50 text-sm tabular-nums dark:border-gray-600 dark:bg-gray-800 ${
+          isBlank ? 'text-gray-400' : 'text-gray-900 dark:text-gray-100'
+        }`}
+      >
+        {showHammerPlaceholder ? (
+          <IoHammer className="h-3.5 w-3.5 text-primary-teal" aria-hidden />
+        ) : display === '' ? (
+          '·'
+        ) : (
+          display
+        )}
+      </span>
     </div>
   );
 }

@@ -20,7 +20,7 @@ import { useDelayedTrueWhile } from '../hooks/useDelayedTrueWhile';
 import api from '../utils/api';
 import { waitlistEntryCountLabel } from '../components/registration/registrationViewEditShared';
 import { teamIdsAssignedOnDraw, type TournamentDrawState } from '../utils/tournamentDrawModel';
-import { drawHasScoreActivity } from '../utils/tournamentDrawResultsRows';
+import { getEarliestStartMs, isLiveScoresWindowOpen } from '../utils/fiscalSeason';
 import { isBonspielCalendarType } from '../utils/eventCalendarTypes';
 import {
   clubCalendarDate,
@@ -267,6 +267,8 @@ export default function PublicEventDetailPage() {
   const [publicDraw, setPublicDraw] = useState<TournamentDrawState | null | undefined>(undefined);
   const [publicDrawLoading, setPublicDrawLoading] = useState(false);
   const [publicDrawError, setPublicDrawError] = useState<string | null>(null);
+  /** Bumps when the 24-hour live-scores window opens so the tab appears without a reload. */
+  const [scoresClock, setScoresClock] = useState(0);
   /** Aligns public bracket baseline pan with this column (tabs / max-w-6xl + horizontal padding). */
   const publicBracketAlignColumnRef = useRef<HTMLDivElement>(null);
 
@@ -302,7 +304,7 @@ export default function PublicEventDetailPage() {
     const showT = isBonspielCalendarType(cal) && (event.tournamentTeamsPublished ?? 0) === 1;
     const showD = isBonspielCalendarType(cal) && (event.tournamentDrawPublished ?? 0) === 1;
     const showScores =
-      showD && publicDraw != null && !publicDrawLoading && drawHasScoreActivity(publicDraw);
+      showD && isLiveScoresWindowOpen(event.timespans, Date.now() + serverOffsetMs);
     const showBar = showT || showD;
     const t = searchParams.get('tab');
     const clearTab = () => {
@@ -328,14 +330,28 @@ export default function PublicEventDetailPage() {
       clearTab();
     } else if (t === 'draw' && !showD) {
       clearTab();
-    } else if (t === 'scores') {
-      // Wait until draw load settles before deciding the Live scores tab is unavailable.
-      if (!showD) clearTab();
-      else if (publicDraw !== undefined && !publicDrawLoading && !showScores) clearTab();
+    } else if (t === 'scores' && !showScores) {
+      clearTab();
     }
-  }, [event, loading, searchParams, setSearchParams, publicDraw, publicDrawLoading]);
+  }, [event, loading, searchParams, setSearchParams, serverOffsetMs, scoresClock]);
 
-  const serverNowMs = useMemo(() => Date.now() + serverOffsetMs, [serverOffsetMs, tick]);
+  const serverNowMs = useMemo(
+    () => Date.now() + serverOffsetMs,
+    [serverOffsetMs, tick, scoresClock]
+  );
+
+  useEffect(() => {
+    if (!event || loading) return;
+    const startMs = getEarliestStartMs(event.timespans);
+    if (!Number.isFinite(startMs)) return;
+    const openAt = startMs - MS_DAY;
+    const remaining = openAt - (Date.now() + serverOffsetMs);
+    if (remaining <= 0) return;
+    // setTimeout delay is a 32-bit signed int; reschedule if the window is farther out.
+    const delay = Math.min(remaining, 2_147_483_647);
+    const id = window.setTimeout(() => setScoresClock((n) => n + 1), delay);
+    return () => window.clearTimeout(id);
+  }, [event, loading, serverOffsetMs, scoresClock]);
 
   const registrationStartMs = event?.registrationStart
     ? new Date(event.registrationStart).getTime()
@@ -579,9 +595,9 @@ export default function PublicEventDetailPage() {
     isBonspielCalendarType(calendarTypeIds) && (event.tournamentTeamsPublished ?? 0) === 1;
   const showPublicDraw =
     isBonspielCalendarType(calendarTypeIds) && (event.tournamentDrawPublished ?? 0) === 1;
-  const showLiveScores = showPublicDraw && publicDraw != null && drawHasScoreActivity(publicDraw);
+  const showLiveScores = showPublicDraw && isLiveScoresWindowOpen(event.timespans, serverNowMs);
   const showEventTabs = showPublicTeams || showPublicDraw;
-  // Allow scores while draw is loading; tab chrome only appears once score activity exists.
+  // Live scores opens 24 hours before the event starts, including while the draw is still loading.
   const publicView: 'details' | 'teams' | 'draw' | 'scores' =
     tabParam === 'teams' && showPublicTeams
       ? 'teams'
@@ -707,6 +723,18 @@ export default function PublicEventDetailPage() {
             </div>
           ) : publicDraw != null ? (
             <div className="max-w-6xl mx-auto px-4 sm:px-6 pb-10 w-full min-w-0 text-gray-700 dark:text-gray-300">
+              <p className="mb-4 text-sm">
+                All games are streamed live to our{' '}
+                <a
+                  href="https://www.youtube.com/@TriangleCurling/streams"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary-teal-link hover:underline"
+                >
+                  YouTube Channel
+                </a>
+                .
+              </p>
               <PublicEventLiveScores
                 draw={publicDraw}
                 teams={liveScoresTeams}
