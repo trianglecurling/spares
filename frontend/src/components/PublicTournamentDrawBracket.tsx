@@ -1,6 +1,8 @@
 import type { RefObject } from 'react';
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import PublicTeamRosterDialog from './PublicTeamRosterDialog';
 import TournamentDrawBracketScene from './TournamentDrawBracketScene';
+import type { TournamentFormat } from '../utils/tournamentDisplay';
 import { useAlert } from '../contexts/AlertContext';
 import { useBracketCanvasView } from '../hooks/useBracketCanvasView';
 import type { TournamentDrawState } from '../utils/tournamentDrawModel';
@@ -24,6 +26,9 @@ import {
 export type PublicTournamentDrawTeamRef = {
   teamName: string | null;
   sortOrder: number;
+  homeClub?: string | null;
+  viceSlotCode?: string;
+  skipSlotCode?: string;
   roster?: Array<{ slotCode: string; playerName: string | null }>;
 };
 
@@ -37,6 +42,7 @@ type PublicTournamentDrawBracketProps = {
   filenameBase: string;
   /** Padded content column (e.g. tab bar wrapper) so the default pan lines up with public page text. */
   alignContentColumnRef?: RefObject<HTMLElement | null>;
+  tournamentFormat?: TournamentFormat;
 };
 
 /**
@@ -48,6 +54,7 @@ export default function PublicTournamentDrawBracket({
   title,
   filenameBase,
   alignContentColumnRef,
+  tournamentFormat = 'fours',
 }: PublicTournamentDrawBracketProps) {
   const { showAlert } = useAlert();
   const printSceneRef = useRef<HTMLDivElement>(null);
@@ -76,7 +83,17 @@ export default function PublicTournamentDrawBracket({
     [draw, printLayout]
   );
 
-  const bracketView = useBracketCanvasView({ enabled: true, attachToken: layout.width });
+  const [highlightedGameId, setHighlightedGameId] = useState<string | null>(null);
+  const [openTeamId, setOpenTeamId] = useState<number | null>(null);
+  const jumpToGameRef = useRef<(gameId: string) => void>(() => {});
+  const bracketView = useBracketCanvasView({
+    enabled: true,
+    attachToken: layout.width,
+    onCanvasBackgroundTap: () => setHighlightedGameId(null),
+    onBracketShortPress: () => {},
+    onBracketJump: (gameId) => jumpToGameRef.current(gameId),
+    onBracketTeam: (registrationId) => setOpenTeamId(registrationId),
+  });
   const { setBaselinePan, snapPanToBaseline } = bracketView;
   const didSnapInitialPan = useRef(false);
 
@@ -108,6 +125,25 @@ export default function PublicTournamentDrawBracket({
     ro.observe(col);
     return () => ro.disconnect();
   }, [alignContentColumnRef, layout.width, setBaselinePan, snapPanToBaseline]);
+
+  const jumpToGame = useCallback(
+    (gameId: string) => {
+      const box = layout.positions[gameId];
+      if (!box) return;
+      bracketView.panToContentPoint(box.x + box.w / 2, box.y);
+      setHighlightedGameId(gameId);
+    },
+    [bracketView, layout.positions]
+  );
+  jumpToGameRef.current = jumpToGame;
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setHighlightedGameId(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   const handleExportPdf = useCallback(async () => {
     const scene = printSceneRef.current;
@@ -153,7 +189,7 @@ export default function PublicTournamentDrawBracket({
       </div>
       <div
         ref={bracketView.canvasShellRef}
-        className="relative flex-1 min-h-[800px] w-full select-none [&_*]:select-none overflow-hidden bg-white"
+        className="relative flex-1 min-h-[max(100dvh,1100px)] w-full select-none [&_*]:select-none overflow-hidden bg-white"
       >
         <div
           role="application"
@@ -162,6 +198,7 @@ export default function PublicTournamentDrawBracket({
           onPointerDown={bracketView.beginCanvasPan}
         >
           <div
+            ref={bracketView.canvasContentRef}
             style={{
               transform: `translate(${bracketView.displayPan.x}px, ${bracketView.displayPan.y}px) scale(${bracketView.zoom})`,
               transformOrigin: '0 0',
@@ -184,11 +221,20 @@ export default function PublicTournamentDrawBracket({
                 onSelectGame={() => {}}
                 onSelectTextNode={() => {}}
                 viewZoom={bracketView.zoom}
+                highlightedGameId={highlightedGameId}
+                onJumpToGame={jumpToGame}
+                onOpenTeam={setOpenTeamId}
               />
             </div>
           </div>
         </div>
       </div>
+      <PublicTeamRosterDialog
+        teamId={openTeamId}
+        teamsById={teamsById}
+        format={tournamentFormat}
+        onClose={() => setOpenTeamId(null)}
+      />
       <div
         aria-hidden
         style={{

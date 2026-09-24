@@ -319,6 +319,56 @@ export function resolveResultsTableSideLabel(
   }
 }
 
+/** Registration id for the competitor on a slot, following the same feeder walk as the card label. */
+export function resolveResultsTableSideRegistrationId(
+  draw: TournamentDrawState,
+  g: TournamentGameNode,
+  slotIndex: number,
+  visitingGameIds: Set<string> = new Set()
+): number | null {
+  if (visitingGameIds.has(g.id)) {
+    const slot = g.slots[slotIndex];
+    return slot?.sourceType === 'registration' ? (slot.registrationId ?? null) : null;
+  }
+  visitingGameIds.add(g.id);
+  try {
+    const feeders = incomingGameFeedersSorted(draw, g.id);
+    if (slotIndex < feeders.length) {
+      const edge = feeders[slotIndex]!;
+      const from = draw.games[edge.fromGameId];
+      if (!from) return null;
+      const finisherSlotIdx = slotIndexForPlaceAfterResult(from, edge.place);
+      if (finisherSlotIdx == null) return null;
+      return resolveResultsTableSideRegistrationId(draw, from, finisherSlotIdx, visitingGameIds);
+    }
+    const slot = g.slots[slotIndex];
+    if (!slot) return null;
+    if (slot.sourceType === 'registration') return slot.registrationId ?? null;
+    if (slot.sourceType === 'game_place' && slot.gameId) {
+      const og = draw.games[slot.gameId];
+      if (!og) return null;
+      const idx = slotIndexForPlaceAfterResult(og, slot.place);
+      if (idx == null) return null;
+      return resolveResultsTableSideRegistrationId(draw, og, idx, visitingGameIds);
+    }
+    return null;
+  } finally {
+    visitingGameIds.delete(g.id);
+  }
+}
+
+function withRegistrationIds(
+  draw: TournamentDrawState,
+  g: TournamentGameNode,
+  segments: CompetitorLineSegment[]
+): CompetitorLineSegment[] {
+  return segments.map((seg) => {
+    if (seg.slotIndex == null) return seg;
+    const registrationId = resolveResultsTableSideRegistrationId(draw, g, seg.slotIndex);
+    return registrationId != null ? { ...seg, registrationId } : seg;
+  });
+}
+
 export function formatSlotSourceLabel(
   slot: TournamentSlotSource,
   teamsById: Map<number, TeamRow>,
@@ -351,6 +401,8 @@ export type CompetitorLineSegment = {
   rockColor?: string;
   /** Which `g.slots` index this line represents, when it maps to a single slot. */
   slotIndex?: number | null;
+  /** Confirmed team occupying this side, when the label is a team rather than a feeder. */
+  registrationId?: number | null;
 };
 
 export type CompetitorLabelsOptions = {
@@ -433,10 +485,14 @@ export function competitorLabelsLineSegments(
     if (c1 && c2) {
       const colorForSlot = (slot: 0 | 1) => (g.rockColor1Slot === slot ? c1 : c2);
       if (rockColorOrder === 'slot') {
-        return ordered.map((seg) => {
-          if (seg.slotIndex !== 0 && seg.slotIndex !== 1) return seg;
-          return { ...seg, rockColor: colorForSlot(seg.slotIndex) };
-        });
+        return withRegistrationIds(
+          draw,
+          g,
+          ordered.map((seg) => {
+            if (seg.slotIndex !== 0 && seg.slotIndex !== 1) return seg;
+            return { ...seg, rockColor: colorForSlot(seg.slotIndex) };
+          })
+        );
       }
       const bySlot = new Map<number, CompetitorLineSegment>();
       for (const seg of ordered) {
@@ -446,14 +502,14 @@ export function competitorLabelsLineSegments(
       const secondLogical = firstLogical === 0 ? 1 : 0;
       const first = bySlot.get(firstLogical) ?? ordered[0]!;
       const second = bySlot.get(secondLogical) ?? ordered[1]!;
-      return [
+      return withRegistrationIds(draw, g, [
         { ...first, rockColor: c1, slotIndex: firstLogical },
         { ...second, rockColor: c2, slotIndex: secondLogical },
-      ];
+      ]);
     }
   }
 
-  return ordered;
+  return withRegistrationIds(draw, g, ordered);
 }
 
 /** True when a competitor segment is (or resolves to) the given registration. */

@@ -474,7 +474,18 @@ export default function PublicEventDetailPage() {
     () =>
       new Map(
         publicTeams.map(
-          (t) => [t.id, { teamName: t.teamName, sortOrder: t.sortOrder, roster: t.roster }] as const
+          (t) =>
+            [
+              t.id,
+              {
+                teamName: t.teamName,
+                sortOrder: t.sortOrder,
+                homeClub: t.homeClub,
+                viceSlotCode: t.viceSlotCode,
+                skipSlotCode: t.skipSlotCode,
+                roster: t.roster,
+              },
+            ] as const
         )
       ),
     [publicTeams]
@@ -733,6 +744,7 @@ export default function PublicEventDetailPage() {
                 title={displayTitle}
                 filenameBase={event.slug || event.title}
                 alignContentColumnRef={publicBracketAlignColumnRef}
+                tournamentFormat={publicTeamsFormat ?? 'fours'}
               />
             </div>
           ) : null

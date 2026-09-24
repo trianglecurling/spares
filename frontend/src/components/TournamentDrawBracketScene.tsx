@@ -1,4 +1,4 @@
-import { Fragment } from 'react';
+import { Fragment, type CSSProperties, type ReactNode } from 'react';
 import type { TournamentDrawState } from '../utils/tournamentDrawModel';
 import {
   competitorLabelsLineSegments,
@@ -31,6 +31,96 @@ import {
   virtualFeederOutcomeLabel,
   virtualFeederPositionId,
 } from '../utils/tournamentDrawVirtualFeeders';
+
+export type BracketRoutingLine = {
+  key: string;
+  text: string;
+  color?: string;
+  toGameId?: string;
+};
+
+/** Win/loss (or place) label under a game card. Game destinations can pan the canvas. */
+export function BracketRoutingLabel({
+  line,
+  sourceNodeId,
+  onJumpToGame,
+}: {
+  line: BracketRoutingLine;
+  /** Team-path tree node that owns this label, when the same game can appear more than once. */
+  sourceNodeId?: string;
+  onJumpToGame?: (gameId: string) => void;
+}) {
+  const colorClass = line.color ? undefined : 'text-slate-500 dark:text-slate-400';
+  if (!line.toGameId || !onJumpToGame) {
+    return (
+      <span style={line.color ? { color: line.color } : undefined} className={colorClass}>
+        {line.text}
+      </span>
+    );
+  }
+  const gameLabel = line.text.replace(/^[^-]+-/, '') || line.text;
+  return (
+    <button
+      type="button"
+      data-bracket-jump-target={line.toGameId}
+      data-bracket-jump-source={sourceNodeId}
+      className={[
+        'cursor-pointer rounded-sm text-left hover:underline underline-offset-2',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40',
+        colorClass ?? '',
+      ].join(' ')}
+      style={line.color ? { color: line.color } : undefined}
+      aria-label={`Go to ${gameLabel}`}
+      onClick={(e) => {
+        if (e.detail !== 0) return;
+        onJumpToGame(line.toGameId!);
+      }}
+    >
+      {line.text}
+    </button>
+  );
+}
+
+/** Team name on a game card. Opens the roster dialog when the side is a known team. */
+export function BracketCompetitorName({
+  registrationId,
+  onOpenTeam,
+  className,
+  style,
+  children,
+}: {
+  registrationId?: number | null;
+  onOpenTeam?: (registrationId: number) => void;
+  className?: string;
+  style?: CSSProperties;
+  children: ReactNode;
+}) {
+  if (registrationId == null || !onOpenTeam) {
+    return (
+      <span className={className} style={style}>
+        {children}
+      </span>
+    );
+  }
+  return (
+    <button
+      type="button"
+      data-bracket-team-id={registrationId}
+      className={[
+        className ?? '',
+        'cursor-pointer rounded-sm text-left hover:underline underline-offset-2',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40',
+      ].join(' ')}
+      style={style}
+      onClick={(e) => {
+        if (e.detail !== 0) return;
+        onOpenTeam(registrationId);
+      }}
+    >
+      {children}
+    </button>
+  );
+}
 
 /** Bracket SVG path keys use `id`, `id-cross`, or `id-into` per connection. */
 export function bracketPathKeyToConnectionId(key: string): string {
@@ -70,6 +160,12 @@ export type TournamentDrawBracketSceneProps = {
   hideVirtualFeederCards?: boolean;
   /** Print density hides two-sided routing labels and shows either the game name or participants. */
   density?: 'screen' | 'print';
+  /** Public canvases: game id outlined after a routing-label jump. */
+  highlightedGameId?: string | null;
+  /** Public canvases: pan to the game named by a W/L (or place) label. */
+  onJumpToGame?: (gameId: string) => void;
+  /** Public canvases: open the roster dialog for a team name on a card. */
+  onOpenTeam?: (registrationId: number) => void;
 };
 
 export default function TournamentDrawBracketScene({
@@ -90,6 +186,9 @@ export default function TournamentDrawBracketScene({
   hideLaneChrome = false,
   hideVirtualFeederCards = false,
   density = 'screen',
+  highlightedGameId = null,
+  onJumpToGame,
+  onOpenTeam,
 }: TournamentDrawBracketSceneProps) {
   const textNoteEditing = interactive && updateDraw != null;
   const print = density === 'print';
@@ -330,7 +429,9 @@ export default function TournamentDrawBracketScene({
                           {' v. '}
                         </span>
                       ) : null}
-                      <span
+                      <BracketCompetitorName
+                        registrationId={print ? null : seg.registrationId}
+                        onOpenTeam={print ? undefined : onOpenTeam}
                         style={
                           !isWinner && !isLoser && seg.color ? { color: seg.color } : undefined
                         }
@@ -352,7 +453,7 @@ export default function TournamentDrawBracketScene({
                           />
                         ) : null}
                         {displayText}
-                      </span>
+                      </BracketCompetitorName>
                     </Fragment>
                   );
                 })}
@@ -390,18 +491,22 @@ export default function TournamentDrawBracketScene({
               >
                 {routingLines.map((line) => (
                   <div key={line.key}>
-                    <span
-                      style={line.color ? { color: line.color } : undefined}
-                      className={
-                        line.color
-                          ? undefined
-                          : print
-                            ? 'text-slate-600'
-                            : 'text-slate-500 dark:text-slate-400'
-                      }
-                    >
-                      {line.text}
-                    </span>
+                    {print || !onJumpToGame ? (
+                      <span
+                        style={line.color ? { color: line.color } : undefined}
+                        className={
+                          line.color
+                            ? undefined
+                            : print
+                              ? 'text-slate-600'
+                              : 'text-slate-500 dark:text-slate-400'
+                        }
+                      >
+                        {line.text}
+                      </span>
+                    ) : (
+                      <BracketRoutingLabel line={line} onJumpToGame={onJumpToGame} />
+                    )}
                   </div>
                 ))}
               </div>
@@ -409,6 +514,7 @@ export default function TournamentDrawBracketScene({
           </>
         );
         const gameMuted = teamPathDim?.mutedGameIds.has(g.id) ?? false;
+        const jumped = g.id === highlightedGameId;
         const cardStyle = {
           left: box.x,
           top: box.y,
@@ -427,7 +533,9 @@ export default function TournamentDrawBracketScene({
                 'absolute text-left rounded-lg border shadow-sm p-2 transition-colors z-[1]',
                 selected
                   ? 'border-primary-teal ring-2 ring-primary-teal/30 bg-white/93 dark:bg-gray-800/93'
-                  : 'border-gray-200 dark:border-gray-600 bg-white/90 dark:bg-gray-800/90 hover:border-primary-teal/50',
+                  : jumped
+                    ? 'z-[3] border-primary-teal ring-2 ring-primary-teal/50 bg-white/90 dark:bg-gray-800/90'
+                    : 'border-gray-200 dark:border-gray-600 bg-white/90 dark:bg-gray-800/90 hover:border-primary-teal/50',
               ].join(' ')}
               style={cardStyle}
               onClick={(e) => {
@@ -446,7 +554,9 @@ export default function TournamentDrawBracketScene({
             className={
               print
                 ? 'absolute text-left rounded-md border p-1.5 z-[1] border-gray-300 bg-white'
-                : 'absolute text-left rounded-lg border shadow-sm p-2 z-[1] border-gray-200 dark:border-gray-600 bg-white/90 dark:bg-gray-800/90'
+                : jumped
+                  ? 'absolute text-left rounded-lg border shadow-sm p-2 z-[3] border-primary-teal ring-2 ring-primary-teal/50 bg-white/90 dark:bg-gray-800/90'
+                  : 'absolute text-left rounded-lg border shadow-sm p-2 z-[1] border-gray-200 dark:border-gray-600 bg-white/90 dark:bg-gray-800/90'
             }
             style={cardStyle}
           >
