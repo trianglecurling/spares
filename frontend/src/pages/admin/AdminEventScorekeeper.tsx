@@ -35,7 +35,7 @@ export default function AdminEventScorekeeper() {
           <br />
         </>
       ) : null}
-      Enter game results. Changes save automatically.
+      Enter game results. Changes save automatically, and scores from other scorekeepers update live.
     </>
   );
 

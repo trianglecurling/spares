@@ -695,11 +695,15 @@ function FinalScoreEntry({
   const [score0, setScore0] = useState(() => scoreForLogical(logical0));
   const [score1, setScore1] = useState(() => scoreForLogical(logical1));
   const editingRef = useRef(false);
+  const hydratedRef = useRef({ score0, score1 });
 
   useEffect(() => {
     if (editingRef.current) return;
-    setScore0(scoreForLogical(logical0));
-    setScore1(scoreForLogical(logical1));
+    const next0 = scoreForLogical(logical0);
+    const next1 = scoreForLogical(logical1);
+    hydratedRef.current = { score0: next0, score1: next1 };
+    setScore0(next0);
+    setScore1(next1);
   }, [gameId, logical0, logical1, initialScores?.[0], initialScores?.[1]]);
 
   const trySave = (rawDisplay0: string, rawDisplay1: string) => {
@@ -781,6 +785,17 @@ function FinalScoreEntry({
               }}
               onBlur={() => {
                 editingRef.current = false;
+                if (
+                  score0 === hydratedRef.current.score0 &&
+                  score1 === hydratedRef.current.score1
+                ) {
+                  const next0 = scoreForLogical(logical0);
+                  const next1 = scoreForLogical(logical1);
+                  hydratedRef.current = { score0: next0, score1: next1 };
+                  setScore0(next0);
+                  setScore1(next1);
+                  return;
+                }
                 trySave(score0, score1);
               }}
               onChange={(e) => {
@@ -813,18 +828,17 @@ function MultiScoreEntry({
   initialScores: number[] | null;
   onSave: (gameId: string, scores: number[]) => void;
 }) {
-  const [values, setValues] = useState<string[]>(() =>
-    initialScores ? initialScores.map(String) : Array.from({ length: game.slots.length }, () => ''),
-  );
+  const scoresToValues = (scores: number[] | null) =>
+    scores ? scores.map(String) : Array.from({ length: game.slots.length }, () => '');
+  const [values, setValues] = useState<string[]>(() => scoresToValues(initialScores));
   const editingRef = useRef(false);
+  const hydratedRef = useRef(values.join('\u0000'));
 
   useEffect(() => {
     if (editingRef.current) return;
-    setValues(
-      initialScores
-        ? initialScores.map(String)
-        : Array.from({ length: game.slots.length }, () => ''),
-    );
+    const next = scoresToValues(initialScores);
+    hydratedRef.current = next.join('\u0000');
+    setValues(next);
   }, [gameId, game.slots.length, initialScores?.join(',')]);
 
   const trySave = (nextValues: string[]) => {
@@ -865,6 +879,12 @@ function MultiScoreEntry({
                 }}
                 onBlur={() => {
                   editingRef.current = false;
+                  if (values.join('\u0000') === hydratedRef.current) {
+                    const next = scoresToValues(initialScores);
+                    hydratedRef.current = next.join('\u0000');
+                    setValues(next);
+                    return;
+                  }
                   trySave(values);
                 }}
                 onChange={(e) => {
