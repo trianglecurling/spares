@@ -161,6 +161,26 @@ describe('registration business logic', () => {
     expect(fees.lineItems.map((item) => item.lineType)).not.toContain('spare_only_fee');
   });
 
+  test('upgrading from basic ice to a paid league drops the spare-only fee', () => {
+    const friday = league({ id: 100, name: 'Friday', predecessorLeagueId: null, allowsWaitlist: false });
+    const paidBasicIce = calculateRegistrationFees(membershipOnly({ membershipOption: 'regular_spare_only' }));
+    expect(paidBasicIce.lineItems.map((item) => item.lineType)).toEqual(['regular_membership_fee', 'spare_only_fee']);
+
+    const upgraded = calculateRegistrationFees(
+      membershipOnly({
+        membershipOption: 'regular_spare_only',
+        leagues: { [friday.id]: friday },
+      }),
+      { chargedLeagueIds: [friday.id] },
+    );
+    expect(upgraded.lineItems.map((item) => item.lineType)).toEqual(['regular_membership_fee', 'league_fee']);
+    expect(upgraded.lineItems.find((item) => item.lineType === 'league_fee')?.amountMinor).toBe(30000);
+    expect(staffPaidRegistrationAdjustment(upgraded.totalDueMinor, paidBasicIce.totalDueMinor)).toEqual({
+      kind: 'balance_due',
+      adjustmentMinor: 27500,
+    });
+  });
+
   test('an available instructional program is billed as a league fee', () => {
     const instructional = league({
       id: 300,

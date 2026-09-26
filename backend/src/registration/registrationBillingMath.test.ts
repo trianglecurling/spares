@@ -168,6 +168,19 @@ describe('curlingRegistrationCheckoutLineItems', () => {
     ]);
   });
 
+  test('credits a paid basic ice fee against the league upgrade', () => {
+    expect(
+      curlingRegistrationCheckoutLineItems({
+        invoiceLines: [
+          { description: 'Regular membership', amountMinor: 10000, lineType: 'regular_membership_fee' },
+          { description: 'Friday league fee', amountMinor: 30000, lineType: 'league_fee' },
+        ],
+        orderAmountMinor: 27500,
+        priorPaidMinor: 12500,
+      }),
+    ).toEqual([{ description: 'Friday league fee', amountMinor: 27500 }]);
+  });
+
   test('omits fully paid leading charges instead of adding a credit', () => {
     expect(
       curlingRegistrationCheckoutLineItems({

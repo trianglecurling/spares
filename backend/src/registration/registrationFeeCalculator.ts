@@ -41,16 +41,22 @@ function positiveMinor(value: number): number {
   return Math.max(0, Math.round(value));
 }
 
+function hasPaidChargedLeague(context: RegistrationContext, chargedLeagueIds: number[]): boolean {
+  return chargedLeagueIds.some((leagueId) => (context.leagues[leagueId]?.registrationFeeMinor ?? 0) > 0);
+}
+
 /**
- * A curler gets the basic (spare-only) ice privilege fee when they explicitly chose basic ice
- * (regular_spare_only), or when they chose league play but every league they are being charged for
- * is free, which is equivalent to basic ice. In the latter case the fee is added silently.
+ * Basic ice is billed for an explicit spare-only membership, or when league play
+ * only landed free leagues (equivalent to basic ice). A paid league already
+ * includes those privileges, so upgrading from basic ice to a paid league must
+ * drop the spare-only fee. The earlier payment then credits the remaining
+ * league balance.
  */
 function qualifiesForSpareOnlyIce(context: RegistrationContext, chargedLeagueIds: number[]): boolean {
+  if (hasPaidChargedLeague(context, chargedLeagueIds)) return false;
   if (context.membershipOption === 'regular_spare_only') return true;
   if (context.membershipOption !== 'regular') return false;
-  if (chargedLeagueIds.length === 0) return false;
-  return chargedLeagueIds.every((leagueId) => (context.leagues[leagueId]?.registrationFeeMinor ?? 0) === 0);
+  return chargedLeagueIds.length > 0;
 }
 
 /**
