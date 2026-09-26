@@ -63,6 +63,36 @@ export function accumulateStandingSums(games: GameWithResultValues[]): Map<numbe
   return teamSums;
 }
 
+export function tallyRecordsFromGames(games: GameWithResultValues[]): Map<number, GameRecord> {
+  const records = new Map<number, GameRecord>();
+  const ensure = (teamId: number): GameRecord => {
+    let record = records.get(teamId);
+    if (!record) {
+      record = { gamesPlayed: 0, wins: 0, losses: 0, ties: 0 };
+      records.set(teamId, record);
+    }
+    return record;
+  };
+  for (const game of games) {
+    const team1Outcome = outcomeFromFirstTiebreaker(game.team1_values, game.team2_values);
+    if (team1Outcome == null) continue;
+    const team2Outcome = outcomeFromFirstTiebreaker(game.team2_values, game.team1_values);
+    const team1 = ensure(game.team1_id);
+    team1.gamesPlayed++;
+    if (team1Outcome === 'win') team1.wins++;
+    else if (team1Outcome === 'loss') team1.losses++;
+    else team1.ties++;
+    if (team2Outcome != null) {
+      const team2 = ensure(game.team2_id);
+      team2.gamesPlayed++;
+      if (team2Outcome === 'win') team2.wins++;
+      else if (team2Outcome === 'loss') team2.losses++;
+      else team2.ties++;
+    }
+  }
+  return records;
+}
+
 export function tallyTeamRecord(
   teamId: number,
   games: Array<{ id: number; team1_id: number; team2_id: number }>,

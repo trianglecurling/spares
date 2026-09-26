@@ -10,8 +10,19 @@ export const leagueSettingsSchema = {
     headToHeadFirst: { type: 'boolean' },
     resultLabels: { type: ['array', 'null'], items: { type: 'string' } },
     collectByeRequests: { type: 'boolean' },
+    pointsPossiblePerGame: { type: ['number', 'null'] },
+    rankBy: { type: 'string', enum: ['total', 'percentage'] },
+    maxAssignedPrimaryPoints: { type: 'number' },
   },
-  required: ['leagueId', 'headToHeadFirst', 'resultLabels', 'collectByeRequests'],
+  required: [
+    'leagueId',
+    'headToHeadFirst',
+    'resultLabels',
+    'collectByeRequests',
+    'pointsPossiblePerGame',
+    'rankBy',
+    'maxAssignedPrimaryPoints',
+  ],
 } as const;
 
 export const gameResultValueSchema = {
@@ -135,8 +146,28 @@ export const standingRowSchema = {
     divisionName: { type: 'string' },
     tiebreakerValues: { type: 'array', items: { type: 'number' } },
     gamesPlayed: { type: 'number' },
+    wins: { type: 'number' },
+    losses: { type: 'number' },
+    ties: { type: 'number' },
+    h2hResult: { type: ['string', 'null'], enum: ['win', 'loss', null] },
+    h2hOpponentName: { type: ['string', 'null'] },
+    h2hPairIndex: { type: ['number', 'null'] },
   },
-  required: ['rank', 'teamId', 'teamName', 'divisionId', 'divisionName', 'tiebreakerValues', 'gamesPlayed'],
+  required: [
+    'rank',
+    'teamId',
+    'teamName',
+    'divisionId',
+    'divisionName',
+    'tiebreakerValues',
+    'gamesPlayed',
+    'wins',
+    'losses',
+    'ties',
+    'h2hResult',
+    'h2hOpponentName',
+    'h2hPairIndex',
+  ],
 } as const;
 
 export const standingsResponseSchema = {
@@ -147,9 +178,19 @@ export const standingsResponseSchema = {
     divisionName: { type: 'string' },
     headToHeadFirst: { type: 'boolean' },
     resultLabels: { type: ['array', 'null'], items: { type: 'string' } },
+    pointsPossiblePerGame: { type: ['number', 'null'] },
+    rankBy: { type: 'string', enum: ['total', 'percentage'] },
     rows: { type: 'array', items: standingRowSchema },
   },
-  required: ['divisionId', 'divisionName', 'headToHeadFirst', 'resultLabels', 'rows'],
+  required: [
+    'divisionId',
+    'divisionName',
+    'headToHeadFirst',
+    'resultLabels',
+    'pointsPossiblePerGame',
+    'rankBy',
+    'rows',
+  ],
 } as const;
 
 export const leagueStandingsResponseSchema = {
@@ -164,6 +205,8 @@ export const leagueSettingsPutBodySchema = {
     headToHeadFirst: { type: 'boolean' },
     resultLabels: { type: ['array', 'null'], items: { type: 'string' } },
     collectByeRequests: { type: 'boolean' },
+    pointsPossiblePerGame: { type: ['number', 'null'] },
+    rankBy: { type: 'string', enum: ['total', 'percentage'] },
   },
 } as const;
 

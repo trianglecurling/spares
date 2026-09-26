@@ -39,3 +39,14 @@ export function booleanFromSqliteFlag(value: unknown): boolean | null {
   if (value === false || value === 0 || value === '0') return false;
   return null;
 }
+
+export function resolveUsaCurlingMembershipOptIn(stored: boolean | null | undefined): boolean {
+  return stored ?? defaultUsaCurlingMembershipOptIn();
+}
+
+export function resolveUswcaMembershipOptIn(
+  stored: boolean | null | undefined,
+  preferredPronouns: string | null | undefined,
+): boolean {
+  return stored ?? defaultUswcaMembershipOptIn(preferredPronouns);
+}

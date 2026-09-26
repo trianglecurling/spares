@@ -189,6 +189,9 @@ export type MemberProfileResponse = {
   emergencyContactPhone: string | null;
   preferredPronouns: string | null;
   usaCurlingCompetitionGender: string | null;
+  usaCurlingMembershipOptIn: boolean | null;
+  uswcaMembershipOptIn: boolean | null;
+  usaCurlingMembershipNumber: string | null;
   guardianFirstName: string | null;
   guardianLastName: string | null;
   guardianEmail: string | null;
@@ -777,6 +780,8 @@ export type UpdateProfileBody = {
   emergencyContactPhone?: string;
   preferredPronouns?: string;
   usaCurlingCompetitionGender?: string;
+  usaCurlingMembershipOptIn?: boolean;
+  uswcaMembershipOptIn?: boolean;
   guardianFirstName?: string;
   guardianLastName?: string;
   guardianEmail?: string;
@@ -811,6 +816,9 @@ export type UpdateMemberBody = {
   emergencyContactPhone?: string;
   preferredPronouns?: string;
   usaCurlingCompetitionGender?: string;
+  usaCurlingMembershipOptIn?: boolean;
+  uswcaMembershipOptIn?: boolean;
+  usaCurlingMembershipNumber?: string | null;
   lifetimeMember?: boolean;
   isAdmin?: boolean;
   isServerAdmin?: boolean;
@@ -824,6 +832,44 @@ export type UpdateMemberBody = {
   guardianLastName?: string;
   guardianEmail?: string;
   guardianPhone?: string;
+};
+
+export type OrgRosterMember = {
+  id: number;
+  name: string;
+  firstName: string;
+  lastName: string;
+  email: string | null;
+  usaCurlingOptIn: boolean;
+  uswcaOptIn: boolean;
+  usaCurlingMembershipNumber: string | null;
+  usaCurlingMembershipType: 'Basic' | 'Youth';
+  usaCurlingFromAnotherClub: boolean;
+  missingUsaCurlingNumber: boolean;
+};
+
+export type OrgRostersResponse = {
+  generatedOn: string;
+  currentMemberCount: number;
+  usaCurlingCount: number;
+  uswcaCount: number;
+  missingUsaCurlingNumberCount: number;
+  lastConfirmationEmailsQueuedAt: string | null;
+  lastConfirmationEmailsQueuedCount: number | null;
+  lastConfirmationEmailsSkippedNoEmail: number | null;
+  lastConfirmationEmailsConfirmByDate: string | null;
+  members: OrgRosterMember[];
+  usaCurlingTsv: string;
+  uswcaTsv: string;
+};
+
+export type OrgRosterConfirmationEmailBody = {
+  confirmByDate: string;
+};
+
+export type OrgRosterConfirmationEmailResponse = {
+  queued: number;
+  skippedNoEmail: number;
 };
 
 export type BulkDeleteBody = {

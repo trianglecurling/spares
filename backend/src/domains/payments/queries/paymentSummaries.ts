@@ -66,6 +66,83 @@ function sortPaymentActivity(items: RegistrationPaymentActivityItem[]): Registra
   });
 }
 
+export type RegistrationPaymentLinkRow = {
+  id: number;
+  curlerMemberId: number | null;
+  sessionId: number;
+  status: string;
+};
+
+export type CanceledSiblingRegistrationRow = {
+  id: number;
+  curlerMemberId: number | null;
+  sessionId: number;
+  cancelledAt?: string | Date | null;
+};
+
+function canceledSiblingRecency(row: CanceledSiblingRegistrationRow): number {
+  if (row.cancelledAt instanceof Date) return row.cancelledAt.getTime();
+  if (typeof row.cancelledAt === 'string' && row.cancelledAt.trim()) {
+    const parsed = Date.parse(row.cancelledAt);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return row.id;
+}
+
+/**
+ * Map the most recently canceled registration onto the unique live
+ * registration for the same curler and session. Older canceled test
+ * checkouts stay on their original rows so they are not treated as a
+ * live overpayment. Ambiguous (0 or 2+) live rows are skipped so a
+ * payment is never credited twice.
+ */
+export function mapCanceledSiblingPaymentsToLiveRegistrations(input: {
+  requestedRegistrations: RegistrationPaymentLinkRow[];
+  canceledSiblings: CanceledSiblingRegistrationRow[];
+}): Map<number, number> {
+  const liveByKey = new Map<string, number[]>();
+  for (const row of input.requestedRegistrations) {
+    if (row.status === 'cancelled' || row.curlerMemberId == null) continue;
+    const key = `${row.curlerMemberId}:${row.sessionId}`;
+    const list = liveByKey.get(key) ?? [];
+    list.push(row.id);
+    liveByKey.set(key, list);
+  }
+
+  const latestCanceledByKey = new Map<string, CanceledSiblingRegistrationRow>();
+  for (const canceled of input.canceledSiblings) {
+    if (canceled.curlerMemberId == null) continue;
+    const key = `${canceled.curlerMemberId}:${canceled.sessionId}`;
+    const current = latestCanceledByKey.get(key);
+    if (!current || canceledSiblingRecency(canceled) >= canceledSiblingRecency(current)) {
+      latestCanceledByKey.set(key, canceled);
+    }
+  }
+
+  const canceledToLive = new Map<number, number>();
+  for (const [key, canceled] of latestCanceledByKey) {
+    const lives = liveByKey.get(key) ?? [];
+    if (lives.length !== 1) continue;
+    const liveId = lives[0];
+    if (liveId == null || liveId === canceled.id) continue;
+    canceledToLive.set(canceled.id, liveId);
+  }
+  return canceledToLive;
+}
+
+export function remapPaymentOrderSubjectToRequestedRegistrations(input: {
+  subjectId: number | null;
+  requestedIds: ReadonlySet<number>;
+  canceledToLive: ReadonlyMap<number, number>;
+}): number[] {
+  if (input.subjectId == null) return [];
+  const targets = new Set<number>();
+  if (input.requestedIds.has(input.subjectId)) targets.add(input.subjectId);
+  const liveId = input.canceledToLive.get(input.subjectId);
+  if (liveId != null && input.requestedIds.has(liveId)) targets.add(liveId);
+  return [...targets];
+}
+
 export function groupPaymentActivityByRegistration(input: {
   registrationIds: number[];
   subjectOrders: Array<{ id: number; subjectId: number | null }>;
@@ -144,6 +221,49 @@ export async function listCurlingRegistrationPaymentActivityByRegistrationIds(
   if (registrationIds.length === 0) return empty;
 
   const { db, schema } = getDrizzleDb();
+  const requestedRegistrations = await db
+    .select({
+      id: schema.curlingRegistrations.id,
+      curlerMemberId: schema.curlingRegistrations.curler_member_id,
+      sessionId: schema.curlingRegistrations.session_id,
+      status: schema.curlingRegistrations.status,
+    })
+    .from(schema.curlingRegistrations)
+    .where(inArray(schema.curlingRegistrations.id, registrationIds));
+
+  const liveCurlers = requestedRegistrations.filter(
+    (row) => row.status !== 'cancelled' && row.curlerMemberId != null,
+  );
+  const liveCurlerIds = [...new Set(liveCurlers.map((row) => row.curlerMemberId as number))];
+  const liveSessionIds = [...new Set(liveCurlers.map((row) => row.sessionId))];
+  const canceledSiblings =
+    liveCurlerIds.length > 0 && liveSessionIds.length > 0
+      ? await db
+          .select({
+            id: schema.curlingRegistrations.id,
+            curlerMemberId: schema.curlingRegistrations.curler_member_id,
+            sessionId: schema.curlingRegistrations.session_id,
+            cancelledAt: schema.curlingRegistrations.cancelled_at,
+          })
+          .from(schema.curlingRegistrations)
+          .where(
+            and(
+              eq(schema.curlingRegistrations.status, 'cancelled'),
+              inArray(schema.curlingRegistrations.curler_member_id, liveCurlerIds),
+              inArray(schema.curlingRegistrations.session_id, liveSessionIds),
+            ),
+          )
+      : [];
+
+  const canceledToLive = mapCanceledSiblingPaymentsToLiveRegistrations({
+    requestedRegistrations,
+    canceledSiblings,
+  });
+  const lookupIds = [
+    ...new Set([...registrationIds, ...canceledSiblings.map((row) => row.id)]),
+  ];
+  const requestedIds = new Set(registrationIds);
+
   const [subjectOrders, invoiceLinks] = await Promise.all([
     db
       .select({
@@ -154,7 +274,7 @@ export async function listCurlingRegistrationPaymentActivityByRegistrationIds(
       .where(
         and(
           eq(schema.paymentOrders.subject_type, 'curling_registration'),
-          inArray(schema.paymentOrders.subject_id, registrationIds),
+          inArray(schema.paymentOrders.subject_id, lookupIds),
         ),
       ),
     db
@@ -163,13 +283,34 @@ export async function listCurlingRegistrationPaymentActivityByRegistrationIds(
         registrationId: schema.registrationInvoices.registration_id,
       })
       .from(schema.registrationInvoices)
-      .where(inArray(schema.registrationInvoices.registration_id, registrationIds)),
+      .where(inArray(schema.registrationInvoices.registration_id, lookupIds)),
   ]);
+
+  const remappedSubjectOrders: Array<{ id: number; subjectId: number | null }> = [];
+  for (const row of subjectOrders) {
+    for (const subjectId of remapPaymentOrderSubjectToRequestedRegistrations({
+      subjectId: row.subjectId,
+      requestedIds,
+      canceledToLive,
+    })) {
+      remappedSubjectOrders.push({ id: row.id, subjectId });
+    }
+  }
+  const remappedInvoiceLinks: Array<{ paymentOrderId: number | null; registrationId: number }> = [];
+  for (const row of invoiceLinks) {
+    for (const registrationId of remapPaymentOrderSubjectToRequestedRegistrations({
+      subjectId: row.registrationId,
+      requestedIds,
+      canceledToLive,
+    })) {
+      remappedInvoiceLinks.push({ paymentOrderId: row.paymentOrderId, registrationId });
+    }
+  }
 
   const orderIds = [
     ...new Set([
-      ...subjectOrders.map((row) => row.id),
-      ...invoiceLinks.map((row) => row.paymentOrderId).filter((id): id is number => id != null),
+      ...remappedSubjectOrders.map((row) => row.id),
+      ...remappedInvoiceLinks.map((row) => row.paymentOrderId).filter((id): id is number => id != null),
     ]),
   ];
   if (orderIds.length === 0) return empty;
@@ -209,8 +350,8 @@ export async function listCurlingRegistrationPaymentActivityByRegistrationIds(
 
   return groupPaymentActivityByRegistration({
     registrationIds,
-    subjectOrders,
-    invoiceLinks,
+    subjectOrders: remappedSubjectOrders,
+    invoiceLinks: remappedInvoiceLinks,
     orders,
     refunds,
   });

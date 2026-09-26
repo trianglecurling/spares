@@ -6,7 +6,7 @@ import {
   type Dispatch,
   type SetStateAction,
 } from 'react';
-import api, { formatApiError } from '../utils/api';
+import api, { ensureAccessToken, formatApiError } from '../utils/api';
 import { useAlert } from '../contexts/AlertContext';
 import type { TournamentDrawState, TournamentGameResult } from '../utils/tournamentDrawModel';
 import { normalizeDrawState } from '../utils/tournamentDrawRouting';
@@ -29,11 +29,47 @@ export type UpdateDrawForResults = (
 ) => void;
 
 const RESULT_PATCH_DEBOUNCE_MS = 350;
+const DRAW_STREAM_RETRY_MS = 2000;
 
 type PendingGamePatch = {
   result?: TournamentGameResult | null;
   rockColor1Slot?: 0 | 1 | null;
 };
+
+/** Keep in-progress local scores when a remote draw arrives. */
+function overlayDirtyGames(
+  server: TournamentDrawState,
+  local: TournamentDrawState,
+  dirtyGameIds: ReadonlySet<string>,
+): TournamentDrawState {
+  if (dirtyGameIds.size === 0) return server;
+  const games = { ...server.games };
+  for (const gameId of dirtyGameIds) {
+    const localGame = local.games[gameId];
+    const serverGame = games[gameId];
+    if (!localGame || !serverGame) continue;
+    games[gameId] = {
+      ...serverGame,
+      result: localGame.result,
+      rockColor1Slot: localGame.rockColor1Slot,
+    };
+  }
+  return { ...server, games };
+}
+
+function consumeSseBuffer(buffer: string, onData: (data: string) => void): string {
+  const parts = buffer.split('\n\n');
+  const rest = parts.pop() ?? '';
+  for (const part of parts) {
+    const data = part
+      .split('\n')
+      .filter((line) => line.startsWith('data:'))
+      .map((line) => line.slice(5).trimStart())
+      .join('\n');
+    if (data) onData(data);
+  }
+  return rest;
+}
 
 /** Debounced per-game result PATCH for an editor that already owns draw state. */
 export function useTournamentGameResultPersist(
@@ -44,10 +80,13 @@ export function useTournamentGameResultPersist(
   updateDrawForResults: UpdateDrawForResults;
   saveStatus: 'idle' | 'saving' | 'saved' | 'error';
   replaceDrawAndPersist: (next: TournamentDrawState) => Promise<void>;
+  applyRemoteDraw: (serverDraw: TournamentDrawState) => void;
 } {
   const { showAlert } = useAlert();
   const resultPatchTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const pendingPatchesRef = useRef<Record<string, PendingGamePatch>>({});
+  /** Games with a pending or in-flight score save. Remote updates must not replace these. */
+  const dirtyGameIdsRef = useRef<Set<string>>(new Set());
   const drawRef = useRef<TournamentDrawState | null>(null);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const onPatchFailure = options?.onPatchFailure;
@@ -59,12 +98,21 @@ export function useTournamentGameResultPersist(
       }
       resultPatchTimersRef.current = {};
       pendingPatchesRef.current = {};
+      dirtyGameIdsRef.current.clear();
     };
+  }, []);
+
+  const releaseDirtyGame = useCallback((gameId: string) => {
+    if (pendingPatchesRef.current[gameId] || resultPatchTimersRef.current[gameId]) return;
+    dirtyGameIdsRef.current.delete(gameId);
   }, []);
 
   const flushGamePatch = useCallback(
     async (gameId: string, patch: PendingGamePatch) => {
-      if (patch.result === undefined && patch.rockColor1Slot === undefined) return;
+      if (patch.result === undefined && patch.rockColor1Slot === undefined) {
+        releaseDirtyGame(gameId);
+        return;
+      }
       setSaveStatus('saving');
       try {
         const body: Record<string, unknown> = {};
@@ -79,9 +127,11 @@ export function useTournamentGameResultPersist(
         setSaveStatus('error');
         onPatchFailure?.();
         showAlert(formatApiError(err, 'Failed to save game result'), 'error');
+      } finally {
+        releaseDirtyGame(gameId);
       }
     },
-    [eventId, onPatchFailure, showAlert],
+    [eventId, onPatchFailure, releaseDirtyGame, showAlert],
   );
 
   const updateDrawForResults = useCallback<UpdateDrawForResults>(
@@ -95,6 +145,7 @@ export function useTournamentGameResultPersist(
       const patch = opts?.persistGameResult;
       if (!patch) return;
       const { gameId, result, rockColor1Slot, debounceMs } = patch;
+      dirtyGameIdsRef.current.add(gameId);
       const delay = debounceMs ?? RESULT_PATCH_DEBOUNCE_MS;
       const pending = pendingPatchesRef.current[gameId] ?? {};
       if (result !== undefined) pending.result = result;
@@ -121,6 +172,7 @@ export function useTournamentGameResultPersist(
       }
       resultPatchTimersRef.current = {};
       pendingPatchesRef.current = {};
+      dirtyGameIdsRef.current.clear();
       setSaveStatus('saving');
       try {
         await api.put(`/events/${eventId}/tournament-draw`, next);
@@ -137,7 +189,21 @@ export function useTournamentGameResultPersist(
     [eventId, onPatchFailure, setDraw, showAlert],
   );
 
-  return { updateDrawForResults, saveStatus, replaceDrawAndPersist };
+  const applyRemoteDraw = useCallback(
+    (serverDraw: TournamentDrawState) => {
+      const normalized = normalizeDrawState(serverDraw);
+      setDraw((current) => {
+        const next = current
+          ? overlayDirtyGames(normalized, current, dirtyGameIdsRef.current)
+          : normalized;
+        drawRef.current = next;
+        return next;
+      });
+    },
+    [setDraw],
+  );
+
+  return { updateDrawForResults, saveStatus, replaceDrawAndPersist, applyRemoteDraw };
 }
 
 /** Standalone load + persist for the dedicated scorekeeper page. */
@@ -153,10 +219,8 @@ export function useTournamentDrawResults(eventId: number) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const { updateDrawForResults, saveStatus, replaceDrawAndPersist } = useTournamentGameResultPersist(
-    eventId,
-    setDraw,
-  );
+  const { updateDrawForResults, saveStatus, replaceDrawAndPersist, applyRemoteDraw } =
+    useTournamentGameResultPersist(eventId, setDraw);
 
   useEffect(() => {
     if (!Number.isFinite(eventId) || eventId <= 0) {
@@ -200,6 +264,103 @@ export function useTournamentDrawResults(eventId: number) {
       cancelled = true;
     };
   }, [eventId]);
+
+  useEffect(() => {
+    if (!Number.isFinite(eventId) || eventId <= 0) return;
+
+    let cancelled = false;
+    let abort: AbortController | null = null;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let refetching = false;
+    let refetchQueued = false;
+
+    const refetchDraw = () => {
+      if (cancelled) return;
+      if (refetching) {
+        refetchQueued = true;
+        return;
+      }
+      refetching = true;
+      api
+        .get<{ draw: TournamentDrawState | null }>(`/events/${eventId}/tournament-draw`)
+        .then((res) => {
+          if (cancelled) return;
+          const raw = res.data?.draw ?? null;
+          if (raw) applyRemoteDraw(raw);
+        })
+        .catch(() => {
+          // Keep the draw on screen; the stream will retry.
+        })
+        .finally(() => {
+          refetching = false;
+          if (refetchQueued && !cancelled) {
+            refetchQueued = false;
+            refetchDraw();
+          }
+        });
+    };
+
+    const scheduleRetry = () => {
+      if (cancelled || retryTimer) return;
+      retryTimer = setTimeout(() => {
+        retryTimer = undefined;
+        void connect();
+      }, DRAW_STREAM_RETRY_MS);
+    };
+
+    const connect = async () => {
+      if (cancelled) return;
+      const token = await ensureAccessToken();
+      if (cancelled || !token) {
+        scheduleRetry();
+        return;
+      }
+      abort = new AbortController();
+      const signal = abort.signal;
+      let buffer = '';
+      try {
+        const res = await fetch(`/api/events/${eventId}/tournament-draw/stream`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: 'text/event-stream',
+          },
+          signal,
+        });
+        if (!res.ok || !res.body) {
+          if (res.status !== 403) scheduleRetry();
+          return;
+        }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        while (!cancelled) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer = consumeSseBuffer(buffer + decoder.decode(value, { stream: true }), (data) => {
+            try {
+              const msg = JSON.parse(data) as { type?: string };
+              if (msg.type === 'tournament_draw_updated') refetchDraw();
+            } catch {
+              // Ignore malformed SSE payloads.
+            }
+          });
+        }
+        if (!cancelled) scheduleRetry();
+      } catch (err) {
+        if (cancelled || signal.aborted || (err instanceof DOMException && err.name === 'AbortError')) {
+          return;
+        }
+        scheduleRetry();
+      }
+    };
+
+    void connect();
+
+    return () => {
+      cancelled = true;
+      abort?.abort();
+      if (retryTimer) clearTimeout(retryTimer);
+    };
+  }, [applyRemoteDraw, eventId]);
 
   const updateGameResult = useCallback(
     (gameId: string, result: TournamentGameResult | null, debounceMs?: number) => {

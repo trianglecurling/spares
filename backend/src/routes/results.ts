@@ -19,9 +19,17 @@ import {
   memberStatsListResponseSchema,
   teamStatsSchema,
 } from '../api/leagueResultsSchemas.js';
+import { sendValidationError } from '../api/errors.js';
 import type { ApiReply } from '../api/types.js';
 import { hasLeagueSetupAccess } from '../utils/leagueAccess.js';
-import { accumulateStandingSums, hasRecordedResult, outcomeFromFirstTiebreaker, tallyTeamRecord } from '../utils/gameRecord.js';
+import {
+  accumulateStandingSums,
+  hasRecordedResult,
+  outcomeFromFirstTiebreaker,
+  tallyRecordsFromGames,
+  tallyTeamRecord,
+} from '../utils/gameRecord.js';
+import { rankDivisionTeams, type RankBy } from '../utils/standingsRank.js';
 
 type DrizzleDb = ReturnType<typeof getDrizzleDb>['db'];
 type DrizzleSchema = ReturnType<typeof getDrizzleDb>['schema'];
@@ -128,16 +136,26 @@ async function computeTeamLineup(
   });
 }
 
+type LeagueSettingsRow = {
+  head_to_head_first: number;
+  result_labels: string | null;
+  collect_bye_requests: number;
+  points_possible_per_game: number | null;
+  rank_by_points_percentage: number;
+};
+
 async function getOrCreateLeagueSettings(
   db: DrizzleDb,
   schema: DrizzleSchema,
   leagueId: number
-): Promise<{ head_to_head_first: number; result_labels: string | null; collect_bye_requests: number }> {
+): Promise<LeagueSettingsRow> {
   const rows = await db
     .select({
       head_to_head_first: schema.leagueSettings.head_to_head_first,
       result_labels: schema.leagueSettings.result_labels,
       collect_bye_requests: schema.leagueSettings.collect_bye_requests,
+      points_possible_per_game: schema.leagueSettings.points_possible_per_game,
+      rank_by_points_percentage: schema.leagueSettings.rank_by_points_percentage,
     })
     .from(schema.leagueSettings)
     .where(eq(schema.leagueSettings.league_id, leagueId))
@@ -148,6 +166,8 @@ async function getOrCreateLeagueSettings(
       head_to_head_first: rows[0].head_to_head_first,
       result_labels: rows[0].result_labels,
       collect_bye_requests: rows[0].collect_bye_requests ?? 1,
+      points_possible_per_game: rows[0].points_possible_per_game ?? null,
+      rank_by_points_percentage: rows[0].rank_by_points_percentage ?? 0,
     };
   }
 
@@ -156,74 +176,48 @@ async function getOrCreateLeagueSettings(
     head_to_head_first: 0,
     result_labels: null,
     collect_bye_requests: 1,
+    points_possible_per_game: null,
+    rank_by_points_percentage: 0,
   });
-  return { head_to_head_first: 0, result_labels: null, collect_bye_requests: 1 };
+  return {
+    head_to_head_first: 0,
+    result_labels: null,
+    collect_bye_requests: 1,
+    points_possible_per_game: null,
+    rank_by_points_percentage: 0,
+  };
 }
 
-/**
- * Compare two tiebreaker value arrays (both same length). Returns negative if a wins, positive if b wins, 0 if tie.
- * Higher values are better (e.g. wins, points).
- */
-function compareTiebreakerValues(a: number[], b: number[]): number {
-  const len = Math.max(a.length, b.length);
-  for (let i = 0; i < len; i++) {
-    const va = a[i] ?? 0;
-    const vb = b[i] ?? 0;
-    if (va !== vb) return vb - va; // descending: higher is better
-  }
-  return 0;
+async function maxAssignedPrimaryPoints(
+  db: DrizzleDb,
+  schema: DrizzleSchema,
+  leagueId: number
+): Promise<number> {
+  const rows = await db
+    .select({
+      maxValue: sql<number | null>`max(${schema.gameResults.value})`,
+    })
+    .from(schema.gameResults)
+    .innerJoin(schema.games, eq(schema.gameResults.game_id, schema.games.id))
+    .where(and(eq(schema.games.league_id, leagueId), eq(schema.gameResults.result_order, 0)));
+  return Number(rows[0]?.maxValue ?? 0);
 }
 
-/**
- * Resolve head-to-head between two teams: positive if teamA beat teamB (A ranks higher), negative if B beat A, 0 if no game or tie.
- */
-function h2hTwoTeams(
-  teamA: number,
-  teamB: number,
-  gameResults: Array<{ team1_id: number; team2_id: number; team1_values: number[]; team2_values: number[] }>
-): number {
-  const game = gameResults.find(
-    (g) =>
-      (g.team1_id === teamA && g.team2_id === teamB) || (g.team1_id === teamB && g.team2_id === teamA)
-  );
-  if (!game) return 0;
-  const cmp = compareTiebreakerValues(
-    game.team1_id === teamA ? game.team1_values : game.team2_values,
-    game.team1_id === teamA ? game.team2_values : game.team1_values
-  );
-  return -cmp; // positive when A has higher values (A wins)
-}
-
-/**
- * Among tied teams, apply head-to-head. Returns ordering: first element is highest rank.
- * If one team beat all others, they're first; then recurse on the rest.
- */
-function orderByHeadToHead(
-  teamIds: number[],
-  gameResults: Array<{ team1_id: number; team2_id: number; team1_values: number[]; team2_values: number[] }>
-): number[] {
-  if (teamIds.length <= 1) return teamIds;
-
-  const wins = new Map<number, number>();
-  for (const id of teamIds) wins.set(id, 0);
-  for (let i = 0; i < teamIds.length; i++) {
-    for (let j = i + 1; j < teamIds.length; j++) {
-      const a = teamIds[i]!;
-      const b = teamIds[j]!;
-      const h = h2hTwoTeams(a, b, gameResults);
-      if (h > 0) wins.set(a, (wins.get(a) ?? 0) + 1);
-      else if (h < 0) wins.set(b, (wins.get(b) ?? 0) + 1);
-    }
-  }
-
-  const sorted = [...teamIds].sort((a, b) => (wins.get(b) ?? 0) - (wins.get(a) ?? 0));
-  const maxWins = wins.get(sorted[0]!) ?? 0;
-  if (maxWins === 0) return teamIds; // no head-to-head resolution (e.g. no games between them)
-
-  const first = sorted.filter((id) => (wins.get(id) ?? 0) === maxWins);
-  const rest = teamIds.filter((id) => !first.includes(id));
-  if (rest.length === 0) return first;
-  return [...first, ...orderByHeadToHead(rest, gameResults)];
+function serializeLeagueSettings(
+  leagueId: number,
+  settings: LeagueSettingsRow,
+  maxAssigned: number
+) {
+  const resultLabels = settings.result_labels ? (JSON.parse(settings.result_labels) as string[]) : null;
+  return {
+    leagueId,
+    headToHeadFirst: settings.head_to_head_first === 1,
+    resultLabels,
+    collectByeRequests: settings.collect_bye_requests === 1,
+    pointsPossiblePerGame: settings.points_possible_per_game ?? null,
+    rankBy: (settings.rank_by_points_percentage === 1 ? 'percentage' : 'total') as RankBy,
+    maxAssignedPrimaryPoints: maxAssigned,
+  };
 }
 
 export async function resultsRoutes(fastify: FastifyInstance) {
@@ -249,13 +243,8 @@ export async function resultsRoutes(fastify: FastifyInstance) {
       const leagueId = parseInt((request.params as { id: string }).id, 10);
       const { db, schema } = getDrizzleDb();
       const settings = await getOrCreateLeagueSettings(db, schema, leagueId);
-      const resultLabels = settings.result_labels ? (JSON.parse(settings.result_labels) as string[]) : null;
-      return {
-        leagueId,
-        headToHeadFirst: settings.head_to_head_first === 1,
-        resultLabels,
-        collectByeRequests: settings.collect_bye_requests === 1,
-      };
+      const maxAssigned = await maxAssignedPrimaryPoints(db, schema, leagueId);
+      return serializeLeagueSettings(leagueId, settings, maxAssigned);
     }
   );
 
@@ -289,20 +278,35 @@ export async function resultsRoutes(fastify: FastifyInstance) {
           headToHeadFirst: z.boolean().optional(),
           resultLabels: z.array(z.string()).nullable().optional(),
           collectByeRequests: z.boolean().optional(),
+          pointsPossiblePerGame: z.number().int().positive().nullable().optional(),
+          rankBy: z.enum(['total', 'percentage']).optional(),
         })
         .parse(request.body ?? {});
 
       const { db, schema } = getDrizzleDb();
       await getOrCreateLeagueSettings(db, schema, leagueId);
+      const maxAssigned = await maxAssignedPrimaryPoints(db, schema, leagueId);
+
+      if (body.pointsPossiblePerGame != null && body.pointsPossiblePerGame < maxAssigned) {
+        return sendValidationError(
+          reply,
+          `Points possible per game cannot be lower than ${maxAssigned}, the highest points already assigned to a game.`,
+          { pointsPossiblePerGame: `Must be at least ${maxAssigned}.` }
+        );
+      }
 
       const update: {
         head_to_head_first?: number;
         result_labels?: string | null;
         collect_bye_requests?: number;
+        points_possible_per_game?: number | null;
+        rank_by_points_percentage?: number;
       } = {};
       if (body.headToHeadFirst !== undefined) update.head_to_head_first = body.headToHeadFirst ? 1 : 0;
       if (body.resultLabels !== undefined) update.result_labels = body.resultLabels ? JSON.stringify(body.resultLabels) : null;
       if (body.collectByeRequests !== undefined) update.collect_bye_requests = body.collectByeRequests ? 1 : 0;
+      if (body.pointsPossiblePerGame !== undefined) update.points_possible_per_game = body.pointsPossiblePerGame;
+      if (body.rankBy !== undefined) update.rank_by_points_percentage = body.rankBy === 'percentage' ? 1 : 0;
 
       if (Object.keys(update).length > 0) {
         await db
@@ -312,13 +316,7 @@ export async function resultsRoutes(fastify: FastifyInstance) {
       }
 
       const settings = await getOrCreateLeagueSettings(db, schema, leagueId);
-      const resultLabels = settings.result_labels ? (JSON.parse(settings.result_labels) as string[]) : null;
-      return {
-        leagueId,
-        headToHeadFirst: settings.head_to_head_first === 1,
-        resultLabels,
-        collectByeRequests: settings.collect_bye_requests === 1,
-      };
+      return serializeLeagueSettings(leagueId, settings, maxAssigned);
     }
   );
 
@@ -421,6 +419,19 @@ export async function resultsRoutes(fastify: FastifyInstance) {
       if (!game) return reply.code(404).send({ error: 'Game not found.' });
       if (!(await hasLeagueSetupAccess(member, game.league_id))) {
         return reply.code(403).send({ error: 'Forbidden' });
+      }
+
+      const settings = await getOrCreateLeagueSettings(db, schema, game.league_id);
+      const pointsPossible = settings.points_possible_per_game;
+      if (pointsPossible != null) {
+        const primaryValues = [...body.team1Results, ...body.team2Results].filter((r) => r.resultOrder === 0);
+        if (primaryValues.some((r) => r.value > pointsPossible)) {
+          return sendValidationError(
+            reply,
+            `Primary points cannot be higher than ${pointsPossible} (points possible per game).`,
+            { points: `Must be at most ${pointsPossible}.` }
+          );
+        }
       }
 
       await db.delete(schema.gameResults).where(eq(schema.gameResults.game_id, gameId));
@@ -707,6 +718,8 @@ export async function resultsRoutes(fastify: FastifyInstance) {
       const settings = await getOrCreateLeagueSettings(db, schema, leagueId);
       const resultLabels = settings.result_labels ? (JSON.parse(settings.result_labels) as string[]) : null;
       const headToHeadFirst = settings.head_to_head_first === 1;
+      const pointsPossiblePerGame = settings.points_possible_per_game ?? null;
+      const rankBy: RankBy = settings.rank_by_points_percentage === 1 ? 'percentage' : 'total';
 
       const divisions = await db
         .select({ id: schema.leagueDivisions.id, name: schema.leagueDivisions.name, sort_order: schema.leagueDivisions.sort_order })
@@ -787,12 +800,16 @@ export async function resultsRoutes(fastify: FastifyInstance) {
       }
 
       const teamSums = accumulateStandingSums(gamesWithResults);
+      const teamRecords = tallyRecordsFromGames(gamesWithResults);
+      const rankingOptions = { headToHeadFirst, pointsPossiblePerGame, rankBy };
 
       const standings: Array<{
         divisionId: number;
         divisionName: string;
         headToHeadFirst: boolean;
         resultLabels: string[] | null;
+        pointsPossiblePerGame: number | null;
+        rankBy: RankBy;
         rows: Array<{
           rank: number;
           teamId: number;
@@ -801,89 +818,46 @@ export async function resultsRoutes(fastify: FastifyInstance) {
           divisionName: string;
           tiebreakerValues: number[];
           gamesPlayed: number;
+          wins: number;
+          losses: number;
+          ties: number;
+          h2hResult: 'win' | 'loss' | null;
+          h2hOpponentName: string | null;
+          h2hPairIndex: number | null;
         }>;
       }> = [];
 
       for (const div of divisions) {
         const divTeams = divisionTeams.get(div.id) ?? [];
-        const withSums = divTeams.map((t) => ({
-          team: t,
-          sums: teamSums.get(t.id) ?? { values: [], gamesPlayed: 0 },
-        }));
-
-        withSums.sort((a, b) => {
-          const cmp = compareTiebreakerValues(a.sums.values, b.sums.values);
-          if (cmp !== 0) return cmp;
-          if (!headToHeadFirst) return 0;
-          const ordered = orderByHeadToHead(
-            [a.team.id, b.team.id],
-            gamesWithResults
-          );
-          return ordered.indexOf(a.team.id) - ordered.indexOf(b.team.id);
-        });
-
-        if (headToHeadFirst) {
-          const byKey = (vals: number[]) => vals.join(',');
-          const groups: typeof withSums[] = [];
-          let prevKey: string | null = null;
-          let group: typeof withSums = [];
-          for (const row of withSums) {
-            const key = byKey(row.sums.values);
-            if (key !== prevKey) {
-              if (group.length > 0) groups.push(group);
-              group = [row];
-              prevKey = key;
-            } else {
-              group.push(row);
-            }
-          }
-          if (group.length > 0) groups.push(group);
-          const reordered: typeof withSums = [];
-          for (const g of groups) {
-            if (g.length <= 1) {
-              reordered.push(...g);
-              continue;
-            }
-            const ordered = orderByHeadToHead(
-              g.map((x) => x.team.id),
-              gamesWithResults
-            );
-            for (const id of ordered) {
-              const r = g.find((x) => x.team.id === id);
-              if (r) reordered.push(r);
-            }
-          }
-          withSums.length = 0;
-          withSums.push(...reordered);
-        }
-
-        let rank = 1;
-        const rows = withSums.map((x, idx) => {
-          const sameAsPrev =
-            idx > 0 &&
-            compareTiebreakerValues(withSums[idx - 1]!.sums.values, x.sums.values) === 0 &&
-            (!headToHeadFirst ||
-              orderByHeadToHead(
-                [withSums[idx - 1]!.team.id, x.team.id],
-                gamesWithResults
-              ).length === 2);
-          if (!sameAsPrev) rank = idx + 1;
-          return {
-            rank,
-            teamId: x.team.id,
-            teamName: x.team.name,
-            divisionId: div.id,
-            divisionName: div.name,
-            tiebreakerValues: x.sums.values,
-            gamesPlayed: x.sums.gamesPlayed,
-          };
-        });
+        const ranked = rankDivisionTeams(
+          divTeams.map((t) => {
+            const sums = teamSums.get(t.id) ?? { values: [], gamesPlayed: 0 };
+            const record = teamRecords.get(t.id) ?? { gamesPlayed: 0, wins: 0, losses: 0, ties: 0 };
+            return {
+              teamId: t.id,
+              teamName: t.name,
+              values: sums.values,
+              gamesPlayed: sums.gamesPlayed,
+              wins: record.wins,
+              losses: record.losses,
+              ties: record.ties,
+            };
+          }),
+          gamesWithResults,
+          rankingOptions
+        );
         standings.push({
           divisionId: div.id,
           divisionName: div.name,
           headToHeadFirst,
           resultLabels,
-          rows,
+          pointsPossiblePerGame,
+          rankBy,
+          rows: ranked.map((row) => ({
+            ...row,
+            divisionId: div.id,
+            divisionName: div.name,
+          })),
         });
       }
       return standings;

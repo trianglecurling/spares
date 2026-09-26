@@ -760,6 +760,66 @@ async function getPublicPublishedTournamentDrawEventId(
   return event.id;
 }
 
+/** SSE: clients refetch the draw when `tournament_draw_updated` arrives. */
+function openTournamentDrawLiveStream(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  eventId: number,
+): FastifyReply {
+  const stream = new PassThrough();
+  reply
+    .header('Content-Type', 'text/event-stream; charset=utf-8')
+    .header('Cache-Control', 'no-cache, no-transform')
+    .header('Connection', 'keep-alive')
+    .header('X-Accel-Buffering', 'no');
+
+  const send = (chunk: string) => {
+    if (!stream.writableEnded) {
+      stream.write(chunk);
+    }
+  };
+
+  const subscription = subscribeTournamentDrawLive(eventId, send, request.ip || 'unknown');
+  if (!subscription.ok) {
+    return sendApiError(
+      reply,
+      429,
+      subscription.error === 'ip_limit'
+        ? 'Too many live connections from this network. Please try again later.'
+        : 'Too many live connections for this draw. Please try again later.',
+    );
+  }
+
+  send(`data: ${JSON.stringify({ type: 'connected', eventId })}\n\n`);
+
+  let cleanedUp = false;
+  let pingTimer: ReturnType<typeof setInterval> | undefined;
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
+  const cleanup = () => {
+    if (cleanedUp) return;
+    cleanedUp = true;
+    if (pingTimer) clearInterval(pingTimer);
+    if (idleTimer) clearTimeout(idleTimer);
+    subscription.unsubscribe();
+    if (!stream.writableEnded) {
+      stream.end();
+    }
+  };
+
+  pingTimer = setInterval(() => {
+    send(': ping\n\n');
+  }, 30000);
+
+  idleTimer = setTimeout(() => {
+    cleanup();
+  }, getTournamentDrawIdleTimeoutMs());
+
+  request.raw.on('close', cleanup);
+  stream.on('close', cleanup);
+
+  return reply.send(stream);
+}
+
 // Public routes (no auth required)
 export async function publicEventRoutes(fastify: FastifyInstance): Promise<void> {
   // List published public events
@@ -962,59 +1022,7 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
         return sendApiError(reply, 404, 'Event not found');
       }
 
-      const stream = new PassThrough();
-      reply
-        .header('Content-Type', 'text/event-stream; charset=utf-8')
-        .header('Cache-Control', 'no-cache, no-transform')
-        .header('Connection', 'keep-alive')
-        .header('X-Accel-Buffering', 'no');
-
-      const send = (chunk: string) => {
-        if (!stream.writableEnded) {
-          stream.write(chunk);
-        }
-      };
-
-      const subscription = subscribeTournamentDrawLive(eventId, send, request.ip || 'unknown');
-      if (!subscription.ok) {
-        return sendApiError(
-          reply,
-          429,
-          subscription.error === 'ip_limit'
-            ? 'Too many live connections from this network. Please try again later.'
-            : 'Too many live connections for this draw. Please try again later.'
-        );
-      }
-
-      const payload = JSON.stringify({ type: 'connected', eventId });
-      send(`data: ${payload}\n\n`);
-
-      let cleanedUp = false;
-      let pingTimer: ReturnType<typeof setInterval> | undefined;
-      let idleTimer: ReturnType<typeof setTimeout> | undefined;
-      const cleanup = () => {
-        if (cleanedUp) return;
-        cleanedUp = true;
-        if (pingTimer) clearInterval(pingTimer);
-        if (idleTimer) clearTimeout(idleTimer);
-        subscription.unsubscribe();
-        if (!stream.writableEnded) {
-          stream.end();
-        }
-      };
-
-      pingTimer = setInterval(() => {
-        send(': ping\n\n');
-      }, 30000);
-
-      idleTimer = setTimeout(() => {
-        cleanup();
-      }, getTournamentDrawIdleTimeoutMs());
-
-      request.raw.on('close', cleanup);
-      stream.on('close', cleanup);
-
-      return reply.send(stream);
+      return openTournamentDrawLiveStream(request, reply, eventId);
     }
   );
 
@@ -1785,6 +1793,29 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
         throw err;
       }
     }
+  );
+
+  fastify.get<{ Params: { id: string } }>(
+    '/events/:id/tournament-draw/stream',
+    {
+      schema: {
+        tags: ['events'],
+        hide: true,
+        description:
+          'Server-Sent Events stream: emits tournament_draw_updated when the draw changes; clients should refetch GET /events/:id/tournament-draw.',
+      },
+    },
+    async (request, reply) => {
+      const eventId = parseInt(request.params.id, 10);
+      if (isNaN(eventId)) return sendApiError(reply, 400, 'Invalid event id');
+
+      const member = (request as AuthenticatedRequest).member as Member;
+      if (!(await canManageEvent(member, eventId))) {
+        return sendApiError(reply, 403, 'Forbidden');
+      }
+
+      return openTournamentDrawLiveStream(request, reply, eventId);
+    },
   );
 
   fastify.put<{ Params: { id: string }; Body: unknown }>(

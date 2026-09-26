@@ -29,6 +29,7 @@ const ProfilePaymentDetailPage = lazyRoute(() => import('./pages/ProfilePaymentD
 const PublicPaymentDetailPage = lazyRoute(() => import('./pages/PublicPaymentDetailPage'));
 const AdminMembersLayout = lazyRoute(() => import('./pages/admin/AdminMembersLayout'));
 const AdminMembers = lazyRoute(() => import('./pages/admin/AdminMembers'));
+const AdminOrgRosters = lazyRoute(() => import('./pages/admin/AdminOrgRosters'));
 const AdminMemberCredentials = lazyRoute(() => import('./pages/admin/AdminMemberCredentials'));
 const AdminMemberCredentialDetail = lazyRoute(
   () => import('./pages/admin/AdminMemberCredentialDetail')
@@ -584,6 +585,7 @@ function App() {
                         }
                       >
                         <Route index element={<AdminMembers />} />
+                        <Route path="org-rosters" element={<AdminOrgRosters />} />
                         <Route path="credentials" element={<AdminMemberCredentials />} />
                       </Route>
                       <Route

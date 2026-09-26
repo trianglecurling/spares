@@ -30,6 +30,8 @@ type RegistrationParentAssociationFieldsProps = {
   onUsaCurlingChange: (checked: boolean) => void;
   onUswcaChange: (checked: boolean) => void;
   tone?: FormFieldTone;
+  /** Staff editors describe the member in third person. */
+  audience?: 'self' | 'staff';
 };
 
 function OrgMention({
@@ -54,13 +56,23 @@ function MembershipOptInToggle({
   checked,
   onChange,
   tone,
+  audience,
 }: {
   organization: string;
   checked: boolean;
   onChange: (checked: boolean) => void;
   tone: FormFieldTone;
+  audience: 'self' | 'staff';
 }) {
   const id = useId();
+  const label =
+    audience === 'staff'
+      ? checked
+        ? `Opted in to ${organization}`
+        : `Opted out of ${organization}`
+      : checked
+        ? <>I <strong>want</strong> to be a member of {organization}</>
+        : <>I <strong>do not want</strong> to be a member of {organization}</>;
 
   return (
     <div className="flex items-start gap-3">
@@ -95,7 +107,7 @@ function MembershipOptInToggle({
             : 'cursor-pointer text-sm font-medium text-gray-700'
         }
       >
-        I {checked ? <strong>want</strong> : <strong>do not want</strong>} to be a member of {organization}
+        {label}
       </label>
     </div>
   );
@@ -107,6 +119,7 @@ export default function RegistrationParentAssociationFields({
   onUsaCurlingChange,
   onUswcaChange,
   tone = 'public',
+  audience = 'self',
 }: RegistrationParentAssociationFieldsProps) {
   return (
     <FormSection title="Parent association memberships" tone={tone}>
@@ -131,13 +144,24 @@ export default function RegistrationParentAssociationFields({
           checked={usaCurlingOptIn}
           onChange={onUsaCurlingChange}
           tone={tone}
+          audience={audience}
         />
         <MembershipOptInToggle
           organization="US Women's Curling Association"
           checked={uswcaOptIn}
           onChange={onUswcaChange}
           tone={tone}
+          audience={audience}
         />
+        <p
+          className={
+            tone === 'app'
+              ? 'text-sm font-medium text-gray-700 dark:text-gray-300'
+              : 'text-sm font-medium text-gray-700'
+          }
+        >
+          GNCC — Yes (required for all members)
+        </p>
       </div>
     </FormSection>
   );

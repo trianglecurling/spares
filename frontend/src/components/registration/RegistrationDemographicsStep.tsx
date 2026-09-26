@@ -20,6 +20,7 @@ type RegistrationDemographicsStepProps = {
   onStartOver: () => void;
   onCommitDraft: (form: RegistrationDemographicsFormFields) => void;
   onSubmit: (form: RegistrationDemographicsFormFields) => void;
+  lockedEmail?: string;
 };
 
 function RegistrationDemographicsStep({
@@ -36,6 +37,7 @@ function RegistrationDemographicsStep({
   onStartOver,
   onCommitDraft,
   onSubmit,
+  lockedEmail = '',
 }: RegistrationDemographicsStepProps) {
   const fieldsRef = useRef<RegistrationDemographicFieldsHandle>(null);
 
@@ -67,6 +69,7 @@ function RegistrationDemographicsStep({
           ref={fieldsRef}
           initialValue={initialDemographics}
           curlerDateOfBirth={curlerDateOfBirth}
+          lockedEmail={lockedEmail}
           onCommit={onCommitDraft}
         />
         {error ? <p className="text-sm text-red-600">{error}</p> : null}

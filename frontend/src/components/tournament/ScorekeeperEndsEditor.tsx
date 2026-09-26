@@ -4,6 +4,7 @@ import { IoHammer } from 'react-icons/io5';
 import ChoiceInput from '../ChoiceInput';
 import FormField from '../FormField';
 import FormFieldMessage from '../FormFieldMessage';
+import { resolveSheetStoneColorHex } from '../../utils/sheetStoneColors';
 import type { TournamentFormat } from '../../utils/tournamentDisplay';
 import {
   eligiblePowerPlayEnds,
@@ -80,6 +81,9 @@ type ScorekeeperEndsEditorProps = {
   /** Content before the team name (rock color swatch / control). */
   team0Leading?: ReactNode;
   team1Leading?: ReactNode;
+  /** Sheet stone color for each visual row, when assigned. Shown in the end-score popup. */
+  team0StoneColor?: string | null;
+  team1StoneColor?: string | null;
   onChangeEntries: (next: Array<EndScoreEntry | null>) => void;
   onGameCompleteChange: (complete: boolean) => void;
   onFirstEndHammerChange: (slot: 0 | 1 | null) => void;
@@ -98,6 +102,8 @@ export default function ScorekeeperEndsEditor({
   disabled = false,
   team0Leading,
   team1Leading,
+  team0StoneColor = null,
+  team1StoneColor = null,
   onChangeEntries,
   onGameCompleteChange,
   onFirstEndHammerChange,
@@ -310,6 +316,8 @@ export default function ScorekeeperEndsEditor({
           openEndIndex={openEndIndex}
           team0Label={team0Label}
           team1Label={team1Label}
+          team0StoneColor={team0StoneColor}
+          team1StoneColor={team1StoneColor}
           hasValue={entries[openEndIndex] != null}
           onClose={() => setOpenEndIndex(null)}
           onSelect={(value) => {
@@ -469,6 +477,24 @@ function TeamNameWithHammer({
   );
 }
 
+function TeamScoreColumnHeading({
+  label,
+  stoneColor,
+}: {
+  label: string;
+  stoneColor: string | null;
+}) {
+  return (
+    <div
+      className="break-words border-b-2 px-1 py-1 text-xs font-medium leading-snug text-gray-700 dark:text-gray-200"
+      style={{ borderColor: stoneColor ? resolveSheetStoneColorHex(stoneColor) : 'transparent' }}
+      title={label}
+    >
+      {label}
+    </div>
+  );
+}
+
 function EndScoreCell({
   entry,
   side,
@@ -532,6 +558,8 @@ function EndResultPicker({
   openEndIndex,
   team0Label,
   team1Label,
+  team0StoneColor,
+  team1StoneColor,
   hasValue,
   onClose,
   onSelect,
@@ -540,6 +568,8 @@ function EndResultPicker({
   openEndIndex: number;
   team0Label: string;
   team1Label: string;
+  team0StoneColor: string | null;
+  team1StoneColor: string | null;
   hasValue: boolean;
   onClose: () => void;
   onSelect: (value: EndScoreEntry | null) => void;
@@ -554,7 +584,7 @@ function EndResultPicker({
       return;
     }
     const rect = el.getBoundingClientRect();
-    const menuWidth = 224;
+    const menuWidth = 320;
     setPos({
       top: rect.bottom + 4,
       left: Math.max(8, Math.min(rect.left, window.innerWidth - menuWidth - 8)),
@@ -585,7 +615,7 @@ function EndResultPicker({
       ref={menuRef}
       role="listbox"
       aria-label="End result"
-      className="fixed z-[120] w-56 rounded-lg border border-gray-200 bg-white p-2 shadow-lg dark:border-gray-600 dark:bg-gray-800"
+      className="fixed z-[120] w-80 rounded-lg border border-gray-200 bg-white p-2 shadow-lg dark:border-gray-600 dark:bg-gray-800"
       style={{ top: pos.top, left: pos.left }}
     >
       <button
@@ -597,18 +627,8 @@ function EndResultPicker({
         Blank end
       </button>
       <div className="grid grid-cols-2 gap-1">
-        <div
-          className="truncate px-2 py-1 text-xs font-medium text-gray-500 dark:text-gray-400"
-          title={team0Label}
-        >
-          {team0Label}
-        </div>
-        <div
-          className="truncate px-2 py-1 text-xs font-medium text-gray-500 dark:text-gray-400"
-          title={team1Label}
-        >
-          {team1Label}
-        </div>
+        <TeamScoreColumnHeading label={team0Label} stoneColor={team0StoneColor} />
+        <TeamScoreColumnHeading label={team1Label} stoneColor={team1StoneColor} />
         {Array.from({ length: MAX_POINTS }, (_, i) => {
           const points = i + 1;
           return (

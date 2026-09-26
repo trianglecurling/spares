@@ -211,13 +211,15 @@ export function pickRosterConfirmationBilling<T extends { registrationId: number
 export function isRosterConfirmationPaymentReminder(input: {
   alreadySent: boolean;
   balanceMinor: number;
+  reusablePaymentUrl?: boolean;
 }): boolean {
-  return input.alreadySent && input.balanceMinor > 0;
+  return input.alreadySent && input.balanceMinor > 0 && input.reusablePaymentUrl === true;
 }
 
 export function rosterConfirmationSendSideEffects(input: {
   balanceMinor: number;
   alreadySent?: boolean;
+  reusablePaymentUrl?: boolean;
 }): {
   createPaymentLink: boolean;
   reusePaymentLink: boolean;
@@ -226,7 +228,7 @@ export function rosterConfirmationSendSideEffects(input: {
   if (input.balanceMinor <= 0) {
     return { createPaymentLink: false, reusePaymentLink: false, issueRefund: false };
   }
-  if (input.alreadySent) {
+  if (input.alreadySent && input.reusablePaymentUrl) {
     return { createPaymentLink: false, reusePaymentLink: true, issueRefund: false };
   }
   return { createPaymentLink: true, reusePaymentLink: false, issueRefund: false };
@@ -761,12 +763,16 @@ export async function getRosterConfirmationEmailPreview(input: {
   if (!recipient) {
     throw new RosterConfirmationEmailValidationError({ memberId: 'This member is not on a league roster for the selected session.' });
   }
-  const isReminder = isRosterConfirmationPaymentReminder(recipient);
   const paymentUrl =
-    isReminder && recipient.registrationId != null
-      ? await loadExistingRegistrationPaymentUrl(recipient.registrationId)
+    recipient.registrationId != null && recipient.balanceMinor > 0
+      ? await loadExistingRegistrationPaymentUrl(recipient.registrationId, recipient.balanceMinor)
       : null;
-  const paymentLinkPending = recipient.balanceMinor > 0 && !isReminder;
+  const isReminder = isRosterConfirmationPaymentReminder({
+    alreadySent: recipient.alreadySent,
+    balanceMinor: recipient.balanceMinor,
+    reusablePaymentUrl: Boolean(paymentUrl),
+  });
+  const paymentLinkPending = recipient.balanceMinor > 0 && !paymentUrl;
   const payload = payloadForRecipient(list, recipient, {
     paymentUrl,
     paymentLinkPending,
@@ -926,14 +932,21 @@ async function sendOneRosterConfirmationEmail(input: {
   if (!recipient.canSend || !recipient.memberEmail || recipient.registrationId == null) {
     throw new Error(skipSendError(recipient));
   }
-  let paymentUrl: string | null = null;
+  let paymentUrl =
+    recipient.balanceMinor > 0
+      ? await loadExistingRegistrationPaymentUrl(recipient.registrationId, recipient.balanceMinor)
+      : null;
   const sideEffects = rosterConfirmationSendSideEffects({
     balanceMinor: recipient.balanceMinor,
     alreadySent: recipient.alreadySent,
+    reusablePaymentUrl: Boolean(paymentUrl),
   });
-  const isReminder = isRosterConfirmationPaymentReminder(recipient);
+  const isReminder = isRosterConfirmationPaymentReminder({
+    alreadySent: recipient.alreadySent,
+    balanceMinor: recipient.balanceMinor,
+    reusablePaymentUrl: Boolean(paymentUrl),
+  });
   if (sideEffects.reusePaymentLink) {
-    paymentUrl = await loadExistingRegistrationPaymentUrl(recipient.registrationId);
     if (!paymentUrl) {
       throw new Error('An existing payment link was not found for this registration.');
     }

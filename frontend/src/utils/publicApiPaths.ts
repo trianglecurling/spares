@@ -8,6 +8,7 @@ export function isPublicApiRequestUrl(url: string): boolean {
     normalized.startsWith('/registration/guest/') ||
     normalized.startsWith('/registration/window') ||
     normalized.startsWith('/registration/early-access/') ||
+    normalized.startsWith('/registration/special-links/') ||
     normalized.startsWith('/registration/payment-status/') ||
     normalized.startsWith('/contact') ||
     normalized.startsWith('/install') ||

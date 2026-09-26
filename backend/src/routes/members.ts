@@ -26,6 +26,9 @@ import {
   memberPaymentHistoryResponseSchema,
   memberProfileResponseSchema,
   memberUpdateResponseSchema,
+  orgRosterConfirmationEmailBodySchema,
+  orgRosterConfirmationEmailResponseSchema,
+  orgRostersResponseSchema,
   successResponseSchema,
 } from '../api/schemas.js';
 import { MEMBER_PROFILE_EMAIL_UNAVAILABLE } from '../api/errors.js';
@@ -66,6 +69,9 @@ import type {
   MemberProfileResponse,
   MemberSummaryResponse,
   MemberUpdateResponse,
+  OrgRosterConfirmationEmailBody,
+  OrgRosterConfirmationEmailResponse,
+  OrgRostersResponse,
   UpdateMemberBody,
   UpdateMemberAccountAccessDelegatesBody,
   UpdateProfileBody,
@@ -106,6 +112,13 @@ import {
 } from '../registration/curlingExperienceYears.js';
 import { getMemberTotalExperienceYears } from '../services/memberExperienceSummary.js';
 import { listMemberCredentials } from '../services/credentialService.js';
+import {
+  getOrgRosters,
+  OrgRosterValidationError,
+  queueOrgRosterConfirmationEmails,
+} from '../services/orgRosterService.js';
+import { saveMemberParentAssociationOptIns } from '../utils/memberParentAssociationOptIns.js';
+import { booleanFromSqliteFlag } from '../utils/parentAssociationMemberships.js';
 import {
   createMemberSeasonMembership,
   deleteMemberSeasonMembership,
@@ -148,6 +161,8 @@ const updateProfileSchema = z.object({
   emergencyContactPhone: z.string().min(1).optional(),
   preferredPronouns: z.string().max(PREFERRED_PRONOUN_MAX_LENGTH).optional(),
   usaCurlingCompetitionGender: z.enum(USA_CURLING_COMPETITION_GENDER_VALUES).optional(),
+  usaCurlingMembershipOptIn: z.boolean().optional(),
+  uswcaMembershipOptIn: z.boolean().optional(),
   guardianFirstName: z.string().min(1).optional(),
   guardianLastName: z.string().min(1).optional(),
   guardianEmail: z.string().email().optional(),
@@ -197,6 +212,9 @@ const updateMemberSchema = z.object({
   emergencyContactPhone: z.string().optional(),
   preferredPronouns: z.string().max(PREFERRED_PRONOUN_MAX_LENGTH).optional(),
   usaCurlingCompetitionGender: z.enum(USA_CURLING_COMPETITION_GENDER_VALUES).optional(),
+  usaCurlingMembershipOptIn: z.boolean().optional(),
+  uswcaMembershipOptIn: z.boolean().optional(),
+  usaCurlingMembershipNumber: z.string().nullable().optional(),
   lifetimeMember: z.boolean().optional(),
   isAdmin: z.boolean().optional(),
   isServerAdmin: z.boolean().optional(),
@@ -292,6 +310,8 @@ const updateProfileBodySchema = {
     emergencyContactPhone: { type: 'string', minLength: 1 },
     preferredPronouns: { type: 'string', maxLength: PREFERRED_PRONOUN_MAX_LENGTH },
     usaCurlingCompetitionGender: { type: 'string', enum: ['Male', 'Female', 'Unspecified'] },
+    usaCurlingMembershipOptIn: { type: 'boolean' },
+    uswcaMembershipOptIn: { type: 'boolean' },
     guardianFirstName: { type: 'string', minLength: 1 },
     guardianLastName: { type: 'string', minLength: 1 },
     guardianEmail: { type: 'string' },
@@ -338,6 +358,9 @@ const updateMemberBodySchema = {
     emergencyContactPhone: { type: 'string' },
     preferredPronouns: { type: 'string', maxLength: PREFERRED_PRONOUN_MAX_LENGTH },
     usaCurlingCompetitionGender: { type: 'string', enum: ['Male', 'Female', 'Unspecified'] },
+    usaCurlingMembershipOptIn: { type: 'boolean' },
+    uswcaMembershipOptIn: { type: 'boolean' },
+    usaCurlingMembershipNumber: { type: ['string', 'null'] },
     lifetimeMember: { type: 'boolean' },
     isAdmin: { type: 'boolean' },
     isServerAdmin: { type: 'boolean' },
@@ -426,6 +449,9 @@ interface MemberUpdateData {
   emergency_contact_phone?: string | null;
   preferred_pronouns?: string | null;
   usa_curling_competition_gender?: string | null;
+  usa_curling_membership_opt_in?: number | null;
+  uswca_membership_opt_in?: number | null;
+  usa_curling_membership_number?: string | null;
   lifetime_member?: number;
   opted_in_sms?: number;
   email_visible?: number;
@@ -597,6 +623,9 @@ function buildMemberProfileResponse(member: Member): MemberProfileResponse {
     emergencyContactPhone: minor ? guardianPhone ?? member.emergency_contact_phone ?? null : member.emergency_contact_phone ?? null,
     preferredPronouns: member.preferred_pronouns ?? null,
     usaCurlingCompetitionGender: member.usa_curling_competition_gender ?? null,
+    usaCurlingMembershipOptIn: booleanFromSqliteFlag(member.usa_curling_membership_opt_in),
+    uswcaMembershipOptIn: booleanFromSqliteFlag(member.uswca_membership_opt_in),
+    usaCurlingMembershipNumber: member.usa_curling_membership_number?.trim() || null,
     guardianFirstName,
     guardianLastName,
     guardianEmail: member.guardian_email ?? null,
@@ -941,6 +970,13 @@ export async function memberRoutes(fastify: FastifyInstance) {
     }
     if (body.themePreference !== undefined) {
       updateData.theme_preference = body.themePreference;
+    }
+
+    if (body.usaCurlingMembershipOptIn !== undefined || body.uswcaMembershipOptIn !== undefined) {
+      await saveMemberParentAssociationOptIns(member.id, {
+        usaCurlingMembershipOptIn: body.usaCurlingMembershipOptIn,
+        uswcaMembershipOptIn: body.uswcaMembershipOptIn,
+      });
     }
 
     if (Object.keys(updateData).length > 0) {
@@ -1732,6 +1768,56 @@ export async function memberRoutes(fastify: FastifyInstance) {
     },
   );
 
+  fastify.get<{ Reply: OrgRostersResponse | ApiErrorResponse }>(
+    '/members/org-rosters',
+    {
+      schema: {
+        tags: ['members'],
+        response: {
+          200: orgRostersResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const member = (request as AuthenticatedRequest).member;
+      if (!memberCanManageMembers(member)) {
+        return reply.code(403).send({ error: 'Forbidden' });
+      }
+      return getOrgRosters();
+    },
+  );
+
+  fastify.post<{ Body: OrgRosterConfirmationEmailBody; Reply: OrgRosterConfirmationEmailResponse | ApiErrorResponse }>(
+    '/members/org-rosters/confirmation-emails',
+    {
+      schema: {
+        tags: ['members'],
+        body: orgRosterConfirmationEmailBodySchema,
+        response: {
+          200: orgRosterConfirmationEmailResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const member = (request as AuthenticatedRequest).member;
+      if (!memberCanManageMembers(member)) {
+        return reply.code(403).send({ error: 'Forbidden' });
+      }
+      const body = z.object({ confirmByDate: z.string().min(1) }).parse(request.body);
+      try {
+        return await queueOrgRosterConfirmationEmails({
+          confirmByDate: body.confirmByDate,
+          actorMemberId: member.id,
+        });
+      } catch (error) {
+        if (error instanceof OrgRosterValidationError) {
+          return sendValidationError(reply, error.message, error.details);
+        }
+        throw error;
+      }
+    },
+  );
+
   fastify.get<{ Params: { id: string }; Reply: MemberProfileResponse | ApiErrorResponse }>(
     '/members/:id/profile',
     {
@@ -1939,6 +2025,17 @@ export async function memberRoutes(fastify: FastifyInstance) {
     }
     if (body.isSponsorAdmin !== undefined) {
       updateData.is_sponsor_admin = body.isSponsorAdmin ? 1 : 0;
+    }
+    if (
+      body.usaCurlingMembershipOptIn !== undefined ||
+      body.uswcaMembershipOptIn !== undefined ||
+      body.usaCurlingMembershipNumber !== undefined
+    ) {
+      await saveMemberParentAssociationOptIns(memberId, {
+        usaCurlingMembershipOptIn: body.usaCurlingMembershipOptIn,
+        uswcaMembershipOptIn: body.uswcaMembershipOptIn,
+        usaCurlingMembershipNumber: body.usaCurlingMembershipNumber,
+      });
     }
 
     const hasAnyGuardianField =

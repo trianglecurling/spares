@@ -575,6 +575,41 @@
       "when": 1788490200000,
       "tag": "0082_add_leagues_teams_published",
       "breakpoints": true
+    },
+    {
+      "idx": 83,
+      "version": "7",
+      "when": 1788490800000,
+      "tag": "0083_add_registration_special_links",
+      "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1788491400000,
+      "tag": "0084_add_member_parent_org_rosters",
+      "breakpoints": true
+    },
+    {
+      "idx": 85,
+      "version": "7",
+      "when": 1788492000000,
+      "tag": "0085_add_league_settings_points_possible",
+      "breakpoints": true
+    },
+    {
+      "idx": 86,
+      "version": "7",
+      "when": 1788492600000,
+      "tag": "0086_add_parent_org_confirmation_email_state",
+      "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1788493200000,
+      "tag": "0087_add_contact_settings_nudge_dismissed",
+      "breakpoints": true
     }
   ]
 }

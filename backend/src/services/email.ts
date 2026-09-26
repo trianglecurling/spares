@@ -18,6 +18,7 @@ import {
   FINANCE_CONTACT_EMAIL,
 } from './expenseReportConstants.js';
 import { parseVolunteerSignupKind, type VolunteerSignupKind } from '../utils/volunteerStats.js';
+import { PARENT_ORG_URLS } from '../utils/parentOrganizations.js';
 
 let emailClient: EmailClient | null = null;
 let smtpTransporter: Transporter | null = null;
@@ -1029,6 +1030,56 @@ export async function sendWelcomeEmail(
       recipientName: name,
     }
   );
+}
+
+export async function sendParentOrgConfirmationEmail(input: {
+  email: string;
+  name: string;
+  confirmByDate: string;
+  usaCurlingOptIn: boolean;
+  uswcaOptIn: boolean;
+  profileUrl: string;
+  cc?: string | null;
+}): Promise<void> {
+  const safeName = escapeHtml(input.name);
+  const confirmBy = escapeHtml(formatDateForEmail(input.confirmByDate));
+  const profileUrl = escapeHtml(input.profileUrl);
+  const usaCurlingUrl = escapeHtml(PARENT_ORG_URLS.usaCurling);
+  const gnccUrl = escapeHtml(PARENT_ORG_URLS.gncc);
+  const uswcaUrl = escapeHtml(PARENT_ORG_URLS.uswca);
+  const usaCurlingMembershipUrl = escapeHtml(PARENT_ORG_URLS.usaCurlingMembership);
+  const yesNo = (value: boolean) => (value ? 'Yes' : 'No');
+
+  const htmlContent = `
+    <h2>Action requested: confirm your parent org memberships</h2>
+    <p>Hi ${safeName},</p>
+    <p>Triangle Curling belongs to 3 parent organizations:</p>
+    <ul>
+      <li><a href="${usaCurlingUrl}">USA Curling</a></li>
+      <li><a href="${gnccUrl}">Grand National Curling Club (GNCC)</a></li>
+      <li><a href="${uswcaUrl}">United States Women's Curling Association (USWCA)</a></li>
+    </ul>
+    <p>Your Triangle Curling Membership includes membership to all 3 organizations. By default, only members who have selected &ldquo;She/her&rdquo; pronouns are automatically opted-in to joining USWCA, but all members are welcome to change this option.</p>
+    <p>Please confirm your parent org memberships no later than end-of-day on <strong>${confirmBy}</strong>:</p>
+    <ul>
+      <li>USA Curling &mdash; ${yesNo(input.usaCurlingOptIn)}</li>
+      <li>USWCA &mdash; ${yesNo(input.uswcaOptIn)}</li>
+      <li>GNCC &mdash; Yes (required for all members)</li>
+    </ul>
+    <p>If that looks good, no action is required. If you would like to make any changes, open your <a href="${profileUrl}">Profile</a> to update parent org options.</p>
+    <h3>Information about our parent associations</h3>
+    <p>USA Curling is the national governing body (NGB) for the sport of curling in the United States. USA Curling membership provides access to national competitions, clinics, courses, and SafeSport training. For more info, see <a href="${usaCurlingMembershipUrl}">${usaCurlingMembershipUrl}</a>.</p>
+    <p>The Grand National Curling Club of America (GNCC) is the regional curling association to which Triangle Curling belongs. The GNCC organizes competitions, provides support for curling clubs, and provides SafeSport training for those who are not USA Curling members. Triangle Curling's liability insurance is provided through the GNCC, so membership is required.</p>
+    <p>The United States Women's Curling Association supports women's curling in the US by organizing annual women's bonspiels, supporting junior curling, providing grants for developmental curling, and acting as a voice to USA Curling. Membership is open to all.</p>
+  `;
+
+  await sendEmail({
+    to: input.email,
+    subject: 'Action requested: confirm your parent org memberships',
+    htmlContent,
+    recipientName: input.name,
+    cc: input.cc,
+  });
 }
 
 function escapeHtml(input: string): string {

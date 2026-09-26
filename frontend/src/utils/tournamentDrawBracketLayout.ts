@@ -558,9 +558,9 @@ function isChampionshipMatch(
 export function placeRoutingLinesOnCard(
   draw: TournamentDrawState,
   g: TournamentGameNode
-): Array<{ key: string; text: string; color?: string }> {
+): Array<{ key: string; text: string; color?: string; toGameId?: string }> {
   const k = g.slots.length;
-  const lines: Array<{ key: string; text: string; color?: string }> = [];
+  const lines: Array<{ key: string; text: string; color?: string; toGameId?: string }> = [];
   for (let p = 1; p <= k; p++) {
     const c = draw.connections.find((x) => x.fromGameId === g.id && x.place === p);
     if (!c || c.terminalType === 'tbd') continue;
@@ -577,6 +577,7 @@ export function placeRoutingLinesOnCard(
         key: `g-${p}-${c.toGameId}`,
         text: `${prefix}-${to?.label ?? '?'}`,
         color: ev?.color,
+        toGameId: c.toGameId,
       });
     }
   }

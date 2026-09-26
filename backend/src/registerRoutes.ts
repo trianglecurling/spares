@@ -9,6 +9,7 @@ import { gameRoutes } from './routes/games.js';
 import { resultsRoutes } from './routes/results.js';
 import { schedulingRoutes } from './routes/scheduling.js';
 import { availabilityRoutes } from './routes/availability.js';
+import { contactSettingsNudgeRoutes } from './routes/contactSettingsNudge.js';
 import { spareRoutes } from './routes/spares.js';
 import { configRoutes } from './routes/config.js';
 import { calendarRoutes } from './routes/calendar.js';
@@ -76,6 +77,7 @@ export async function registerProtectedApiRoutes(fastify: FastifyInstance): Prom
   await fastify.register(protectedAuthRoutes, { prefix: '/api' });
   await fastify.register(protectedPasskeyRoutes, { prefix: '/api' });
   await fastify.register(memberRoutes, { prefix: '/api' });
+  await fastify.register(contactSettingsNudgeRoutes, { prefix: '/api' });
   await fastify.register(credentialRoutes, { prefix: '/api' });
   await fastify.register(leagueRoutes, { prefix: '/api' });
   await fastify.register(leagueSetupRoutes, { prefix: '/api' });

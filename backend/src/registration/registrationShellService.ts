@@ -58,6 +58,7 @@ export type RegistrationShellRow = {
   membership_option: CurlingMembershipOptionSqlite;
   basic_ice_fallback_interest: number | null;
   name_tag_replacement_quantity: number | null;
+  special_link_id: number | null;
   status: RegistrationShellStatus;
   shell_completed_at: string | Date | null;
   cancelled_at: string | Date | null;
@@ -242,6 +243,7 @@ export function mapRegistration(row: any): RegistrationShellRow {
     membership_option: (row.membership_option ?? 'none') as CurlingMembershipOptionSqlite,
     basic_ice_fallback_interest: row.basic_ice_fallback_interest ?? null,
     name_tag_replacement_quantity: parseNameTagReplacementQuantity(row.name_tag_replacement_quantity),
+    special_link_id: row.special_link_id ?? null,
     status: row.status,
     shell_completed_at: normalizeDateTime(row.shell_completed_at),
     cancelled_at: normalizeDateTime(row.cancelled_at),
@@ -330,16 +332,28 @@ export async function getScheduleRegistrationWindow(seasonId: number, sessionId:
 export async function getEffectiveRegistrationWindow(
   seasonId: number,
   sessionId: number,
-  options?: { earlyAccessUnlocked?: boolean },
+  options?: { earlyAccessUnlocked?: boolean; specialLinkToken?: string; specialLinkId?: number | null },
 ) {
   const window = await getScheduleRegistrationWindow(seasonId, sessionId);
   if (!window) return null;
   const { applyEarlyAccessOverlayToWindowState } = await import('./registrationEarlyAccess.js');
+  const {
+    applySpecialLinkOverlayToWindowState,
+    resolveSpecialLinkConstraints,
+    specialLinkTokenFromRequest,
+  } = await import('./registrationSpecialLinks.js');
+  const constraints = await resolveSpecialLinkConstraints({
+    specialLinkId: options?.specialLinkId,
+    token: options?.specialLinkToken ?? specialLinkTokenFromRequest(),
+    seasonId,
+    sessionId,
+  });
+  const withEarlyAccess = await applyEarlyAccessOverlayToWindowState(window.state, {
+    unlocked: options?.earlyAccessUnlocked,
+  });
   return {
     ...window,
-    state: await applyEarlyAccessOverlayToWindowState(window.state, {
-      unlocked: options?.earlyAccessUnlocked,
-    }),
+    state: applySpecialLinkOverlayToWindowState(withEarlyAccess, constraints, { seasonId, sessionId }),
   };
 }
 
@@ -364,7 +378,20 @@ export async function getDefaultScheduleRegistrationWindow() {
   return getScheduleRegistrationWindow(ids.seasonId, ids.sessionId);
 }
 
-export async function getDefaultRegistrationWindow(options?: { earlyAccessUnlocked?: boolean }) {
+export async function getDefaultRegistrationWindow(options?: {
+  earlyAccessUnlocked?: boolean;
+  specialLinkToken?: string;
+}) {
+  const { getUsableSpecialLinkByToken, specialLinkTokenFromRequest } = await import('./registrationSpecialLinks.js');
+  const token = options?.specialLinkToken ?? specialLinkTokenFromRequest();
+  const specialLink = await getUsableSpecialLinkByToken(token);
+  if (specialLink) {
+    return getEffectiveRegistrationWindow(specialLink.season_id, specialLink.session_id, {
+      earlyAccessUnlocked: options?.earlyAccessUnlocked,
+      specialLinkToken: token ?? undefined,
+      specialLinkId: specialLink.id,
+    });
+  }
   const ids = await resolveDefaultRegistrationWindowIds();
   if (!ids) return null;
   return getEffectiveRegistrationWindow(ids.seasonId, ids.sessionId, options);
@@ -373,7 +400,7 @@ export async function getDefaultRegistrationWindow(options?: { earlyAccessUnlock
 export async function assertRegistrationOpen(
   seasonId: number,
   sessionId: number,
-  options?: { earlyAccessUnlocked?: boolean },
+  options?: { earlyAccessUnlocked?: boolean; specialLinkToken?: string; specialLinkId?: number | null },
 ): Promise<void> {
   const window = await getEffectiveRegistrationWindow(seasonId, sessionId, options);
   if (!window) throw new RegistrationShellValidationError({ sessionId: 'Registration session was not found.' });
@@ -503,8 +530,10 @@ export async function insertEmptyGuestRegistrationDraft(input: {
   sessionId: number;
   earlyAccessUnlocked?: boolean;
 }): Promise<RegistrationShellRow> {
+  const specialLinkId = await resolveDraftSpecialLinkId(input.seasonId, input.sessionId);
   await assertRegistrationOpen(input.seasonId, input.sessionId, {
     earlyAccessUnlocked: input.earlyAccessUnlocked,
+    specialLinkId,
   });
   const { db, schema } = getDrizzleDb();
   const [row] = await db
@@ -513,6 +542,7 @@ export async function insertEmptyGuestRegistrationDraft(input: {
       season_id: input.seasonId,
       session_id: input.sessionId,
       returning_member_answer: 0,
+      special_link_id: specialLinkId,
       status: 'identity_incomplete',
       updated_at: sql`CURRENT_TIMESTAMP`,
     })
@@ -527,10 +557,15 @@ export async function createDraft(input: {
   submittedByMemberId: number;
   earlyAccessUnlocked?: boolean;
 }): Promise<RegistrationShellRow> {
+  const specialLinkId = await resolveDraftSpecialLinkId(input.seasonId, input.sessionId);
   await assertRegistrationOpen(input.seasonId, input.sessionId, {
     earlyAccessUnlocked: input.earlyAccessUnlocked,
+    specialLinkId,
   });
   const existing = await findActiveRegistrationForSubmitter(input.submittedByMemberId);
+  if (existing && specialLinkId != null && existing.special_link_id === specialLinkId) {
+    return existing;
+  }
   if (hasBlockingInProgressDraft(existing)) {
     throw new RegistrationInProgressError();
   }
@@ -542,11 +577,46 @@ export async function createDraft(input: {
       session_id: input.sessionId,
       submitted_by_member_id: input.submittedByMemberId,
       returning_member_answer: input.returningMember ? 1 : 0,
+      special_link_id: specialLinkId,
       status: 'identity_incomplete',
       updated_at: sql`CURRENT_TIMESTAMP`,
     })
     .returning();
   return mapRegistration(row);
+}
+
+async function resolveDraftSpecialLinkId(seasonId: number, sessionId: number): Promise<number | null> {
+  const { resolveSpecialLinkConstraints } = await import('./registrationSpecialLinks.js');
+  const constraints = await resolveSpecialLinkConstraints({ seasonId, sessionId });
+  return constraints?.id ?? null;
+}
+
+async function specialLinkSummaryForRegistration(registration: RegistrationShellRow) {
+  const { resolveSpecialLinkConstraints } = await import('./registrationSpecialLinks.js');
+  const constraints = await resolveSpecialLinkConstraints({
+    specialLinkId: registration.special_link_id,
+    seasonId: registration.season_id,
+    sessionId: registration.session_id,
+  });
+  if (!constraints) return null;
+  return {
+    email: constraints.email,
+    allowLeagueRegistration: constraints.allowLeagueRegistration,
+    allowedLeagueIds: constraints.allowedLeagueIds,
+  };
+}
+
+async function assertSpecialLinkCurlerEmail(
+  registration: RegistrationShellRow,
+  email: string | null | undefined,
+): Promise<void> {
+  const { assertSpecialLinkEmail, resolveSpecialLinkConstraints } = await import('./registrationSpecialLinks.js');
+  const constraints = await resolveSpecialLinkConstraints({
+    specialLinkId: registration.special_link_id,
+    seasonId: registration.season_id,
+    sessionId: registration.session_id,
+  });
+  assertSpecialLinkEmail(constraints, email);
 }
 
 export async function getRegistrationById(id: number): Promise<RegistrationShellRow | null> {
@@ -585,6 +655,7 @@ export async function getRegistrationShellPayload(id: number) {
     })),
     policiesComplete,
     isMinor,
+    specialLink: await specialLinkSummaryForRegistration(registration),
   };
 }
 
@@ -633,8 +704,14 @@ export async function attachReturningCurler(input: {
   if (!current) {
     throw new RegistrationShellValidationError({ registration: 'Registration was not found.' });
   }
-  await assertCurlerNotAlreadyRegistered(current, input.curlerMemberId);
   const { db, schema } = getDrizzleDb();
+  const [curlerRow] = await db
+    .select({ email: schema.members.email })
+    .from(schema.members)
+    .where(eq(schema.members.id, input.curlerMemberId))
+    .limit(1);
+  await assertSpecialLinkCurlerEmail(current, curlerRow?.email ?? null);
+  await assertCurlerNotAlreadyRegistered(current, input.curlerMemberId);
   const existing = await findReusableDraft(input.registrationId, input.curlerMemberId);
   const targetId = existing?.id ?? input.registrationId;
   const [row] = await db
@@ -716,6 +793,10 @@ export async function attachNewCurler(input: {
   useSubmitterEmailForCurler?: boolean;
 }): Promise<{ registration: RegistrationShellRow; submitter: MemberSummary; curler: MemberSummary }> {
   const { db, schema } = getDrizzleDb();
+  const registration = await getRegistrationById(input.registrationId);
+  if (!registration) {
+    throw new RegistrationShellValidationError({ registration: 'Registration was not found.' });
+  }
   const actorRow = input.actorMemberId
     ? (await db.select().from(schema.members).where(eq(schema.members.id, input.actorMemberId)).limit(1))[0]
     : null;
@@ -732,6 +813,7 @@ export async function attachNewCurler(input: {
   const resolvedCurlerEmail = input.useSubmitterEmailForCurler
     ? actorEmail ?? pendingSubmitterEmail ?? input.curler.email
     : input.curler.email;
+  await assertSpecialLinkCurlerEmail(registration, resolvedCurlerEmail);
 
   if (!input.registeringForSelf) {
     await assertNewRegistrationEmailAvailable({
@@ -744,11 +826,6 @@ export async function attachNewCurler(input: {
   const submitter = actorRow
     ? mapMemberSummary(actorRow)
     : await createMemberForRegistration(input.submitter ?? input.curler);
-
-  const registration = await getRegistrationById(input.registrationId);
-  if (!registration) {
-    throw new RegistrationShellValidationError({ registration: 'Registration was not found.' });
-  }
 
   const curler = input.registeringForSelf
     ? submitter
@@ -859,6 +936,7 @@ export async function updateCurlerDemographics(
     });
   }
   validateDemographics(input, resolvedDateOfBirth);
+  await assertSpecialLinkCurlerEmail(registration, input.email);
   try {
     await applyMemberDemographicsUpdate(
       registration.curler_member_id,

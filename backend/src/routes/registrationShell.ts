@@ -67,8 +67,14 @@ import {
   isRegistrationEarlyAccessActive,
 } from '../registration/registrationEarlyAccess.js';
 import {
+  RegistrationSpecialLinkValidationError,
+  bindSpecialLinkOnRequest,
+  getPublicSpecialLinkStatus,
+} from '../registration/registrationSpecialLinks.js';
+import {
   registrationEarlyAccessStatusSchema,
   registrationEarlyAccessUnlockResponseSchema,
+  registrationSpecialLinkPublicResponseSchema,
 } from '../api/schemas.js';
 import { getLeagueTeamMemberPlacementOptions } from '../registration/memberWaitlistJoinService.js';
 import { RegistrationMemberValidationError } from '../registration/registrationMemberService.js';
@@ -325,6 +331,9 @@ function handleRegistrationError(reply: FastifyReply, error: unknown) {
   if (error instanceof RegistrationEarlyAccessValidationError) {
     return sendValidationError(reply, error.message, error.details);
   }
+  if (error instanceof RegistrationSpecialLinkValidationError) {
+    return sendValidationError(reply, error.message, error.details);
+  }
   if (error instanceof RegistrationMembershipPaymentValidationError) {
     return sendValidationError(reply, error.message, error.details);
   }
@@ -366,6 +375,29 @@ async function requireDraftAccess(request: FastifyRequest, reply: FastifyReply, 
 
 export async function publicRegistrationShellRoutes(fastify: FastifyInstance) {
   fastify.addHook('onRequest', bindEarlyAccessOnRequest);
+  fastify.addHook('onRequest', bindSpecialLinkOnRequest);
+
+  fastify.get<{ Params: { token: string }; Reply: unknown | ApiErrorResponse }>(
+    '/registration/special-links/:token',
+    {
+      schema: {
+        tags: ['registration'],
+        params: {
+          type: 'object',
+          properties: { token: { type: 'string' } },
+          required: ['token'],
+        },
+        response: { 200: registrationSpecialLinkPublicResponseSchema, 400: apiErrorResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      try {
+        return await getPublicSpecialLinkStatus(request.params.token);
+      } catch (error) {
+        return handleRegistrationError(reply, error);
+      }
+    },
+  );
 
   fastify.get<{ Reply: unknown | ApiErrorResponse }>(
     '/registration/early-access/status',
@@ -610,6 +642,7 @@ export async function publicRegistrationShellRoutes(fastify: FastifyInstance) {
 
 export async function protectedRegistrationShellRoutes(fastify: FastifyInstance) {
   fastify.addHook('onRequest', bindEarlyAccessOnRequest);
+  fastify.addHook('onRequest', bindSpecialLinkOnRequest);
 
   fastify.get('/registration/drafts/me', {
     schema: {

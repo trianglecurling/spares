@@ -10,6 +10,7 @@ import { migrateEventCalendarTypesToMultiSelectSqlite } from './eventCalendarTyp
 import { migrateEventTransferGroupsSqlite } from './eventTransferGroupsMigration.js';
 import { restoreFalselyCancelledEmptyPriorityRegistrations } from './registrationPriorityInvalidationMigration.js';
 import { repairStoredPersonNameEncoding } from './memberNameEncodingMigration.js';
+import { relinkCanceledRegistrationPayments } from './relinkCanceledRegistrationPayments.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const drizzleDir = path.join(__dirname, '../../drizzle');
@@ -252,6 +253,7 @@ export async function runDrizzleMigrations(config: DatabaseConfig): Promise<void
     await ensureSqliteVolunteerProgramSlugColumn();
     await spawnDrizzleKit(['push', '--force']);
     await restoreFalselyCancelledEmptyPriorityRegistrations('sqlite');
+    await relinkCanceledRegistrationPayments('sqlite');
     await repairStoredPersonNameEncoding();
     return;
   }
@@ -260,5 +262,6 @@ export async function runDrizzleMigrations(config: DatabaseConfig): Promise<void
   await applyPendingPostgresMigrations();
   console.log('Running post-migration data checks...');
   await restoreFalselyCancelledEmptyPriorityRegistrations('postgres');
+  await relinkCanceledRegistrationPayments('postgres');
   await repairStoredPersonNameEncoding();
 }

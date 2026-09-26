@@ -3411,6 +3411,69 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/registration/special-links/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    token: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            valid: boolean;
+                            /** @enum {string} */
+                            reason?: "used" | "invalidated" | "not_found";
+                            email?: string;
+                            allowLeagueRegistration?: boolean;
+                            allowedLeagueIds?: number[] | null;
+                            requiresLogin?: boolean;
+                            seasonId?: number;
+                            sessionId?: number;
+                            seasonName?: string;
+                            sessionName?: string;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/registration/early-access/status": {
         parameters: {
             query?: never;
@@ -4577,6 +4640,9 @@ export interface paths {
                             emergencyContactPhone: null | string;
                             preferredPronouns: null | string;
                             usaCurlingCompetitionGender: null | string;
+                            usaCurlingMembershipOptIn: null | boolean;
+                            uswcaMembershipOptIn: null | boolean;
+                            usaCurlingMembershipNumber: null | string;
                             guardianFirstName: null | string;
                             guardianLastName: null | string;
                             guardianEmail: null | string;
@@ -4622,6 +4688,8 @@ export interface paths {
                         preferredPronouns?: string;
                         /** @enum {string} */
                         usaCurlingCompetitionGender?: "Male" | "Female" | "Unspecified";
+                        usaCurlingMembershipOptIn?: boolean;
+                        uswcaMembershipOptIn?: boolean;
                         guardianFirstName?: string;
                         guardianLastName?: string;
                         guardianEmail?: string;
@@ -4654,6 +4722,9 @@ export interface paths {
                             emergencyContactPhone: null | string;
                             preferredPronouns: null | string;
                             usaCurlingCompetitionGender: null | string;
+                            usaCurlingMembershipOptIn: null | boolean;
+                            uswcaMembershipOptIn: null | boolean;
+                            usaCurlingMembershipNumber: null | string;
                             guardianFirstName: null | string;
                             guardianLastName: null | string;
                             guardianEmail: null | string;
@@ -5442,6 +5513,111 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/members/org-rosters": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            generatedOn: string;
+                            currentMemberCount: number;
+                            usaCurlingCount: number;
+                            uswcaCount: number;
+                            missingUsaCurlingNumberCount: number;
+                            lastConfirmationEmailsQueuedAt: null | string;
+                            lastConfirmationEmailsQueuedCount: null | number;
+                            lastConfirmationEmailsSkippedNoEmail: null | number;
+                            lastConfirmationEmailsConfirmByDate: null | string;
+                            members: {
+                                id: number;
+                                name: string;
+                                firstName: string;
+                                lastName: string;
+                                email: null | string;
+                                usaCurlingOptIn: boolean;
+                                uswcaOptIn: boolean;
+                                usaCurlingMembershipNumber: null | string;
+                                /** @enum {string} */
+                                usaCurlingMembershipType: "Basic" | "Youth";
+                                usaCurlingFromAnotherClub: boolean;
+                                missingUsaCurlingNumber: boolean;
+                            }[];
+                            usaCurlingTsv: string;
+                            uswcaTsv: string;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/members/org-rosters/confirmation-emails": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        confirmByDate: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            queued: number;
+                            skippedNoEmail: number;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/members/{id}/profile": {
         parameters: {
             query?: never;
@@ -5479,6 +5655,9 @@ export interface paths {
                             emergencyContactPhone: null | string;
                             preferredPronouns: null | string;
                             usaCurlingCompetitionGender: null | string;
+                            usaCurlingMembershipOptIn: null | boolean;
+                            uswcaMembershipOptIn: null | boolean;
+                            usaCurlingMembershipNumber: null | string;
                             guardianFirstName: null | string;
                             guardianLastName: null | string;
                             guardianEmail: null | string;
@@ -5565,6 +5744,9 @@ export interface paths {
                         preferredPronouns?: string;
                         /** @enum {string} */
                         usaCurlingCompetitionGender?: "Male" | "Female" | "Unspecified";
+                        usaCurlingMembershipOptIn?: boolean;
+                        uswcaMembershipOptIn?: boolean;
+                        usaCurlingMembershipNumber?: string | null;
                         lifetimeMember?: boolean;
                         isAdmin?: boolean;
                         isServerAdmin?: boolean;
@@ -5849,6 +6031,128 @@ export interface paths {
                         "application/json": {
                             success: boolean;
                             sent: number;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/members/me/contact-settings-nudge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            visible: boolean;
+                            emailVisible: boolean;
+                            phoneVisible: boolean;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/members/me/contact-settings-nudge/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        emailVisible: boolean;
+                        phoneVisible: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            success: boolean;
+                            emailVisible: boolean;
+                            phoneVisible: boolean;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/members/me/contact-settings-nudge/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            success: boolean;
                         };
                     };
                 };
@@ -9019,6 +9323,10 @@ export interface paths {
                             headToHeadFirst: boolean;
                             resultLabels: null | string[];
                             collectByeRequests: boolean;
+                            pointsPossiblePerGame: null | number;
+                            /** @enum {string} */
+                            rankBy: "total" | "percentage";
+                            maxAssignedPrimaryPoints: number;
                         };
                     };
                 };
@@ -9039,6 +9347,9 @@ export interface paths {
                         headToHeadFirst?: boolean;
                         resultLabels?: string[] | null;
                         collectByeRequests?: boolean;
+                        pointsPossiblePerGame?: number | null;
+                        /** @enum {string} */
+                        rankBy?: "total" | "percentage";
                     };
                 };
             };
@@ -9054,6 +9365,10 @@ export interface paths {
                             headToHeadFirst: boolean;
                             resultLabels: null | string[];
                             collectByeRequests: boolean;
+                            pointsPossiblePerGame: null | number;
+                            /** @enum {string} */
+                            rankBy: "total" | "percentage";
+                            maxAssignedPrimaryPoints: number;
                         };
                     };
                 };
@@ -9311,6 +9626,9 @@ export interface paths {
                             divisionName: string;
                             headToHeadFirst: boolean;
                             resultLabels: null | string[];
+                            pointsPossiblePerGame: null | number;
+                            /** @enum {string} */
+                            rankBy: "total" | "percentage";
                             rows: {
                                 rank: number;
                                 teamId: number;
@@ -9319,6 +9637,13 @@ export interface paths {
                                 divisionName: string;
                                 tiebreakerValues: number[];
                                 gamesPlayed: number;
+                                wins: number;
+                                losses: number;
+                                ties: number;
+                                /** @enum {null|string} */
+                                h2hResult: "win" | "loss" | null;
+                                h2hOpponentName: null | string;
+                                h2hPairIndex: null | number;
                             }[];
                         }[];
                     };
@@ -19582,6 +19907,143 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/registration/staff/special-links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query: {
+                    sessionId: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            links: {
+                                id: number;
+                                token: string;
+                                label: null | string;
+                                email: string;
+                                allowLeagueRegistration: boolean;
+                                allowedLeagueIds: number[] | null;
+                                used: boolean;
+                                invalidated: boolean;
+                                usedByRegistrationId: null | number;
+                                createdAt: string;
+                                usedAt: null | string;
+                                registrationUrl: string;
+                            }[];
+                            leagues: {
+                                id: number;
+                                name: string;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        sessionId: number;
+                        email: string;
+                        label?: string | null;
+                        allowLeagueRegistration: boolean;
+                        allowedLeagueIds?: number[] | null;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: number;
+                            token: string;
+                            label: null | string;
+                            email: string;
+                            allowLeagueRegistration: boolean;
+                            allowedLeagueIds: number[] | null;
+                            used: boolean;
+                            invalidated: boolean;
+                            usedByRegistrationId: null | number;
+                            createdAt: string;
+                            usedAt: null | string;
+                            registrationUrl: string;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/registration/staff/special-links/{linkId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    linkId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            success: boolean;
+                        };
+                    };
+                };
+            };
+        };
         options?: never;
         head?: never;
         patch?: never;

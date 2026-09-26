@@ -400,6 +400,17 @@ export async function putRegistrationLeaguePriorities(
     }
   }
 
+  const { assertSpecialLinkLeagues, resolveSpecialLinkConstraints } = await import('./registrationSpecialLinks.js');
+  const specialLinkConstraints = await resolveSpecialLinkConstraints({
+    specialLinkId: registration.special_link_id,
+    seasonId: registration.season_id,
+    sessionId: registration.session_id,
+  });
+  assertSpecialLinkLeagues(
+    specialLinkConstraints,
+    priorities.map((priority) => priority.leagueId),
+  );
+
   const details = validationDetails(context);
   if (Object.keys(details).length > 0) {
     throw new RegistrationLeagueSelectionValidationError(details);

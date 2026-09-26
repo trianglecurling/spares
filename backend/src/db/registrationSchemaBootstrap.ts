@@ -439,6 +439,24 @@ const memberDemographicColumnsSQLite: { name: string; ddl: string }[] = [
   { name: 'guardian_phone', ddl: 'guardian_phone TEXT' },
 ];
 
+const memberParentOrgColumnsSQLite: { name: string; ddl: string; pgType: string }[] = [
+  {
+    name: 'usa_curling_membership_opt_in',
+    ddl: 'usa_curling_membership_opt_in INTEGER CHECK(usa_curling_membership_opt_in IN (0, 1))',
+    pgType: 'INTEGER',
+  },
+  {
+    name: 'uswca_membership_opt_in',
+    ddl: 'uswca_membership_opt_in INTEGER CHECK(uswca_membership_opt_in IN (0, 1))',
+    pgType: 'INTEGER',
+  },
+  {
+    name: 'usa_curling_membership_number',
+    ddl: 'usa_curling_membership_number TEXT',
+    pgType: 'TEXT',
+  },
+];
+
 function curlingRegistrationDDLForDialect(isPostgres: boolean): string {
   const merged = curlingRegistrationDDLBase + curlingRegistrationExtendedDDL;
   if (!isPostgres) return merged;
@@ -570,6 +588,21 @@ INSERT INTO registration_league_processing_settings (scope, enabled)
 VALUES ('singleton', 0)
 ON CONFLICT (scope) DO NOTHING`));
     await db.execute(sql.raw(`
+CREATE TABLE IF NOT EXISTS parent_org_confirmation_email_state (
+  scope TEXT PRIMARY KEY NOT NULL DEFAULT 'singleton',
+  last_queued_at TIMESTAMP,
+  last_queued_count INTEGER NOT NULL DEFAULT 0,
+  last_skipped_no_email INTEGER NOT NULL DEFAULT 0,
+  last_confirm_by_date TEXT,
+  last_actor_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+)`));
+    await db.execute(sql.raw(`
+INSERT INTO parent_org_confirmation_email_state (scope)
+VALUES ('singleton')
+ON CONFLICT (scope) DO NOTHING`));
+    await db.execute(sql.raw(`
 CREATE TABLE IF NOT EXISTS registration_payment_deadlines (
   id INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   season_id INTEGER NOT NULL REFERENCES curling_seasons(id) ON DELETE CASCADE,
@@ -647,6 +680,20 @@ CREATE TABLE IF NOT EXISTS registration_league_processing_settings (
 INSERT OR IGNORE INTO registration_league_processing_settings (scope, enabled)
 VALUES ('singleton', 0)`));
   await db.execute(sql.raw(`
+CREATE TABLE IF NOT EXISTS parent_org_confirmation_email_state (
+  scope TEXT PRIMARY KEY NOT NULL DEFAULT 'singleton',
+  last_queued_at DATETIME,
+  last_queued_count INTEGER NOT NULL DEFAULT 0,
+  last_skipped_no_email INTEGER NOT NULL DEFAULT 0,
+  last_confirm_by_date TEXT,
+  last_actor_member_id INTEGER REFERENCES members(id) ON DELETE SET NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)`));
+  await db.execute(sql.raw(`
+INSERT OR IGNORE INTO parent_org_confirmation_email_state (scope)
+VALUES ('singleton')`));
+  await db.execute(sql.raw(`
 CREATE TABLE IF NOT EXISTS registration_payment_deadlines (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   season_id INTEGER NOT NULL REFERENCES curling_seasons(id) ON DELETE CASCADE,
@@ -710,11 +757,47 @@ function ensureMemberExperienceBaselineColumnsSync(
   }
 }
 
+async function ensureMemberParentOrgColumns(
+  db: DatabaseAdapter,
+  execSQL: (d: DatabaseAdapter, s: string) => Promise<void>
+): Promise<void> {
+  if (db.isAsync()) {
+    for (const col of memberParentOrgColumnsSQLite) {
+      await execSQL(db, `ALTER TABLE members ADD COLUMN IF NOT EXISTS ${col.name} ${col.pgType}`);
+    }
+    return;
+  }
+
+  const stmt = db.prepare<{ name?: string | null }>(`PRAGMA table_info(members)`);
+  const rows = await allMaybe(stmt.all());
+  const names = new Set(rows.map((c) => String(c.name)));
+  for (const col of memberParentOrgColumnsSQLite) {
+    if (!names.has(col.name)) {
+      await execSQL(db, `ALTER TABLE members ADD COLUMN ${col.ddl}`);
+    }
+  }
+}
+
+function ensureMemberParentOrgColumnsSync(
+  db: DatabaseAdapter,
+  execSQLSync: (d: DatabaseAdapter, s: string) => void
+): void {
+  const stmt = db.prepare<{ name?: string | null }>(`PRAGMA table_info(members)`);
+  const rows = stmt.all() as { name?: string | null }[];
+  const names = new Set(rows.map((c) => String(c.name)));
+  for (const col of memberParentOrgColumnsSQLite) {
+    if (!names.has(col.name)) {
+      execSQLSync(db, `ALTER TABLE members ADD COLUMN ${col.ddl}`);
+    }
+  }
+}
+
 async function ensureMemberDemographicColumns(
   db: DatabaseAdapter,
   execSQL: (d: DatabaseAdapter, s: string) => Promise<void>
 ): Promise<void> {
   await ensureMemberExperienceBaselineColumns(db, execSQL);
+  await ensureMemberParentOrgColumns(db, execSQL);
   if (db.isAsync()) {
     for (const col of memberDemographicColumnsSQLite) {
       const pgType = col.name === 'date_of_birth' ? 'DATE' : 'TEXT';
@@ -738,6 +821,7 @@ function ensureMemberDemographicColumnsSync(
   execSQLSync: (d: DatabaseAdapter, s: string) => void
 ): void {
   ensureMemberExperienceBaselineColumnsSync(db, execSQLSync);
+  ensureMemberParentOrgColumnsSync(db, execSQLSync);
   const stmt = db.prepare<{ name?: string | null }>(`PRAGMA table_info(members)`);
   const rows = stmt.all() as { name?: string | null }[];
   const names = new Set(rows.map((c) => String(c.name)));

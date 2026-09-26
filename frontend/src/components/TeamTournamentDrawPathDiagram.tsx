@@ -41,6 +41,9 @@ import {
 import { formatTeamDisplayName } from '../utils/tournamentDisplay';
 import { resolveSheetStoneColorHex } from '../utils/sheetStoneColors';
 import type { PublicTournamentDrawTeamRef } from './PublicTournamentDrawBracket';
+import PublicTeamRosterDialog from './PublicTeamRosterDialog';
+import type { TournamentFormat } from '../utils/tournamentDisplay';
+import { BracketCompetitorName, BracketRoutingLabel } from './TournamentDrawBracketScene';
 
 type Props = {
   draw: TournamentDrawState;
@@ -54,6 +57,7 @@ type Props = {
   onExportPdfReady?: (exportPdf: (() => Promise<void>) | null) => void;
   title?: string;
   filenameBase?: string;
+  tournamentFormat?: TournamentFormat;
 };
 
 const BRACKET_TOOLBAR_BUTTON_CLASS =
@@ -305,6 +309,10 @@ function TeamPathGameCard({
   teamId,
   muted,
   print,
+  highlighted,
+  sourceNodeId,
+  onJumpToGame,
+  onOpenTeam,
 }: {
   draw: TournamentDrawState;
   g: TournamentGameNode;
@@ -312,6 +320,10 @@ function TeamPathGameCard({
   teamId: number;
   muted: boolean;
   print?: boolean;
+  highlighted?: boolean;
+  sourceNodeId?: string;
+  onJumpToGame?: (gameId: string) => void;
+  onOpenTeam?: (registrationId: number) => void;
 }) {
   const routingLines = print ? [] : placeRoutingLinesOnCard(draw, g);
   const competitorSegments = print
@@ -342,7 +354,9 @@ function TeamPathGameCard({
       className={
         print
           ? 'text-left rounded-md border p-1.5 border-gray-300 bg-white h-full w-full box-border'
-          : 'text-left rounded-lg border shadow-sm p-2 border-gray-200 dark:border-gray-600 bg-white/90 dark:bg-gray-800/90 h-full w-full box-border'
+          : highlighted
+            ? 'text-left rounded-lg border shadow-sm p-2 border-primary-teal ring-2 ring-primary-teal/50 bg-white/90 dark:bg-gray-800/90 h-full w-full box-border'
+            : 'text-left rounded-lg border shadow-sm p-2 border-gray-200 dark:border-gray-600 bg-white/90 dark:bg-gray-800/90 h-full w-full box-border'
       }
       style={{
         opacity: muted ? 0.42 : undefined,
@@ -370,7 +384,9 @@ function TeamPathGameCard({
                     {' v. '}
                   </span>
                 ) : null}
-                <span
+                <BracketCompetitorName
+                  registrationId={seg.registrationId}
+                  onOpenTeam={onOpenTeam}
                   style={!isWinner && !isLoser && seg.color ? { color: seg.color } : undefined}
                   className={
                     isWinner
@@ -390,7 +406,7 @@ function TeamPathGameCard({
                     />
                   ) : null}
                   {seg.text}
-                </span>
+                </BracketCompetitorName>
               </Fragment>
             );
           })}
@@ -419,12 +435,11 @@ function TeamPathGameCard({
         <div className="text-[10px] font-medium tabular-nums mt-1 pt-0.5 border-t border-gray-100 dark:border-gray-700/80 space-y-0.5">
           {routingLines.map((line) => (
             <div key={line.key}>
-              <span
-                style={line.color ? { color: line.color } : undefined}
-                className={line.color ? undefined : 'text-slate-500 dark:text-slate-400'}
-              >
-                {line.text}
-              </span>
+              <BracketRoutingLabel
+                line={line}
+                sourceNodeId={sourceNodeId}
+                onJumpToGame={onJumpToGame}
+              />
             </div>
           ))}
         </div>
@@ -485,6 +500,9 @@ function TeamPathDiagramScene({
   cardW,
   cardH,
   print,
+  highlightedNodeId,
+  onJumpToGame,
+  onOpenTeam,
 }: {
   filteredDraw: TournamentDrawState;
   labelingDraw: TournamentDrawState;
@@ -503,6 +521,9 @@ function TeamPathDiagramScene({
   cardW: number;
   cardH: number;
   print?: boolean;
+  highlightedNodeId?: string | null;
+  onJumpToGame?: (fromNodeId: string, gameId: string) => void;
+  onOpenTeam?: (registrationId: number) => void;
 }) {
   return (
     <div style={{ position: 'relative', width, height, background: print ? '#ffffff' : undefined }}>
@@ -568,7 +589,9 @@ function TeamPathDiagramScene({
         return (
           <div
             key={node.id}
-            className="absolute z-[1]"
+            className={
+            !print && node.id === highlightedNodeId ? 'absolute z-[3]' : 'absolute z-[1]'
+          }
             style={{ left: box.x, top: box.y, width: cardW, height: cardH }}
           >
             {g ? (
@@ -579,6 +602,14 @@ function TeamPathDiagramScene({
                 teamId={teamId}
                 muted={!viableTreeNodeIds.has(node.id)}
                 print={print}
+                highlighted={!print && node.id === highlightedNodeId}
+                sourceNodeId={print ? undefined : node.id}
+                onJumpToGame={
+                  print || !onJumpToGame
+                    ? undefined
+                    : (gameId) => onJumpToGame(node.id, gameId)
+                }
+                onOpenTeam={print ? undefined : onOpenTeam}
               />
             ) : (
               <TeamPathSinkCard
@@ -607,6 +638,7 @@ export default function TeamTournamentDrawPathDiagram({
   onExportPdfReady,
   title,
   filenameBase,
+  tournamentFormat = 'fours',
 }: Props) {
   const { showAlert } = useAlert();
   const printSceneRef = useRef<HTMLDivElement>(null);
@@ -686,11 +718,26 @@ export default function TeamTournamentDrawPathDiagram({
     };
   }, [normalized, teamId, teamsById]);
 
+  const [highlightedNodeId, setHighlightedNodeId] = useState<string | null>(null);
+  const [openTeamId, setOpenTeamId] = useState<number | null>(null);
+  const jumpToGameRef = useRef<(gameId: string, sourceNodeId: string | null) => void>(() => {});
   const bracketView = useBracketCanvasView({
     enabled: pathModel.kind === 'ok',
     attachToken: pathModel.kind === 'ok' ? pathModel.width : 0,
+    onCanvasBackgroundTap: () => setHighlightedNodeId(null),
+    onBracketShortPress: () => {},
+    onBracketJump: (gameId, sourceNodeId) => jumpToGameRef.current(gameId, sourceNodeId),
+    onBracketTeam: (registrationId) => setOpenTeamId(registrationId),
   });
   const { setBaselinePan, snapPanToBaseline, resetView } = bracketView;
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setHighlightedNodeId(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
   const didSnapInitialPan = useRef(false);
 
   const exportingRef = useRef(false);
@@ -799,6 +846,17 @@ export default function TeamTournamentDrawPathDiagram({
     printEdgeList,
   } = pathModel;
 
+  jumpToGameRef.current = (gameId, sourceNodeId) => {
+    const child = sourceNodeId
+      ? [...treeNodes.values()].find((n) => n.parentId === sourceNodeId && n.gameId === gameId)
+      : undefined;
+    const target = child ?? [...treeNodes.values()].find((n) => n.gameId === gameId);
+    const box = target ? positions[target.id] : undefined;
+    if (!target || !box) return;
+    bracketView.panToContentPoint(box.x + box.w / 2, box.y);
+    setHighlightedNodeId(target.id);
+  };
+
   const fullPage = !!alignContentColumnRef;
   const sceneProps = {
     filteredDraw,
@@ -842,7 +900,7 @@ export default function TeamTournamentDrawPathDiagram({
         ref={bracketView.canvasShellRef}
         className={
           fullPage
-            ? 'relative flex-1 min-h-[650px] w-full select-none [&_*]:select-none overflow-hidden bg-white'
+            ? 'relative flex-1 min-h-[max(100dvh,1100px)] w-full select-none [&_*]:select-none overflow-hidden bg-white'
             : 'relative flex-1 min-h-[420px] w-full min-w-0 overflow-hidden rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 select-none [&_*]:select-none'
         }
       >
@@ -853,6 +911,7 @@ export default function TeamTournamentDrawPathDiagram({
           onPointerDown={bracketView.beginCanvasPan}
         >
           <div
+            ref={bracketView.canvasContentRef}
             style={{
               transform: `translate(${bracketView.displayPan.x}px, ${bracketView.displayPan.y}px) scale(${bracketView.zoom})`,
               transformOrigin: '0 0',
@@ -873,10 +932,19 @@ export default function TeamTournamentDrawPathDiagram({
               hGap={H_GAP}
               cardW={CARD_W}
               cardH={CARD_H}
+              highlightedNodeId={highlightedNodeId}
+              onJumpToGame={(fromNodeId, gameId) => jumpToGameRef.current(gameId, fromNodeId)}
+              onOpenTeam={setOpenTeamId}
             />
           </div>
         </div>
       </div>
+      <PublicTeamRosterDialog
+        teamId={openTeamId}
+        teamsById={teamsById}
+        format={tournamentFormat}
+        onClose={() => setOpenTeamId(null)}
+      />
       <div
         aria-hidden
         style={{

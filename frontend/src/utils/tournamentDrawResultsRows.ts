@@ -183,11 +183,6 @@ export function countGamesWithResults(draw: TournamentDrawState): number {
   return n;
 }
 
-/** True when any game has a stored result (including in-progress end-by-end scores). */
-export function drawHasScoreActivity(draw: TournamentDrawState): boolean {
-  return countGamesWithResults(draw) > 0;
-}
-
 export function gameHasRecordedResult(game: TournamentGameNode): boolean {
   if (game.result == null) return false;
   // In-progress end-by-end scores are saved but the game is not finished yet.

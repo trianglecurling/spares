@@ -26,6 +26,7 @@ import MemberEmail from '../components/MemberEmail';
 import AppStateCard from '../components/AppStateCard';
 import DashboardRegistrationStatus from '../components/DashboardRegistrationStatus';
 import DashboardAvailabilityReminder from '../components/DashboardAvailabilityReminder';
+import DashboardContactSettingsNudge from '../components/DashboardContactSettingsNudge';
 import DashboardMembershipCard from '../components/DashboardMembershipCard';
 import { useAlert } from '../contexts/AlertContext';
 import { useConfirm } from '../contexts/ConfirmContext';
@@ -1574,13 +1575,19 @@ export default function Dashboard() {
         />
 
         <div className="space-y-8">
-          {!hasAlertSection ? <DashboardAvailabilityReminder /> : null}
+          {!hasAlertSection ? (
+            <>
+              <DashboardAvailabilityReminder />
+              <DashboardContactSettingsNudge />
+            </>
+          ) : null}
           {enabledSections.map((section) => {
             if (section.key === 'alert') {
               return (
                 <Fragment key={section.key}>
                   {renderAlertSection(section)}
                   <DashboardAvailabilityReminder />
+                  <DashboardContactSettingsNudge />
                 </Fragment>
               );
             }

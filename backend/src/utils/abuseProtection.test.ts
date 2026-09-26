@@ -56,6 +56,13 @@ describe('abuseProtection', () => {
     if (!second.ok) expect(second.reason).toContain('recipient_cooldown');
   });
 
+  test('public send budget does not cooldown a shared destination inbox', () => {
+    const first = consumeSendBudget({ kind: 'public', recipient: 'info@example.com', failOpen: false });
+    const second = consumeSendBudget({ kind: 'public', recipient: 'info@example.com', failOpen: false });
+    expect(first.ok).toBe(true);
+    expect(second.ok).toBe(true);
+  });
+
   test('sliding window returns 429 after max', () => {
     expect(consumeSlidingWindowLimit('k', 2, 60_000).ok).toBe(true);
     expect(consumeSlidingWindowLimit('k', 2, 60_000).ok).toBe(true);
@@ -67,7 +74,8 @@ describe('abuseProtection', () => {
     expect(abuseRouteRateLimits.authVerify.max).toBe(10);
     expect(abuseRouteRateLimits.authToken.max).toBe(10);
     expect(abuseRouteRateLimits.authToken.timeWindow).toBe('15 minutes');
-    expect(abuseRouteRateLimits.contact.max).toBe(5);
+    expect(abuseRouteRateLimits.contact.max).toBe(30);
+    expect(abuseRouteRateLimits.contact.timeWindow).toBe('15 minutes');
     expect(abuseRouteRateLimits.mailingList.max).toBe(5);
     expect(abuseRouteRateLimits.feedback.max).toBe(5);
     expect(abuseRouteRateLimits.eventRegister.max).toBe(10);

@@ -75,13 +75,17 @@ type SendBudgetOptions = {
   failOpen?: boolean;
 };
 
-const SEND_HOURLY_CAP = 200;
+/** Allows a full-member blast (400+) plus normal OTP/contact traffic in the same hour. */
+const SEND_HOURLY_CAP = 600;
 const SEND_DAILY_CAP = 2000;
 
 const COOLDOWN_MS: Record<SendBudgetKind, number> = {
   otp: 60_000,
   contact_confirm: 5 * 60_000,
-  public: 30_000,
+  // Contact-form mail goes to a shared club inbox. A per-destination cooldown
+  // would lock every visitor after one successful send (including bots).
+  // Per-sender and per-IP limits on the contact route cover abuse instead.
+  public: 0,
   staff: 0,
 };
 

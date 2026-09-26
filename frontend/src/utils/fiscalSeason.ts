@@ -84,3 +84,18 @@ export function getEarliestStartMs(
     }),
   );
 }
+
+const LIVE_SCORES_OPEN_LEAD_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Live scores are available from 24 hours before the earliest event start, and stay available after that.
+ * Events with no usable start time stay closed.
+ */
+export function isLiveScoresWindowOpen(
+  timespans: Array<{ start_dt: string; end_dt: string }> | undefined,
+  nowMs: number,
+): boolean {
+  const startMs = getEarliestStartMs(timespans);
+  if (!Number.isFinite(startMs)) return false;
+  return nowMs >= startMs - LIVE_SCORES_OPEN_LEAD_MS;
+}

@@ -131,6 +131,7 @@ type DemographicScalarFieldRowProps = {
   initialValue: string;
   type: string;
   disabled: boolean;
+  helperText?: string;
   className?: string;
   max?: string;
   onFieldChange: (field: DemographicScalarField, value: string) => void;
@@ -144,6 +145,7 @@ const DemographicScalarFieldRow = memo(function DemographicScalarFieldRow({
   initialValue,
   type,
   disabled,
+  helperText,
   className,
   max,
   onFieldChange,
@@ -153,7 +155,16 @@ const DemographicScalarFieldRow = memo(function DemographicScalarFieldRow({
   const dobError = field === 'dateOfBirth' ? dateOfBirthValidationMessage(displayedValue) : null;
 
   return (
-    <FormField label={label} htmlFor={fieldId} required tone="public" className={className} error={dobError}>
+    <FormField
+      label={label}
+      htmlFor={fieldId}
+      required
+      tone="public"
+      className={className}
+      error={dobError}
+      helperText={helperText}
+      state={disabled ? 'disabled' : 'default'}
+    >
       {({ describedBy, invalid }) => (
         <input
           id={fieldId}
@@ -219,6 +230,7 @@ export type RegistrationDemographicFieldsProps = {
   idPrefix?: string;
   lockCurlerEmailToSubmitter?: boolean;
   submitterEmailForCurler?: string;
+  lockedEmail?: string;
   onSubmitterEmailMatch?: () => void;
   /** Curler date of birth already stored on the member record. When empty, the form collects an initial value. */
   curlerDateOfBirth?: string | null;
@@ -235,6 +247,7 @@ const RegistrationDemographicFields = forwardRef<
     idPrefix = 'registration',
     lockCurlerEmailToSubmitter = false,
     submitterEmailForCurler = '',
+    lockedEmail = '',
     onSubmitterEmailMatch,
     curlerDateOfBirth = null,
     onCommit,
@@ -246,13 +259,13 @@ const RegistrationDemographicFields = forwardRef<
   const onSubmitterEmailMatchRef = useRef(onSubmitterEmailMatch);
   const onCommitRef = useRef(onCommit);
   const idPrefixRef = useRef(idPrefix);
-  const lockEmailRef = useRef(lockCurlerEmailToSubmitter);
-  const submitterEmailRef = useRef(submitterEmailForCurler);
+  const lockEmailRef = useRef(lockCurlerEmailToSubmitter || Boolean(lockedEmail));
+  const submitterEmailRef = useRef(lockedEmail || submitterEmailForCurler);
   onSubmitterEmailMatchRef.current = onSubmitterEmailMatch;
   onCommitRef.current = onCommit;
   idPrefixRef.current = idPrefix;
-  lockEmailRef.current = lockCurlerEmailToSubmitter;
-  submitterEmailRef.current = submitterEmailForCurler;
+  lockEmailRef.current = lockCurlerEmailToSubmitter || Boolean(lockedEmail);
+  submitterEmailRef.current = lockedEmail || submitterEmailForCurler;
 
   const [formDateOfBirth, setFormDateOfBirth] = useState(initialValue.dateOfBirth);
   const [preferredPronouns, setPreferredPronouns] = useState(initialValue.preferredPronouns);
@@ -271,9 +284,10 @@ const RegistrationDemographicFields = forwardRef<
   }, []);
 
   useEffect(() => {
-    if (!lockCurlerEmailToSubmitter || !submitterEmailForCurler) return;
-    draftRef.current = { ...draftRef.current, email: submitterEmailForCurler };
-  }, [lockCurlerEmailToSubmitter, submitterEmailForCurler]);
+    const lockedValue = lockedEmail || (lockCurlerEmailToSubmitter ? submitterEmailForCurler : '');
+    if (!lockedValue) return;
+    draftRef.current = { ...draftRef.current, email: lockedValue };
+  }, [lockCurlerEmailToSubmitter, lockedEmail, submitterEmailForCurler]);
 
   useImperativeHandle(
     ref,
@@ -333,7 +347,8 @@ const RegistrationDemographicFields = forwardRef<
     autoComplete: string,
     className: string,
   ) => {
-    const emailLocked = field === 'email' && lockCurlerEmailToSubmitter;
+    const emailLocked = field === 'email' && (lockCurlerEmailToSubmitter || Boolean(lockedEmail));
+    const lockedValue = lockedEmail || submitterEmailForCurler;
     return (
       <DemographicScalarFieldRow
         key={field}
@@ -341,9 +356,14 @@ const RegistrationDemographicFields = forwardRef<
         label={label}
         autoComplete={autoComplete}
         fieldId={`${idPrefix}-${field}`}
-        initialValue={emailLocked ? submitterEmailForCurler : initialValue[field]}
+        initialValue={emailLocked ? lockedValue : initialValue[field]}
         type={field === 'dateOfBirth' ? 'date' : field === 'email' ? 'email' : 'text'}
         disabled={emailLocked}
+        helperText={
+          field === 'email' && lockedEmail
+            ? 'This invite is locked to this email address.'
+            : undefined
+        }
         className={className}
         max={field === 'dateOfBirth' ? localDateOnly() : undefined}
         onFieldChange={handleScalarFieldChange}

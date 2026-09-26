@@ -3,6 +3,10 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 /** Below this distance (px) from pointer down to up, a tap (not a pan) — background clear or bracket card select. */
 export const BRACKET_CANVAS_TAP_MOVE_THRESHOLD_PX = 8;
 
+const BRACKET_JUMP_PAN_MS = 500;
+/** Gap between the top of the canvas and a game jumped to from a routing label. */
+const BRACKET_JUMP_TOP_MARGIN_PX = 32;
+
 export const BRACKET_CANVAS_MIN_ZOOM = 0.25;
 export const BRACKET_CANVAS_MAX_ZOOM = 4;
 
@@ -20,6 +24,10 @@ export type UseBracketCanvasViewOptions = {
   onCanvasBackgroundTap?: () => void;
   /** Admin: short press on a game card, virtual feeder, or text note (after pan layer captures the pointer). */
   onBracketShortPress?: (hit: BracketShortPressHit) => void;
+  /** Short press on a win/loss (or place) label that names another game. */
+  onBracketJump?: (gameId: string, sourceNodeId: string | null) => void;
+  /** Short press on a team name on a game card. */
+  onBracketTeam?: (registrationId: number) => void;
   /**
    * When this value changes, wheel listeners are rebound (e.g. `layout.width` once the canvas shell mounts).
    * Fixes missed attachment when `enabled` was already true before the ref node existed.
@@ -59,7 +67,11 @@ export function bracketPanForContentPoint(args: {
   };
 }
 
-export function bracketPinchZoomFromDistance(
+export function bracketLayerTransform(x: number, y: number, zoom: number): string {
+  return `translate(${x}px, ${y}px) scale(${zoom})`;
+}
+
+function bracketPinchZoomFromDistance(
   startZoom: number,
   startDist: number,
   currentDist: number,
@@ -98,9 +110,12 @@ export function useBracketCanvasView({
   enabled,
   onCanvasBackgroundTap,
   onBracketShortPress,
+  onBracketJump,
+  onBracketTeam,
   attachToken,
 }: UseBracketCanvasViewOptions) {
   const canvasShellRef = useRef<HTMLDivElement | null>(null);
+  const canvasContentRef = useRef<HTMLDivElement | null>(null);
   const shortPressOriginRef = useRef<Element | null>(null);
   const [zoom, setZoom] = useState(1);
   const zoomRef = useRef(1);
@@ -122,6 +137,33 @@ export function useBracketCanvasView({
   const pinchRef = useRef<PinchSession | null>(null);
   const didPinchRef = useRef(false);
   const finishSessionRef = useRef<(allowShortPress: boolean) => void>(() => {});
+  const panAnimRef = useRef<Animation | null>(null);
+
+  const readVisualPan = useCallback((): BracketCanvasPoint => {
+    const el = canvasContentRef.current;
+    if (!el) return committedPanRef.current;
+    const transform = getComputedStyle(el).transform;
+    if (!transform || transform === 'none') return committedPanRef.current;
+    const matrix = new DOMMatrix(transform);
+    return { x: matrix.e, y: matrix.f };
+  }, []);
+
+  const cancelPanAnimation = useCallback(() => {
+    const playback = panAnimRef.current;
+    if (!playback) return;
+    const visual = readVisualPan();
+    try {
+      playback.commitStyles();
+    } catch {
+      /* commitStyles can fail if the animation is already idle */
+    }
+    playback.cancel();
+    panAnimRef.current = null;
+    committedPanRef.current = visual;
+    setCommittedPan(visual);
+    panLiveRef.current = null;
+    setPanLive(null);
+  }, [readVisualPan]);
 
   const startPinchFromPointsRef = useRef<(a: BracketCanvasPoint, b: BracketCanvasPoint) => void>(
     () => {},
@@ -133,6 +175,7 @@ export function useBracketCanvasView({
   startPinchFromPointsRef.current = (a, b) => {
     const shell = canvasShellRef.current;
     if (!shell) return;
+    cancelPanAnimation();
     didPinchRef.current = true;
     const pan = panLiveRef.current ?? committedPanRef.current;
     panDragRef.current = null;
@@ -205,15 +248,17 @@ export function useBracketCanvasView({
   }, []);
 
   const snapPanToBaseline = useCallback(() => {
+    cancelPanAnimation();
     commitPan();
     const b = baselinePanRef.current;
     committedPanRef.current = { x: b.x, y: b.y };
     setCommittedPan({ x: b.x, y: b.y });
     panLiveRef.current = null;
     setPanLive(null);
-  }, [commitPan]);
+  }, [cancelPanAnimation, commitPan]);
 
   const resetView = useCallback(() => {
+    cancelPanAnimation();
     commitPan();
     pinchRef.current = null;
     const b = baselinePanRef.current;
@@ -223,15 +268,78 @@ export function useBracketCanvasView({
     setZoom(1);
     setPanLive(null);
     panLiveRef.current = null;
-  }, [commitPan]);
+  }, [cancelPanAnimation, commitPan]);
+
+  /**
+   * Pan so a content point is horizontally centered and `contentY` sits just below the top of the canvas.
+   * Zoom stays unchanged. Pass the top of a game card as `contentY`.
+   */
+  const panToContentPoint = useCallback(
+    (contentX: number, contentY: number) => {
+      const shell = canvasShellRef.current;
+      if (!shell) return;
+      cancelPanAnimation();
+      commitPan();
+      const rect = shell.getBoundingClientRect();
+      const nextPan = bracketPanForContentPoint({
+        shellX: rect.width / 2,
+        shellY: BRACKET_JUMP_TOP_MARGIN_PX,
+        contentX,
+        contentY,
+        zoom: zoomRef.current,
+      });
+      const from = committedPanRef.current;
+      const zoom = zoomRef.current;
+      const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      const layer = canvasContentRef.current;
+      if (
+        !layer ||
+        reducedMotion ||
+        (Math.abs(from.x - nextPan.x) < 0.5 && Math.abs(from.y - nextPan.y) < 0.5)
+      ) {
+        committedPanRef.current = nextPan;
+        setCommittedPan(nextPan);
+        panLiveRef.current = null;
+        setPanLive(null);
+        return;
+      }
+
+      const playback = layer.animate(
+        [
+          { transform: bracketLayerTransform(from.x, from.y, zoom) },
+          { transform: bracketLayerTransform(nextPan.x, nextPan.y, zoom) },
+        ],
+        {
+          duration: BRACKET_JUMP_PAN_MS,
+          easing: 'ease-in-out',
+          fill: 'forwards',
+        }
+      );
+      panAnimRef.current = playback;
+      playback.onfinish = () => {
+        if (panAnimRef.current !== playback) return;
+        panAnimRef.current = null;
+        try {
+          playback.commitStyles();
+        } catch {
+          /* already committed or idle */
+        }
+        playback.cancel();
+        committedPanRef.current = nextPan;
+        setCommittedPan(nextPan);
+      };
+    },
+    [cancelPanAnimation, commitPan]
+  );
 
   useEffect(() => {
     return () => {
+      cancelPanAnimation();
       detachPanWindowListenersRef.current?.();
       detachPanWindowListenersRef.current = null;
       commitPan();
     };
-  }, [commitPan]);
+  }, [cancelPanAnimation, commitPan]);
 
   useLayoutEffect(() => {
     if (!enabled) return;
@@ -240,6 +348,7 @@ export function useBracketCanvasView({
 
     const onWheel = (e: WheelEvent) => {
       if (!el.contains(e.target as Node)) return;
+      cancelPanAnimation();
 
       const et = e.target;
       if (et instanceof Element) {
@@ -307,7 +416,7 @@ export function useBracketCanvasView({
 
     el.addEventListener('wheel', onWheel, { passive: false, capture: true });
     return () => el.removeEventListener('wheel', onWheel, { capture: true });
-  }, [enabled, attachToken]);
+  }, [cancelPanAnimation, enabled, attachToken]);
 
   useLayoutEffect(() => {
     if (!enabled) return;
@@ -381,6 +490,7 @@ export function useBracketCanvasView({
     (e: React.PointerEvent) => {
       if (e.defaultPrevented) return;
       if (e.pointerType === 'mouse' && e.button !== 0) return;
+      cancelPanAnimation();
 
       const sessionActive = detachPanWindowListenersRef.current != null;
       if (sessionActive) {
@@ -464,6 +574,25 @@ export function useBracketCanvasView({
         const origin = shortPressOriginRef.current;
         shortPressOriginRef.current = null;
         if (!allowShortPress) return;
+
+        if (origin instanceof Element && onBracketJump) {
+          const jump = origin.closest('[data-bracket-jump-target]');
+          const gameId = jump?.getAttribute('data-bracket-jump-target');
+          if (gameId) {
+            onBracketJump(gameId, jump?.getAttribute('data-bracket-jump-source') ?? null);
+            return;
+          }
+        }
+
+        if (origin instanceof Element && onBracketTeam) {
+          const teamEl = origin.closest('[data-bracket-team-id]');
+          const rawId = teamEl?.getAttribute('data-bracket-team-id');
+          const registrationId = rawId != null ? Number(rawId) : NaN;
+          if (Number.isInteger(registrationId)) {
+            onBracketTeam(registrationId);
+            return;
+          }
+        }
 
         if (origin instanceof Element && onBracketShortPress) {
           const gameCard = origin.closest('[data-draw-game-card]');
@@ -592,17 +721,19 @@ export function useBracketCanvasView({
       captureTarget.addEventListener('lostpointercapture', onLostCapture);
       detachPanWindowListenersRef.current = () => finishSession(false);
     },
-    [commitPan, onBracketShortPress, onCanvasBackgroundTap],
+    [cancelPanAnimation, commitPan, onBracketJump, onBracketShortPress, onBracketTeam, onCanvasBackgroundTap],
   );
 
   const displayPan = panLive ?? committedPan;
 
   return {
     canvasShellRef,
+    canvasContentRef,
     zoom,
     displayPan,
     beginCanvasPan,
     resetView,
+    panToContentPoint,
     setBaselinePan,
     snapPanToBaseline,
   };

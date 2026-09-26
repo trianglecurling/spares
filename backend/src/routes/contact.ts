@@ -9,12 +9,14 @@ import { abuseRouteRateLimits } from '../plugins/abuseRateLimits.js';
 import {
   consumeSlidingWindowLimit,
   honeypotTarpitMs,
+  isIpLimitBypassed,
   tarpitDelay,
 } from '../utils/abuseProtection.js';
 import { createCaptchaChallenge, verifyCaptchaAnswer } from '../utils/captcha.js';
 import { captchaResponseSchema } from '../api/schemas.js';
 
 const EMAIL_LIMIT_PER_HOUR = 3;
+const IP_LIMIT_PER_HOUR = 5;
 const EMAIL_LIMIT_WINDOW_MS = 60 * 60 * 1000;
 
 const contactRecipientSlugSchema = z.string().trim().min(1).max(64).regex(/^[a-z0-9-]+$/);
@@ -199,6 +201,13 @@ export async function contactRoutes(fastify: FastifyInstance) {
         return reply.code(400).send({ error: captchaResult.error });
       }
 
+      if (!isIpLimitBypassed(request.ip)) {
+        const ipKey = `contact-ip:${request.ip || 'unknown'}`;
+        if (!consumeSlidingWindowLimit(ipKey, IP_LIMIT_PER_HOUR, EMAIL_LIMIT_WINDOW_MS).ok) {
+          return reply.code(429).send({ error: 'Too many contact requests. Please try again later.' });
+        }
+      }
+
       const emailKey = `contact-email:${payload.email.toLowerCase().trim()}`;
       if (!consumeSlidingWindowLimit(emailKey, EMAIL_LIMIT_PER_HOUR, EMAIL_LIMIT_WINDOW_MS).ok) {
         return reply.code(429).send({ error: 'Too many contact requests. Please try again later.' });
@@ -227,7 +236,9 @@ export async function contactRoutes(fastify: FastifyInstance) {
       });
 
       if (delivery.status === 'failed' && delivery.reason === 'send_budget') {
-        return reply.code(429).send({ error: 'Too many contact requests. Please try again later.' });
+        return reply.code(429).send({
+          error: 'Unable to send messages right now. Please try again later.',
+        });
       }
 
       if (payload.sendCopy) {

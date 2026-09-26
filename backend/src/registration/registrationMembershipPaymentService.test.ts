@@ -4,6 +4,7 @@ import {
   offlinePaymentCheckoutExpireFailure,
   paymentUrlFromRegistrationMessagePayload,
   RegistrationMembershipPaymentValidationError,
+  reusableRegistrationCheckoutUrl,
 } from './registrationMembershipPaymentService.js';
 
 describe('offlinePaymentCheckoutExpireFailure', () => {
@@ -43,5 +44,40 @@ describe('existing registration payment URLs', () => {
     ).toBe('https://squareup.example/pay/abc');
     expect(paymentUrlFromRegistrationMessagePayload({ paymentUrl: '' })).toBeNull();
     expect(paymentUrlFromRegistrationMessagePayload({ amountDueMinor: 1000 })).toBeNull();
+  });
+
+  test('reuses only an open checkout that still matches the remaining balance', () => {
+    const openUrl = 'https://squareup.example/pay/open';
+    expect(
+      reusableRegistrationCheckoutUrl({
+        status: 'pending',
+        amountMinor: 15000,
+        hostedCheckoutUrl: openUrl,
+        expectedAmountMinor: 15000,
+      }),
+    ).toBe(openUrl);
+    expect(
+      reusableRegistrationCheckoutUrl({
+        status: 'succeeded',
+        amountMinor: 33300,
+        hostedCheckoutUrl: 'https://squareup.example/pay/paid',
+        expectedAmountMinor: 15000,
+      }),
+    ).toBeNull();
+    expect(
+      reusableRegistrationCheckoutUrl({
+        status: 'pending',
+        amountMinor: 33300,
+        hostedCheckoutUrl: openUrl,
+        expectedAmountMinor: 15000,
+      }),
+    ).toBeNull();
+    expect(
+      reusableRegistrationCheckoutUrl({
+        status: 'created',
+        amountMinor: 15000,
+        hostedCheckoutUrl: ` ${openUrl} `,
+      }),
+    ).toBe(openUrl);
   });
 });

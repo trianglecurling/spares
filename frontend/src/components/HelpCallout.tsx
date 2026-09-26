@@ -12,6 +12,8 @@ type HelpCalloutProps = {
   triggerClassName?: string;
   /** Custom trigger content. Defaults to the question-mark icon. */
   children?: ReactNode;
+  /** Extra classes for the tooltip panel. */
+  tooltipClassName?: string;
 };
 
 function joinClasses(...parts: Array<string | false | null | undefined>): string {
@@ -25,6 +27,7 @@ export default function HelpCallout({
   className,
   triggerClassName,
   children,
+  tooltipClassName,
 }: HelpCalloutProps) {
   const tooltipId = useId();
   const rootRef = useRef<HTMLSpanElement>(null);
@@ -72,7 +75,8 @@ export default function HelpCallout({
         className={joinClasses(
           'absolute top-full z-30 mt-1.5 w-72 min-w-0 max-w-[calc(100vw-2.5rem)] whitespace-normal break-words rounded-lg border border-gray-200 bg-white p-3 text-sm font-normal normal-case leading-snug text-gray-600 shadow-lg dark:border-gray-600 dark:bg-gray-800 dark:text-gray-300',
           align === 'end' ? 'right-0' : 'left-0',
-          open ? 'block' : 'hidden'
+          open ? 'block' : 'hidden',
+          tooltipClassName
         )}
       >
         {text}
