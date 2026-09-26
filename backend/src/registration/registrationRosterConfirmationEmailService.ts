@@ -179,7 +179,7 @@ function squareCheckoutInvoiceLines(
     owedDiscountLines: Array<RosterConfirmationFeeLine>;
   },
   configuredNames: Map<RegistrationPaymentItemLineType, string | null>,
-): Array<{ description: string; amountMinor: number }> {
+): Array<{ description: string; amountMinor: number; lineType?: string }> {
   return [...input.owedLines, ...input.owedDiscountLines]
     .filter((line) => line.amountMinor !== 0)
     .map((line) => ({
@@ -189,6 +189,7 @@ function squareCheckoutInvoiceLines(
         configuredNames,
       }),
       amountMinor: line.amountMinor,
+      lineType: line.lineType,
     }));
 }
 

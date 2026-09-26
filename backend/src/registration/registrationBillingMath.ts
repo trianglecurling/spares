@@ -110,38 +110,113 @@ export type CurlingCheckoutLine = {
   amountMinor: number;
 };
 
+export type RegistrationCheckoutInvoiceLine = {
+  description?: string;
+  amountMinor: number;
+  lineType?: string;
+  relatedLeagueId?: number | null;
+  discountEligible?: boolean | number;
+};
+
+function isPositiveCharge(line: RegistrationCheckoutInvoiceLine): boolean {
+  return line.amountMinor > 0;
+}
+
+function isDiscountEligibleCharge(line: RegistrationCheckoutInvoiceLine): boolean {
+  if (line.discountEligible === false || line.discountEligible === 0) return false;
+  return line.lineType !== 'sabbatical_fee' && line.lineType !== 'replacement_name_tag_fee';
+}
+
+function discountTargetIndices<T extends RegistrationCheckoutInvoiceLine>(charges: T[], discount: T): number[] {
+  if (discount.relatedLeagueId != null) {
+    const matched = charges
+      .map((charge, index) => (charge.relatedLeagueId === discount.relatedLeagueId ? index : -1))
+      .filter((index) => index >= 0);
+    if (matched.length > 0) return matched;
+  }
+
+  const lineType = discount.lineType ?? '';
+  const matched = charges
+    .map((charge, index) => {
+      if (!isDiscountEligibleCharge(charge)) return -1;
+      if (lineType === 'student_discount' || lineType === 'winter_only_discount') {
+        return charge.lineType === 'regular_membership_fee' ? index : -1;
+      }
+      if (lineType === 'student_league_discount') {
+        return charge.lineType !== 'regular_membership_fee' ? index : -1;
+      }
+      if (lineType === 'financial_assistance_discount') {
+        return charge.lineType === 'junior_recreational_fee' ? index : -1;
+      }
+      if (lineType === 'sabbatical_fill_discount') {
+        return charge.lineType === 'league_fee' ? index : -1;
+      }
+      if (lineType === 'reciprocal_discount') {
+        return charge.lineType === 'regular_membership_fee' ? index : -1;
+      }
+      return index;
+    })
+    .filter((index) => index >= 0);
+  return matched.length > 0 ? matched : charges.map((_, index) => index);
+}
+
+function applyAmountToTargets(remaining: number[], targets: number[], amount: number): void {
+  const positiveTargets = targets.filter((index) => remaining[index] > 0);
+  const total = positiveTargets.reduce((sum, index) => sum + remaining[index], 0);
+  if (total <= 0 || amount <= 0) return;
+
+  let leftover = Math.min(amount, total);
+  const planned = positiveTargets.map((index) =>
+    Math.min(remaining[index], Math.round((amount * remaining[index]) / total)),
+  );
+  let plannedSum = planned.reduce((sum, share) => sum + share, 0);
+  if (plannedSum > leftover) {
+    for (let index = planned.length - 1; index >= 0 && plannedSum > leftover; index -= 1) {
+      const decrease = Math.min(planned[index], plannedSum - leftover);
+      planned[index] -= decrease;
+      plannedSum -= decrease;
+    }
+  } else if (plannedSum < leftover) {
+    for (let index = 0; index < planned.length && plannedSum < leftover; index += 1) {
+      const increase = Math.min(remaining[positiveTargets[index]] - planned[index], leftover - plannedSum);
+      planned[index] += increase;
+      plannedSum += increase;
+    }
+  }
+  positiveTargets.forEach((chargeIndex, index) => {
+    remaining[chargeIndex] -= planned[index];
+  });
+}
+
 /**
- * Apply money already paid to current invoice charges in order (membership,
- * then later fees). Fully covered charges are omitted so Square can sell the
- * remaining catalog items instead of a synthetic "amount already paid" credit.
+ * Fold invoice discounts into the charges they belong to, then apply money
+ * already paid to those net amounts in order. Fully covered charges are omitted
+ * so a later unpaid league is not split with a completed one.
  */
-export function applyPriorPaidToInvoiceLines<T extends { amountMinor: number }>(
+export function applyPriorPaidToInvoiceLines<T extends RegistrationCheckoutInvoiceLine>(
   invoiceLines: T[],
   priorPaidMinor: number,
 ): T[] {
-  const remainingPaid = Math.max(0, Math.round(priorPaidMinor));
-  if (remainingPaid <= 0) return invoiceLines;
-
-  let leftoverPaid = remainingPaid;
-  const leftoverCharges: T[] = [];
-  const discounts: T[] = [];
-  for (const line of invoiceLines) {
-    if (line.amountMinor < 0) {
-      discounts.push(line);
-      continue;
-    }
-    if (leftoverPaid >= line.amountMinor) {
-      leftoverPaid -= line.amountMinor;
-      continue;
-    }
-    if (leftoverPaid > 0) {
-      leftoverCharges.push({ ...line, amountMinor: line.amountMinor - leftoverPaid });
-      leftoverPaid = 0;
-      continue;
-    }
-    leftoverCharges.push(line);
+  const charges = invoiceLines.filter((line) => isPositiveCharge(line));
+  const discounts = invoiceLines.filter((line) => line.amountMinor < 0);
+  const remaining = charges.map((line) => line.amountMinor);
+  for (const discount of discounts) {
+    applyAmountToTargets(remaining, discountTargetIndices(charges, discount), Math.abs(Math.round(discount.amountMinor)));
   }
-  return [...leftoverCharges, ...discounts];
+
+  let leftoverPaid = Math.max(0, Math.round(priorPaidMinor));
+  const leftoverCharges: T[] = [];
+  for (const [index, charge] of charges.entries()) {
+    const netMinor = remaining[index];
+    if (netMinor <= 0) continue;
+    if (leftoverPaid >= netMinor) {
+      leftoverPaid -= netMinor;
+      continue;
+    }
+    leftoverCharges.push({ ...charge, amountMinor: netMinor - leftoverPaid });
+    leftoverPaid = 0;
+  }
+  return leftoverCharges;
 }
 
 /**
@@ -151,7 +226,13 @@ export function applyPriorPaidToInvoiceLines<T extends { amountMinor: number }>(
  * amount due.
  */
 export function curlingRegistrationCheckoutLineItems(input: {
-  invoiceLines: Array<{ description: string; amountMinor: number }>;
+  invoiceLines: Array<{
+    description: string;
+    amountMinor: number;
+    lineType?: string;
+    relatedLeagueId?: number | null;
+    discountEligible?: boolean | number;
+  }>;
   orderAmountMinor: number;
   priorPaidMinor?: number | null;
   allowBalanceFallback?: boolean;
@@ -162,10 +243,16 @@ export function curlingRegistrationCheckoutLineItems(input: {
       .map((line) => ({
         description: line.description.trim(),
         amountMinor: line.amountMinor,
+        lineType: line.lineType,
+        relatedLeagueId: line.relatedLeagueId,
+        discountEligible: line.discountEligible,
       }))
       .filter((line) => line.description.length > 0 && line.amountMinor !== 0),
     priorPaidMinor,
-  );
+  ).map((line) => ({
+    description: line.description,
+    amountMinor: line.amountMinor,
+  }));
 
   if (lineItems.length > 0 && checkoutLinesTotalMinor(lineItems) === input.orderAmountMinor) {
     return lineItems;

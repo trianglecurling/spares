@@ -108,6 +108,47 @@ describe('applyPriorPaidToInvoiceLines', () => {
       ),
     ).toEqual([{ description: 'Monday Late league fee', amountMinor: 15000 }]);
   });
+
+  test('covers a paid league at its discounted net instead of splitting the remainder', () => {
+    expect(
+      applyPriorPaidToInvoiceLines(
+        [
+          {
+            description: 'Regular membership fee',
+            amountMinor: 20800,
+            lineType: 'regular_membership_fee',
+          },
+          {
+            description: 'Monday Late league fee',
+            amountMinor: 12500,
+            lineType: 'league_fee',
+          },
+          {
+            description: 'Thursday Night league fee',
+            amountMinor: 12500,
+            lineType: 'league_fee',
+          },
+          {
+            description: 'Student discount (membership)',
+            amountMinor: -6240,
+            lineType: 'student_discount',
+          },
+          {
+            description: 'Student discount (leagues)',
+            amountMinor: -7500,
+            lineType: 'student_league_discount',
+          },
+        ],
+        23310,
+      ),
+    ).toEqual([
+      {
+        description: 'Thursday Night league fee',
+        amountMinor: 8750,
+        lineType: 'league_fee',
+      },
+    ]);
+  });
 });
 
 describe('curlingRegistrationCheckoutLineItems', () => {
@@ -153,21 +194,38 @@ describe('curlingRegistrationCheckoutLineItems', () => {
     ).toEqual([{ description: 'Tuesday league fee', amountMinor: 15000 }]);
   });
 
-  test('keeps real discounts after omitting a paid membership', () => {
+  test('nets a remaining league discount after omitting a paid membership', () => {
     expect(
       curlingRegistrationCheckoutLineItems({
         invoiceLines: [
-          { description: 'Regular membership', amountMinor: 20800 },
-          { description: 'Friday Evening league fee', amountMinor: 15000 },
-          { description: 'Temporary sabbatical-fill discount', amountMinor: -2000 },
+          { description: 'Regular membership', amountMinor: 20800, lineType: 'regular_membership_fee' },
+          { description: 'Friday Evening league fee', amountMinor: 15000, lineType: 'league_fee' },
+          {
+            description: 'Temporary sabbatical-fill discount',
+            amountMinor: -2000,
+            lineType: 'sabbatical_fill_discount',
+          },
         ],
         orderAmountMinor: 13000,
         priorPaidMinor: 20800,
       }),
-    ).toEqual([
-      { description: 'Friday Evening league fee', amountMinor: 15000 },
-      { description: 'Temporary sabbatical-fill discount', amountMinor: -2000 },
-    ]);
+    ).toEqual([{ description: 'Friday Evening league fee', amountMinor: 13000 }]);
+  });
+
+  test('charges only the newly added discounted league after the original payment', () => {
+    expect(
+      curlingRegistrationCheckoutLineItems({
+        invoiceLines: [
+          { description: 'Regular membership', amountMinor: 20800, lineType: 'regular_membership_fee' },
+          { description: 'Monday Late league fee', amountMinor: 12500, lineType: 'league_fee' },
+          { description: 'Thursday Night league fee', amountMinor: 12500, lineType: 'league_fee' },
+          { description: 'Student discount (membership)', amountMinor: -6240, lineType: 'student_discount' },
+          { description: 'Student discount (leagues)', amountMinor: -7500, lineType: 'student_league_discount' },
+        ],
+        orderAmountMinor: 8750,
+        priorPaidMinor: 23310,
+      }),
+    ).toEqual([{ description: 'Thursday Night league fee', amountMinor: 8750 }]);
   });
 
   test('falls back to a single balance line when items cannot be reconciled', () => {

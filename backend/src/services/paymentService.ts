@@ -1044,6 +1044,8 @@ export class PaymentService {
               lineType: this.schema.registrationInvoiceLineItems.line_type,
               description: this.schema.registrationInvoiceLineItems.description,
               amountMinor: this.schema.registrationInvoiceLineItems.amount_minor,
+              relatedLeagueId: this.schema.registrationInvoiceLineItems.related_league_id,
+              discountEligible: this.schema.registrationInvoiceLineItems.discount_eligible,
             })
             .from(this.schema.registrationInvoiceLineItems)
             .where(eq(this.schema.registrationInvoiceLineItems.invoice_id, invoice.id))
@@ -1060,6 +1062,9 @@ export class PaymentService {
           configuredNames: configuredRegistrationItemNames,
         }),
         amountMinor: line.amountMinor,
+        lineType: line.lineType,
+        relatedLeagueId: line.relatedLeagueId,
+        discountEligible: line.discountEligible,
       }));
       const priorPaidMinor = asNumber(input.metadata.priorPaidMinor) ?? 0;
       const allowBalanceFallback =

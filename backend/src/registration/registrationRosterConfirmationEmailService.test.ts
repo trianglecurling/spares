@@ -83,8 +83,7 @@ describe('roster confirmation checkout lines', () => {
       }),
     ).toEqual([
       { description: 'TCC Regular Membership', amountMinor: 5000 },
-      { description: 'League', amountMinor: 15000 },
-      { description: 'Temporary sabbatical-fill discount', amountMinor: -5000 },
+      { description: 'League', amountMinor: 10000 },
     ]);
   });
 
@@ -112,10 +111,7 @@ describe('roster confirmation checkout lines', () => {
           ['financial_assistance_discount', 'Need-based financial aid'],
         ]),
       }),
-    ).toEqual([
-      { description: 'Junior Rec', amountMinor: 7500 },
-      { description: 'Need-based financial aid', amountMinor: -3750 },
-    ]);
+    ).toEqual([{ description: 'Junior Rec', amountMinor: 3750 }]);
   });
 
   test('omits a fully paid membership from the Square cart', () => {
