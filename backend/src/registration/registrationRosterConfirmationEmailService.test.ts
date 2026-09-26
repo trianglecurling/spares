@@ -218,14 +218,47 @@ describe('roster confirmation send side effects', () => {
   });
 
   test('reuses the existing payment link for unpaid follow-ups', () => {
-    expect(rosterConfirmationSendSideEffects({ balanceMinor: 10000, alreadySent: true })).toEqual({
+    expect(
+      rosterConfirmationSendSideEffects({
+        balanceMinor: 10000,
+        alreadySent: true,
+        reusablePaymentUrl: true,
+      }),
+    ).toEqual({
       createPaymentLink: false,
       reusePaymentLink: true,
       issueRefund: false,
     });
-    expect(isRosterConfirmationPaymentReminder({ alreadySent: true, balanceMinor: 10000 })).toBe(true);
+    expect(
+      isRosterConfirmationPaymentReminder({
+        alreadySent: true,
+        balanceMinor: 10000,
+        reusablePaymentUrl: true,
+      }),
+    ).toBe(true);
     expect(isRosterConfirmationPaymentReminder({ alreadySent: false, balanceMinor: 10000 })).toBe(false);
     expect(isRosterConfirmationPaymentReminder({ alreadySent: true, balanceMinor: 0 })).toBe(false);
+  });
+
+  test('creates a new payment link when the original checkout cannot collect the remaining balance', () => {
+    expect(
+      rosterConfirmationSendSideEffects({
+        balanceMinor: 15000,
+        alreadySent: true,
+        reusablePaymentUrl: false,
+      }),
+    ).toEqual({
+      createPaymentLink: true,
+      reusePaymentLink: false,
+      issueRefund: false,
+    });
+    expect(
+      isRosterConfirmationPaymentReminder({
+        alreadySent: true,
+        balanceMinor: 15000,
+        reusablePaymentUrl: false,
+      }),
+    ).toBe(false);
   });
 });
 
@@ -282,6 +315,35 @@ describe('roster confirmation payload', () => {
     expect(rendered.textBody).toContain('Payment link will be created when this email is sent.');
     expect(rendered.textBody).toContain('Payment is due by Sunday, September 13, 2026');
     expect(rendered.textBody).not.toContain('https://');
+  });
+
+  test('additional balance after a completed payment uses a confirmation, not a past-due reminder', () => {
+    const payload = buildRosterConfirmationEmailPayload({
+      memberName: 'Jamie Renaud',
+      seasonName: '2026-27',
+      sessionName: 'Fall',
+      leagues: [
+        { leagueName: 'Hump Day', isTemporarySabbaticalFill: false },
+        { leagueName: 'Thursday Night', isTemporarySabbaticalFill: false },
+      ],
+      owedLines: [
+        { description: 'Hump Day league fee', amountMinor: 15000 },
+        { description: 'Thursday Night league fee', amountMinor: 15000 },
+      ],
+      owedDiscountLines: [],
+      owedSubtotalMinor: 30000,
+      owedDiscountMinor: 0,
+      owedMinor: 30000,
+      paidMinor: 15000,
+      balanceMinor: 15000,
+      paymentLinkPending: true,
+    });
+    const rendered = renderRegistrationEmail('roster_confirmation', payload);
+    expect(payload.paymentLinkReuse).toBe(false);
+    expect(rendered.subject).toBe('Your Fall leagues and payment link');
+    expect(rendered.subject).not.toContain('Past due');
+    expect(rendered.textBody).toContain('Payment link will be created when this email is sent.');
+    expect(rendered.textBody).not.toContain('Your existing payment link will be included');
   });
 
   test('reminder preview reuses the existing payment link instead of creating one', () => {

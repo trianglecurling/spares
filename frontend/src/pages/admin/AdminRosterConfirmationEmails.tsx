@@ -341,12 +341,12 @@ export default function AdminRosterConfirmationEmails() {
         : '';
     const reminderCopy =
       count === 1
-        ? 'This sends a payment reminder using the existing Square payment link. A new payment link is not created.'
-        : `This sends ${count} payment reminders using each member's existing Square payment link. New payment links are not created.`;
+        ? 'This sends a payment email for the remaining balance. An existing unpaid payment link is reused only when it still matches what is due. Otherwise a new payment link is created.'
+        : `This sends ${count} payment emails for remaining balances. Existing unpaid payment links are reused only when they still match what is due. Otherwise a new payment link is created.`;
     const confirmed = await confirm({
       title:
         mode === 'unpaid'
-          ? 'Send payment reminders?'
+          ? 'Send payment emails?'
           : unsentOnly
             ? 'Send unsent roster emails?'
             : 'Send roster emails?',
@@ -354,9 +354,9 @@ export default function AdminRosterConfirmationEmails() {
         mode === 'unpaid'
           ? reminderCopy
           : count === 1
-            ? `This sends the roster confirmation email.${heldNote} A Square payment link is created only if a remaining balance is due and no link exists yet. Follow-up reminders reuse the existing payment link. Credits are not refunded automatically.`
-            : `This sends ${count} roster confirmation emails.${heldNote} Square payment links are created only for remaining balances that do not already have a link. Follow-up reminders reuse existing payment links. Credits are not refunded automatically.`,
-      confirmText: mode === 'unpaid' ? 'Send reminders' : 'Send emails',
+            ? `This sends the roster confirmation email.${heldNote} A Square payment link is created when a remaining balance is due and no matching unpaid link exists. Credits are not refunded automatically.`
+            : `This sends ${count} roster confirmation emails.${heldNote} Square payment links are created when a remaining balance is due and no matching unpaid link exists. Credits are not refunded automatically.`,
+      confirmText: 'Send emails',
       cancelText: 'Cancel',
     });
     if (!confirmed) return;
@@ -696,8 +696,8 @@ export default function AdminRosterConfirmationEmails() {
             {unpaidReminderMemberIds.length > 0 ? (
               <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
                 {unpaidReminderMemberIds.length === 1
-                  ? '1 member still owes and can receive a payment reminder that reuses their existing payment link.'
-                  : `${unpaidReminderMemberIds.length} members still owe and can receive payment reminders that reuse their existing payment links.`}
+                  ? '1 member still owes and can receive a payment email. An existing unpaid link is reused only when it still matches the remaining balance.'
+                  : `${unpaidReminderMemberIds.length} members still owe and can receive payment emails. Existing unpaid links are reused only when they still match the remaining balance.`}
               </p>
             ) : null}
             {payload?.leagueProcessingActive ? (

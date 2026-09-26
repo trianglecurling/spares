@@ -1872,44 +1872,41 @@ export function paymentUrlFromRegistrationMessagePayload(payloadJson: unknown): 
   return trimmed || null;
 }
 
-/** Existing hosted checkout URL for a registration. Does not create or expire a checkout. */
-export async function loadExistingRegistrationPaymentUrl(registrationId: number): Promise<string | null> {
-  const invoice = await loadLatestRegistrationInvoice(registrationId);
-  if (invoice?.payment_order_id) {
-    const existingOrder = await createPaymentService().getPaymentOrderById(invoice.payment_order_id);
-    const hostedCheckoutUrl =
-      typeof existingOrder?.metadata.hostedCheckoutUrl === 'string' ? existingOrder.metadata.hostedCheckoutUrl.trim() : '';
-    if (
-      hostedCheckoutUrl &&
-      existingOrder &&
-      (existingOrder.status === 'pending' || existingOrder.status === 'created')
-    ) {
-      return hostedCheckoutUrl;
-    }
+/** Open hosted checkout URL that can still collect `expectedAmountMinor`, if provided. */
+export function reusableRegistrationCheckoutUrl(input: {
+  status?: string | null;
+  amountMinor?: number | null;
+  hostedCheckoutUrl?: string | null;
+  expectedAmountMinor?: number | null;
+}): string | null {
+  const url = typeof input.hostedCheckoutUrl === 'string' ? input.hostedCheckoutUrl.trim() : '';
+  if (!url) return null;
+  if (input.status !== 'pending' && input.status !== 'created') return null;
+  if (
+    input.expectedAmountMinor != null &&
+    input.expectedAmountMinor > 0 &&
+    input.amountMinor !== input.expectedAmountMinor
+  ) {
+    return null;
   }
+  return url;
+}
 
-  const { db, schema } = getDrizzleDb();
-  const rows = await db
-    .select({ payloadJson: schema.registrationOutboundMessages.payload_json })
-    .from(schema.registrationOutboundMessages)
-    .where(
-      and(
-        eq(schema.registrationOutboundMessages.registration_id, registrationId),
-        eq(schema.registrationOutboundMessages.delivery_status, 'sent'),
-        inArray(schema.registrationOutboundMessages.message_type, [
-          'roster_confirmation',
-          'deferred_registration_payment_link',
-          'roster_payment_reminder',
-          'registration_submitted_immediate_payment',
-        ]),
-      ),
-    )
-    .orderBy(desc(schema.registrationOutboundMessages.sent_at), desc(schema.registrationOutboundMessages.id));
-  for (const row of rows) {
-    const paymentUrl = paymentUrlFromRegistrationMessagePayload(row.payloadJson);
-    if (paymentUrl) return paymentUrl;
-  }
-  return null;
+/** Existing hosted checkout URL for a registration. Does not create or expire a checkout. */
+export async function loadExistingRegistrationPaymentUrl(
+  registrationId: number,
+  expectedAmountMinor?: number,
+): Promise<string | null> {
+  const invoice = await loadLatestRegistrationInvoice(registrationId);
+  if (!invoice?.payment_order_id) return null;
+  const existingOrder = await createPaymentService().getPaymentOrderById(invoice.payment_order_id);
+  return reusableRegistrationCheckoutUrl({
+    status: existingOrder?.status,
+    amountMinor: existingOrder?.amountMinor,
+    hostedCheckoutUrl:
+      typeof existingOrder?.metadata.hostedCheckoutUrl === 'string' ? existingOrder.metadata.hostedCheckoutUrl : null,
+    expectedAmountMinor,
+  });
 }
 
 function waitlistPositionSortKey(registrationId: number, leagueId: number): string {
