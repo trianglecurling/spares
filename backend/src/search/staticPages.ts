@@ -52,6 +52,13 @@ const STATIC_PAGES: StaticPageDefinition[] = [
     keywords: 'league play teams competitive recreational curling',
   },
   {
+    id: 'stones',
+    title: 'Curling stones',
+    url: '/stones',
+    description: 'Where each of the club’s curling stones is in play, with position and maintenance history.',
+    keywords: 'stones rocks sheet rotation texturing band narrowing imprinting wcf serial',
+  },
+  {
     id: 'feedback',
     title: 'Feedback',
     url: '/feedback',

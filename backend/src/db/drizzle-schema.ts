@@ -1862,6 +1862,58 @@ export const buildingAccessConfigSqlite = sqliteTable('building_access_config', 
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
 });
 
+// Club curling stones: identity, position history, and running-surface maintenance (public data)
+export const curlingStonesSqlite = sqliteTable('curling_stones', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  wcf_registration_number: text('wcf_registration_number').notNull(),
+  al_serial_number: text('al_serial_number').notNull(),
+  notes: text('notes'),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  uniqueWcf: uniqueIndex('curling_stones_wcf_registration_number_unique').on(table.wcf_registration_number),
+  uniqueAl: uniqueIndex('curling_stones_al_serial_number_unique').on(table.al_serial_number),
+}));
+
+/** Append-only; a stone's current placement is its latest row by (effective_date, id). */
+export const curlingStonePlacementsSqlite = sqliteTable('curling_stone_placements', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  stone_id: integer('stone_id').notNull().references(() => curlingStonesSqlite.id, { onDelete: 'cascade' }),
+  sheet: text('sheet'), // 'A' | 'B' | 'C' | 'D'; null for spares and unassigned stones
+  color: text('color'), // 'red' | 'yellow'; null for unassigned stones
+  rock_number: integer('rock_number'), // 1-8; null for spares and unassigned stones
+  side: text('side').notNull(), // 'A' | 'B' running surface in play
+  effective_date: text('effective_date').notNull(), // YYYY-MM-DD
+  change_type: text('change_type').notNull(), // 'added' | 'moved' | 'swapped' | 'rotated' | 'flipped'
+  related_stone_id: integer('related_stone_id').references(() => curlingStonesSqlite.id, { onDelete: 'set null' }),
+  notes: text('notes'),
+  created_by_member_id: integer('created_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  stoneIdx: index('idx_curling_stone_placements_stone_id').on(table.stone_id, table.effective_date),
+}));
+
+export const curlingStoneMaintenanceSqlite = sqliteTable('curling_stone_maintenance', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  stone_id: integer('stone_id').notNull().references(() => curlingStonesSqlite.id, { onDelete: 'cascade' }),
+  activity_type: text('activity_type').notNull(), // 'texturing' | 'band_narrowing' | 'imprinting'
+  side: text('side').notNull(), // 'A' | 'B'
+  performed_on: text('performed_on').notNull(), // YYYY-MM-DD
+  passes: integer('passes'),
+  rotations: integer('rotations'),
+  sandpaper_grit: integer('sandpaper_grit'),
+  band_width_1_mm: real('band_width_1_mm'),
+  band_width_2_mm: real('band_width_2_mm'),
+  band_width_3_mm: real('band_width_3_mm'),
+  band_width_4_mm: real('band_width_4_mm'),
+  comments: text('comments'),
+  created_by_member_id: integer('created_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  stoneIdx: index('idx_curling_stone_maintenance_stone_id').on(table.stone_id, table.performed_on),
+}));
+
 // Public contact form recipient categories (contact page + article links)
 export const publicContactRecipientsSqlite = sqliteTable('public_contact_recipients', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -4318,6 +4370,58 @@ export const buildingAccessConfigPg = pgTable('building_access_config', {
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
 });
 
+// Club curling stones: identity, position history, and running-surface maintenance (public data)
+export const curlingStonesPg = pgTable('curling_stones', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  wcf_registration_number: textPg('wcf_registration_number').notNull(),
+  al_serial_number: textPg('al_serial_number').notNull(),
+  notes: textPg('notes'),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  uniqueWcf: uniqueIndexPg('curling_stones_wcf_registration_number_unique').on(table.wcf_registration_number),
+  uniqueAl: uniqueIndexPg('curling_stones_al_serial_number_unique').on(table.al_serial_number),
+}));
+
+/** Append-only; a stone's current placement is its latest row by (effective_date, id). */
+export const curlingStonePlacementsPg = pgTable('curling_stone_placements', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  stone_id: integerPg('stone_id').notNull().references(() => curlingStonesPg.id, { onDelete: 'cascade' }),
+  sheet: textPg('sheet'), // 'A' | 'B' | 'C' | 'D'; null for spares and unassigned stones
+  color: textPg('color'), // 'red' | 'yellow'; null for unassigned stones
+  rock_number: integerPg('rock_number'), // 1-8; null for spares and unassigned stones
+  side: textPg('side').notNull(), // 'A' | 'B' running surface in play
+  effective_date: date('effective_date').notNull(),
+  change_type: textPg('change_type').notNull(), // 'added' | 'moved' | 'swapped' | 'rotated' | 'flipped'
+  related_stone_id: integerPg('related_stone_id').references(() => curlingStonesPg.id, { onDelete: 'set null' }),
+  notes: textPg('notes'),
+  created_by_member_id: integerPg('created_by_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  stoneIdx: indexPg('idx_curling_stone_placements_stone_id').on(table.stone_id, table.effective_date),
+}));
+
+export const curlingStoneMaintenancePg = pgTable('curling_stone_maintenance', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  stone_id: integerPg('stone_id').notNull().references(() => curlingStonesPg.id, { onDelete: 'cascade' }),
+  activity_type: textPg('activity_type').notNull(), // 'texturing' | 'band_narrowing' | 'imprinting'
+  side: textPg('side').notNull(), // 'A' | 'B'
+  performed_on: date('performed_on').notNull(),
+  passes: integerPg('passes'),
+  rotations: integerPg('rotations'),
+  sandpaper_grit: integerPg('sandpaper_grit'),
+  band_width_1_mm: doublePrecision('band_width_1_mm'),
+  band_width_2_mm: doublePrecision('band_width_2_mm'),
+  band_width_3_mm: doublePrecision('band_width_3_mm'),
+  band_width_4_mm: doublePrecision('band_width_4_mm'),
+  comments: textPg('comments'),
+  created_by_member_id: integerPg('created_by_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  stoneIdx: indexPg('idx_curling_stone_maintenance_stone_id').on(table.stone_id, table.performed_on),
+}));
+
 // Showcase images for homepage (URLs only)
 export const publicContactRecipientsPg = pgTable('public_contact_recipients', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
@@ -5213,6 +5317,9 @@ export const sqliteSchema = {
   permalinkHits: permalinkHitsSqlite,
   siteConfig: siteConfigSqlite,
   buildingAccessConfig: buildingAccessConfigSqlite,
+  curlingStones: curlingStonesSqlite,
+  curlingStonePlacements: curlingStonePlacementsSqlite,
+  curlingStoneMaintenance: curlingStoneMaintenanceSqlite,
   publicContactRecipients: publicContactRecipientsSqlite,
   dashboardSections: dashboardSectionsSqlite,
   mailingLists: mailingListsSqlite,
@@ -5345,6 +5452,9 @@ export const pgSchema = {
   permalinkHits: permalinkHitsPg,
   siteConfig: siteConfigPg,
   buildingAccessConfig: buildingAccessConfigPg,
+  curlingStones: curlingStonesPg,
+  curlingStonePlacements: curlingStonePlacementsPg,
+  curlingStoneMaintenance: curlingStoneMaintenancePg,
   publicContactRecipients: publicContactRecipientsPg,
   dashboardSections: dashboardSectionsPg,
   mailingLists: mailingListsPg,

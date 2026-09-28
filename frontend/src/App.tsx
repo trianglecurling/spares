@@ -38,6 +38,10 @@ const AdminWaivers = lazyRoute(() => import('./pages/admin/AdminWaivers'));
 const AdminFacilityInfo = lazyRoute(() => import('./pages/admin/AdminFacilityInfo'));
 const AdminSheets = lazyRoute(() => import('./pages/admin/AdminSheets'));
 const AdminBuildingAccess = lazyRoute(() => import('./pages/admin/AdminBuildingAccess'));
+const AdminStones = lazyRoute(() => import('./pages/admin/AdminStones'));
+const AdminStoneDetail = lazyRoute(() => import('./pages/admin/AdminStoneDetail'));
+const PublicStonesPage = lazyRoute(() => import('./pages/PublicStonesPage'));
+const PublicStoneDetailPage = lazyRoute(() => import('./pages/PublicStoneDetailPage'));
 const BuildingAccessPage = lazyRoute(() => import('./pages/BuildingAccessPage'));
 const MemberCommunicationsPage = lazyRoute(() => import('./pages/MemberCommunicationsPage'));
 const BoardMeetingMinutesPage = lazyRoute(() => import('./pages/BoardMeetingMinutesPage'));
@@ -280,6 +284,8 @@ function App() {
                       <Route path="/search" element={<PublicSearchPage />} />
                       <Route path="/public/leagues" element={<LegacyPublicLeaguesRedirect />} />
                       <Route path="/leagues/public" element={<PublicLeaguesPage />} />
+                      <Route path="/stones" element={<PublicStonesPage />} />
+                      <Route path="/stones/:stoneId" element={<PublicStoneDetailPage />} />
                       <Route path="/events/:slug/teams/:teamId" element={<PublicEventTeamPage />} />
                       <Route path="/events/:slug" element={<PublicEventDetailPage />} />
                       <Route path="/events/:slug/register" element={<PublicEventRegisterPage />} />
@@ -640,6 +646,14 @@ function App() {
                       />
                       <Route path="/admin/sheets" element={<Navigate to="/admin/facility" replace />} />
                       <Route
+                        path="/admin/facility/stones/:stoneId"
+                        element={
+                          <ProtectedRoute leagueManagerOnly>
+                            <AdminStoneDetail />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
                         path="/admin/facility"
                         element={
                           <ProtectedRoute leagueManagerOnly>
@@ -648,6 +662,7 @@ function App() {
                         }
                       >
                         <Route index element={<AdminSheets />} />
+                        <Route path="stones" element={<AdminStones />} />
                         <Route path="building-access" element={<AdminBuildingAccess />} />
                       </Route>
                       <Route

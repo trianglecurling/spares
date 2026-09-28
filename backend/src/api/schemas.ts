@@ -2521,6 +2521,43 @@ export const staffRegistrationBillingResponseSchema = {
   },
 } as const;
 
+export const staffRegistrationNameTagsResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['sessionId', 'sessionName', 'nameTags'],
+  properties: {
+    sessionId: { type: 'number' },
+    sessionName: { type: 'string' },
+    nameTags: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: [
+          'registrationId',
+          'curlerId',
+          'curlerName',
+          'nameTagName',
+          'includePronouns',
+          'pronouns',
+          'quantity',
+          'kind',
+        ],
+        properties: {
+          registrationId: { type: 'number' },
+          curlerId: { type: ['number', 'null'] },
+          curlerName: { type: 'string' },
+          nameTagName: { type: 'string' },
+          includePronouns: { type: 'boolean' },
+          pronouns: { type: ['string', 'null'] },
+          quantity: { type: 'number' },
+          kind: { type: 'string', enum: ['new_member', 'paid_replacement'] },
+        },
+      },
+    },
+  },
+} as const;
+
 export const staffRegistrationRefundResponseSchema = {
   type: 'object',
   additionalProperties: false,

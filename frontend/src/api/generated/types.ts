@@ -3340,6 +3340,224 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/public/stones": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            stones: {
+                                id: number;
+                                wcfRegistrationNumber: string;
+                                alSerialNumber: string;
+                                notes: null | string;
+                                current: null | {
+                                    /** @enum {null|string} */
+                                    sheet: "A" | "B" | "C" | "D" | null;
+                                    /** @enum {null|string} */
+                                    color: "red" | "yellow" | null;
+                                    rockNumber: null | number;
+                                    /** @enum {string} */
+                                    side: "A" | "B";
+                                    effectiveDate: string;
+                                };
+                                lastMaintenance: {
+                                    texturing: null | string;
+                                    bandNarrowing: null | string;
+                                    imprinting: null | string;
+                                };
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/public/stones/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            since: string;
+                            entries: {
+                                id: string;
+                                date: string;
+                                /** @enum {string} */
+                                kind: "added" | "moved" | "swapped" | "rotated" | "flipped" | "maintenance";
+                                /** @enum {null|string} */
+                                activityType: "texturing" | "band_narrowing" | "imprinting" | null;
+                                passes: null | number;
+                                rotations: null | number;
+                                sandpaperGrit: null | number;
+                                bandWidthsMm: (null | number)[];
+                                notes: null | string;
+                                stones: {
+                                    id: number;
+                                    wcfRegistrationNumber: string;
+                                    /** @enum {string} */
+                                    side: "A" | "B";
+                                    from: null | {
+                                        /** @enum {null|string} */
+                                        sheet: "A" | "B" | "C" | "D" | null;
+                                        /** @enum {null|string} */
+                                        color: "red" | "yellow" | null;
+                                        rockNumber: null | number;
+                                    };
+                                    to: null | {
+                                        /** @enum {null|string} */
+                                        sheet: "A" | "B" | "C" | "D" | null;
+                                        /** @enum {null|string} */
+                                        color: "red" | "yellow" | null;
+                                        rockNumber: null | number;
+                                    };
+                                }[];
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/public/stones/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            stone: {
+                                id: number;
+                                wcfRegistrationNumber: string;
+                                alSerialNumber: string;
+                                notes: null | string;
+                                current: null | {
+                                    /** @enum {null|string} */
+                                    sheet: "A" | "B" | "C" | "D" | null;
+                                    /** @enum {null|string} */
+                                    color: "red" | "yellow" | null;
+                                    rockNumber: null | number;
+                                    /** @enum {string} */
+                                    side: "A" | "B";
+                                    effectiveDate: string;
+                                };
+                                lastMaintenance: {
+                                    texturing: null | string;
+                                    bandNarrowing: null | string;
+                                    imprinting: null | string;
+                                };
+                            };
+                            placements: {
+                                id: number;
+                                /** @enum {null|string} */
+                                sheet: "A" | "B" | "C" | "D" | null;
+                                /** @enum {null|string} */
+                                color: "red" | "yellow" | null;
+                                rockNumber: null | number;
+                                /** @enum {string} */
+                                side: "A" | "B";
+                                effectiveDate: string;
+                                /** @enum {string} */
+                                changeType: "added" | "moved" | "swapped" | "rotated" | "flipped";
+                                relatedStone: null | {
+                                    id: number;
+                                    wcfRegistrationNumber: string;
+                                };
+                                notes: null | string;
+                            }[];
+                            maintenance: {
+                                id: number;
+                                stoneId: number;
+                                /** @enum {string} */
+                                activityType: "texturing" | "band_narrowing" | "imprinting";
+                                /** @enum {string} */
+                                side: "A" | "B";
+                                performedOn: string;
+                                passes: null | number;
+                                rotations: null | number;
+                                sandpaperGrit: null | number;
+                                bandWidthsMm: (null | number)[];
+                                comments: null | string;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/public/search": {
         parameters: {
             query?: never;
@@ -20300,6 +20518,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/registration/staff/name-tags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query: {
+                    sessionId: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            sessionId: number;
+                            sessionName: string;
+                            nameTags: {
+                                registrationId: number;
+                                curlerId: null | number;
+                                curlerName: string;
+                                nameTagName: string;
+                                includePronouns: boolean;
+                                pronouns: null | string;
+                                quantity: number;
+                                /** @enum {string} */
+                                kind: "new_member" | "paid_replacement";
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/registration/staff/roster-confirmation-emails": {
         parameters: {
             query?: never;
@@ -25849,6 +26118,661 @@ export interface paths {
             };
         };
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/stones": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        wcfRegistrationNumber: string;
+                        alSerialNumber: string;
+                        notes?: string | null;
+                        /** @enum {null|string} */
+                        sheet: "A" | "B" | "C" | "D" | null;
+                        /** @enum {null|string} */
+                        color: "red" | "yellow" | null;
+                        rockNumber: null | number;
+                        /** @enum {string} */
+                        side: "A" | "B";
+                        effectiveDate: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            stone: {
+                                id: number;
+                                wcfRegistrationNumber: string;
+                                alSerialNumber: string;
+                                notes: null | string;
+                                current: null | {
+                                    /** @enum {null|string} */
+                                    sheet: "A" | "B" | "C" | "D" | null;
+                                    /** @enum {null|string} */
+                                    color: "red" | "yellow" | null;
+                                    rockNumber: null | number;
+                                    /** @enum {string} */
+                                    side: "A" | "B";
+                                    effectiveDate: string;
+                                };
+                                lastMaintenance: {
+                                    texturing: null | string;
+                                    bandNarrowing: null | string;
+                                    imprinting: null | string;
+                                };
+                            };
+                            placements: {
+                                id: number;
+                                /** @enum {null|string} */
+                                sheet: "A" | "B" | "C" | "D" | null;
+                                /** @enum {null|string} */
+                                color: "red" | "yellow" | null;
+                                rockNumber: null | number;
+                                /** @enum {string} */
+                                side: "A" | "B";
+                                effectiveDate: string;
+                                /** @enum {string} */
+                                changeType: "added" | "moved" | "swapped" | "rotated" | "flipped";
+                                relatedStone: null | {
+                                    id: number;
+                                    wcfRegistrationNumber: string;
+                                };
+                                notes: null | string;
+                            }[];
+                            maintenance: {
+                                id: number;
+                                stoneId: number;
+                                /** @enum {string} */
+                                activityType: "texturing" | "band_narrowing" | "imprinting";
+                                /** @enum {string} */
+                                side: "A" | "B";
+                                performedOn: string;
+                                passes: null | number;
+                                rotations: null | number;
+                                sandpaperGrit: null | number;
+                                bandWidthsMm: (null | number)[];
+                                comments: null | string;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/stones/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        effectiveDate: string;
+                        /** @enum {string} */
+                        side: "A" | "B";
+                        rows: {
+                            wcfRegistrationNumber: string;
+                            alSerialNumber: string;
+                            /** @enum {null|string} */
+                            sheet: "A" | "B" | "C" | "D" | null;
+                            /** @enum {null|string} */
+                            color: "red" | "yellow" | null;
+                            rockNumber: null | number;
+                        }[];
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            created: number;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/stones/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        effectiveDate: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            moved: number;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/stones/maintenance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        stoneIds: number[];
+                        /** @enum {string} */
+                        side: "A" | "B" | "current";
+                        /** @enum {string} */
+                        activityType: "texturing" | "band_narrowing" | "imprinting";
+                        performedOn: string;
+                        passes?: number | null;
+                        rotations?: number | null;
+                        sandpaperGrit?: number | null;
+                        bandWidthsMm?: (number | null)[] | null;
+                        comments?: string | null;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            created: number;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/stones/maintenance/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            success: boolean;
+                        };
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        side: "A" | "B";
+                        /** @enum {string} */
+                        activityType: "texturing" | "band_narrowing" | "imprinting";
+                        performedOn: string;
+                        passes?: number | null;
+                        rotations?: number | null;
+                        sandpaperGrit?: number | null;
+                        bandWidthsMm?: (number | null)[] | null;
+                        comments?: string | null;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            success: boolean;
+                        };
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/stones/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            success: boolean;
+                        };
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        wcfRegistrationNumber: string;
+                        alSerialNumber: string;
+                        notes: string | null;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            stone: {
+                                id: number;
+                                wcfRegistrationNumber: string;
+                                alSerialNumber: string;
+                                notes: null | string;
+                                current: null | {
+                                    /** @enum {null|string} */
+                                    sheet: "A" | "B" | "C" | "D" | null;
+                                    /** @enum {null|string} */
+                                    color: "red" | "yellow" | null;
+                                    rockNumber: null | number;
+                                    /** @enum {string} */
+                                    side: "A" | "B";
+                                    effectiveDate: string;
+                                };
+                                lastMaintenance: {
+                                    texturing: null | string;
+                                    bandNarrowing: null | string;
+                                    imprinting: null | string;
+                                };
+                            };
+                            placements: {
+                                id: number;
+                                /** @enum {null|string} */
+                                sheet: "A" | "B" | "C" | "D" | null;
+                                /** @enum {null|string} */
+                                color: "red" | "yellow" | null;
+                                rockNumber: null | number;
+                                /** @enum {string} */
+                                side: "A" | "B";
+                                effectiveDate: string;
+                                /** @enum {string} */
+                                changeType: "added" | "moved" | "swapped" | "rotated" | "flipped";
+                                relatedStone: null | {
+                                    id: number;
+                                    wcfRegistrationNumber: string;
+                                };
+                                notes: null | string;
+                            }[];
+                            maintenance: {
+                                id: number;
+                                stoneId: number;
+                                /** @enum {string} */
+                                activityType: "texturing" | "band_narrowing" | "imprinting";
+                                /** @enum {string} */
+                                side: "A" | "B";
+                                performedOn: string;
+                                passes: null | number;
+                                rotations: null | number;
+                                sandpaperGrit: null | number;
+                                bandWidthsMm: (null | number)[];
+                                comments: null | string;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/stones/{id}/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {null|string} */
+                        sheet: "A" | "B" | "C" | "D" | null;
+                        /** @enum {null|string} */
+                        color: "red" | "yellow" | null;
+                        rockNumber: null | number;
+                        effectiveDate: string;
+                        notes?: string | null;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            stone: {
+                                id: number;
+                                wcfRegistrationNumber: string;
+                                alSerialNumber: string;
+                                notes: null | string;
+                                current: null | {
+                                    /** @enum {null|string} */
+                                    sheet: "A" | "B" | "C" | "D" | null;
+                                    /** @enum {null|string} */
+                                    color: "red" | "yellow" | null;
+                                    rockNumber: null | number;
+                                    /** @enum {string} */
+                                    side: "A" | "B";
+                                    effectiveDate: string;
+                                };
+                                lastMaintenance: {
+                                    texturing: null | string;
+                                    bandNarrowing: null | string;
+                                    imprinting: null | string;
+                                };
+                            };
+                            placements: {
+                                id: number;
+                                /** @enum {null|string} */
+                                sheet: "A" | "B" | "C" | "D" | null;
+                                /** @enum {null|string} */
+                                color: "red" | "yellow" | null;
+                                rockNumber: null | number;
+                                /** @enum {string} */
+                                side: "A" | "B";
+                                effectiveDate: string;
+                                /** @enum {string} */
+                                changeType: "added" | "moved" | "swapped" | "rotated" | "flipped";
+                                relatedStone: null | {
+                                    id: number;
+                                    wcfRegistrationNumber: string;
+                                };
+                                notes: null | string;
+                            }[];
+                            maintenance: {
+                                id: number;
+                                stoneId: number;
+                                /** @enum {string} */
+                                activityType: "texturing" | "band_narrowing" | "imprinting";
+                                /** @enum {string} */
+                                side: "A" | "B";
+                                performedOn: string;
+                                passes: null | number;
+                                rotations: null | number;
+                                sandpaperGrit: null | number;
+                                bandWidthsMm: (null | number)[];
+                                comments: null | string;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/stones/{id}/flip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        effectiveDate: string;
+                        notes?: string | null;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            stone: {
+                                id: number;
+                                wcfRegistrationNumber: string;
+                                alSerialNumber: string;
+                                notes: null | string;
+                                current: null | {
+                                    /** @enum {null|string} */
+                                    sheet: "A" | "B" | "C" | "D" | null;
+                                    /** @enum {null|string} */
+                                    color: "red" | "yellow" | null;
+                                    rockNumber: null | number;
+                                    /** @enum {string} */
+                                    side: "A" | "B";
+                                    effectiveDate: string;
+                                };
+                                lastMaintenance: {
+                                    texturing: null | string;
+                                    bandNarrowing: null | string;
+                                    imprinting: null | string;
+                                };
+                            };
+                            placements: {
+                                id: number;
+                                /** @enum {null|string} */
+                                sheet: "A" | "B" | "C" | "D" | null;
+                                /** @enum {null|string} */
+                                color: "red" | "yellow" | null;
+                                rockNumber: null | number;
+                                /** @enum {string} */
+                                side: "A" | "B";
+                                effectiveDate: string;
+                                /** @enum {string} */
+                                changeType: "added" | "moved" | "swapped" | "rotated" | "flipped";
+                                relatedStone: null | {
+                                    id: number;
+                                    wcfRegistrationNumber: string;
+                                };
+                                notes: null | string;
+                            }[];
+                            maintenance: {
+                                id: number;
+                                stoneId: number;
+                                /** @enum {string} */
+                                activityType: "texturing" | "band_narrowing" | "imprinting";
+                                /** @enum {string} */
+                                side: "A" | "B";
+                                performedOn: string;
+                                passes: null | number;
+                                rotations: null | number;
+                                sandpaperGrit: null | number;
+                                bandWidthsMm: (null | number)[];
+                                comments: null | string;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;

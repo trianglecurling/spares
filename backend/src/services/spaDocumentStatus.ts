@@ -63,6 +63,17 @@ async function isPublicPermalinkInfoPath(slug: string): Promise<boolean> {
   return row != null;
 }
 
+async function curlingStoneExists(id: number): Promise<boolean> {
+  if (!Number.isFinite(id)) return false;
+  const { db, schema } = getDrizzleDb();
+  const [row] = await db
+    .select({ id: schema.curlingStones.id })
+    .from(schema.curlingStones)
+    .where(eq(schema.curlingStones.id, id))
+    .limit(1);
+  return row != null;
+}
+
 const SPA_ROUTE_RULES: SpaRouteRule[] = [
   { pattern: /^\/$/ },
   { pattern: /^\/login$/ },
@@ -80,6 +91,11 @@ const SPA_ROUTE_RULES: SpaRouteRule[] = [
   { pattern: /^\/leagues\/public$/ },
   { pattern: /^\/public\/leagues$/ },
   { pattern: /^\/calendar\/public$/ },
+  { pattern: /^\/stones$/ },
+  {
+    pattern: /^\/stones\/(\d+)$/,
+    resolve: async ([, id]) => ((await curlingStoneExists(Number.parseInt(id, 10))) ? 200 : 404),
+  },
   { pattern: /^\/search$/ },
   { pattern: /^\/explainers\/sabbaticals$/ },
   { pattern: /^\/explainers\/waitlists$/ },
@@ -159,7 +175,8 @@ const SPA_ROUTE_RULES: SpaRouteRule[] = [
   { pattern: /^\/admin\/leagues$/ },
   { pattern: /^\/admin\/leagues\/[^/]+\/setup(?:\/[^/]+)?$/ },
   { pattern: /^\/admin\/sheets$/ },
-  { pattern: /^\/admin\/facility(?:\/building-access)?$/ },
+  { pattern: /^\/admin\/facility(?:\/building-access|\/stones)?$/ },
+  { pattern: /^\/admin\/facility\/stones\/\d+$/ },
   { pattern: /^\/building-access$/ },
   { pattern: /^\/member-communications$/ },
   { pattern: /^\/board-meeting-minutes$/ },

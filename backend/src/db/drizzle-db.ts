@@ -92,6 +92,9 @@ type PgSchema = {
   permalinkHits: typeof pgSchema.permalinkHitsPg;
   siteConfig: typeof pgSchema.siteConfigPg;
   buildingAccessConfig: typeof pgSchema.buildingAccessConfigPg;
+  curlingStones: typeof pgSchema.curlingStonesPg;
+  curlingStonePlacements: typeof pgSchema.curlingStonePlacementsPg;
+  curlingStoneMaintenance: typeof pgSchema.curlingStoneMaintenancePg;
   publicContactRecipients: typeof pgSchema.publicContactRecipientsPg;
   dashboardSections: typeof pgSchema.dashboardSectionsPg;
   mailingLists: typeof pgSchema.mailingListsPg;
@@ -253,6 +256,9 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       permalinkHits: sqliteSchema.permalinkHitsSqlite,
       siteConfig: sqliteSchema.siteConfigSqlite,
       buildingAccessConfig: sqliteSchema.buildingAccessConfigSqlite,
+      curlingStones: sqliteSchema.curlingStonesSqlite,
+      curlingStonePlacements: sqliteSchema.curlingStonePlacementsSqlite,
+      curlingStoneMaintenance: sqliteSchema.curlingStoneMaintenanceSqlite,
       publicContactRecipients: sqliteSchema.publicContactRecipientsSqlite,
       dashboardSections: sqliteSchema.dashboardSectionsSqlite,
       mailingLists: sqliteSchema.mailingListsSqlite,
@@ -403,6 +409,9 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       permalinkHits: pgSchema.permalinkHitsPg,
       siteConfig: pgSchema.siteConfigPg,
       buildingAccessConfig: pgSchema.buildingAccessConfigPg,
+      curlingStones: pgSchema.curlingStonesPg,
+      curlingStonePlacements: pgSchema.curlingStonePlacementsPg,
+      curlingStoneMaintenance: pgSchema.curlingStoneMaintenancePg,
       publicContactRecipients: pgSchema.publicContactRecipientsPg,
       dashboardSections: pgSchema.dashboardSectionsPg,
       mailingLists: pgSchema.mailingListsPg,

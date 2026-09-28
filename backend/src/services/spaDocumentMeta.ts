@@ -78,6 +78,10 @@ const STATIC_META_BY_PATH: Record<string, StaticMeta> = {
     pageTitle: 'Leagues',
     description: 'Learn about Triangle Curling Club league play and how to join.',
   },
+  '/stones': {
+    pageTitle: 'Curling stones',
+    description: 'Where each of the club’s curling stones is in play, with position and maintenance history.',
+  },
   '/feedback': {
     pageTitle: 'Feedback',
     description: 'Share feedback about the club website or member tools.',

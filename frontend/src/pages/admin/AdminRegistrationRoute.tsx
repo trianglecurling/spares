@@ -64,6 +64,13 @@ export default function AdminRegistrationRoute() {
     return <ConfigPage />;
   }
 
+  if (segment === 'name-tags') {
+    if (subsegment) {
+      return <Navigate to={`/admin/registrations/name-tags${location.search}`} replace />;
+    }
+    return <ConfigPage />;
+  }
+
   if (segment === 'roster-emails') {
     if (subsegment && /^\d+$/.test(subsegment)) {
       return (

@@ -4,6 +4,7 @@ export type PublicSystemPagePath =
   | '/'
   | '/calendar/public'
   | '/leagues/public'
+  | '/stones'
   | '/events'
   | '/donate'
   | '/contact'
@@ -13,6 +14,7 @@ export const PUBLIC_SYSTEM_PAGES: Array<{ path: PublicSystemPagePath; label: str
   { path: '/', label: 'Home' },
   { path: '/calendar/public', label: 'Public calendar' },
   { path: '/leagues/public', label: 'Public leagues' },
+  { path: '/stones', label: 'Curling stones' },
   { path: '/events', label: 'Events' },
   { path: '/donate', label: 'Donate' },
   { path: '/contact', label: 'Contact' },
