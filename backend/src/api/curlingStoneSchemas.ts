@@ -76,6 +76,17 @@ export const curlingStonePlacementSchema = {
       required: ['id', 'wcfRegistrationNumber'],
     },
     notes: { type: ['string', 'null'] },
+    groupSize: { type: 'integer' },
+    dateRange: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        min: { type: ['string', 'null'] },
+        max: { type: ['string', 'null'] },
+      },
+      required: ['min', 'max'],
+    },
+    canUndo: { type: 'boolean' },
   },
   required: [
     'id',
@@ -87,7 +98,29 @@ export const curlingStonePlacementSchema = {
     'changeType',
     'relatedStone',
     'notes',
+    'groupSize',
+    'dateRange',
+    'canUndo',
   ],
+} as const;
+
+export const curlingStonePlacementUpdateBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    effectiveDate: dateOnlySchema,
+    notes: { type: ['string', 'null'], maxLength: 2000 },
+  },
+  required: ['effectiveDate'],
+} as const;
+
+export const curlingStonePlacementChangeResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    affected: { type: 'integer' },
+  },
+  required: ['affected'],
 } as const;
 
 export const curlingStoneMaintenanceSchema = {

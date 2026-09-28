@@ -3530,6 +3530,12 @@ export interface paths {
                                     wcfRegistrationNumber: string;
                                 };
                                 notes: null | string;
+                                groupSize: number;
+                                dateRange: {
+                                    min: null | string;
+                                    max: null | string;
+                                };
+                                canUndo: boolean;
                             }[];
                             maintenance: {
                                 id: number;
@@ -26203,6 +26209,12 @@ export interface paths {
                                     wcfRegistrationNumber: string;
                                 };
                                 notes: null | string;
+                                groupSize: number;
+                                dateRange: {
+                                    min: null | string;
+                                    max: null | string;
+                                };
+                                canUndo: boolean;
                             }[];
                             maintenance: {
                                 id: number;
@@ -26456,6 +26468,75 @@ export interface paths {
         };
         trace?: never;
     };
+    "/stones/placements/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            affected: number;
+                        };
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        effectiveDate: string;
+                        notes?: string | null;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            affected: number;
+                        };
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
     "/stones/{id}": {
         parameters: {
             query?: never;
@@ -26556,6 +26637,12 @@ export interface paths {
                                     wcfRegistrationNumber: string;
                                 };
                                 notes: null | string;
+                                groupSize: number;
+                                dateRange: {
+                                    min: null | string;
+                                    max: null | string;
+                                };
+                                canUndo: boolean;
                             }[];
                             maintenance: {
                                 id: number;
@@ -26655,6 +26742,12 @@ export interface paths {
                                     wcfRegistrationNumber: string;
                                 };
                                 notes: null | string;
+                                groupSize: number;
+                                dateRange: {
+                                    min: null | string;
+                                    max: null | string;
+                                };
+                                canUndo: boolean;
                             }[];
                             maintenance: {
                                 id: number;
@@ -26753,6 +26846,12 @@ export interface paths {
                                     wcfRegistrationNumber: string;
                                 };
                                 notes: null | string;
+                                groupSize: number;
+                                dateRange: {
+                                    min: null | string;
+                                    max: null | string;
+                                };
+                                canUndo: boolean;
                             }[];
                             maintenance: {
                                 id: number;

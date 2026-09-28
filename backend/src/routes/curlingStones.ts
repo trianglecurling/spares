@@ -13,6 +13,8 @@ import {
   curlingStoneMaintenanceCreateResponseSchema,
   curlingStoneMaintenanceUpdateBodySchema,
   curlingStoneMoveBodySchema,
+  curlingStonePlacementChangeResponseSchema,
+  curlingStonePlacementUpdateBodySchema,
   curlingStoneRotateBodySchema,
   curlingStoneRotateResponseSchema,
   curlingStoneUpdateBodySchema,
@@ -32,8 +34,10 @@ import {
   listCurlingStones,
   moveCurlingStone,
   rotateCurlingStones,
+  undoCurlingStonePlacement,
   updateCurlingStone,
   updateCurlingStoneMaintenance,
+  updateCurlingStonePlacement,
 } from '../domains/facility/curlingStones.js';
 import {
   ROCKS_PER_COLOR,
@@ -81,6 +85,7 @@ const updateBody = z.object({ ...identifierFields, notes: z.string().max(2000).n
 const moveBody = z.object({ ...positionFields, effectiveDate: dateOnly, notes });
 const flipBody = z.object({ effectiveDate: dateOnly, notes });
 const rotateBody = z.object({ effectiveDate: dateOnly });
+const placementUpdateBody = z.object({ effectiveDate: dateOnly, notes });
 
 const maintenanceFields = {
   activityType: z.enum(['texturing', 'band_narrowing', 'imprinting']),
@@ -307,6 +312,53 @@ export async function protectedCurlingStoneRoutes(fastify: FastifyInstance): Pro
       try {
         await deleteCurlingStoneMaintenance(id);
         return { success: true };
+      } catch (error) {
+        return handleStoneError(reply, error);
+      }
+    },
+  );
+
+  fastify.patch(
+    '/stones/placements/:id',
+    {
+      schema: {
+        tags: ['curling-stones'],
+        params: curlingStoneIdParamsSchema,
+        body: curlingStonePlacementUpdateBodySchema,
+        response: { 200: curlingStonePlacementChangeResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      const member = await requireStoneManager(request, reply);
+      if (!member) return reply;
+      const id = parseId(request);
+      if (id == null) return sendApiError(reply, 400, 'Invalid position history entry id');
+      const parsed = placementUpdateBody.safeParse(request.body);
+      if (!parsed.success) return sendValidationError(reply, 'Invalid position history entry', parsed.error.flatten());
+      try {
+        return { affected: await updateCurlingStonePlacement(id, parsed.data) };
+      } catch (error) {
+        return handleStoneError(reply, error);
+      }
+    },
+  );
+
+  fastify.delete(
+    '/stones/placements/:id',
+    {
+      schema: {
+        tags: ['curling-stones'],
+        params: curlingStoneIdParamsSchema,
+        response: { 200: curlingStonePlacementChangeResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      const member = await requireStoneManager(request, reply);
+      if (!member) return reply;
+      const id = parseId(request);
+      if (id == null) return sendApiError(reply, 400, 'Invalid position history entry id');
+      try {
+        return { affected: await undoCurlingStonePlacement(id) };
       } catch (error) {
         return handleStoneError(reply, error);
       }

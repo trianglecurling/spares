@@ -55,8 +55,13 @@ function positionOf(row: StonePosition): StonePosition {
   return { sheet: row.sheet, color: row.color, rockNumber: row.rockNumber };
 }
 
-/** Rows written by one action share a date and creation timestamp, so they are shown as one change. */
-function placementGroupKey(row: ActivityPlacementInput): string {
+/**
+ * Rows written by one action share a date and creation timestamp, so they are shown (and edited) as
+ * one change. Moves and flips always stand alone.
+ */
+export function placementGroupKey(
+  row: Pick<ActivityPlacementInput, 'id' | 'stoneId' | 'effectiveDate' | 'changeType' | 'relatedStoneId' | 'notes' | 'createdAt'>,
+): string {
   const base = `${row.effectiveDate}|${row.createdAt}`;
   switch (row.changeType) {
     case 'rotated':

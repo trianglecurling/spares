@@ -1,7 +1,12 @@
 import { asc, eq, gte, inArray, sql } from 'drizzle-orm';
 import { isUniqueConstraintViolation } from '../../api/errors.js';
 import { getDrizzleDb } from '../../db/drizzle-db.js';
-import { buildCurlingStoneActivity, type ActivityEntryDto } from './curlingStoneActivity.js';
+import {
+  buildCurlingStoneActivity,
+  placementGroupKey,
+  type ActivityEntryDto,
+  type ActivityPlacementInput,
+} from './curlingStoneActivity.js';
 import {
   isStoneColor,
   isStoneSheet,
@@ -60,6 +65,12 @@ export type PlacementDto = StonePosition & {
   changeType: PlacementChangeType;
   relatedStone: { id: number; wcfRegistrationNumber: string } | null;
   notes: string | null;
+  /** Number of stones changed by the same action (both stones in a swap, every stone in a rotation). */
+  groupSize: number;
+  /** Dates the entry can move to without reordering any affected stone's history. */
+  dateRange: { min: string | null; max: string | null };
+  /** True when this action is still the latest change for every stone it touched. */
+  canUndo: boolean;
 };
 
 export type MaintenanceDto = {
@@ -146,6 +157,73 @@ async function loadCurrentPlacements(executor: DrizzleExecutor): Promise<Map<num
     current.set(row.stone_id, row);
   }
   return current;
+}
+
+function toActivityPlacement(row: PlacementRow): ActivityPlacementInput {
+  return {
+    ...placementPosition(row),
+    id: row.id,
+    stoneId: row.stone_id,
+    side: placementSide(row),
+    effectiveDate: formatDateValue(row.effective_date),
+    changeType: row.change_type as PlacementChangeType,
+    relatedStoneId: row.related_stone_id ?? null,
+    notes: row.notes ?? null,
+    createdAt: formatTimestampValue(row.created_at),
+  };
+}
+
+type PlacementIndex = {
+  byStone: Map<number, PlacementRow[]>;
+  groups: Map<string, PlacementRow[]>;
+  keyById: Map<number, string>;
+};
+
+function indexPlacements(rows: PlacementRow[]): PlacementIndex {
+  const index: PlacementIndex = { byStone: new Map(), groups: new Map(), keyById: new Map() };
+  for (const row of [...rows].sort(placementOrder)) {
+    const history = index.byStone.get(row.stone_id) ?? [];
+    history.push(row);
+    index.byStone.set(row.stone_id, history);
+    const key = placementGroupKey(toActivityPlacement(row));
+    index.keyById.set(row.id, key);
+    index.groups.set(key, [...(index.groups.get(key) ?? []), row]);
+  }
+  return index;
+}
+
+function placementGroup(index: PlacementIndex, placementId: number): PlacementRow[] {
+  const key = index.keyById.get(placementId);
+  return key ? (index.groups.get(key) ?? []) : [];
+}
+
+/** The window between each affected stone's neighboring entries, so editing never reorders history. */
+function groupDateRange(index: PlacementIndex, group: PlacementRow[]): PlacementDto['dateRange'] {
+  let min: string | null = null;
+  let max: string | null = null;
+  for (const row of group) {
+    const history = index.byStone.get(row.stone_id) ?? [];
+    const position = history.findIndex((entry) => entry.id === row.id);
+    const previous = history[position - 1];
+    const next = history[position + 1];
+    if (previous) {
+      const date = formatDateValue(previous.effective_date);
+      if (min == null || date > min) min = date;
+    }
+    if (next) {
+      const date = formatDateValue(next.effective_date);
+      if (max == null || date < max) max = date;
+    }
+  }
+  return { min, max };
+}
+
+function groupCanUndo(index: PlacementIndex, group: PlacementRow[]): boolean {
+  if (group.length === 0 || group.some((row) => row.change_type === 'added')) return false;
+  return group.every((row) => {
+    const history = index.byStone.get(row.stone_id) ?? [];
+    return history[history.length - 1]?.id === row.id;
+  });
 }
 
 function occupantsByPosition(current: Map<number, PlacementRow>): Map<string, number> {
@@ -275,11 +353,8 @@ export async function listCurlingStones(): Promise<StoneSummaryDto[]> {
 export async function getCurlingStoneDetail(stoneId: number): Promise<StoneDetailDto> {
   const { db, schema } = getDrizzleDb();
   const stone = await loadStoneOrThrow(db, stoneId);
-  const [placementRows, maintenanceRows, allStones] = await Promise.all([
-    db
-      .select()
-      .from(schema.curlingStonePlacements)
-      .where(eq(schema.curlingStonePlacements.stone_id, stoneId)),
+  const [allPlacementRows, maintenanceRows, allStones] = await Promise.all([
+    db.select().from(schema.curlingStonePlacements),
     db
       .select()
       .from(schema.curlingStoneMaintenance)
@@ -290,11 +365,13 @@ export async function getCurlingStoneDetail(stoneId: number): Promise<StoneDetai
       .from(schema.curlingStones),
   ]);
   const wcfById = new Map(allStones.map((row) => [row.id, row.wcf]));
-  const orderedPlacements = [...placementRows].sort(placementOrder);
+  const index = indexPlacements(allPlacementRows);
+  const orderedPlacements = index.byStone.get(stoneId) ?? [];
 
   const placements: PlacementDto[] = orderedPlacements
     .map((row) => {
       const relatedWcf = row.related_stone_id != null ? wcfById.get(row.related_stone_id) : undefined;
+      const group = placementGroup(index, row.id);
       return {
         id: row.id,
         ...placementPosition(row),
@@ -306,6 +383,9 @@ export async function getCurlingStoneDetail(stoneId: number): Promise<StoneDetai
             ? { id: row.related_stone_id, wcfRegistrationNumber: relatedWcf }
             : null,
         notes: row.notes ?? null,
+        groupSize: group.length,
+        dateRange: groupDateRange(index, group),
+        canUndo: groupCanUndo(index, group),
       };
     })
     .reverse();
@@ -345,17 +425,7 @@ export async function listCurlingStoneActivity(since: string): Promise<ActivityE
   return buildCurlingStoneActivity({
     since,
     wcfByStoneId: new Map(stones.map((row) => [row.id, row.wcf])),
-    placements: placementRows.map((row) => ({
-      ...placementPosition(row),
-      id: row.id,
-      stoneId: row.stone_id,
-      side: placementSide(row),
-      effectiveDate: formatDateValue(row.effective_date),
-      changeType: row.change_type as PlacementChangeType,
-      relatedStoneId: row.related_stone_id ?? null,
-      notes: row.notes ?? null,
-      createdAt: formatTimestampValue(row.created_at),
-    })),
+    placements: placementRows.map(toActivityPlacement),
     maintenance: maintenanceRows.map((row) => ({
       ...toMaintenanceDto(row),
       createdAt: formatTimestampValue(row.created_at),
@@ -650,6 +720,90 @@ export async function rotateCurlingStones(input: { effectiveDate: string }, memb
       })),
     );
     return onSheets.length;
+  });
+}
+
+async function loadPlacementGroupOrThrow(executor: DrizzleExecutor, placementId: number) {
+  const { schema } = getDrizzleDb();
+  const index = indexPlacements(await executor.select().from(schema.curlingStonePlacements));
+  const group = placementGroup(index, placementId);
+  if (group.length === 0) throw new CurlingStoneError(404, 'Position history entry not found');
+  return { index, group };
+}
+
+function formatRangeMessage(range: PlacementDto['dateRange']): string {
+  if (range.min && range.max) return `Choose a date from ${range.min} to ${range.max}`;
+  if (range.min) return `Choose a date on or after ${range.min}`;
+  return `Choose a date on or before ${range.max}`;
+}
+
+/**
+ * Changes the date and notes of a position change. Every row written by the same action (both stones
+ * in a swap, every stone in a rotation or import) is updated together so the change stays whole.
+ */
+export async function updateCurlingStonePlacement(
+  placementId: number,
+  input: { effectiveDate: string; notes?: string | null },
+): Promise<number> {
+  const { db, schema } = getDrizzleDb();
+  return db.transaction(async (tx) => {
+    const { index, group } = await loadPlacementGroupOrThrow(tx, placementId);
+    const range = groupDateRange(index, group);
+    if ((range.min && input.effectiveDate < range.min) || (range.max && input.effectiveDate > range.max)) {
+      throw new CurlingStoneError(
+        400,
+        `${formatRangeMessage(range)} so this change stays in order with the other position changes for ${
+          group.length === 1 ? 'this stone' : 'these stones'
+        }.`,
+      );
+    }
+    await tx
+      .update(schema.curlingStonePlacements)
+      .set({ effective_date: input.effectiveDate, notes: trimOrNull(input.notes) })
+      .where(
+        inArray(
+          schema.curlingStonePlacements.id,
+          group.map((row) => row.id),
+        ),
+      );
+    return group.length;
+  });
+}
+
+/** Removes the latest position change for every stone it touched, returning them to where they were. */
+export async function undoCurlingStonePlacement(placementId: number): Promise<number> {
+  const { db, schema } = getDrizzleDb();
+  return db.transaction(async (tx) => {
+    const { index, group } = await loadPlacementGroupOrThrow(tx, placementId);
+    if (group.some((row) => row.change_type === 'added')) {
+      throw new CurlingStoneError(400, 'The first entry for a stone can’t be undone. Delete the stone instead.');
+    }
+    if (!groupCanUndo(index, group)) {
+      throw new CurlingStoneError(
+        409,
+        'Only the most recent change can be undone. A later change affects one of these stones.',
+      );
+    }
+    await tx.delete(schema.curlingStonePlacements).where(
+      inArray(
+        schema.curlingStonePlacements.id,
+        group.map((row) => row.id),
+      ),
+    );
+
+    const seen = new Set<string>();
+    for (const row of (await loadCurrentPlacements(tx)).values()) {
+      const key = stonePositionKey(placementPosition(row));
+      if (!key) continue;
+      if (seen.has(key)) {
+        throw new CurlingStoneError(
+          409,
+          `Undoing this would put two stones at ${stonePositionLabel(placementPosition(row))}. Move the other stone first.`,
+        );
+      }
+      seen.add(key);
+    }
+    return group.length;
   });
 }
 

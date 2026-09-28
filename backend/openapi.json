@@ -5344,6 +5344,34 @@
                               "null",
                               "string"
                             ]
+                          },
+                          "groupSize": {
+                            "type": "integer"
+                          },
+                          "dateRange": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                              "min": {
+                                "type": [
+                                  "null",
+                                  "string"
+                                ]
+                              },
+                              "max": {
+                                "type": [
+                                  "null",
+                                  "string"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "min",
+                              "max"
+                            ]
+                          },
+                          "canUndo": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
@@ -5355,7 +5383,10 @@
                           "effectiveDate",
                           "changeType",
                           "relatedStone",
-                          "notes"
+                          "notes",
+                          "groupSize",
+                          "dateRange",
+                          "canUndo"
                         ]
                       }
                     },
@@ -40168,6 +40199,34 @@
                               "null",
                               "string"
                             ]
+                          },
+                          "groupSize": {
+                            "type": "integer"
+                          },
+                          "dateRange": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                              "min": {
+                                "type": [
+                                  "null",
+                                  "string"
+                                ]
+                              },
+                              "max": {
+                                "type": [
+                                  "null",
+                                  "string"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "min",
+                              "max"
+                            ]
+                          },
+                          "canUndo": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
@@ -40179,7 +40238,10 @@
                           "effectiveDate",
                           "changeType",
                           "relatedStone",
-                          "notes"
+                          "notes",
+                          "groupSize",
+                          "dateRange",
+                          "canUndo"
                         ]
                       }
                     },
@@ -40722,6 +40784,109 @@
         }
       }
     },
+    "/stones/placements/{id}": {
+      "patch": {
+        "tags": [
+          "curling-stones"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "effectiveDate": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                  },
+                  "notes": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 2000
+                  }
+                },
+                "required": [
+                  "effectiveDate"
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d+$"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "affected": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "affected"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "curling-stones"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d+$"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "affected": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "affected"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/stones/{id}": {
       "patch": {
         "tags": [
@@ -40983,6 +41148,34 @@
                               "null",
                               "string"
                             ]
+                          },
+                          "groupSize": {
+                            "type": "integer"
+                          },
+                          "dateRange": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                              "min": {
+                                "type": [
+                                  "null",
+                                  "string"
+                                ]
+                              },
+                              "max": {
+                                "type": [
+                                  "null",
+                                  "string"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "min",
+                              "max"
+                            ]
+                          },
+                          "canUndo": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
@@ -40994,7 +41187,10 @@
                           "effectiveDate",
                           "changeType",
                           "relatedStone",
-                          "notes"
+                          "notes",
+                          "groupSize",
+                          "dateRange",
+                          "canUndo"
                         ]
                       }
                     },
@@ -41414,6 +41610,34 @@
                               "null",
                               "string"
                             ]
+                          },
+                          "groupSize": {
+                            "type": "integer"
+                          },
+                          "dateRange": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                              "min": {
+                                "type": [
+                                  "null",
+                                  "string"
+                                ]
+                              },
+                              "max": {
+                                "type": [
+                                  "null",
+                                  "string"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "min",
+                              "max"
+                            ]
+                          },
+                          "canUndo": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
@@ -41425,7 +41649,10 @@
                           "effectiveDate",
                           "changeType",
                           "relatedStone",
-                          "notes"
+                          "notes",
+                          "groupSize",
+                          "dateRange",
+                          "canUndo"
                         ]
                       }
                     },
@@ -41773,6 +42000,34 @@
                               "null",
                               "string"
                             ]
+                          },
+                          "groupSize": {
+                            "type": "integer"
+                          },
+                          "dateRange": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                              "min": {
+                                "type": [
+                                  "null",
+                                  "string"
+                                ]
+                              },
+                              "max": {
+                                "type": [
+                                  "null",
+                                  "string"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "min",
+                              "max"
+                            ]
+                          },
+                          "canUndo": {
+                            "type": "boolean"
                           }
                         },
                         "required": [
@@ -41784,7 +42039,10 @@
                           "effectiveDate",
                           "changeType",
                           "relatedStone",
-                          "notes"
+                          "notes",
+                          "groupSize",
+                          "dateRange",
+                          "canUndo"
                         ]
                       }
                     },

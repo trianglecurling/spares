@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { del, get, post } from '../../api/client';
+import { del, get, patch, post } from '../../api/client';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
 import AppPageControlsRow from '../../components/AppPageControlsRow';
 import AppStateCard from '../../components/AppStateCard';
@@ -21,11 +21,13 @@ import {
   formatStoneDate,
   maintenanceSummary,
   MAINTENANCE_ACTIVITY_LABELS,
+  PLACEMENT_CHANGE_LABELS,
   publicStoneHref,
   stonePositionLabel,
   stoneTitle,
   type StoneDetailResponse,
   type StoneMaintenance,
+  type StonePlacement,
   type StoneSummary,
 } from '../../utils/curlingStones';
 
@@ -34,9 +36,34 @@ type DialogState =
   | { type: 'move' }
   | { type: 'flip' }
   | { type: 'maintenance'; record?: StoneMaintenance }
+  | { type: 'placement'; placement: StonePlacement }
   | null;
 
 const backButton = <BackButton label="Stones" to="/admin/facility/stones" />;
+
+function placementEntryLabel(placement: StonePlacement): string {
+  return `${PLACEMENT_CHANGE_LABELS[placement.changeType].toLowerCase()} entry from ${formatStoneDate(placement.effectiveDate)}`;
+}
+
+function placementScopeNote(placement: StonePlacement): string | null {
+  if (placement.groupSize <= 1) return null;
+  if (placement.changeType === 'swapped' && placement.relatedStone) {
+    return `This also updates the matching entry for stone ${placement.relatedStone.wcfRegistrationNumber}.`;
+  }
+  if (placement.changeType === 'rotated') {
+    return `This updates the whole rotation, all ${placement.groupSize} stones.`;
+  }
+  return `This updates all ${placement.groupSize} stones changed at the same time.`;
+}
+
+function placementDateHelper(range: StonePlacement['dateRange']): string | null {
+  if (range.min && range.max) {
+    return `Between ${formatStoneDate(range.min)} and ${formatStoneDate(range.max)}, so history stays in order.`;
+  }
+  if (range.min) return `${formatStoneDate(range.min)} or later, so history stays in order.`;
+  if (range.max) return `${formatStoneDate(range.max)} or earlier, so history stays in order.`;
+  return null;
+}
 
 export default function AdminStoneDetail() {
   const { stoneId = '' } = useParams();
@@ -146,6 +173,46 @@ export default function AdminStoneDetail() {
     }
   };
 
+  const handleUpdatePlacement = async (
+    placement: StonePlacement,
+    values: { effectiveDate: string; notes: string | null },
+  ) => {
+    try {
+      const { affected } = await patch('/stones/placements/{id}', values, { id: String(placement.id) });
+      showAlert(affected > 1 ? `Updated history for ${affected} stones` : 'Position history updated', 'success');
+      closeAndReload();
+    } catch (error) {
+      showAlert(formatApiError(error, 'Failed to update position history'), 'error');
+      throw error;
+    }
+  };
+
+  const handleUndoPlacement = async (placement: StonePlacement) => {
+    const previous = placements[placements.findIndex((entry) => entry.id === placement.id) + 1];
+    const outcome =
+      placement.changeType === 'swapped' && placement.relatedStone
+        ? `Both this stone and stone ${placement.relatedStone.wcfRegistrationNumber} go back to where they were.`
+        : placement.changeType === 'rotated'
+          ? `All ${placement.groupSize} stones in the rotation move back one sheet.`
+          : placement.changeType === 'flipped'
+            ? `Side ${previous?.side ?? (placement.side === 'A' ? 'B' : 'A')} goes back in play.`
+            : `This stone goes back to ${stonePositionLabel(previous)}.`;
+    const confirmed = await confirm({
+      title: 'Undo position change',
+      message: `Undo the ${placementEntryLabel(placement)}? ${outcome} The entry is removed from history.`,
+      variant: 'danger',
+      confirmText: 'Undo change',
+    });
+    if (!confirmed) return;
+    try {
+      await del('/stones/placements/{id}', undefined, { id: String(placement.id) });
+      showAlert('Position change undone', 'success');
+      void load();
+    } catch (error) {
+      showAlert(formatApiError(error, 'Failed to undo position change'), 'error');
+    }
+  };
+
   const handleFlip = async ({ effectiveDate, notes }: { effectiveDate: string; notes: string | null }) => {
     try {
       await post('/stones/{id}/flip', { effectiveDate, notes }, { id: String(stone.id) });
@@ -232,8 +299,56 @@ export default function AdminStoneDetail() {
 
       <section className="space-y-3">
         <h2 className="app-section-title">Position history</h2>
-        <StonePlacementTable placements={placements} getStoneHref={adminStoneHref} />
+        <StonePlacementTable
+          placements={placements}
+          getStoneHref={adminStoneHref}
+          renderActions={(placement) => (
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="secondary"
+                className="!px-3 !py-1"
+                onClick={() => setDialog({ type: 'placement', placement })}
+                aria-label={`Edit ${placementEntryLabel(placement)}`}
+              >
+                Edit
+              </Button>
+              {placement.canUndo ? (
+                <Button
+                  variant="outline-danger"
+                  className="!px-3 !py-1"
+                  onClick={() => void handleUndoPlacement(placement)}
+                  aria-label={`Undo ${placementEntryLabel(placement)}`}
+                >
+                  Undo
+                </Button>
+              ) : null}
+            </div>
+          )}
+        />
       </section>
+      {dialog?.type === 'placement' ? (
+        <StoneDateActionModal
+          title="Edit position history"
+          submitLabel="Save changes"
+          initialDate={dialog.placement.effectiveDate}
+          initialNotes={dialog.placement.notes}
+          minDate={dialog.placement.dateRange.min}
+          maxDate={dialog.placement.dateRange.max}
+          dateHelperText={placementDateHelper(dialog.placement.dateRange)}
+          showNotes
+          onClose={() => setDialog(null)}
+          onSubmit={(values) => handleUpdatePlacement(dialog.placement, values)}
+          description={
+            <>
+              <p>
+                {PLACEMENT_CHANGE_LABELS[dialog.placement.changeType]} to {stonePositionLabel(dialog.placement)}, side{' '}
+                {dialog.placement.side} in play.
+              </p>
+              {placementScopeNote(dialog.placement) ? <p className="mt-2">{placementScopeNote(dialog.placement)}</p> : null}
+            </>
+          }
+        />
+      ) : null}
 
       {dialog?.type === 'edit' ? (
         <StoneFormModal stones={stones} stone={stone} onClose={() => setDialog(null)} onSaved={closeAndReload} />

@@ -56,9 +56,11 @@ export function StoneMaintenanceTable({
 export function StonePlacementTable({
   placements,
   getStoneHref,
+  renderActions,
 }: {
   placements: StonePlacement[];
   getStoneHref: (stoneId: number) => string;
+  renderActions?: (placement: StonePlacement) => ReactNode;
 }) {
   return (
     <DataTable<StonePlacement, never, number>
@@ -102,6 +104,11 @@ export function StonePlacementTable({
           renderCell: (placement) => placement.notes ?? '',
         },
       ]}
+      actions={
+        renderActions
+          ? { header: 'Actions', widthClassName: 'w-40', renderActions }
+          : undefined
+      }
     />
   );
 }
