@@ -7,6 +7,7 @@ import {
   addExpenseReportNote,
   createExpenseReport,
   deleteExpenseReportForAdmin,
+  exportExpenseReportsForAdmin,
   getExpenseAdminSummary,
   getExpenseReceiptFileForAdmin,
   getExpenseReceiptFileForMember,
@@ -21,6 +22,7 @@ import {
 import {
   EXPENSE_REPORT_STATUSES,
 } from '../services/expenseReportConstants.js';
+import { EXPENSE_DATE_RANGES } from '../services/expenseReportDateRange.js';
 import { abuseRouteRateLimits } from '../plugins/abuseRateLimits.js';
 import {
   expenseListItemSchema,
@@ -104,6 +106,37 @@ const listQuerySchema = z.object({
   status: z.enum(EXPENSE_REPORT_STATUSES).optional().or(z.literal('')),
   search: z.string().optional(),
 });
+
+const adminFilterQuerySchema = z.object({
+  status: z.enum(EXPENSE_REPORT_STATUSES).optional().or(z.literal('')),
+  search: z.string().optional(),
+  range: z.enum(EXPENSE_DATE_RANGES).optional().or(z.literal('')),
+  from: z.string().optional(),
+  to: z.string().optional(),
+});
+
+const adminListQuerySchema = adminFilterQuerySchema.extend({
+  page: z.coerce.number().int().min(1).optional(),
+  pageSize: z.coerce.number().int().min(1).max(100).optional(),
+});
+
+const adminFilterQuerystringProperties = {
+  status: { type: 'string' },
+  search: { type: 'string' },
+  range: { type: 'string', enum: ['', ...EXPENSE_DATE_RANGES] },
+  from: { type: 'string' },
+  to: { type: 'string' },
+} as const;
+
+function adminFiltersFromQuery(query: z.infer<typeof adminFilterQuerySchema>) {
+  return {
+    status: query.status || undefined,
+    search: query.search,
+    range: query.range || undefined,
+    from: query.from,
+    to: query.to,
+  };
+}
 
 const adminPatchSchema = z.object({
   status: z.enum(EXPENSE_REPORT_STATUSES).optional(),
@@ -279,22 +312,61 @@ export async function protectedExpenseRoutes(fastify: FastifyInstance): Promise<
           properties: {
             page: { type: 'number' },
             pageSize: { type: 'number' },
-            status: { type: 'string' },
-            search: { type: 'string' },
+            ...adminFilterQuerystringProperties,
           },
         },
-        response: { 200: listResponseSchema, 403: apiErrorResponseSchema },
+        response: {
+          200: listResponseSchema,
+          400: apiErrorResponseSchema,
+          403: apiErrorResponseSchema,
+        },
       },
     },
     async (request, reply) => {
       if (!requireExpensesRead(request, reply)) return;
-      const query = listQuerySchema.parse(request.query);
-      return listExpenseReportsForAdmin({
-        page: query.page,
-        pageSize: query.pageSize,
-        status: query.status || undefined,
-        search: query.search,
-      });
+      try {
+        const query = adminListQuerySchema.parse(request.query);
+        return await listExpenseReportsForAdmin({
+          page: query.page,
+          pageSize: query.pageSize,
+          ...adminFiltersFromQuery(query),
+        });
+      } catch (err) {
+        return handleExpenseError(reply, err);
+      }
+    }
+  );
+
+  fastify.get(
+    '/admin/expenses/export',
+    {
+      schema: {
+        tags: ['expenses'],
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: adminFilterQuerystringProperties,
+        },
+        response: {
+          200: { type: 'string', description: 'CSV of expense reports matching the filters' },
+          400: apiErrorResponseSchema,
+          403: apiErrorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      if (!requireExpensesRead(request, reply)) return;
+      try {
+        const query = adminFilterQuerySchema.parse(request.query);
+        const result = await exportExpenseReportsForAdmin(adminFiltersFromQuery(query));
+        return reply
+          .header('Content-Type', 'text/csv; charset=utf-8')
+          .header('Content-Disposition', `attachment; filename="${result.filename}"`)
+          .header('Cache-Control', 'private, no-store')
+          .send(result.csv);
+      } catch (err) {
+        return handleExpenseError(reply, err);
+      }
     }
   );
 

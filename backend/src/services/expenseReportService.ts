@@ -1,6 +1,6 @@
 import path from 'path';
 import { randomUUID } from 'crypto';
-import { and, asc, desc, eq, gte, inArray, isNull, notInArray, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, lt, notInArray, or, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import type {
   ExpenseDocumentType,
@@ -13,7 +13,8 @@ import { expenseReportManageUrl } from '../utils/expenseReportManageUrl.js';
 import { getFileStorageAdapter } from '../utils/fileStorage.js';
 import { detectMimeType, sanitizeFilename } from '../utils/managedFiles.js';
 import { config } from '../config.js';
-import { formatDateInTimeZone, localDateTimeToUtcDate } from '../utils/timeZone.js';
+import { formatDateInTimeZone, formatTimeInTimeZone, localDateTimeToUtcDate } from '../utils/timeZone.js';
+import { toCsv } from '../utils/csv.js';
 import { normalizeEmail } from '../utils/auth.js';
 import { volunteerCredentialIsValidOn } from '../utils/volunteerCredentials.js';
 import {
@@ -26,8 +27,14 @@ import {
   CLUB_CREDIT_CARD_HOLDER_CREDENTIAL_NAME,
   EXPENSE_DOCUMENT_TYPE_LABELS,
   EXPENSE_STATUS_LABELS,
+  EXPENSE_TRIP_PURPOSE_LABELS,
   MAX_EXPENSE_DOCUMENTS,
 } from './expenseReportConstants.js';
+import {
+  ExpenseDateRangeError,
+  resolveExpenseDateBounds,
+  type ExpenseDateRange,
+} from './expenseReportDateRange.js';
 import {
   isSubmitterEditableStatus,
   shouldSendCheckMailedEmail,
@@ -1254,16 +1261,34 @@ export async function listExpenseReportsForMember(
   };
 }
 
-export async function listExpenseReportsForAdmin(query: {
-  page?: number;
-  pageSize?: number;
+export type ExpenseAdminListFilters = {
   status?: ExpenseReportStatus | '';
   search?: string;
-}) {
-  const pageSize = Math.min(Math.max(query.pageSize ?? 25, 1), 100);
-  const page = Math.max(query.page ?? 1, 1);
-  const offset = (page - 1) * pageSize;
+  range?: ExpenseDateRange | '';
+  from?: string;
+  to?: string;
+};
+
+function clubTimeZone(): string {
+  return config.timeZone || 'America/New_York';
+}
+
+async function getFiscalYearStartMmdd(): Promise<string | null> {
   const { db, schema } = getDrizzleDb();
+  const [row] = await db
+    .select({ mmdd: schema.governanceSettings.fiscal_year_start_mmdd })
+    .from(schema.governanceSettings)
+    .where(eq(schema.governanceSettings.id, 1))
+    .limit(1);
+  return row?.mmdd ?? null;
+}
+
+function clubToday(timeZone: string): string {
+  return formatDateInTimeZone(new Date(), timeZone) ?? new Date().toISOString().slice(0, 10);
+}
+
+async function buildAdminListWhere(query: ExpenseAdminListFilters) {
+  const { schema } = getDrizzleDb();
   const filters = [];
   if (query.status) {
     filters.push(eq(schema.expenseReports.status, query.status));
@@ -1278,7 +1303,44 @@ export async function listExpenseReportsForAdmin(query: {
       )
     );
   }
-  const where = filters.length ? and(...filters) : undefined;
+  if (query.range) {
+    const timeZone = clubTimeZone();
+    let bounds;
+    try {
+      bounds = resolveExpenseDateBounds({
+        range: query.range,
+        from: query.from,
+        to: query.to,
+        todayLocal: clubToday(timeZone),
+        fiscalYearStartMmdd: query.range === 'this_fiscal_year' ? await getFiscalYearStartMmdd() : null,
+      });
+    } catch (err) {
+      if (err instanceof ExpenseDateRangeError) {
+        throw new ExpenseReportError(err.message, 400, [{ field: err.field, message: err.message }]);
+      }
+      throw err;
+    }
+    if (bounds.from) {
+      const fromUtc = localDateTimeToUtcDate(bounds.from, '00:00:00', timeZone);
+      filters.push(gte(schema.expenseReports.submitted_at, fromUtc as any));
+    }
+    if (bounds.toExclusive) {
+      const toUtc = localDateTimeToUtcDate(bounds.toExclusive, '00:00:00', timeZone);
+      filters.push(lt(schema.expenseReports.submitted_at, toUtc as any));
+    }
+  }
+  return filters.length ? and(...filters) : undefined;
+}
+
+export async function listExpenseReportsForAdmin(query: ExpenseAdminListFilters & {
+  page?: number;
+  pageSize?: number;
+}) {
+  const pageSize = Math.min(Math.max(query.pageSize ?? 25, 1), 100);
+  const page = Math.max(query.page ?? 1, 1);
+  const offset = (page - 1) * pageSize;
+  const { db, schema } = getDrizzleDb();
+  const where = await buildAdminListWhere(query);
   const [countRow] = await db
     .select({ count: sql<number>`count(*)` })
     .from(schema.expenseReports)
@@ -1296,6 +1358,93 @@ export async function listExpenseReportsForAdmin(query: {
     page,
     pageSize,
     total,
+  };
+}
+
+const EXPENSE_EXPORT_HEADERS = [
+  'Report ID',
+  'Submitted',
+  'Status',
+  'Type',
+  'Submitter name',
+  'Submitter email',
+  'Submitter phone',
+  'Committee',
+  'Purpose',
+  'Activity date',
+  'Total amount',
+  'To reimburse',
+  'Currency',
+  'Club credit card',
+  'Credit card holder',
+  'Round trip miles',
+  'Trip purpose',
+  'Comments',
+];
+
+function formatExportAmount(amountMinor: number): string {
+  return (amountMinor / 100).toFixed(2);
+}
+
+function formatExportSubmittedAt(value: unknown, timeZone: string): string {
+  if (!value) return '';
+  const date = value instanceof Date ? value : new Date(String(value));
+  if (Number.isNaN(date.getTime())) return String(value);
+  const day = formatDateInTimeZone(date, timeZone);
+  const time = formatTimeInTimeZone(date, timeZone);
+  return day && time ? `${day} ${time.slice(0, 5)}` : date.toISOString();
+}
+
+function exportTripPurpose(row: ReportRow): string {
+  const purpose = row.trip_purpose == null ? '' : String(row.trip_purpose);
+  if (!purpose) return '';
+  if (purpose === 'other') return String(row.trip_purpose_other ?? '') || 'Other';
+  return EXPENSE_TRIP_PURPOSE_LABELS[purpose as keyof typeof EXPENSE_TRIP_PURPOSE_LABELS] ?? purpose;
+}
+
+function exportCsvRow(row: ReportRow, itemTotalMinor: number | undefined, timeZone: string): string[] {
+  const item = mapListItem(row, itemTotalMinor);
+  const usedCard = asBool(row.used_club_credit_card);
+  return [
+    String(item.id),
+    formatExportSubmittedAt(row.submitted_at, timeZone),
+    item.statusLabel,
+    item.kind === 'mileage' ? 'Mileage' : 'Expense',
+    item.submitterName,
+    item.submitterEmail,
+    row.submitter_phone == null ? '' : String(row.submitter_phone),
+    String(row.committee_custom || row.committee_name || ''),
+    row.purpose == null ? '' : String(row.purpose),
+    asDateOnly(row.activity_date) ?? '',
+    formatExportAmount(item.totalAmountMinor),
+    formatExportAmount(item.requestedAmountMinor),
+    item.requestedCurrency.toUpperCase(),
+    usedCard == null ? '' : usedCard ? 'Yes' : 'No',
+    usedCard ? String(row.club_credit_card_owner_name ?? '') : '',
+    row.round_trip_miles == null ? '' : String(row.round_trip_miles),
+    exportTripPurpose(row),
+    row.comments == null ? '' : String(row.comments),
+  ];
+}
+
+export async function exportExpenseReportsForAdmin(
+  query: ExpenseAdminListFilters
+): Promise<{ csv: string; filename: string }> {
+  const { db, schema } = getDrizzleDb();
+  const where = await buildAdminListWhere(query);
+  const rows = (await db
+    .select()
+    .from(schema.expenseReports)
+    .where(where)
+    .orderBy(desc(schema.expenseReports.submitted_at), desc(schema.expenseReports.id))) as ReportRow[];
+  const totals = await loadItemTotalsByReportId(rows.map((row) => asInt(row.id)));
+  const timeZone = clubTimeZone();
+  return {
+    csv: toCsv(
+      EXPENSE_EXPORT_HEADERS,
+      rows.map((row) => exportCsvRow(row, totals.get(asInt(row.id)), timeZone))
+    ),
+    filename: `expense-reports-${clubToday(timeZone)}.csv`,
   };
 }
 

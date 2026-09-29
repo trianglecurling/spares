@@ -1,5 +1,4 @@
 import { useEffect, useId, useMemo, useState } from 'react';
-import axios from 'axios';
 import Button from '../../components/Button';
 import FormCheckbox from '../../components/FormCheckbox';
 import InlineStateMessage from '../../components/InlineStateMessage';
@@ -8,6 +7,7 @@ import SortableList from '../../components/dragDrop/SortableList';
 import SortableRow from '../../components/dragDrop/SortableRow';
 import { useAlert } from '../../contexts/AlertContext';
 import api, { getApiErrorMessage } from '../../utils/api';
+import { downloadBlob, filenameFromDisposition, messageFromBlobError } from '../../utils/fileDownload';
 
 export type RegistrationExportColumn = {
   key: string;
@@ -65,26 +65,6 @@ function mergeColumnChoices(catalog: RegistrationExportColumn[]): ColumnChoice[]
     ? new Set([...stored.selected.filter((key) => byKey.has(key)), ...catalog.map((column) => column.key).filter((key) => !(stored.order ?? []).includes(key))])
     : new Set(catalog.map((column) => column.key));
   return order.map((key) => ({ ...byKey.get(key)!, selected: selected.has(key) }));
-}
-
-function filenameFromDisposition(header: string | undefined, fallback: string): string {
-  if (!header) return fallback;
-  const utfMatch = /filename\*=UTF-8''([^;]+)/i.exec(header);
-  if (utfMatch?.[1]) return decodeURIComponent(utfMatch[1]);
-  const match = /filename="?([^"]+)"?/i.exec(header);
-  return match?.[1] ?? fallback;
-}
-
-async function messageFromExportError(error: unknown): Promise<string> {
-  if (axios.isAxiosError(error) && error.response?.data instanceof Blob) {
-    try {
-      const parsed = JSON.parse(await error.response.data.text()) as { error?: string };
-      if (typeof parsed.error === 'string' && parsed.error.trim()) return parsed.error.trim();
-    } catch {
-      // Fall through to the shared API error helper.
-    }
-  }
-  return getApiErrorMessage(error, 'Unable to export registrations.');
 }
 
 export default function AdminRegistrationsExportDialog({
@@ -147,22 +127,14 @@ export default function AdminRegistrationsExportDialog({
         },
         { responseType: 'blob' },
       );
-      const blob = new Blob([response.data], { type: 'text/csv;charset=utf-8' });
-      const objectUrl = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = objectUrl;
-      link.download = filenameFromDisposition(
-        response.headers['content-disposition'],
-        'registrations.csv',
+      downloadBlob(
+        new Blob([response.data], { type: 'text/csv;charset=utf-8' }),
+        filenameFromDisposition(response.headers['content-disposition'], 'registrations.csv'),
       );
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(objectUrl);
       showAlert('Registration export downloaded.', 'success');
       onClose();
     } catch (error) {
-      showAlert(await messageFromExportError(error), 'error');
+      showAlert(await messageFromBlobError(error, 'Unable to export registrations.'), 'error');
     } finally {
       setExporting(false);
     }
