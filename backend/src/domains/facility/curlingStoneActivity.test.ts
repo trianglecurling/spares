@@ -34,7 +34,8 @@ function maintenance(overrides: Partial<ActivityMaintenanceInput> & Pick<Activit
     performedOn: '2026-03-01',
     passes: 2,
     rotations: null,
-    sandpaperGrit: 220,
+    sandpaperGrit: 80,
+    sandpaperCondition: 'new',
     bandWidthsMm: [],
     comments: null,
     createdAt: '2026-03-01T10:00:00.000Z',
@@ -109,7 +110,7 @@ describe('buildCurlingStoneActivity', () => {
       maintenance: [
         maintenance({ id: 1, stoneId: 1 }),
         maintenance({ id: 2, stoneId: 2 }),
-        maintenance({ id: 3, stoneId: 3, passes: 3 }),
+        maintenance({ id: 3, stoneId: 3, sandpaperCondition: 'used_once' }),
         maintenance({ id: 4, stoneId: 3, performedOn: '2026-01-15' }),
         maintenance({ id: 5, stoneId: 1, activityType: 'imprinting', passes: null, sandpaperGrit: null }),
         maintenance({ id: 6, stoneId: 2, activityType: 'imprinting', passes: null, sandpaperGrit: null }),

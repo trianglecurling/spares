@@ -25,6 +25,13 @@ export type SpareRequestContextGame = {
   opponentName: string | null;
 };
 
+export type SpareRequestContextTeam = {
+  id: number;
+  name: string | null;
+  players: SpareRequestContextPlayer[];
+  games: SpareRequestContextGame[];
+};
+
 export type SpareRequestContextLeague = {
   id: number;
   name: string;
@@ -34,7 +41,14 @@ export type SpareRequestContextLeague = {
   teamName: string | null;
   players: SpareRequestContextPlayer[];
   games: SpareRequestContextGame[];
+  /** True when the viewer manages this league and can request for any rostered player. */
+  isManager: boolean;
+  /** Every team in the league; only filled in when `isManager`. */
+  managedTeams: SpareRequestContextTeam[];
 };
+
+/** Which leagues the viewer manages: every league, or a list of league IDs. */
+export type ManagedLeagueScope = 'all' | number[];
 
 export type SpareRequestContext = {
   leagues: SpareRequestContextLeague[];
@@ -142,100 +156,44 @@ async function loadTeamLeaguesForMember(
   return [...byLeague.values()];
 }
 
-/**
- * Active, spare-eligible leagues for the member in the relevant session,
- * with teammates and scheduled games for their team.
- *
- * Team membership in this session is the source of truth. Active roster rows
- * without a team are still listed so the form can explain that they need a
- * team assignment.
- */
-export async function getSpareRequestContextForMember(
-  memberId: number,
-): Promise<SpareRequestContext> {
-  const today = await getCurrentDateStringAsync();
-  const sessionId = await resolveRelevantSessionIdForLeagues(today);
-  if (sessionId == null) {
-    return { leagues: [] };
-  }
+type TeamDetail = {
+  players: SpareRequestContextPlayer[];
+  games: SpareRequestContextGame[];
+};
+
+/** Rosters and upcoming scheduled games for the given teams, keyed by team ID. */
+async function loadTeamDetails(
+  teams: Array<{ teamId: number; leagueId: number }>,
+  viewerId: number,
+  today: string,
+): Promise<Map<number, TeamDetail>> {
+  const details = new Map<number, TeamDetail>();
+  if (teams.length === 0) return details;
 
   const { db, schema } = getDrizzleDb();
+  const teamIds = [...new Set(teams.map((t) => t.teamId))];
+  const leagueByTeam = new Map(teams.map((t) => [t.teamId, t.leagueId]));
 
-  const teamLeagues = await loadTeamLeaguesForMember(memberId, sessionId);
-  const teamLeagueIds = new Set(teamLeagues.map((row) => row.leagueId));
-
-  const rosterRows = (await db
+  const teammateRows = (await db
     .select({
-      leagueId: schema.leagues.id,
-      leagueName: schema.leagues.name,
-      dayOfWeek: schema.leagues.day_of_week,
-      format: schema.leagues.format,
-      allowsDropIns: schema.leagues.allows_drop_ins,
-      memberName: schema.members.name,
+      teamId: schema.teamMembers.team_id,
+      memberId: schema.teamMembers.member_id,
+      name: schema.members.name,
+      role: schema.teamMembers.role,
+      isSkip: schema.teamMembers.is_skip,
+      isVice: schema.teamMembers.is_vice,
     })
-    .from(schema.leagueRoster)
-    .innerJoin(schema.leagues, eq(schema.leagueRoster.league_id, schema.leagues.id))
-    .innerJoin(schema.members, eq(schema.leagueRoster.member_id, schema.members.id))
-    .where(
-      and(
-        eq(schema.leagueRoster.member_id, memberId),
-        eq(schema.leagueRoster.status, 'active'),
-        eq(schema.leagues.session_id, sessionId),
-      ),
-    )
-    .orderBy(schema.leagues.day_of_week, schema.leagues.name)) as Array<{
-    leagueId: number;
-    leagueName: string;
-    dayOfWeek: number;
-    format: string;
-    allowsDropIns: number;
-    memberName: string;
+    .from(schema.teamMembers)
+    .innerJoin(schema.members, eq(schema.teamMembers.member_id, schema.members.id))
+    .where(inArray(schema.teamMembers.team_id, teamIds))
+    .orderBy(schema.teamMembers.team_id, schema.teamMembers.role)) as Array<{
+    teamId: number;
+    memberId: number;
+    name: string;
+    role: string;
+    isSkip: number;
+    isVice: number;
   }>;
-
-  const unassignedRosterLeagues: LeagueRow[] = [];
-  for (const row of rosterRows) {
-    if (teamLeagueIds.has(row.leagueId)) continue;
-    if (!isLeagueEligibleForSpares({ format: row.format, allowsDropIns: row.allowsDropIns })) {
-      continue;
-    }
-    unassignedRosterLeagues.push({
-      ...row,
-      teamId: null,
-      teamName: null,
-    });
-  }
-
-  const leaguesForContext = [...teamLeagues, ...unassignedRosterLeagues].sort((a, b) => {
-    if (a.dayOfWeek !== b.dayOfWeek) return a.dayOfWeek - b.dayOfWeek;
-    return a.leagueName.localeCompare(b.leagueName);
-  });
-
-  const teamIds = [
-    ...new Set(leaguesForContext.map((row) => row.teamId).filter((id): id is number => id != null)),
-  ];
-
-  const teammateRows = teamIds.length
-    ? ((await db
-        .select({
-          teamId: schema.teamMembers.team_id,
-          memberId: schema.teamMembers.member_id,
-          name: schema.members.name,
-          role: schema.teamMembers.role,
-          isSkip: schema.teamMembers.is_skip,
-          isVice: schema.teamMembers.is_vice,
-        })
-        .from(schema.teamMembers)
-        .innerJoin(schema.members, eq(schema.teamMembers.member_id, schema.members.id))
-        .where(inArray(schema.teamMembers.team_id, teamIds))
-        .orderBy(schema.teamMembers.team_id, schema.teamMembers.role)) as Array<{
-        teamId: number;
-        memberId: number;
-        name: string;
-        role: string;
-        isSkip: number;
-        isVice: number;
-      }>)
-    : [];
 
   const teammatesByTeam = new Map<number, TeamMateRow[]>();
   for (const row of teammateRows) {
@@ -252,37 +210,32 @@ export async function getSpareRequestContextForMember(
     });
     teammatesByTeam.set(row.teamId, list);
   }
-  for (const [teamId, list] of teammatesByTeam) {
-    teammatesByTeam.set(teamId, sortTeammatesByRosterRole(list));
-  }
 
-  const gameRows = teamIds.length
-    ? ((await db
-        .select({
-          id: schema.games.id,
-          leagueId: schema.games.league_id,
-          team1Id: schema.games.team1_id,
-          team2Id: schema.games.team2_id,
-          gameDate: schema.games.game_date,
-          gameTime: schema.games.game_time,
-        })
-        .from(schema.games)
-        .where(
-          and(
-            eq(schema.games.status, 'scheduled'),
-            gte(schema.games.game_date, today),
-            or(inArray(schema.games.team1_id, teamIds), inArray(schema.games.team2_id, teamIds)),
-          ),
-        )
-        .orderBy(asc(schema.games.game_date), asc(schema.games.game_time), asc(schema.games.id))) as Array<{
-        id: number;
-        leagueId: number;
-        team1Id: number;
-        team2Id: number;
-        gameDate: unknown;
-        gameTime: unknown;
-      }>)
-    : [];
+  const gameRows = (await db
+    .select({
+      id: schema.games.id,
+      leagueId: schema.games.league_id,
+      team1Id: schema.games.team1_id,
+      team2Id: schema.games.team2_id,
+      gameDate: schema.games.game_date,
+      gameTime: schema.games.game_time,
+    })
+    .from(schema.games)
+    .where(
+      and(
+        eq(schema.games.status, 'scheduled'),
+        gte(schema.games.game_date, today),
+        or(inArray(schema.games.team1_id, teamIds), inArray(schema.games.team2_id, teamIds)),
+      ),
+    )
+    .orderBy(asc(schema.games.game_date), asc(schema.games.game_time), asc(schema.games.id))) as Array<{
+    id: number;
+    leagueId: number;
+    team1Id: number;
+    team2Id: number;
+    gameDate: unknown;
+    gameTime: unknown;
+  }>;
 
   const opponentTeamIds = new Set<number>();
   for (const row of gameRows) {
@@ -305,22 +258,17 @@ export async function getSpareRequestContextForMember(
 
   const now = new Date();
   const timeZone = config.timeZone;
-  const gamesByLeague = new Map<number, SpareRequestContextGame[]>();
-  for (const league of leaguesForContext) {
-    if (league.teamId == null) {
-      gamesByLeague.set(league.leagueId, []);
-      continue;
-    }
-    const myTeamId = league.teamId;
+  for (const teamId of teamIds) {
+    const leagueId = leagueByTeam.get(teamId);
     const games: SpareRequestContextGame[] = [];
     for (const row of gameRows) {
-      if (row.leagueId !== league.leagueId) continue;
-      if (row.team1Id !== myTeamId && row.team2Id !== myTeamId) continue;
+      if (row.leagueId !== leagueId) continue;
+      if (row.team1Id !== teamId && row.team2Id !== teamId) continue;
       const date = formatDateValue(row.gameDate);
       const time = formatTimeValue(row.gameTime);
       if (!date || !time) continue;
       if (!isGameStillUpcoming(date, time, now, timeZone)) continue;
-      const opponentId = row.team1Id === myTeamId ? row.team2Id : row.team1Id;
+      const opponentId = row.team1Id === teamId ? row.team2Id : row.team1Id;
       games.push({
         id: row.id,
         date,
@@ -328,46 +276,196 @@ export async function getSpareRequestContextForMember(
         opponentName: opponentNames.get(opponentId) ?? null,
       });
     }
-    gamesByLeague.set(league.leagueId, games);
+    details.set(teamId, {
+      players: sortTeammatesByRosterRole(teammatesByTeam.get(teamId) ?? []).map((player) => ({
+        ...player,
+        isSelf: player.memberId === viewerId,
+      })),
+      games,
+    });
   }
 
-  const leagues: SpareRequestContextLeague[] = leaguesForContext.map((row) => {
-    const games = gamesByLeague.get(row.leagueId) ?? [];
-    if (row.teamId != null) {
-      const teammates = teammatesByTeam.get(row.teamId) ?? [];
-      return {
-        id: row.leagueId,
-        name: row.leagueName,
-        dayOfWeek: row.dayOfWeek,
-        format: row.format,
-        teamId: row.teamId,
-        teamName: row.teamName,
-        players: teammates.map((player) => ({
-          ...player,
-          isSelf: player.memberId === memberId,
-        })),
-        games,
-      };
+  return details;
+}
+
+type ManagedLeagueRow = {
+  leagueId: number;
+  leagueName: string;
+  dayOfWeek: number;
+  format: string;
+};
+
+async function loadManagedLeagues(
+  scope: ManagedLeagueScope,
+  sessionId: number,
+): Promise<ManagedLeagueRow[]> {
+  if (Array.isArray(scope) && scope.length === 0) return [];
+  const { db, schema } = getDrizzleDb();
+  const rows = (await db
+    .select({
+      leagueId: schema.leagues.id,
+      leagueName: schema.leagues.name,
+      dayOfWeek: schema.leagues.day_of_week,
+      format: schema.leagues.format,
+      allowsDropIns: schema.leagues.allows_drop_ins,
+    })
+    .from(schema.leagues)
+    .where(
+      and(
+        eq(schema.leagues.session_id, sessionId),
+        scope === 'all' ? undefined : inArray(schema.leagues.id, scope),
+      ),
+    )) as Array<ManagedLeagueRow & { allowsDropIns: number }>;
+  return rows.filter((row) =>
+    isLeagueEligibleForSpares({ format: row.format, allowsDropIns: row.allowsDropIns }),
+  );
+}
+
+/**
+ * Spare-eligible leagues the member can request a spare for in the relevant session.
+ *
+ * Team membership in this session is the source of truth for the member's own
+ * requests. Active roster rows without a team are still listed so the form can
+ * explain that they need a team assignment. Leagues the member manages are also
+ * listed, with every team's roster and games, so a manager can request for any player.
+ */
+export async function getSpareRequestContextForMember(
+  memberId: number,
+  options: { managedLeagues?: ManagedLeagueScope; includeOwnLeagues?: boolean } = {},
+): Promise<SpareRequestContext> {
+  const today = await getCurrentDateStringAsync();
+  const sessionId = await resolveRelevantSessionIdForLeagues(today);
+  if (sessionId == null) {
+    return { leagues: [] };
+  }
+
+  const { db, schema } = getDrizzleDb();
+  const includeOwnLeagues = options.includeOwnLeagues ?? true;
+
+  const teamLeagues = includeOwnLeagues ? await loadTeamLeaguesForMember(memberId, sessionId) : [];
+  const teamLeagueIds = new Set(teamLeagues.map((row) => row.leagueId));
+
+  const rosterRows = includeOwnLeagues
+    ? ((await db
+        .select({
+          leagueId: schema.leagues.id,
+          leagueName: schema.leagues.name,
+          dayOfWeek: schema.leagues.day_of_week,
+          format: schema.leagues.format,
+          allowsDropIns: schema.leagues.allows_drop_ins,
+          memberName: schema.members.name,
+        })
+        .from(schema.leagueRoster)
+        .innerJoin(schema.leagues, eq(schema.leagueRoster.league_id, schema.leagues.id))
+        .innerJoin(schema.members, eq(schema.leagueRoster.member_id, schema.members.id))
+        .where(
+          and(
+            eq(schema.leagueRoster.member_id, memberId),
+            eq(schema.leagueRoster.status, 'active'),
+            eq(schema.leagues.session_id, sessionId),
+          ),
+        )
+        .orderBy(schema.leagues.day_of_week, schema.leagues.name)) as Array<{
+        leagueId: number;
+        leagueName: string;
+        dayOfWeek: number;
+        format: string;
+        allowsDropIns: number;
+        memberName: string;
+      }>)
+    : [];
+
+  const unassignedRosterLeagues: LeagueRow[] = [];
+  for (const row of rosterRows) {
+    if (teamLeagueIds.has(row.leagueId)) continue;
+    if (!isLeagueEligibleForSpares({ format: row.format, allowsDropIns: row.allowsDropIns })) {
+      continue;
+    }
+    unassignedRosterLeagues.push({
+      ...row,
+      teamId: null,
+      teamName: null,
+    });
+  }
+  const ownLeagues = [...teamLeagues, ...unassignedRosterLeagues];
+  const ownLeagueById = new Map(ownLeagues.map((row) => [row.leagueId, row]));
+
+  const managedLeagues = options.managedLeagues
+    ? await loadManagedLeagues(options.managedLeagues, sessionId)
+    : [];
+  const managedLeagueIds = new Set(managedLeagues.map((row) => row.leagueId));
+
+  const managedTeamRows = managedLeagues.length
+    ? ((await db
+        .select({
+          teamId: schema.leagueTeams.id,
+          leagueId: schema.leagueTeams.league_id,
+          name: schema.leagueTeams.name,
+        })
+        .from(schema.leagueTeams)
+        .where(inArray(schema.leagueTeams.league_id, [...managedLeagueIds]))) as Array<{
+        teamId: number;
+        leagueId: number;
+        name: string | null;
+      }>)
+    : [];
+
+  const teamsToLoad = [
+    ...teamLeagues
+      .filter((row): row is LeagueRow & { teamId: number } => row.teamId != null)
+      .map((row) => ({ teamId: row.teamId, leagueId: row.leagueId })),
+    ...managedTeamRows.map((row) => ({ teamId: row.teamId, leagueId: row.leagueId })),
+  ];
+  const teamDetails = await loadTeamDetails(teamsToLoad, memberId, today);
+
+  const managedTeamsByLeague = new Map<number, SpareRequestContextTeam[]>();
+  for (const row of managedTeamRows) {
+    const detail = teamDetails.get(row.teamId) ?? { players: [], games: [] };
+    if (detail.players.length === 0) continue;
+    const list = managedTeamsByLeague.get(row.leagueId) ?? [];
+    list.push({ id: row.teamId, name: row.name, ...detail });
+    managedTeamsByLeague.set(row.leagueId, list);
+  }
+  for (const list of managedTeamsByLeague.values()) {
+    list.sort((a, b) => (a.name ?? '').localeCompare(b.name ?? ''));
+  }
+
+  const allLeagueIds = new Set<number>([...ownLeagueById.keys(), ...managedLeagueIds]);
+  const managedById = new Map(managedLeagues.map((row) => [row.leagueId, row]));
+
+  const leagues: SpareRequestContextLeague[] = [...allLeagueIds].map((leagueId) => {
+    const own = ownLeagueById.get(leagueId);
+    const managed = managedById.get(leagueId);
+    const isManager = Boolean(managed);
+    const managedTeams = isManager ? (managedTeamsByLeague.get(leagueId) ?? []) : [];
+    const base = {
+      id: leagueId,
+      name: own?.leagueName ?? managed!.leagueName,
+      dayOfWeek: own?.dayOfWeek ?? managed!.dayOfWeek,
+      format: own?.format ?? managed!.format,
+      isManager,
+      managedTeams,
+    };
+
+    if (own?.teamId != null) {
+      const detail = teamDetails.get(own.teamId) ?? { players: [], games: [] };
+      return { ...base, teamId: own.teamId, teamName: own.teamName, ...detail };
     }
 
     return {
-      id: row.leagueId,
-      name: row.leagueName,
-      dayOfWeek: row.dayOfWeek,
-      format: row.format,
+      ...base,
       teamId: null,
       teamName: null,
-      players: [
-        {
-          memberId,
-          name: row.memberName,
-          role: null,
-          sparePosition: null,
-          isSelf: true,
-        },
-      ],
+      players: own
+        ? [{ memberId, name: own.memberName, role: null, sparePosition: null, isSelf: true }]
+        : [],
       games: [],
     };
+  });
+
+  leagues.sort((a, b) => {
+    if (a.dayOfWeek !== b.dayOfWeek) return a.dayOfWeek - b.dayOfWeek;
+    return a.name.localeCompare(b.name);
   });
 
   return { leagues };

@@ -7,6 +7,10 @@ const activityTypeSchema = {
   type: 'string',
   enum: ['texturing', 'band_narrowing', 'imprinting'],
 } as const;
+const sandpaperConditionSchema = {
+  type: ['string', 'null'],
+  enum: ['new', 'used_once', 'used_twice', null],
+} as const;
 const placementChangeTypeSchema = {
   type: 'string',
   enum: ['added', 'moved', 'swapped', 'rotated', 'flipped'],
@@ -135,6 +139,7 @@ export const curlingStoneMaintenanceSchema = {
     passes: { type: ['integer', 'null'] },
     rotations: { type: ['integer', 'null'] },
     sandpaperGrit: { type: ['integer', 'null'] },
+    sandpaperCondition: sandpaperConditionSchema,
     bandWidthsMm: {
       type: 'array',
       items: { type: ['number', 'null'] },
@@ -150,6 +155,7 @@ export const curlingStoneMaintenanceSchema = {
     'passes',
     'rotations',
     'sandpaperGrit',
+    'sandpaperCondition',
     'bandWidthsMm',
     'comments',
   ],
@@ -200,6 +206,7 @@ export const curlingStoneActivityResponseSchema = {
           passes: { type: ['integer', 'null'] },
           rotations: { type: ['integer', 'null'] },
           sandpaperGrit: { type: ['integer', 'null'] },
+          sandpaperCondition: sandpaperConditionSchema,
           bandWidthsMm: { type: 'array', items: { type: ['number', 'null'] } },
           notes: { type: ['string', 'null'] },
           stones: {
@@ -226,6 +233,7 @@ export const curlingStoneActivityResponseSchema = {
           'passes',
           'rotations',
           'sandpaperGrit',
+          'sandpaperCondition',
           'bandWidthsMm',
           'notes',
           'stones',
@@ -345,7 +353,8 @@ const maintenanceFieldProperties = {
   performedOn: dateOnlySchema,
   passes: { type: ['integer', 'null'], minimum: 0, maximum: 1000 },
   rotations: { type: ['integer', 'null'], minimum: 0, maximum: 1000 },
-  sandpaperGrit: { type: ['integer', 'null'], minimum: 1, maximum: 10000 },
+  sandpaperGrit: { type: ['integer', 'null'], enum: [60, 80, 100, null] },
+  sandpaperCondition: sandpaperConditionSchema,
   bandWidthsMm: {
     type: ['array', 'null'],
     minItems: 4,

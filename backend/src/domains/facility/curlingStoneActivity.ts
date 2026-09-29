@@ -2,6 +2,7 @@ import type { StonePosition, StoneSide } from './curlingStonePositions.js';
 
 type MaintenanceActivityType = 'texturing' | 'band_narrowing' | 'imprinting';
 type PlacementChangeType = 'added' | 'moved' | 'swapped' | 'rotated' | 'flipped';
+type SandpaperCondition = 'new' | 'used_once' | 'used_twice';
 
 export type ActivityPlacementInput = StonePosition & {
   id: number;
@@ -23,6 +24,7 @@ export type ActivityMaintenanceInput = {
   passes: number | null;
   rotations: number | null;
   sandpaperGrit: number | null;
+  sandpaperCondition: SandpaperCondition | null;
   bandWidthsMm: Array<number | null>;
   comments: string | null;
   createdAt: string;
@@ -44,6 +46,7 @@ export type ActivityEntryDto = {
   passes: number | null;
   rotations: number | null;
   sandpaperGrit: number | null;
+  sandpaperCondition: SandpaperCondition | null;
   bandWidthsMm: Array<number | null>;
   notes: string | null;
   stones: ActivityStoneDto[];
@@ -86,6 +89,7 @@ function maintenanceGroupKey(row: ActivityMaintenanceInput): string {
     row.passes ?? '',
     row.rotations ?? '',
     row.sandpaperGrit ?? '',
+    row.sandpaperCondition ?? '',
     row.comments ?? '',
     row.createdAt,
   ].join('|');
@@ -144,6 +148,7 @@ export function buildCurlingStoneActivity(input: {
         passes: null,
         rotations: null,
         sandpaperGrit: null,
+        sandpaperCondition: null,
         bandWidthsMm: [],
         notes: row.notes,
         stones: [],
@@ -174,6 +179,7 @@ export function buildCurlingStoneActivity(input: {
         passes: row.passes,
         rotations: row.rotations,
         sandpaperGrit: row.sandpaperGrit,
+        sandpaperCondition: row.sandpaperCondition,
         bandWidthsMm: row.bandWidthsMm,
         notes: row.comments,
         stones: [],

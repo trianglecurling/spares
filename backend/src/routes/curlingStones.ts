@@ -34,6 +34,8 @@ import {
   listCurlingStones,
   moveCurlingStone,
   rotateCurlingStones,
+  SANDPAPER_CONDITIONS,
+  SANDPAPER_GRITS,
   undoCurlingStonePlacement,
   updateCurlingStone,
   updateCurlingStoneMaintenance,
@@ -92,7 +94,13 @@ const maintenanceFields = {
   performedOn: dateOnly,
   passes: z.number().int().min(0).max(1000).nullable().optional(),
   rotations: z.number().int().min(0).max(1000).nullable().optional(),
-  sandpaperGrit: z.number().int().min(1).max(10000).nullable().optional(),
+  sandpaperGrit: z
+    .number()
+    .int()
+    .refine((value) => (SANDPAPER_GRITS as readonly number[]).includes(value), 'Choose 60, 80, or 100 grit.')
+    .nullable()
+    .optional(),
+  sandpaperCondition: z.enum(SANDPAPER_CONDITIONS).nullable().optional(),
   bandWidthsMm: z.array(z.number().min(0).max(100).nullable()).length(4).nullable().optional(),
   comments: z.string().max(2000).nullable().optional(),
 };

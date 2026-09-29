@@ -32,6 +32,14 @@ type MaintenanceRow = DrizzleSchema['curlingStoneMaintenance']['$inferSelect'];
 export type MaintenanceActivityType = 'texturing' | 'band_narrowing' | 'imprinting';
 export type PlacementChangeType = 'added' | 'moved' | 'swapped' | 'rotated' | 'flipped';
 
+export const SANDPAPER_GRITS = [60, 80, 100] as const;
+export const SANDPAPER_CONDITIONS = ['new', 'used_once', 'used_twice'] as const;
+export type SandpaperCondition = (typeof SANDPAPER_CONDITIONS)[number];
+
+function isSandpaperCondition(value: unknown): value is SandpaperCondition {
+  return typeof value === 'string' && (SANDPAPER_CONDITIONS as readonly string[]).includes(value);
+}
+
 export class CurlingStoneError extends Error {
   constructor(
     public readonly statusCode: number,
@@ -82,6 +90,7 @@ export type MaintenanceDto = {
   passes: number | null;
   rotations: number | null;
   sandpaperGrit: number | null;
+  sandpaperCondition: SandpaperCondition | null;
   bandWidthsMm: Array<number | null>;
   comments: string | null;
 };
@@ -133,6 +142,7 @@ function toMaintenanceDto(row: MaintenanceRow): MaintenanceDto {
     passes: row.passes ?? null,
     rotations: row.rotations ?? null,
     sandpaperGrit: row.sandpaper_grit ?? null,
+    sandpaperCondition: isSandpaperCondition(row.sandpaper_condition) ? row.sandpaper_condition : null,
     bandWidthsMm:
       row.activity_type === 'imprinting'
         ? [row.band_width_1_mm, row.band_width_2_mm, row.band_width_3_mm, row.band_width_4_mm].map(
@@ -813,6 +823,7 @@ export type MaintenanceFieldsInput = {
   passes?: number | null;
   rotations?: number | null;
   sandpaperGrit?: number | null;
+  sandpaperCondition?: SandpaperCondition | null;
   bandWidthsMm?: Array<number | null> | null;
   comments?: string | null;
 };
@@ -826,6 +837,7 @@ function normalizeMaintenanceFields(input: MaintenanceFieldsInput) {
     passes: null as number | null,
     rotations: null as number | null,
     sandpaper_grit: null as number | null,
+    sandpaper_condition: null as SandpaperCondition | null,
     band_width_1_mm: null as number | null,
     band_width_2_mm: null as number | null,
     band_width_3_mm: null as number | null,
@@ -834,8 +846,14 @@ function normalizeMaintenanceFields(input: MaintenanceFieldsInput) {
   };
 
   if (input.activityType === 'texturing' || input.activityType === 'band_narrowing') {
-    if (input.sandpaperGrit == null) fieldErrors.sandpaperGrit = 'Enter the sandpaper grit.';
+    if (input.sandpaperGrit == null || !(SANDPAPER_GRITS as readonly number[]).includes(input.sandpaperGrit)) {
+      fieldErrors.sandpaperGrit = 'Choose a sandpaper grit of 60, 80, or 100.';
+    }
+    if (!isSandpaperCondition(input.sandpaperCondition)) {
+      fieldErrors.sandpaperCondition = 'Choose whether the sandpaper was new, used once, or used twice.';
+    }
     base.sandpaper_grit = input.sandpaperGrit ?? null;
+    base.sandpaper_condition = input.sandpaperCondition ?? null;
     if (input.activityType === 'texturing') {
       if (input.passes == null) fieldErrors.passes = 'Enter the number of passes.';
       base.passes = input.passes ?? null;

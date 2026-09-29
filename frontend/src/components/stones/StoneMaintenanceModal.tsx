@@ -3,13 +3,19 @@ import { patch, post } from '../../api/client';
 import { useAlert } from '../../contexts/AlertContext';
 import { formatApiError } from '../../utils/api';
 import {
+  DEFAULT_SANDPAPER_GRIT,
   MAINTENANCE_ACTIVITY_LABELS,
+  SANDPAPER_CONDITION_LABELS,
+  SANDPAPER_GRITS,
   STONE_SHEETS,
   parseOptionalDecimal,
   parseOptionalInteger,
   stonePositionLabel,
   todayInClub,
   type MaintenanceActivityType,
+  isSandpaperGrit,
+  type SandpaperCondition,
+  type SandpaperGrit,
   type StoneMaintenance,
   type StoneSide,
   type StoneSummary,
@@ -34,13 +40,21 @@ type StoneMaintenanceModalProps = {
 };
 
 type FieldErrors = Partial<
-  Record<'stones' | 'performedOn' | 'passes' | 'rotations' | 'sandpaperGrit' | 'bandWidths', string>
+  Record<'stones' | 'performedOn' | 'passes' | 'rotations' | 'sandpaperGrit' | 'sandpaperCondition' | 'bandWidths', string>
 >;
 
 const ACTIVITY_OPTIONS = (Object.keys(MAINTENANCE_ACTIVITY_LABELS) as MaintenanceActivityType[]).map((value) => ({
   value,
   label: MAINTENANCE_ACTIVITY_LABELS[value],
   textValue: MAINTENANCE_ACTIVITY_LABELS[value],
+}));
+
+const GRIT_OPTIONS = SANDPAPER_GRITS.map((value) => ({ value, label: String(value), textValue: String(value) }));
+
+const CONDITION_OPTIONS = (Object.keys(SANDPAPER_CONDITION_LABELS) as SandpaperCondition[]).map((value) => ({
+  value,
+  label: SANDPAPER_CONDITION_LABELS[value],
+  textValue: SANDPAPER_CONDITION_LABELS[value],
 }));
 
 function stoneOptionLabel(stone: StoneSummary): string {
@@ -64,7 +78,10 @@ export default function StoneMaintenanceModal({
   const [performedOn, setPerformedOn] = useState(record?.performedOn ?? todayInClub());
   const [passes, setPasses] = useState(record?.passes != null ? String(record.passes) : '');
   const [rotations, setRotations] = useState(record?.rotations != null ? String(record.rotations) : '');
-  const [grit, setGrit] = useState(record?.sandpaperGrit != null ? String(record.sandpaperGrit) : '');
+  const [grit, setGrit] = useState<SandpaperGrit | null>(
+    isSandpaperGrit(record?.sandpaperGrit) ? record.sandpaperGrit : DEFAULT_SANDPAPER_GRIT,
+  );
+  const [condition, setCondition] = useState<SandpaperCondition | null>(record?.sandpaperCondition ?? null);
   const [widths, setWidths] = useState<string[]>(
     record?.activityType === 'imprinting'
       ? record.bandWidthsMm.map((value) => (value == null ? '' : String(value)))
@@ -76,6 +93,8 @@ export default function StoneMaintenanceModal({
 
   const activityLabelId = `${formId}-activity-label`;
   const widthsLegendId = `${formId}-widths-legend`;
+  const gritLabelId = `${formId}-grit-label`;
+  const conditionLabelId = `${formId}-condition-label`;
   const singleStone = stoneIds.length === 1 ? stones.find((stone) => stone.id === stoneIds[0]) : undefined;
   const isImprinting = activityType === 'imprinting';
 
@@ -106,7 +125,6 @@ export default function StoneMaintenanceModal({
     const nextErrors: FieldErrors = {};
     const parsedPasses = parseOptionalInteger(passes);
     const parsedRotations = parseOptionalInteger(rotations);
-    const parsedGrit = parseOptionalInteger(grit);
     const parsedWidths = widths.map(parseOptionalDecimal);
 
     if (stoneIds.length === 0) nextErrors.stones = 'Choose at least one stone.';
@@ -123,8 +141,9 @@ export default function StoneMaintenanceModal({
     ) {
       nextErrors.rotations = 'Enter the number of rotations as a whole number.';
     }
-    if (!isImprinting && (parsedGrit == null || Number.isNaN(parsedGrit) || parsedGrit < 1)) {
-      nextErrors.sandpaperGrit = 'Enter the sandpaper grit, such as 120.';
+    if (!isImprinting && grit == null) nextErrors.sandpaperGrit = 'Choose the sandpaper grit.';
+    if (!isImprinting && condition == null) {
+      nextErrors.sandpaperCondition = 'Choose whether the sandpaper sheet was new, used once, or used twice.';
     }
     if (isImprinting && parsedWidths.some((value) => value == null || Number.isNaN(value) || value < 0)) {
       nextErrors.bandWidths = 'Enter all four widths in millimeters.';
@@ -137,7 +156,8 @@ export default function StoneMaintenanceModal({
       performedOn,
       passes: activityType === 'texturing' ? parsedPasses : null,
       rotations: activityType === 'band_narrowing' ? parsedRotations : null,
-      sandpaperGrit: isImprinting ? null : parsedGrit,
+      sandpaperGrit: isImprinting ? null : grit,
+      sandpaperCondition: isImprinting ? null : condition,
       bandWidthsMm: isImprinting ? parsedWidths : null,
       comments: comments.trim() || null,
     };
@@ -167,7 +187,7 @@ export default function StoneMaintenanceModal({
   };
 
   const numberInput = (
-    key: 'passes' | 'rotations' | 'sandpaperGrit',
+    key: 'passes' | 'rotations',
     label: string,
     value: string,
     setValue: (next: string) => void,
@@ -179,7 +199,7 @@ export default function StoneMaintenanceModal({
           id={`${formId}-${key}`}
           type="number"
           inputMode="numeric"
-          min={key === 'sandpaperGrit' ? 1 : 0}
+          min={0}
           step={1}
           className="app-input"
           value={value}
@@ -305,17 +325,55 @@ export default function StoneMaintenanceModal({
           </FormField>
         </div>
 
-        {activityType === 'texturing' ? (
+        {!isImprinting ? (
           <div className="grid gap-4 sm:grid-cols-2">
-            {numberInput('passes', 'Number of passes', passes, setPasses)}
-            {numberInput('sandpaperGrit', 'Sandpaper grit', grit, setGrit)}
-          </div>
-        ) : null}
-
-        {activityType === 'band_narrowing' ? (
-          <div className="grid gap-4 sm:grid-cols-2">
-            {numberInput('rotations', 'Number of rotations', rotations, setRotations)}
-            {numberInput('sandpaperGrit', 'Sandpaper grit', grit, setGrit)}
+            {activityType === 'texturing'
+              ? numberInput('passes', 'Number of passes', passes, setPasses)
+              : numberInput('rotations', 'Number of rotations', rotations, setRotations)}
+            <FormField label="Sandpaper grit" labelId={gritLabelId} required error={errors.sandpaperGrit}>
+              {({ describedBy, invalid }) => (
+                <ChoiceInput<SandpaperGrit>
+                  layout="inline"
+                  name={`${formId}-grit`}
+                  ariaLabelledBy={gritLabelId}
+                  ariaDescribedBy={describedBy}
+                  ariaInvalid={invalid}
+                  value={grit}
+                  onChange={(next) => {
+                    if (next == null || Array.isArray(next)) return;
+                    setGrit(next);
+                    if (errors.sandpaperGrit) setErrors((prev) => ({ ...prev, sandpaperGrit: undefined }));
+                  }}
+                  options={GRIT_OPTIONS}
+                />
+              )}
+            </FormField>
+            <FormField
+              label="Sandpaper sheet"
+              labelId={conditionLabelId}
+              required
+              error={errors.sandpaperCondition}
+              className="sm:col-span-2"
+            >
+              {({ describedBy, invalid }) => (
+                <ChoiceInput<SandpaperCondition>
+                  layout="inline"
+                  name={`${formId}-condition`}
+                  ariaLabelledBy={conditionLabelId}
+                  ariaDescribedBy={describedBy}
+                  ariaInvalid={invalid}
+                  value={condition}
+                  onChange={(next) => {
+                    if (next == null || Array.isArray(next)) return;
+                    setCondition(next);
+                    if (errors.sandpaperCondition) {
+                      setErrors((prev) => ({ ...prev, sandpaperCondition: undefined }));
+                    }
+                  }}
+                  options={CONDITION_OPTIONS}
+                />
+              )}
+            </FormField>
           </div>
         ) : null}
 

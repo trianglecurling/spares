@@ -4955,6 +4955,18 @@
                               "integer"
                             ]
                           },
+                          "sandpaperCondition": {
+                            "type": [
+                              "null",
+                              "string"
+                            ],
+                            "enum": [
+                              "new",
+                              "used_once",
+                              "used_twice",
+                              null
+                            ]
+                          },
                           "bandWidthsMm": {
                             "type": "array",
                             "items": {
@@ -5100,6 +5112,7 @@
                           "passes",
                           "rotations",
                           "sandpaperGrit",
+                          "sandpaperCondition",
                           "bandWidthsMm",
                           "notes",
                           "stones"
@@ -5438,6 +5451,18 @@
                               "integer"
                             ]
                           },
+                          "sandpaperCondition": {
+                            "type": [
+                              "null",
+                              "string"
+                            ],
+                            "enum": [
+                              "new",
+                              "used_once",
+                              "used_twice",
+                              null
+                            ]
+                          },
                           "bandWidthsMm": {
                             "type": "array",
                             "items": {
@@ -5463,6 +5488,7 @@
                           "passes",
                           "rotations",
                           "sandpaperGrit",
+                          "sandpaperCondition",
                           "bandWidthsMm",
                           "comments"
                         ]
@@ -5473,6 +5499,46 @@
                     "stone",
                     "placements",
                     "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/public/spare-settings": {
+      "get": {
+        "tags": [
+          "spares"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "notificationDelaySeconds": {
+                      "type": "number"
+                    },
+                    "byePriorityWindowMinutes": {
+                      "type": "number"
+                    },
+                    "urgentThresholdHours": {
+                      "type": "number"
+                    },
+                    "reissueCooldownHours": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "notificationDelaySeconds",
+                    "byePriorityWindowMinutes",
+                    "urgentThresholdHours",
+                    "reissueCooldownHours"
                   ]
                 }
               }
@@ -19055,6 +19121,110 @@
                                 "opponentName"
                               ]
                             }
+                          },
+                          "isManager": {
+                            "type": "boolean"
+                          },
+                          "managedTeams": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "properties": {
+                                "id": {
+                                  "type": "number"
+                                },
+                                "name": {
+                                  "type": [
+                                    "null",
+                                    "string"
+                                  ]
+                                },
+                                "players": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "memberId": {
+                                        "type": "number"
+                                      },
+                                      "name": {
+                                        "type": "string"
+                                      },
+                                      "role": {
+                                        "type": [
+                                          "null",
+                                          "string"
+                                        ]
+                                      },
+                                      "sparePosition": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string",
+                                            "enum": [
+                                              "lead",
+                                              "second",
+                                              "vice",
+                                              "skip"
+                                            ]
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "isSelf": {
+                                        "type": "boolean"
+                                      }
+                                    },
+                                    "required": [
+                                      "memberId",
+                                      "name",
+                                      "role",
+                                      "sparePosition",
+                                      "isSelf"
+                                    ]
+                                  }
+                                },
+                                "games": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "id": {
+                                        "type": "number"
+                                      },
+                                      "date": {
+                                        "type": "string"
+                                      },
+                                      "time": {
+                                        "type": "string"
+                                      },
+                                      "opponentName": {
+                                        "type": [
+                                          "null",
+                                          "string"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "date",
+                                      "time",
+                                      "opponentName"
+                                    ]
+                                  }
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "name",
+                                "players",
+                                "games"
+                              ]
+                            }
                           }
                         },
                         "required": [
@@ -19065,7 +19235,9 @@
                           "teamId",
                           "teamName",
                           "players",
-                          "games"
+                          "games",
+                          "isManager",
+                          "managedTeams"
                         ]
                       }
                     }
@@ -19635,6 +19807,15 @@
                     },
                     "status": {
                       "type": "string"
+                    },
+                    "inByeWindow": {
+                      "type": "boolean"
+                    },
+                    "opensToViewerAt": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
                     }
                   },
                   "required": [
@@ -20544,6 +20725,58 @@
                     },
                     "notificationPaused": {
                       "type": "boolean"
+                    },
+                    "phases": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "bye": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "total": {
+                              "type": "number"
+                            },
+                            "notified": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "total",
+                            "notified"
+                          ]
+                        },
+                        "general": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "total": {
+                              "type": "number"
+                            },
+                            "notified": {
+                              "type": "number"
+                            },
+                            "startsAt": {
+                              "type": [
+                                "null",
+                                "string"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "total",
+                            "notified",
+                            "startsAt"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "bye",
+                        "general"
+                      ]
                     }
                   },
                   "required": [
@@ -20551,7 +20784,8 @@
                     "totalMembers",
                     "notifiedMembers",
                     "nextNotificationAt",
-                    "notificationPaused"
+                    "notificationPaused",
+                    "phases"
                   ]
                 }
               }
@@ -20628,6 +20862,71 @@
                   },
                   "required": [
                     "success"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/spare-settings": {
+      "patch": {
+        "tags": [
+          "spares"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "notificationDelaySeconds": {
+                    "type": "number"
+                  },
+                  "byePriorityWindowMinutes": {
+                    "type": "number"
+                  },
+                  "urgentThresholdHours": {
+                    "type": "number"
+                  },
+                  "reissueCooldownHours": {
+                    "type": "number"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "notificationDelaySeconds": {
+                      "type": "number"
+                    },
+                    "byePriorityWindowMinutes": {
+                      "type": "number"
+                    },
+                    "urgentThresholdHours": {
+                      "type": "number"
+                    },
+                    "reissueCooldownHours": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "notificationDelaySeconds",
+                    "byePriorityWindowMinutes",
+                    "urgentThresholdHours",
+                    "reissueCooldownHours"
                   ]
                 }
               }
@@ -40293,6 +40592,18 @@
                               "integer"
                             ]
                           },
+                          "sandpaperCondition": {
+                            "type": [
+                              "null",
+                              "string"
+                            ],
+                            "enum": [
+                              "new",
+                              "used_once",
+                              "used_twice",
+                              null
+                            ]
+                          },
                           "bandWidthsMm": {
                             "type": "array",
                             "items": {
@@ -40318,6 +40629,7 @@
                           "passes",
                           "rotations",
                           "sandpaperGrit",
+                          "sandpaperCondition",
                           "bandWidthsMm",
                           "comments"
                         ]
@@ -40564,8 +40876,24 @@
                       "integer",
                       "null"
                     ],
-                    "minimum": 1,
-                    "maximum": 10000
+                    "enum": [
+                      60,
+                      80,
+                      100,
+                      null
+                    ]
+                  },
+                  "sandpaperCondition": {
+                    "type": [
+                      "null",
+                      "string"
+                    ],
+                    "enum": [
+                      "new",
+                      "used_once",
+                      "used_twice",
+                      null
+                    ]
                   },
                   "bandWidthsMm": {
                     "type": [
@@ -40677,8 +41005,24 @@
                       "integer",
                       "null"
                     ],
-                    "minimum": 1,
-                    "maximum": 10000
+                    "enum": [
+                      60,
+                      80,
+                      100,
+                      null
+                    ]
+                  },
+                  "sandpaperCondition": {
+                    "type": [
+                      "null",
+                      "string"
+                    ],
+                    "enum": [
+                      "new",
+                      "used_once",
+                      "used_twice",
+                      null
+                    ]
                   },
                   "bandWidthsMm": {
                     "type": [
@@ -41242,6 +41586,18 @@
                               "integer"
                             ]
                           },
+                          "sandpaperCondition": {
+                            "type": [
+                              "null",
+                              "string"
+                            ],
+                            "enum": [
+                              "new",
+                              "used_once",
+                              "used_twice",
+                              null
+                            ]
+                          },
                           "bandWidthsMm": {
                             "type": "array",
                             "items": {
@@ -41267,6 +41623,7 @@
                           "passes",
                           "rotations",
                           "sandpaperGrit",
+                          "sandpaperCondition",
                           "bandWidthsMm",
                           "comments"
                         ]
@@ -41704,6 +42061,18 @@
                               "integer"
                             ]
                           },
+                          "sandpaperCondition": {
+                            "type": [
+                              "null",
+                              "string"
+                            ],
+                            "enum": [
+                              "new",
+                              "used_once",
+                              "used_twice",
+                              null
+                            ]
+                          },
                           "bandWidthsMm": {
                             "type": "array",
                             "items": {
@@ -41729,6 +42098,7 @@
                           "passes",
                           "rotations",
                           "sandpaperGrit",
+                          "sandpaperCondition",
                           "bandWidthsMm",
                           "comments"
                         ]
@@ -42094,6 +42464,18 @@
                               "integer"
                             ]
                           },
+                          "sandpaperCondition": {
+                            "type": [
+                              "null",
+                              "string"
+                            ],
+                            "enum": [
+                              "new",
+                              "used_once",
+                              "used_twice",
+                              null
+                            ]
+                          },
                           "bandWidthsMm": {
                             "type": "array",
                             "items": {
@@ -42119,6 +42501,7 @@
                           "passes",
                           "rotations",
                           "sandpaperGrit",
+                          "sandpaperCondition",
                           "bandWidthsMm",
                           "comments"
                         ]

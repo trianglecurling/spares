@@ -7,7 +7,9 @@ import {
   getSpareRequestCcMemberIds,
   type PublicSpareRecipientPools,
 } from './queries/publicSpareRecipients.js';
-import { initialPublicListingAt } from './spareByePriorityLogic.js';
+import { initialPublicListingAt, isUrgentSpareRequest } from './spareByePriorityLogic.js';
+import { getSpareSettings } from './spareSettings.js';
+import { config } from '../../config.js';
 
 export type StartPublicSpareNotificationsResult = {
   notificationsQueued: number;
@@ -21,8 +23,8 @@ export type StartPublicSpareNotificationsResult = {
  * Shared public notification start used by create, make-public, and re-issue.
  * - Builds recipient pools (league-scoped, CC-excluded, unavailable filtered, bye prioritized)
  * - Enqueues bye first, then randomized others
- * - <24h: drain immediately; dashboard listing is immediate
- * - ≥24h: bye batch first (no inter-bye delay), then 1h wait, then staggered rest
+ * - Urgent (game within the urgent threshold): drain immediately; dashboard listing is immediate
+ * - Otherwise: bye batch first (no inter-bye delay), then the bye window, then staggered rest
  */
 export async function startPublicSpareNotifications(params: {
   spareRequestId: number;
@@ -33,13 +35,20 @@ export async function startPublicSpareNotifications(params: {
   requesterId: number;
   /** Extra IDs to exclude (e.g. known CC ids before they are persisted). */
   excludeMemberIds?: number[];
-  isLessThan24Hours: boolean;
   /** When true, also load persisted CC rows for this request. */
   includePersistedCcs?: boolean;
   clearHadCancellation?: boolean;
 }): Promise<StartPublicSpareNotificationsResult> {
   const { db, schema } = getDrizzleDb();
   const now = await getCurrentTimeAsync();
+  const settings = await getSpareSettings();
+  const isUrgent = isUrgentSpareRequest({
+    gameDate: params.gameDate,
+    gameTime: params.gameTime,
+    now,
+    timeZone: config.timeZone,
+    urgentThresholdHours: settings.urgentThresholdHours,
+  });
 
   const persistedCcIds = params.includePersistedCcs
     ? await getSpareRequestCcMemberIds(params.spareRequestId)
@@ -64,7 +73,7 @@ export async function startPublicSpareNotifications(params: {
   const ordered = pools.orderedRecipients;
   const publicListingAt = initialPublicListingAt({
     now,
-    isLessThan24Hours: params.isLessThan24Hours,
+    isUrgent,
     hasByePriority: pools.byeRecipients.length > 0,
   });
 
@@ -106,12 +115,13 @@ export async function startPublicSpareNotifications(params: {
       next_notification_at: now,
       notification_paused: 0,
       public_listing_at: publicListingAt,
+      notification_processor_id: config.notificationProcessorId,
       // Do not stamp notifications_sent_at here — only when the queue finishes.
       ...(params.clearHadCancellation ? { had_cancellation: 0 } : {}),
     })
     .where(eq(schema.spareRequests.id, params.spareRequestId));
 
-  if (params.isLessThan24Hours) {
+  if (isUrgent) {
     processAllNotificationsForRequest(params.spareRequestId).catch((error) => {
       console.error(
         `[Spare Request] Error processing immediate notifications for ${params.spareRequestId}:`,

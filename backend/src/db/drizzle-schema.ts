@@ -1431,6 +1431,8 @@ export const spareRequestsSqlite = sqliteTable('spare_requests', {
   all_invites_declined_notified: integer('all_invites_declined_notified').default(0).notNull(),
   /** When public requests become visible on member dashboards (after bye priority window when applicable). */
   public_listing_at: text('public_listing_at'),
+  /** Notification processor that owns the queued sends. Null means the default (deployed) processor. */
+  notification_processor_id: text('notification_processor_id'),
 }, (table) => ({
   requesterIdIdx: index('idx_spare_requests_requester_id').on(table.requester_id),
   requestedForMemberIdIdx: index('idx_spare_requests_requested_for_member_id').on(table.requested_for_member_id),
@@ -1501,6 +1503,9 @@ export const serverConfigSqlite = sqliteTable('server_config', {
   capture_backend_logs: integer('capture_backend_logs').default(1).notNull(),
   test_current_time: text('test_current_time'),
   notification_delay_seconds: integer('notification_delay_seconds').default(180).notNull(),
+  spare_bye_priority_window_minutes: integer('spare_bye_priority_window_minutes').default(60).notNull(),
+  spare_urgent_threshold_hours: integer('spare_urgent_threshold_hours').default(24).notNull(),
+  spare_reissue_cooldown_hours: integer('spare_reissue_cooldown_hours').default(72).notNull(),
   session_token_ttl_minutes: integer('session_token_ttl_minutes').default(30).notNull(),
   refresh_token_ttl_days: integer('refresh_token_ttl_days').default(60).notNull(),
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
@@ -1901,7 +1906,8 @@ export const curlingStoneMaintenanceSqlite = sqliteTable('curling_stone_maintena
   performed_on: text('performed_on').notNull(), // YYYY-MM-DD
   passes: integer('passes'),
   rotations: integer('rotations'),
-  sandpaper_grit: integer('sandpaper_grit'),
+  sandpaper_grit: integer('sandpaper_grit'), // 60 | 80 | 100
+  sandpaper_condition: text('sandpaper_condition'), // 'new' | 'used_once' | 'used_twice'
   band_width_1_mm: real('band_width_1_mm'),
   band_width_2_mm: real('band_width_2_mm'),
   band_width_3_mm: real('band_width_3_mm'),
@@ -3941,6 +3947,8 @@ export const spareRequestsPg = pgTable('spare_requests', {
   all_invites_declined_notified: integerPg('all_invites_declined_notified').default(0).notNull(),
   /** When public requests become visible on member dashboards (after bye priority window when applicable). */
   public_listing_at: timestamp('public_listing_at', { withTimezone: false }),
+  /** Notification processor that owns the queued sends. Null means the default (deployed) processor. */
+  notification_processor_id: textPg('notification_processor_id'),
 }, (table) => ({
   requesterIdIdx: indexPg('idx_spare_requests_requester_id').on(table.requester_id),
   requestedForMemberIdIdx: indexPg('idx_spare_requests_requested_for_member_id').on(table.requested_for_member_id),
@@ -4011,6 +4019,9 @@ export const serverConfigPg = pgTable('server_config', {
   capture_backend_logs: integerPg('capture_backend_logs').default(1).notNull(),
   test_current_time: timestamp('test_current_time', { withTimezone: false }),
   notification_delay_seconds: integerPg('notification_delay_seconds').default(180).notNull(),
+  spare_bye_priority_window_minutes: integerPg('spare_bye_priority_window_minutes').default(60).notNull(),
+  spare_urgent_threshold_hours: integerPg('spare_urgent_threshold_hours').default(24).notNull(),
+  spare_reissue_cooldown_hours: integerPg('spare_reissue_cooldown_hours').default(72).notNull(),
   session_token_ttl_minutes: integerPg('session_token_ttl_minutes').default(30).notNull(),
   refresh_token_ttl_days: integerPg('refresh_token_ttl_days').default(60).notNull(),
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
@@ -4409,7 +4420,8 @@ export const curlingStoneMaintenancePg = pgTable('curling_stone_maintenance', {
   performed_on: date('performed_on').notNull(),
   passes: integerPg('passes'),
   rotations: integerPg('rotations'),
-  sandpaper_grit: integerPg('sandpaper_grit'),
+  sandpaper_grit: integerPg('sandpaper_grit'), // 60 | 80 | 100
+  sandpaper_condition: textPg('sandpaper_condition'), // 'new' | 'used_once' | 'used_twice'
   band_width_1_mm: doublePrecision('band_width_1_mm'),
   band_width_2_mm: doublePrecision('band_width_2_mm'),
   band_width_3_mm: doublePrecision('band_width_3_mm'),

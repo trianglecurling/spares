@@ -5,6 +5,11 @@ import HelpHeader from '../components/HelpHeader';
 const helpSections = [
   { path: '/help/quick-start', title: 'Quick Start', description: 'Get started in minutes' },
   {
+    path: '/help/how-spare-requests-work',
+    title: 'How spare requests work',
+    description: 'Notification order, the bye window, and public vs private',
+  },
+  {
     path: '/help/requesting-spare',
     title: 'Requesting a Spare',
     description: 'How to request a spare for your game',

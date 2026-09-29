@@ -617,6 +617,27 @@
       "when": 1788493800000,
       "tag": "0088_add_curling_stones",
       "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1788494400000,
+      "tag": "0089_add_curling_stone_sandpaper_condition",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1788495000000,
+      "tag": "0090_add_spare_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1788495600000,
+      "tag": "0091_add_spare_notification_processor_id",
+      "breakpoints": true
     }
   ]
 }

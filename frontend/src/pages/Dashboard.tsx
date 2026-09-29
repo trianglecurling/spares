@@ -15,6 +15,7 @@ import {
   HiOutlineXCircle,
 } from 'react-icons/hi2';
 import axios from 'axios';
+import { format } from 'date-fns';
 import { AppPage, AppPageHeader } from '../components/AppPage';
 import { get, post } from '../api/client';
 import api from '../utils/api';
@@ -33,6 +34,7 @@ import { useConfirm } from '../contexts/ConfirmContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useLeagueOptions } from '../contexts/LeagueOptionsContext';
 import { formatPhone } from '../utils/phone';
+import { memberHasScope } from '../utils/permissions';
 import { renderMe } from '../utils/me';
 import {
   spareRequestDeepLinkAlert,
@@ -373,7 +375,15 @@ export default function Dashboard() {
         (async () => {
           try {
             const res = await get('/spares/{id}/status', undefined, { id: String(requestId) });
-            showAlert(spareRequestDeepLinkAlert(res?.status), 'error');
+            const inByeWindow = res?.status === 'open' && res.inByeWindow === true;
+            showAlert(
+              spareRequestDeepLinkAlert(res?.status, {
+                inByeWindow,
+                opensAt: res?.opensToViewerAt ?? null,
+                formatOpensAt: (iso) => format(new Date(iso), 'EEE, MMM d h:mm a'),
+              }),
+              inByeWindow ? 'info' : 'error',
+            );
           } catch (error: unknown) {
             const status = axios.isAxiosError(error) ? error.response?.status : undefined;
             showAlert(spareRequestDeepLinkLoadErrorAlert(status), 'error');
@@ -878,7 +888,9 @@ export default function Dashboard() {
             Quick actions
           </p>
           <div className="mt-4 flex flex-1 flex-col justify-center gap-2.5">
-            {!member?.spareOnly && (
+            {(!member?.spareOnly ||
+              memberHasScope(member, 'leagues.manage') ||
+              (member.leagueManagerLeagueIds?.length ?? 0) > 0) && (
               <Link
                 to="/request-spare"
                 className="group flex items-center gap-3 rounded-lg border border-gray-200 dark:border-gray-700 px-3.5 py-2.5 transition-colors hover:border-primary-orange/40 hover:bg-primary-orange/5 dark:hover:border-primary-orange/40 dark:hover:bg-primary-orange/10"

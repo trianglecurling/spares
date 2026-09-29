@@ -3431,6 +3431,8 @@ export interface paths {
                                 passes: null | number;
                                 rotations: null | number;
                                 sandpaperGrit: null | number;
+                                /** @enum {null|string} */
+                                sandpaperCondition: "new" | "used_once" | "used_twice" | null;
                                 bandWidthsMm: (null | number)[];
                                 notes: null | string;
                                 stones: {
@@ -3548,9 +3550,51 @@ export interface paths {
                                 passes: null | number;
                                 rotations: null | number;
                                 sandpaperGrit: null | number;
+                                /** @enum {null|string} */
+                                sandpaperCondition: "new" | "used_once" | "used_twice" | null;
                                 bandWidthsMm: (null | number)[];
                                 comments: null | string;
                             }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/public/spare-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            notificationDelaySeconds: number;
+                            byePriorityWindowMinutes: number;
+                            urgentThresholdHours: number;
+                            reissueCooldownHours: number;
                         };
                     };
                 };
@@ -10610,6 +10654,24 @@ export interface paths {
                                     time: string;
                                     opponentName: null | string;
                                 }[];
+                                isManager: boolean;
+                                managedTeams: {
+                                    id: number;
+                                    name: null | string;
+                                    players: {
+                                        memberId: number;
+                                        name: string;
+                                        role: null | string;
+                                        sparePosition: ("lead" | "second" | "vice" | "skip") | null;
+                                        isSelf: boolean;
+                                    }[];
+                                    games: {
+                                        id: number;
+                                        date: string;
+                                        time: string;
+                                        opponentName: null | string;
+                                    }[];
+                                }[];
                             }[];
                         };
                     };
@@ -10901,6 +10963,8 @@ export interface paths {
                         "application/json": {
                             id: number;
                             status: string;
+                            inByeWindow?: boolean;
+                            opensToViewerAt?: null | string;
                         };
                     };
                 };
@@ -11430,6 +11494,17 @@ export interface paths {
                             notifiedMembers: number;
                             nextNotificationAt: null | string;
                             notificationPaused: boolean;
+                            phases: null | {
+                                bye: {
+                                    total: number;
+                                    notified: number;
+                                };
+                                general: {
+                                    total: number;
+                                    notified: number;
+                                    startsAt: null | string;
+                                };
+                            };
                         };
                     };
                 };
@@ -11519,6 +11594,55 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/spare-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        notificationDelaySeconds?: number;
+                        byePriorityWindowMinutes?: number;
+                        urgentThresholdHours?: number;
+                        reissueCooldownHours?: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            notificationDelaySeconds: number;
+                            byePriorityWindowMinutes: number;
+                            urgentThresholdHours: number;
+                            reissueCooldownHours: number;
+                        };
+                    };
+                };
+            };
+        };
         trace?: never;
     };
     "/public-config": {
@@ -26227,6 +26351,8 @@ export interface paths {
                                 passes: null | number;
                                 rotations: null | number;
                                 sandpaperGrit: null | number;
+                                /** @enum {null|string} */
+                                sandpaperCondition: "new" | "used_once" | "used_twice" | null;
                                 bandWidthsMm: (null | number)[];
                                 comments: null | string;
                             }[];
@@ -26365,7 +26491,10 @@ export interface paths {
                         performedOn: string;
                         passes?: number | null;
                         rotations?: number | null;
-                        sandpaperGrit?: number | null;
+                        /** @enum {integer|null} */
+                        sandpaperGrit?: 60 | 80 | 100 | null;
+                        /** @enum {null|string} */
+                        sandpaperCondition?: "new" | "used_once" | "used_twice" | null;
                         bandWidthsMm?: (number | null)[] | null;
                         comments?: string | null;
                     };
@@ -26446,7 +26575,10 @@ export interface paths {
                         performedOn: string;
                         passes?: number | null;
                         rotations?: number | null;
-                        sandpaperGrit?: number | null;
+                        /** @enum {integer|null} */
+                        sandpaperGrit?: 60 | 80 | 100 | null;
+                        /** @enum {null|string} */
+                        sandpaperCondition?: "new" | "used_once" | "used_twice" | null;
                         bandWidthsMm?: (number | null)[] | null;
                         comments?: string | null;
                     };
@@ -26655,6 +26787,8 @@ export interface paths {
                                 passes: null | number;
                                 rotations: null | number;
                                 sandpaperGrit: null | number;
+                                /** @enum {null|string} */
+                                sandpaperCondition: "new" | "used_once" | "used_twice" | null;
                                 bandWidthsMm: (null | number)[];
                                 comments: null | string;
                             }[];
@@ -26760,6 +26894,8 @@ export interface paths {
                                 passes: null | number;
                                 rotations: null | number;
                                 sandpaperGrit: null | number;
+                                /** @enum {null|string} */
+                                sandpaperCondition: "new" | "used_once" | "used_twice" | null;
                                 bandWidthsMm: (null | number)[];
                                 comments: null | string;
                             }[];
@@ -26864,6 +27000,8 @@ export interface paths {
                                 passes: null | number;
                                 rotations: null | number;
                                 sandpaperGrit: null | number;
+                                /** @enum {null|string} */
+                                sandpaperCondition: "new" | "used_once" | "used_twice" | null;
                                 bandWidthsMm: (null | number)[];
                                 comments: null | string;
                             }[];

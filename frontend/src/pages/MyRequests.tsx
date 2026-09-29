@@ -13,6 +13,10 @@ import { useAlert } from '../contexts/AlertContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { useAuth } from '../contexts/AuthContext';
 import { renderMe } from '../utils/me';
+import { useSpareSettings } from '../hooks/useSpareSettings';
+import SpareNotificationProgress, {
+  type SpareNotificationPhases,
+} from '../components/SpareNotificationProgress';
 
 interface MySpareRequest {
   id: number;
@@ -52,10 +56,12 @@ interface NotificationStatus {
   notifiedMembers: number;
   nextNotificationAt: string | null;
   notificationPaused: boolean;
+  phases: SpareNotificationPhases | null;
 }
 
 export default function MyRequests() {
   const { showAlert } = useAlert();
+  const { settings: spareSettings } = useSpareSettings();
   const { confirm } = useConfirm();
   const { member } = useAuth();
   const [requests, setRequests] = useState<MySpareRequest[]>([]);
@@ -348,13 +354,13 @@ export default function MyRequests() {
       return true;
     }
 
-    // Condition 2: It has been more than 72 hours since the last time notifications were sent
+    // Condition 2: The re-issue cooldown has passed since notifications were last sent
     if (request.notificationsSentAt) {
       const lastSent = new Date(request.notificationsSentAt);
       const now = new Date();
       const hoursSinceLastSent = (now.getTime() - lastSent.getTime()) / (1000 * 60 * 60);
 
-      if (hoursSinceLastSent >= 72) {
+      if (hoursSinceLastSent >= spareSettings.reissueCooldownHours) {
         return true;
       }
     }
@@ -521,6 +527,15 @@ export default function MyRequests() {
                                     <span className="font-medium">All notifications sent.</span>{' '}
                                     {status.notifiedMembers} members notified.
                                   </p>
+                                );
+                              }
+
+                              if (status.notificationStatus === 'in_progress' && status.phases) {
+                                return (
+                                  <SpareNotificationProgress
+                                    phases={status.phases}
+                                    paused={status.notificationPaused}
+                                  />
                                 );
                               }
 

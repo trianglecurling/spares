@@ -4,13 +4,23 @@ const DASHBOARD_HINT = 'See your dashboard for any unfilled spare requests.';
  * Message shown when an email Accept link opens the dashboard and that request
  * is not in the member's open list. Status comes from GET /spares/:id/status.
  */
-export function spareRequestDeepLinkAlert(status: string | null | undefined): string {
+export function spareRequestDeepLinkAlert(
+  status: string | null | undefined,
+  byeWindow?: { inByeWindow?: boolean; opensAt?: string | null; formatOpensAt?: (iso: string) => string },
+): string {
   switch (status) {
     case 'filled':
       return `Sorry, this spare request has already been filled. ${DASHBOARD_HINT}`;
     case 'cancelled':
       return `Sorry, this spare request has been canceled and is no longer available. ${DASHBOARD_HINT}`;
     case 'open':
+      if (byeWindow?.inByeWindow) {
+        const opens =
+          byeWindow.opensAt && byeWindow.formatOpensAt
+            ? ` It opens to everyone else at ${byeWindow.formatOpensAt(byeWindow.opensAt)}.`
+            : ' It opens to everyone else when their exclusive window ends.';
+        return `Players on bye get first chance at this spare request.${opens}`;
+      }
       return `Sorry, this spare request is still open, but it is not currently available for you to accept. ${DASHBOARD_HINT}`;
     default:
       return `Sorry, this spare request is not available. ${DASHBOARD_HINT}`;

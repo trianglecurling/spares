@@ -26,6 +26,13 @@ function getLeagueRoleInfoFromClaims(member: Member): LeagueManagerRoleInfo {
   };
 }
 
+/** Leagues this member can manage: every league, a list of league IDs, or none (empty list). */
+export function getManagedLeagueScope(member: Member): 'all' | number[] {
+  if (isAdmin(member) || isServerAdmin(member)) return 'all';
+  const roleInfo = getLeagueRoleInfoFromClaims(member);
+  return roleInfo.isGlobal ? 'all' : roleInfo.leagueIds;
+}
+
 export async function getLeagueManagerRoleInfo(_memberId: number): Promise<LeagueManagerRoleInfo> {
   // Kept for backwards compatibility with existing call sites.
   return { isGlobal: false, leagueIds: [] };

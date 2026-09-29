@@ -10,6 +10,7 @@ import { getDatabaseConfig, saveDatabaseConfig } from '../db/config.js';
 import { resetDatabaseState, testDatabaseConnection } from '../db/index.js';
 import { setBackendLogCaptureEnabled } from '../otel.js';
 import { invalidateAuthTokenTtlCache } from '../services/authSessionService.js';
+import { invalidateSpareSettingsCache } from '../domains/spares/spareSettings.js';
 import {
   configResponseSchema,
   databaseConfigResponseSchema,
@@ -511,6 +512,7 @@ export async function configRoutes(fastify: FastifyInstance) {
     }
     if (body.notificationDelaySeconds !== undefined) {
       updateData.notification_delay_seconds = body.notificationDelaySeconds;
+      invalidateSpareSettingsCache();
     }
     if (body.sessionTokenTtlMinutes !== undefined) {
       updateData.session_token_ttl_minutes = body.sessionTokenTtlMinutes;

@@ -46,6 +46,7 @@ const BuildingAccessPage = lazyRoute(() => import('./pages/BuildingAccessPage'))
 const MemberCommunicationsPage = lazyRoute(() => import('./pages/MemberCommunicationsPage'));
 const BoardMeetingMinutesPage = lazyRoute(() => import('./pages/BoardMeetingMinutesPage'));
 const AdminConfig = lazyRoute(() => import('./pages/admin/AdminConfig'));
+const AdminSparing = lazyRoute(() => import('./pages/admin/AdminSparing'));
 const AdminDatabaseConfig = lazyRoute(() => import('./pages/admin/AdminDatabaseConfig'));
 const Help = lazyRoute(() => import('./pages/Help'));
 const QuickStart = lazyRoute(() => import('./pages/help/QuickStart'));
@@ -57,6 +58,7 @@ const Authentication = lazyRoute(() => import('./pages/help/Authentication'));
 const EmailSMS = lazyRoute(() => import('./pages/help/EmailSMS'));
 const Availability = lazyRoute(() => import('./pages/help/Availability'));
 const ManagingRequests = lazyRoute(() => import('./pages/help/ManagingRequests'));
+const HowSpareRequestsWork = lazyRoute(() => import('./pages/help/HowSpareRequestsWork'));
 const Install = lazyRoute(() => import('./pages/Install'));
 const Feedback = lazyRoute(() => import('./pages/Feedback'));
 const AdminFeedback = lazyRoute(() => import('./pages/admin/AdminFeedback'));
@@ -265,6 +267,10 @@ function App() {
                       <Route path="/help/email-sms" element={<EmailSMS />} />
                       <Route path="/help/availability" element={<Availability />} />
                       <Route path="/help/managing-requests" element={<ManagingRequests />} />
+                      <Route
+                        path="/help/how-spare-requests-work"
+                        element={<HowSpareRequestsWork />}
+                      />
                       <Route path="/feedback" element={<Feedback />} />
 
                       <Route path="/" element={<PublicHomePage />} />
@@ -665,6 +671,14 @@ function App() {
                         <Route path="stones" element={<AdminStones />} />
                         <Route path="building-access" element={<AdminBuildingAccess />} />
                       </Route>
+                      <Route
+                        path="/admin/sparing"
+                        element={
+                          <ProtectedRoute leagueManagerOnly>
+                            <AdminSparing />
+                          </ProtectedRoute>
+                        }
+                      />
                       <Route
                         path="/admin/config"
                         element={

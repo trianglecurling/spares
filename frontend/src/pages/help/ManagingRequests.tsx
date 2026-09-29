@@ -2,10 +2,13 @@ import { Link, useLocation } from 'react-router-dom';
 import Footer from '../../components/Footer';
 import HelpHeader from '../../components/HelpHeader';
 import { helpSections } from '../Help';
+import { formatHours, useSpareSettings } from '../../hooks/useSpareSettings';
 
 export default function ManagingRequests() {
   const location = useLocation();
   const currentPath = location.pathname;
+  const { settings } = useSpareSettings();
+  const cooldown = formatHours(settings.reissueCooldownHours);
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
@@ -97,7 +100,7 @@ export default function ManagingRequests() {
                     </p>
                     <ol className="list-decimal list-inside space-y-3">
                       <li>
-                        <strong>After 72 hours:</strong> If it's been more than 72 hours since
+                        <strong>After {cooldown}:</strong> If it's been at least {cooldown} since
                         notifications were last sent, you can re-issue to send fresh notifications
                       </li>
                       <li>

@@ -60,6 +60,8 @@ import {
   getSpareRequestContextForMember,
 } from '../domains/spares/queries/spareRequestContext.js';
 import type { SparePosition } from '../utils/sparePositionFromTeamMember.js';
+import { getManagedLeagueScope, hasLeagueManagerAccess } from '../utils/leagueAccess.js';
+import { isPublicSpareVisibleToMember } from '../domains/spares/spareByePriorityLogic.js';
 
 const createSpareRequestSchema = z.object({
   leagueId: z.number(),
@@ -166,6 +168,7 @@ type SpareRequestDb = SpareRequest & {
   notification_status: 'in_progress' | 'completed' | 'paused' | null;
   next_notification_at: string | null;
   notification_paused: number;
+  public_listing_at: Date | string | null;
 };
 
 export async function spareRoutes(fastify: FastifyInstance) {
@@ -246,7 +249,10 @@ export async function spareRoutes(fastify: FastifyInstance) {
       if (!member) {
         return reply.code(401).send({ error: 'Unauthorized' });
       }
-      if (memberIsSpareOnly(member) || memberIsSocialMember(member)) {
+      const managedLeagues = getManagedLeagueScope(member);
+      const hasManagedLeagues = managedLeagues === 'all' || managedLeagues.length > 0;
+      const canRequestForSelf = !memberIsSpareOnly(member) && !memberIsSocialMember(member);
+      if (!canRequestForSelf && !hasManagedLeagues) {
         return { leagues: [] };
       }
       const { canBypassLeagueProcessingHold, isLeagueProcessingActive } = await import(
@@ -255,7 +261,10 @@ export async function spareRoutes(fastify: FastifyInstance) {
       if ((await isLeagueProcessingActive()) && !canBypassLeagueProcessingHold(member)) {
         return { leagues: [] };
       }
-      return getSpareRequestContextForMember(member.id);
+      return getSpareRequestContextForMember(member.id, {
+        managedLeagues: hasManagedLeagues ? managedLeagues : undefined,
+        includeOwnLeagues: canRequestForSelf,
+      });
     }
   );
 
@@ -742,23 +751,14 @@ export async function spareRoutes(fastify: FastifyInstance) {
       .limit(1);
     if (!leagueRows[0]) return reply.code(400).send({ error: 'Invalid league' });
 
-    // Parse date/time as local to avoid timezone issues
-    const [gameYear, gameMonth, gameDay] = normalizeDateString(spareRequest.game_date).split('-').map(Number);
-    const [gameHours, gameMinutes] = String(spareRequest.game_time).split(':').map(Number);
-    const gameDateTime = new Date(gameYear, gameMonth - 1, gameDay, gameHours, gameMinutes);
-    const currentTime = await getCurrentTimeAsync();
-    const hoursUntilGame = (gameDateTime.getTime() - currentTime.getTime()) / (1000 * 60 * 60);
-    const isLessThan24Hours = hoursUntilGame < 24;
-
     const publicResult = await startPublicSpareNotifications({
       spareRequestId: requestId,
       leagueId,
       gameDate: normalizeDateString(spareRequest.game_date),
-      gameTime: String(spareRequest.game_time),
+      gameTime: normalizeTimeString(spareRequest.game_time),
       position: spareRequest.position,
       requesterId: member.id,
       includePersistedCcs: true,
-      isLessThan24Hours,
     });
 
     return {
@@ -870,15 +870,18 @@ export async function spareRoutes(fastify: FastifyInstance) {
     if (!member) {
       return reply.code(401).send({ error: 'Unauthorized' });
     }
-    if (memberIsSpareOnly(member)) {
-      return reply.code(403).send({ error: 'Spare-only members cannot request a spare' });
-    }
-    if (memberIsSocialMember(member)) {
-      return reply.code(403).send({ error: 'Social members cannot request a spare' });
-    }
 
     const body = createSpareRequestSchema.parse(request.body);
     const { db, schema } = getDrizzleDb();
+
+    // League managers request on behalf of their players, so their own membership type does not matter.
+    const isLeagueManager = await hasLeagueManagerAccess(member, body.leagueId);
+    if (!isLeagueManager && memberIsSpareOnly(member)) {
+      return reply.code(403).send({ error: 'Spare-only members cannot request a spare' });
+    }
+    if (!isLeagueManager && memberIsSocialMember(member)) {
+      return reply.code(403).send({ error: 'Social members cannot request a spare' });
+    }
 
     // Validate league (used for display in UI/emails, and for public-request filtering).
     // Also prevents malformed/forged requests from referencing a non-existent league.
@@ -942,7 +945,6 @@ export async function spareRoutes(fastify: FastifyInstance) {
     }
 
     let recipientMembers: Member[] = [];
-    let isLessThan24Hours = false;
     let dayOfWeek: number | null = null;
 
     const positionValue = body.position ?? null;
@@ -957,17 +959,38 @@ export async function spareRoutes(fastify: FastifyInstance) {
         ? positionValue
         : null;
 
-    const teamContext = await getRequesterTeamContext(member.id, body.leagueId);
-    if (!teamContext) {
+    const targetMemberId = body.requestedForMemberId ?? member.id;
+    const ownTeamContext = await getRequesterTeamContext(member.id, body.leagueId);
+    const ownTeamIncludesTarget =
+      ownTeamContext?.teamId != null &&
+      (targetMemberId === member.id ||
+        ownTeamContext.teammates.some((teammate) => teammate.memberId === targetMemberId));
+
+    let teamContext: NonNullable<typeof ownTeamContext>;
+    if (ownTeamIncludesTarget && ownTeamContext) {
+      teamContext = ownTeamContext;
+    } else if (isLeagueManager) {
+      const playerTeamContext = await getRequesterTeamContext(targetMemberId, body.leagueId);
+      if (!playerTeamContext || playerTeamContext.teamId == null) {
+        return reply.code(400).send({
+          error: 'That player is not on a team in this league.',
+        });
+      }
+      teamContext = playerTeamContext;
+    } else if (!ownTeamContext) {
       return reply.code(403).send({
         error: 'You can only request a spare for a league you are on a team in.',
       });
-    }
-    if (teamContext.teamId == null) {
+    } else if (ownTeamContext.teamId == null) {
       return reply.code(400).send({
         error: 'You must be assigned to a team in this league before requesting a spare.',
       });
+    } else {
+      return reply.code(400).send({
+        error: 'You can only request a spare for yourself or a teammate on your team.',
+      });
     }
+
     if (gameIdValue == null) {
       return reply.code(400).send({
         error: 'Select a scheduled game for your team.',
@@ -978,38 +1001,23 @@ export async function spareRoutes(fastify: FastifyInstance) {
       selectedGameTeam2Id !== teamContext.teamId
     ) {
       return reply.code(400).send({
-        error: 'Selected game is not a scheduled game for your team.',
+        error: ownTeamIncludesTarget
+          ? 'Selected game is not a scheduled game for your team.'
+          : "Selected game is not a scheduled game for that player's team.",
       });
     }
 
-    if (body.requestedForMemberId !== undefined) {
-      const requestedForRows = await db
-        .select({ id: schema.members.id, name: schema.members.name })
-        .from(schema.members)
-        .where(eq(schema.members.id, body.requestedForMemberId))
-        .limit(1);
-
-      const requestedForMember = requestedForRows[0];
-      if (!requestedForMember) {
-        return reply.code(400).send({ error: 'Invalid requested-for member' });
-      }
-
-      requestedForMemberId = requestedForMember.id;
-      requestedForNameValue = requestedForMember.name;
-    } else {
-      requestedForMemberId = member.id;
-      requestedForNameValue = member.name;
+    const requestedForRows = await db
+      .select({ id: schema.members.id, name: schema.members.name })
+      .from(schema.members)
+      .where(eq(schema.members.id, targetMemberId))
+      .limit(1);
+    const requestedForMember = requestedForRows[0];
+    if (!requestedForMember) {
+      return reply.code(400).send({ error: 'Invalid requested-for member' });
     }
-
-    const allowedPlayerIds = new Set<number>([member.id]);
-    for (const teammate of teamContext.teammates) {
-      allowedPlayerIds.add(teammate.memberId);
-    }
-    if (requestedForMemberId == null || !allowedPlayerIds.has(requestedForMemberId)) {
-      return reply.code(400).send({
-        error: 'You can only request a spare for yourself or a teammate on your team.',
-      });
-    }
+    requestedForMemberId = requestedForMember.id;
+    requestedForNameValue = requestedForMember.name;
 
     const targetTeammate =
       teamContext.teammates.find((row) => row.memberId === requestedForMemberId) ?? null;
@@ -1053,15 +1061,7 @@ export async function spareRoutes(fastify: FastifyInstance) {
     }
 
     if (body.requestType === 'public') {
-      // Public requests: check if less than 24 hours before game time
-      // Parse date/time as local to avoid timezone issues
       const [gameYear, gameMonth, gameDay] = gameDateValue.split('-').map(Number);
-      const [gameHours, gameMinutes] = gameTimeValue.split(':').map(Number);
-      const gameDateTime = new Date(gameYear, gameMonth - 1, gameDay, gameHours, gameMinutes);
-      const currentTime = await getCurrentTimeAsync();
-      const hoursUntilGame = (gameDateTime.getTime() - currentTime.getTime()) / (1000 * 60 * 60);
-      isLessThan24Hours = hoursUntilGame < 24;
-
       const gameDateObj = new Date(gameYear, gameMonth - 1, gameDay);
       const dayOfWeekValue = gameDateObj.getDay();
       dayOfWeek = dayOfWeekValue;
@@ -1321,7 +1321,6 @@ export async function spareRoutes(fastify: FastifyInstance) {
         position: resolvedPosition,
         requesterId: member.id,
         excludeMemberIds: ccIds,
-        isLessThan24Hours,
       });
 
       console.log(
@@ -1391,6 +1390,31 @@ export async function spareRoutes(fastify: FastifyInstance) {
 
     if (spareRequest.status !== 'open') {
       return reply.code(400).send({ error: 'This spare request is no longer open' });
+    }
+
+    if (spareRequest.request_type === 'public') {
+      const byePriorityRows = await db
+        .select({ id: schema.spareRequestNotificationQueue.id })
+        .from(schema.spareRequestNotificationQueue)
+        .where(
+          and(
+            eq(schema.spareRequestNotificationQueue.spare_request_id, requestId),
+            eq(schema.spareRequestNotificationQueue.member_id, member.id),
+            eq(schema.spareRequestNotificationQueue.is_bye_priority, 1),
+          ),
+        )
+        .limit(1);
+      const openToMember = isPublicSpareVisibleToMember({
+        publicListingAt: spareRequest.public_listing_at,
+        now: await getCurrentTimeAsync(),
+        isByePriorityRecipient: byePriorityRows.length > 0,
+      });
+      if (!openToMember) {
+        return reply.code(403).send({
+          error:
+            'Players on bye get first chance at this spare request. It opens to everyone else when their exclusive window ends.',
+        });
+      }
     }
 
     // Private requests: must be invited. If previously declined, require a message.
@@ -2036,22 +2060,14 @@ export async function spareRoutes(fastify: FastifyInstance) {
         return reply.code(400).send({ error: 'Cannot re-issue a public request without a league' });
       }
 
-      const [reissueYear, reissueMonth, reissueDay] = normalizeDateString(spareRequest.game_date).split('-').map(Number);
-      const [reissueHours, reissueMinutes] = String(spareRequest.game_time).split(':').map(Number);
-      const gameDateTime = new Date(reissueYear, reissueMonth - 1, reissueDay, reissueHours, reissueMinutes);
-      const currentTime = await getCurrentTimeAsync();
-      const hoursUntilGame = (gameDateTime.getTime() - currentTime.getTime()) / (1000 * 60 * 60);
-      const isLessThan24Hours = hoursUntilGame < 24;
-
       const publicResult = await startPublicSpareNotifications({
         spareRequestId: requestId,
         leagueId: spareRequest.league_id,
         gameDate: normalizeDateString(spareRequest.game_date),
-        gameTime: String(spareRequest.game_time),
+        gameTime: normalizeTimeString(spareRequest.game_time),
         position: spareRequest.position,
         requesterId: member.id,
         includePersistedCcs: true,
-        isLessThan24Hours,
         clearHadCancellation: true,
       });
 

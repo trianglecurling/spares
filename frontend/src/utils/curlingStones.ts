@@ -48,6 +48,28 @@ export const MAINTENANCE_ACTIVITY_LABELS: Record<MaintenanceActivityType, string
   imprinting: 'Imprinting',
 };
 
+export type SandpaperCondition = NonNullable<StoneMaintenance['sandpaperCondition']>;
+
+export const SANDPAPER_GRITS = [60, 80, 100] as const;
+export type SandpaperGrit = (typeof SANDPAPER_GRITS)[number];
+export const DEFAULT_SANDPAPER_GRIT: SandpaperGrit = 80;
+
+export function isSandpaperGrit(value: number | null | undefined): value is SandpaperGrit {
+  return value != null && (SANDPAPER_GRITS as readonly number[]).includes(value);
+}
+
+export const SANDPAPER_CONDITION_LABELS: Record<SandpaperCondition, string> = {
+  new: 'New',
+  used_once: 'Used once',
+  used_twice: 'Used twice',
+};
+
+const SANDPAPER_CONDITION_PHRASES: Record<SandpaperCondition, string> = {
+  new: 'new sandpaper sheet',
+  used_once: 'sandpaper sheet used once',
+  used_twice: 'sandpaper sheet used twice',
+};
+
 export const PLACEMENT_CHANGE_LABELS: Record<StonePlacement['changeType'], string> = {
   added: 'Added',
   moved: 'Moved',
@@ -108,7 +130,10 @@ export function formatStoneDate(value: string | null | undefined): string {
 }
 
 export function maintenanceSummary(
-  record: Pick<StoneMaintenance, 'activityType' | 'passes' | 'rotations' | 'sandpaperGrit' | 'bandWidthsMm'>,
+  record: Pick<
+    StoneMaintenance,
+    'activityType' | 'passes' | 'rotations' | 'sandpaperGrit' | 'sandpaperCondition' | 'bandWidthsMm'
+  >,
 ): string {
   if (record.activityType === 'imprinting') {
     const widths = record.bandWidthsMm.map((width) => (width == null ? '—' : String(width)));
@@ -118,7 +143,8 @@ export function maintenanceSummary(
     record.activityType === 'texturing'
       ? `${record.passes ?? '—'} ${record.passes === 1 ? 'pass' : 'passes'}`
       : `${record.rotations ?? '—'} ${record.rotations === 1 ? 'rotation' : 'rotations'}`;
-  return `${count}, ${record.sandpaperGrit ?? '—'} grit`;
+  const condition = record.sandpaperCondition ? `, ${SANDPAPER_CONDITION_PHRASES[record.sandpaperCondition]}` : '';
+  return `${count}, ${record.sandpaperGrit ?? '—'} grit${condition}`;
 }
 
 export function parseOptionalInteger(value: string): number | null {

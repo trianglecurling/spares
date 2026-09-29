@@ -17,6 +17,7 @@ import type { Member, SpareRequest } from '../../../types.js';
 import { getPublicSpareRecipients, getSpareRequestCcMemberIds } from './publicSpareRecipients.js';
 import { normalizeDateString, normalizeTimeString } from '../spareDateTime.js';
 import { memberContactEmails } from '../../../utils/memberParentEmail.js';
+import { isByeBatchListingPlaceholder } from '../spareByePriorityLogic.js';
 
 type SpareRequestDb = SpareRequest & {
   league_id: number | null;
@@ -25,6 +26,7 @@ type SpareRequestDb = SpareRequest & {
   notification_status: 'in_progress' | 'completed' | 'paused' | null;
   next_notification_at: string | null;
   notification_paused: number;
+  public_listing_at?: Date | string | null;
 };
 
 export class SpareQueryError extends Error {
@@ -168,7 +170,20 @@ export async function listAvailableSpareRequestsForMember(member: Member) {
   ];
 
   if (!canSkip) {
-    publicConditions.push(or(isNull(schema.spareRequests.position), ne(schema.spareRequests.position, 'skip'))!);
+    // Anyone we notified can see the request. Bye players are notified for skip spots
+    // even if they have not said they can skip, so their email link must still work.
+    publicConditions.push(
+      or(
+        isNull(schema.spareRequests.position),
+        ne(schema.spareRequests.position, 'skip'),
+        sql`EXISTS (
+          SELECT 1
+          FROM ${schema.spareRequestNotificationQueue}
+          WHERE ${schema.spareRequestNotificationQueue.spare_request_id} = ${schema.spareRequests.id}
+            AND ${schema.spareRequestNotificationQueue.member_id} = ${member.id}
+        )`,
+      )!,
+    );
   }
 
   const publicRequests = await db
@@ -206,10 +221,7 @@ export async function listAvailableSpareRequestsForMember(member: Member) {
     )!,
   ];
 
-  if (!canSkip) {
-    privateConditions.push(or(isNull(schema.spareRequests.position), ne(schema.spareRequests.position, 'skip'))!);
-  }
-
+  // No skip filter for private requests: the requester chose to invite this member.
   const privateRequests = await db
     .select({
       id: schema.spareRequests.id,
@@ -606,6 +618,40 @@ export async function listInvitationsForRequester(requestId: number, requesterId
   }));
 }
 
+/** Whether a non-bye viewer is still waiting out the bye-only window, and when it ends if known. */
+async function publicByeWindowForViewer(
+  spareRequest: { id: number; status: string; public_listing_at: Date | string | null },
+  memberId: number,
+): Promise<{ inByeWindow: boolean; opensToViewerAt: string | null }> {
+  const closed = { inByeWindow: false, opensToViewerAt: null };
+  if (spareRequest.status !== 'open' || spareRequest.public_listing_at == null) return closed;
+  const now = await getCurrentTimeAsync();
+  const listingAt =
+    spareRequest.public_listing_at instanceof Date
+      ? spareRequest.public_listing_at
+      : new Date(spareRequest.public_listing_at);
+  if (Number.isNaN(listingAt.getTime()) || listingAt.getTime() <= now.getTime()) return closed;
+
+  const { db, schema } = getDrizzleDb();
+  const byeRows = await db
+    .select({ id: schema.spareRequestNotificationQueue.id })
+    .from(schema.spareRequestNotificationQueue)
+    .where(
+      and(
+        eq(schema.spareRequestNotificationQueue.spare_request_id, spareRequest.id),
+        eq(schema.spareRequestNotificationQueue.member_id, memberId),
+        eq(schema.spareRequestNotificationQueue.is_bye_priority, 1),
+      ),
+    )
+    .limit(1);
+  if (byeRows.length > 0) return closed;
+  return {
+    inByeWindow: true,
+    // The far-future placeholder means the bye batch is still sending; the real time is not known yet.
+    opensToViewerAt: isByeBatchListingPlaceholder(listingAt) ? null : listingAt.toISOString(),
+  };
+}
+
 export async function getSpareStatusForViewer(requestId: number, memberId: number) {
   const { db, schema } = getDrizzleDb();
   const rows = await db
@@ -614,6 +660,7 @@ export async function getSpareStatusForViewer(requestId: number, memberId: numbe
       requester_id: schema.spareRequests.requester_id,
       request_type: schema.spareRequests.request_type,
       status: schema.spareRequests.status,
+      public_listing_at: schema.spareRequests.public_listing_at,
     })
     .from(schema.spareRequests)
     .where(eq(schema.spareRequests.id, requestId))
@@ -623,8 +670,15 @@ export async function getSpareStatusForViewer(requestId: number, memberId: numbe
   if (!spareRequest) {
     throw new SpareQueryError(404, 'Spare request not found');
   }
-  if (spareRequest.request_type === 'public' || spareRequest.requester_id === memberId) {
+  if (spareRequest.requester_id === memberId) {
     return { id: spareRequest.id, status: spareRequest.status };
+  }
+  if (spareRequest.request_type === 'public') {
+    return {
+      id: spareRequest.id,
+      status: spareRequest.status,
+      ...(await publicByeWindowForViewer(spareRequest, memberId)),
+    };
   }
 
   const [invite, cc] = await Promise.all([
@@ -707,6 +761,48 @@ export async function getNotificationStatusForRequester(requestId: number, reque
     notifiedMembers,
     nextNotificationAt: spareRequest.next_notification_at || null,
     notificationPaused: spareRequest.notification_paused === 1,
+    phases: await notificationPhasesForRequest(spareRequest),
+  };
+}
+
+/**
+ * Public requests go out in two phases: players on bye, then everyone else.
+ * Counts here are queue rows processed (including unreachable members), so each phase can finish.
+ */
+async function notificationPhasesForRequest(spareRequest: SpareRequestDb) {
+  if (spareRequest.request_type !== 'public') return null;
+  const { db, schema } = getDrizzleDb();
+  const queue = schema.spareRequestNotificationQueue;
+  const rows = await db
+    .select({
+      isBye: queue.is_bye_priority,
+      total: sql<number>`COUNT(*)`,
+      notified: sql<number>`COUNT(${queue.notified_at})`,
+    })
+    .from(queue)
+    .where(eq(queue.spare_request_id, spareRequest.id))
+    .groupBy(queue.is_bye_priority);
+  if (rows.length === 0) return null;
+
+  const counts = (isBye: boolean) => {
+    const row = rows.find((r) => (Number(r.isBye) === 1) === isBye);
+    return { total: Number(row?.total ?? 0), notified: Number(row?.notified ?? 0) };
+  };
+  const general = counts(false);
+
+  let generalStartsAt: string | null = null;
+  const listingRaw = spareRequest.public_listing_at;
+  if (listingRaw && general.notified === 0 && !isByeBatchListingPlaceholder(listingRaw)) {
+    const listingAt = listingRaw instanceof Date ? listingRaw : new Date(listingRaw);
+    const now = await getCurrentTimeAsync();
+    if (!Number.isNaN(listingAt.getTime()) && listingAt.getTime() > now.getTime()) {
+      generalStartsAt = listingAt.toISOString();
+    }
+  }
+
+  return {
+    bye: counts(true),
+    general: { ...general, startsAt: generalStartsAt },
   };
 }
 

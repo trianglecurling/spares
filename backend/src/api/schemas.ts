@@ -1478,6 +1478,42 @@ export const databaseConfigResponseSchema = {
   required: ['type'],
 } as const;
 
+const spareRequestContextPlayersSchema = {
+  type: 'array',
+  items: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      memberId: { type: 'number' },
+      name: { type: 'string' },
+      role: { type: ['string', 'null'] },
+      sparePosition: {
+        anyOf: [
+          { type: 'string', enum: ['lead', 'second', 'vice', 'skip'] },
+          { type: 'null' },
+        ],
+      },
+      isSelf: { type: 'boolean' },
+    },
+    required: ['memberId', 'name', 'role', 'sparePosition', 'isSelf'],
+  },
+} as const;
+
+const spareRequestContextGamesSchema = {
+  type: 'array',
+  items: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      id: { type: 'number' },
+      date: { type: 'string' },
+      time: { type: 'string' },
+      opponentName: { type: ['string', 'null'] },
+    },
+    required: ['id', 'date', 'time', 'opponentName'],
+  },
+} as const;
+
 export const spareRequestContextResponseSchema = {
   type: 'object',
   additionalProperties: false,
@@ -1494,46 +1530,57 @@ export const spareRequestContextResponseSchema = {
           format: { type: 'string' },
           teamId: { type: ['number', 'null'] },
           teamName: { type: ['string', 'null'] },
-          players: {
-            type: 'array',
-            items: {
-              type: 'object',
-              additionalProperties: false,
-              properties: {
-                memberId: { type: 'number' },
-                name: { type: 'string' },
-                role: { type: ['string', 'null'] },
-                sparePosition: {
-                  anyOf: [
-                    { type: 'string', enum: ['lead', 'second', 'vice', 'skip'] },
-                    { type: 'null' },
-                  ],
-                },
-                isSelf: { type: 'boolean' },
-              },
-              required: ['memberId', 'name', 'role', 'sparePosition', 'isSelf'],
-            },
-          },
-          games: {
+          players: spareRequestContextPlayersSchema,
+          games: spareRequestContextGamesSchema,
+          isManager: { type: 'boolean' },
+          managedTeams: {
             type: 'array',
             items: {
               type: 'object',
               additionalProperties: false,
               properties: {
                 id: { type: 'number' },
-                date: { type: 'string' },
-                time: { type: 'string' },
-                opponentName: { type: ['string', 'null'] },
+                name: { type: ['string', 'null'] },
+                players: spareRequestContextPlayersSchema,
+                games: spareRequestContextGamesSchema,
               },
-              required: ['id', 'date', 'time', 'opponentName'],
+              required: ['id', 'name', 'players', 'games'],
             },
           },
         },
-        required: ['id', 'name', 'dayOfWeek', 'format', 'teamId', 'teamName', 'players', 'games'],
+        required: [
+          'id',
+          'name',
+          'dayOfWeek',
+          'format',
+          'teamId',
+          'teamName',
+          'players',
+          'games',
+          'isManager',
+          'managedTeams',
+        ],
       },
     },
   },
   required: ['leagues'],
+} as const;
+
+export const spareSettingsResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    notificationDelaySeconds: { type: 'number' },
+    byePriorityWindowMinutes: { type: 'number' },
+    urgentThresholdHours: { type: 'number' },
+    reissueCooldownHours: { type: 'number' },
+  },
+  required: [
+    'notificationDelaySeconds',
+    'byePriorityWindowMinutes',
+    'urgentThresholdHours',
+    'reissueCooldownHours',
+  ],
 } as const;
 
 export const sparesCcResponseSchema = {
@@ -1642,6 +1689,10 @@ export const spareStatusResponseSchema = {
   properties: {
     id: { type: 'number' },
     status: { type: 'string' },
+    /** True while an open public request is still in the bye-only window for this viewer. */
+    inByeWindow: { type: 'boolean' },
+    /** When the bye-only window ends, if known. */
+    opensToViewerAt: { type: ['string', 'null'] },
   },
   required: ['id', 'status'],
 } as const;
@@ -1931,6 +1982,33 @@ export const spareNotificationStatusResponseSchema = {
     notifiedMembers: { type: 'number' },
     nextNotificationAt: { type: ['string', 'null'] },
     notificationPaused: { type: 'boolean' },
+    phases: {
+      type: ['object', 'null'],
+      additionalProperties: false,
+      properties: {
+        bye: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            total: { type: 'number' },
+            notified: { type: 'number' },
+          },
+          required: ['total', 'notified'],
+        },
+        general: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            total: { type: 'number' },
+            notified: { type: 'number' },
+            /** Set while the bye window is holding back the general pool. */
+            startsAt: { type: ['string', 'null'] },
+          },
+          required: ['total', 'notified', 'startsAt'],
+        },
+      },
+      required: ['bye', 'general'],
+    },
   },
   required: [
     'notificationStatus',
@@ -1938,6 +2016,7 @@ export const spareNotificationStatusResponseSchema = {
     'notifiedMembers',
     'nextNotificationAt',
     'notificationPaused',
+    'phases',
   ],
 } as const;
 

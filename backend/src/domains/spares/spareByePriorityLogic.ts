@@ -1,4 +1,6 @@
 import { BYE_PRIORITY_WAIT_MS } from './spareNotificationConstants.js';
+import { normalizeDateString, normalizeTimeString } from './spareDateTime.js';
+import { localDateTimeToUtcDate } from '../../utils/timeZone.js';
 
 /** Far-future placeholder until the bye batch finishes and sets the real listing time. */
 export const PUBLIC_LISTING_HIDDEN_UNTIL_BYE_DONE = new Date('2099-01-01T00:00:00.000Z');
@@ -96,16 +98,43 @@ export function buildPublicSpareRecipientPools<T extends { id: number }>(params:
   return { byeRecipients, otherRecipients, orderedRecipients };
 }
 
+/** Hours from `now` until the game starts, reading the game date/time as club wall-clock time. */
+export function hoursUntilSpareGame(params: {
+  gameDate: string;
+  gameTime: string;
+  now: Date;
+  timeZone: string;
+}): number {
+  const start = localDateTimeToUtcDate(
+    normalizeDateString(params.gameDate),
+    normalizeTimeString(params.gameTime),
+    params.timeZone,
+  );
+  if (Number.isNaN(start.getTime())) return Number.POSITIVE_INFINITY;
+  return (start.getTime() - params.now.getTime()) / (60 * 60 * 1000);
+}
+
+/** Urgent requests skip the bye window and the stagger: everyone is notified right away. */
+export function isUrgentSpareRequest(params: {
+  gameDate: string;
+  gameTime: string;
+  now: Date;
+  timeZone: string;
+  urgentThresholdHours: number;
+}): boolean {
+  return hoursUntilSpareGame(params) < params.urgentThresholdHours;
+}
+
 /**
  * Initial dashboard listing timestamp when a public notification run starts.
  * Staggered requests with bye players stay hidden until the bye batch completes.
  */
 export function initialPublicListingAt(params: {
   now: Date;
-  isLessThan24Hours: boolean;
+  isUrgent: boolean;
   hasByePriority: boolean;
 }): Date {
-  if (!params.isLessThan24Hours && params.hasByePriority) {
+  if (!params.isUrgent && params.hasByePriority) {
     return PUBLIC_LISTING_HIDDEN_UNTIL_BYE_DONE;
   }
   return params.now;
@@ -212,7 +241,7 @@ export function isByeBatchListingPlaceholder(value: Date | string | null | undef
 
 /**
  * General-pool emails wait until `public_listing_at`.
- * For a bye hold, that timestamp is one hour after the last bye-priority email.
+ * For a bye hold, that timestamp is the bye window after the last bye-priority email.
  * Null is a legacy row with no hold, so those emails can go out.
  */
 export function generalPoolEmailsAllowed(params: {
