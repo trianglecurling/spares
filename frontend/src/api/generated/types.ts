@@ -9908,10 +9908,12 @@ export interface paths {
                                 wins: number;
                                 losses: number;
                                 ties: number;
-                                /** @enum {null|string} */
-                                h2hResult: "win" | "loss" | null;
-                                h2hOpponentName: null | string;
-                                h2hPairIndex: null | number;
+                                h2hResults: {
+                                    /** @enum {string} */
+                                    result: "win" | "loss";
+                                    opponentName: string;
+                                    pairIndex: number;
+                                }[];
                             }[];
                         }[];
                     };

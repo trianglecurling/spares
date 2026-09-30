@@ -17857,28 +17857,32 @@
                             "ties": {
                               "type": "number"
                             },
-                            "h2hResult": {
-                              "type": [
-                                "null",
-                                "string"
-                              ],
-                              "enum": [
-                                "win",
-                                "loss",
-                                null
-                              ]
-                            },
-                            "h2hOpponentName": {
-                              "type": [
-                                "null",
-                                "string"
-                              ]
-                            },
-                            "h2hPairIndex": {
-                              "type": [
-                                "null",
-                                "number"
-                              ]
+                            "h2hResults": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "properties": {
+                                  "result": {
+                                    "type": "string",
+                                    "enum": [
+                                      "win",
+                                      "loss"
+                                    ]
+                                  },
+                                  "opponentName": {
+                                    "type": "string"
+                                  },
+                                  "pairIndex": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": [
+                                  "result",
+                                  "opponentName",
+                                  "pairIndex"
+                                ]
+                              }
                             }
                           },
                           "required": [
@@ -17892,9 +17896,7 @@
                             "wins",
                             "losses",
                             "ties",
-                            "h2hResult",
-                            "h2hOpponentName",
-                            "h2hPairIndex"
+                            "h2hResults"
                           ]
                         }
                       }

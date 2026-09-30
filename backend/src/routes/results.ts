@@ -29,7 +29,7 @@ import {
   tallyRecordsFromGames,
   tallyTeamRecord,
 } from '../utils/gameRecord.js';
-import { rankDivisionTeams, type RankBy } from '../utils/standingsRank.js';
+import { rankDivisionTeams, type H2hBadge, type RankBy } from '../utils/standingsRank.js';
 
 type DrizzleDb = ReturnType<typeof getDrizzleDb>['db'];
 type DrizzleSchema = ReturnType<typeof getDrizzleDb>['schema'];
@@ -821,9 +821,7 @@ export async function resultsRoutes(fastify: FastifyInstance) {
           wins: number;
           losses: number;
           ties: number;
-          h2hResult: 'win' | 'loss' | null;
-          h2hOpponentName: string | null;
-          h2hPairIndex: number | null;
+          h2hResults: H2hBadge[];
         }>;
       }> = [];
 
