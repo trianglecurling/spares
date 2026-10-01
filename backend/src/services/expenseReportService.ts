@@ -1474,6 +1474,7 @@ export async function downloadExpenseDocumentsForAdmin(
   const rows = await db
     .select({
       reportId: schema.expenseReports.id,
+      submitterName: schema.expenseReports.submitter_name,
       documentType: schema.expenseDocuments.document_type,
       originalFilename: schema.expenseDocuments.original_filename,
       mimeType: schema.expenseDocuments.mime_type,
@@ -1505,6 +1506,7 @@ export async function downloadExpenseDocumentsForAdmin(
   const named = assignExpenseDocumentArchiveNames(
     rows.map((row) => ({
       reportId: asInt(row.reportId),
+      submitterName: String(row.submitterName ?? ''),
       documentType: String(row.documentType),
       originalFilename: String(row.originalFilename),
       mimeType: String(row.mimeType),
