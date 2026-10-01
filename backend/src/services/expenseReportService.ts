@@ -15,6 +15,8 @@ import { detectMimeType, sanitizeFilename } from '../utils/managedFiles.js';
 import { config } from '../config.js';
 import { formatDateInTimeZone, formatTimeInTimeZone, localDateTimeToUtcDate } from '../utils/timeZone.js';
 import { toCsv } from '../utils/csv.js';
+import { createStoredZip } from '../utils/zipArchive.js';
+import { assignExpenseDocumentArchiveNames } from './expenseDocumentArchive.js';
 import { normalizeEmail } from '../utils/auth.js';
 import { volunteerCredentialIsValidOn } from '../utils/volunteerCredentials.js';
 import {
@@ -1267,6 +1269,8 @@ export type ExpenseAdminListFilters = {
   range?: ExpenseDateRange | '';
   from?: string;
   to?: string;
+  /** When set, export and document download use these report ids and ignore the other filters. */
+  ids?: number[];
 };
 
 function clubTimeZone(): string {
@@ -1289,6 +1293,9 @@ function clubToday(timeZone: string): string {
 
 async function buildAdminListWhere(query: ExpenseAdminListFilters) {
   const { schema } = getDrizzleDb();
+  if (query.ids && query.ids.length > 0) {
+    return inArray(schema.expenseReports.id, query.ids);
+  }
   const filters = [];
   if (query.status) {
     filters.push(eq(schema.expenseReports.status, query.status));
@@ -1445,6 +1452,125 @@ export async function exportExpenseReportsForAdmin(
       rows.map((row) => exportCsvRow(row, totals.get(asInt(row.id)), timeZone))
     ),
     filename: `expense-reports-${clubToday(timeZone)}.csv`,
+  };
+}
+
+const MAX_EXPENSE_DOCUMENT_ARCHIVE_BYTES = 200 * 1024 * 1024;
+
+async function readStoredFile(storageKey: string): Promise<Buffer> {
+  const stream = await getFileStorageAdapter().getReadStream(storageKey);
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
+}
+
+export async function downloadExpenseDocumentsForAdmin(
+  query: ExpenseAdminListFilters
+): Promise<{ zip: Buffer; filename: string }> {
+  const { db, schema } = getDrizzleDb();
+  const where = await buildAdminListWhere(query);
+  const rows = await db
+    .select({
+      reportId: schema.expenseReports.id,
+      documentType: schema.expenseDocuments.document_type,
+      originalFilename: schema.expenseDocuments.original_filename,
+      mimeType: schema.expenseDocuments.mime_type,
+      storageKey: schema.expenseDocuments.storage_key,
+    })
+    .from(schema.expenseDocuments)
+    .innerJoin(
+      schema.expenseReportItems,
+      eq(schema.expenseReportItems.id, schema.expenseDocuments.expense_item_id)
+    )
+    .innerJoin(
+      schema.expenseReports,
+      eq(schema.expenseReports.id, schema.expenseReportItems.report_id)
+    )
+    .where(where)
+    .orderBy(
+      desc(schema.expenseReports.submitted_at),
+      desc(schema.expenseReports.id),
+      asc(schema.expenseReportItems.sort_order),
+      asc(schema.expenseReportItems.id),
+      asc(schema.expenseDocuments.sort_order),
+      asc(schema.expenseDocuments.id)
+    );
+
+  if (rows.length === 0) {
+    throw new ExpenseReportError('No receipts or other documents match these reports.', 404);
+  }
+
+  const named = assignExpenseDocumentArchiveNames(
+    rows.map((row) => ({
+      reportId: asInt(row.reportId),
+      documentType: String(row.documentType),
+      originalFilename: String(row.originalFilename),
+      mimeType: String(row.mimeType),
+      storageKey: String(row.storageKey),
+    }))
+  );
+
+  const entries: Array<{ name: string; data: Buffer }> = [];
+  let totalBytes = 0;
+  for (const document of named) {
+    let data: Buffer;
+    try {
+      data = await readStoredFile(document.storageKey);
+    } catch {
+      throw new ExpenseReportError('A supporting document could not be read.', 500);
+    }
+    totalBytes += data.length;
+    if (totalBytes > MAX_EXPENSE_DOCUMENT_ARCHIVE_BYTES) {
+      throw new ExpenseReportError(
+        'These documents are too large to download together. Narrow the filters or selection and try again.',
+        400
+      );
+    }
+    entries.push({ name: document.archiveName, data });
+  }
+
+  const timeZone = clubTimeZone();
+  return {
+    zip: createStoredZip(entries),
+    filename: `expense-documents-${clubToday(timeZone)}.zip`,
+  };
+}
+
+export async function updateExpenseReportStatusesForAdmin(
+  ids: number[],
+  status: ExpenseReportStatus,
+  actor: StaffActor
+): Promise<{ updatedCount: number; unchangedCount: number }> {
+  const uniqueIds = [...new Set(ids)];
+  if (uniqueIds.length === 0) {
+    throw new ExpenseReportError('Select at least one expense report.', 400);
+  }
+  if (uniqueIds.length > 500) {
+    throw new ExpenseReportError('Select 500 expense reports or fewer.', 400);
+  }
+  const { db, schema } = getDrizzleDb();
+  const existing = await db
+    .select({
+      id: schema.expenseReports.id,
+      status: schema.expenseReports.status,
+    })
+    .from(schema.expenseReports)
+    .where(inArray(schema.expenseReports.id, uniqueIds));
+  if (existing.length !== uniqueIds.length) {
+    throw new ExpenseReportError('One or more expense reports were not found.', 404);
+  }
+  const statusById = new Map(existing.map((row) => [asInt(row.id), String(row.status)]));
+  let updatedCount = 0;
+  for (const id of uniqueIds) {
+    if (statusById.get(id) === status) continue;
+    await updateExpenseReportAdmin(id, { status }, actor);
+    updatedCount += 1;
+  }
+  return {
+    updatedCount,
+    unchangedCount: uniqueIds.length - updatedCount,
   };
 }
 

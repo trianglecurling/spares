@@ -1,7 +1,7 @@
-import { useEffect, useId, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { HiCreditCard } from 'react-icons/hi2';
 import { Link } from 'react-router-dom';
-import { get } from '../../api/client';
+import { get, post } from '../../api/client';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
 import AppPageControlsRow from '../../components/AppPageControlsRow';
 import AppStateCard from '../../components/AppStateCard';
@@ -11,6 +11,8 @@ import DataTable from '../../components/table/DataTable';
 import FormField from '../../components/FormField';
 import type { DataTableColumn } from '../../components/table/tableTypes';
 import { useAlert } from '../../contexts/AlertContext';
+import { useAuth } from '../../contexts/AuthContext';
+import { useConfirm } from '../../contexts/ConfirmContext';
 import useTableQueryState from '../../hooks/useTableQueryState';
 import api, { formatApiError } from '../../utils/api';
 import { downloadBlob, filenameFromDisposition, messageFromBlobError } from '../../utils/fileDownload';
@@ -21,7 +23,9 @@ import {
   EXPENSE_STATUS_OPTIONS,
   type ExpenseAdminSummary,
   type ExpenseReportListItem,
+  type ExpenseReportStatus,
 } from '../../utils/expenseReports';
+import { memberHasScope } from '../../utils/permissions';
 
 const SORT_KEYS = ['submittedAt'] as const;
 
@@ -40,13 +44,21 @@ function asDateRange(value: string): ExpenseDateRange | undefined {
   return (DATE_RANGES as readonly string[]).includes(value) ? (value as ExpenseDateRange) : undefined;
 }
 
+function reportCountLabel(count: number): string {
+  return count === 1 ? '1 expense report' : `${count} expense reports`;
+}
+
 export default function AdminExpenses() {
   const statusId = useId();
   const searchId = useId();
   const rangeId = useId();
   const fromId = useId();
   const toId = useId();
+  const bulkStatusId = useId();
   const { showAlert } = useAlert();
+  const { confirm } = useConfirm();
+  const { member } = useAuth();
+  const canManage = memberHasScope(member, 'expenses.manage');
   const {
     page,
     filters,
@@ -74,6 +86,10 @@ export default function AdminExpenses() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [downloadingDocuments, setDownloadingDocuments] = useState(false);
+  const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [refreshToken, setRefreshToken] = useState(0);
   const pageSize = 25;
 
   const range = asDateRange(filters.range);
@@ -115,14 +131,23 @@ export default function AdminExpenses() {
     return () => {
       cancelled = true;
     };
-  }, [dateRangeError, filterParams, page]);
+  }, [dateRangeError, filterParams, page, refreshToken]);
+
+  const filterKey = JSON.stringify(filterParams);
+  const [selectionFilterKey, setSelectionFilterKey] = useState(filterKey);
+  if (selectionFilterKey !== filterKey) {
+    setSelectionFilterKey(filterKey);
+    setSelectedIds([]);
+  }
+
+  const downloadParams = selectedIds.length > 0 ? { ids: selectedIds.join(',') } : filterParams;
 
   const handleExport = async () => {
-    if (exporting) return;
+    if (exporting || downloadingDocuments) return;
     setExporting(true);
     try {
       const response = await api.get('/admin/expenses/export', {
-        params: filterParams,
+        params: downloadParams,
         responseType: 'blob',
       });
       downloadBlob(
@@ -137,15 +162,104 @@ export default function AdminExpenses() {
     }
   };
 
+  const handleDownloadDocuments = async () => {
+    if (exporting || downloadingDocuments) return;
+    setDownloadingDocuments(true);
+    try {
+      const response = await api.get('/admin/expenses/documents', {
+        params: downloadParams,
+        responseType: 'blob',
+      });
+      downloadBlob(
+        new Blob([response.data], { type: 'application/zip' }),
+        filenameFromDisposition(response.headers['content-disposition'], 'expense-documents.zip')
+      );
+      showAlert('Expense documents downloaded.', 'success');
+    } catch (err) {
+      showAlert(await messageFromBlobError(err, 'Unable to download expense documents.'), 'error');
+    } finally {
+      setDownloadingDocuments(false);
+    }
+  };
+
+  const handleBulkStatus = async (nextStatus: string) => {
+    const option = EXPENSE_STATUS_OPTIONS.find((item) => item.value === nextStatus);
+    if (!option || selectedIds.length === 0 || updatingStatus) return;
+    const emailNote =
+      option.value === 'check_mailed'
+        ? ' Submitters whose reports are not already check mailed will receive an email.'
+        : '';
+    const confirmed = await confirm({
+      title: 'Update status',
+      message: `Update ${reportCountLabel(selectedIds.length)} to ${option.label}?${emailNote}`,
+      confirmText: 'Update status',
+      variant: option.value === 'check_mailed' ? 'warning' : 'info',
+    });
+    if (!confirmed) return;
+    setUpdatingStatus(true);
+    try {
+      const result = await post('/admin/expenses/status', {
+        ids: selectedIds,
+        status: option.value as ExpenseReportStatus,
+      });
+      if (result.updatedCount === 0) {
+        showAlert('Those reports already had that status.', 'success');
+      } else if (result.unchangedCount > 0) {
+        showAlert(
+          `Updated ${reportCountLabel(result.updatedCount)}. ${result.unchangedCount} already had that status.`,
+          'success'
+        );
+      } else {
+        showAlert(`Updated ${reportCountLabel(result.updatedCount)}.`, 'success');
+      }
+      setRefreshToken((current) => current + 1);
+    } catch (err) {
+      showAlert(formatApiError(err, 'Unable to update expense report statuses.'), 'error');
+    } finally {
+      setUpdatingStatus(false);
+    }
+  };
+
   const exportUnavailableReason = dateRangeError
     ? 'Fix the date range to export'
     : loading
       ? undefined
       : error
         ? 'Reports could not be loaded'
-        : total === 0
+        : selectedIds.length === 0 && total === 0
           ? 'No reports match these filters'
           : undefined;
+  const actionTitle =
+    exportUnavailableReason ??
+    (selectedIds.length > 0 ? `${reportCountLabel(selectedIds.length)} selected` : undefined);
+
+  const handleToggleRow = useCallback((row: ExpenseReportListItem, checked: boolean) => {
+    setSelectedIds((current) =>
+      checked
+        ? Array.from(new Set([...current, row.id]))
+        : current.filter((id) => id !== row.id)
+    );
+  }, []);
+
+  const handleTogglePage = useCallback((rows: ExpenseReportListItem[], checked: boolean) => {
+    const rowIds = rows.map((row) => row.id);
+    setSelectedIds((current) =>
+      checked
+        ? Array.from(new Set([...current, ...rowIds]))
+        : current.filter((id) => !rowIds.includes(id))
+    );
+  }, []);
+
+  const selectionConfig = useMemo(
+    () => ({
+      selectedIds,
+      getRowLabel: (row: ExpenseReportListItem) =>
+        `expense report ${row.id} from ${row.submitterName}`,
+      onToggleRow: handleToggleRow,
+      onTogglePage: handleTogglePage,
+    }),
+    [handleTogglePage, handleToggleRow, selectedIds]
+  );
 
   useEffect(() => {
     const loadSummary = async () => {
@@ -156,7 +270,7 @@ export default function AdminExpenses() {
       }
     };
     void loadSummary();
-  }, []);
+  }, [refreshToken]);
 
   const columns: Array<DataTableColumn<ExpenseReportListItem>> = useMemo(
     () => [
@@ -326,16 +440,59 @@ export default function AdminExpenses() {
           </>
         }
         right={
-          <span title={exportUnavailableReason}>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => void handleExport()}
-              disabled={exporting || loading || Boolean(exportUnavailableReason)}
-            >
-              {exporting ? 'Exporting…' : 'Export CSV'}
-            </Button>
-          </span>
+          <div className="flex flex-wrap items-end justify-end gap-3">
+            {canManage && selectedIds.length > 0 ? (
+              <FormField
+                label="Update status"
+                htmlFor={bulkStatusId}
+                className="w-56"
+                labelAccessory={
+                  <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                    {selectedIds.length} selected
+                  </span>
+                }
+              >
+                <ChoiceInput
+                  inputId={bulkStatusId}
+                  layout="popover"
+                  value={null}
+                  placeholder={updatingStatus ? 'Updating…' : 'Choose a status'}
+                  disabled={updatingStatus || exporting || downloadingDocuments || loading}
+                  onChange={(value) => {
+                    const next = Array.isArray(value) ? value[0] : value;
+                    if (typeof next === 'string' && next) void handleBulkStatus(next);
+                  }}
+                  options={EXPENSE_STATUS_OPTIONS.map((option) => ({
+                    value: option.value,
+                    label: option.label,
+                  }))}
+                  inputClassName="app-input max-w-none"
+                />
+              </FormField>
+            ) : null}
+            <span title={actionTitle}>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => void handleDownloadDocuments()}
+                disabled={
+                  downloadingDocuments || exporting || loading || Boolean(exportUnavailableReason)
+                }
+              >
+                {downloadingDocuments ? 'Downloading…' : 'Download receipts'}
+              </Button>
+            </span>
+            <span title={actionTitle}>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => void handleExport()}
+                disabled={exporting || downloadingDocuments || loading || Boolean(exportUnavailableReason)}
+              >
+                {exporting ? 'Exporting…' : 'Export CSV'}
+              </Button>
+            </span>
+          </div>
         }
       />
       {dateRangeError ? (
@@ -349,6 +506,7 @@ export default function AdminExpenses() {
           rows={items}
           rowKey={(row) => row.id}
           columns={columns}
+          selection={selectionConfig}
           pagination={{
             page,
             pageSize,

@@ -7,6 +7,7 @@ import {
   addExpenseReportNote,
   createExpenseReport,
   deleteExpenseReportForAdmin,
+  downloadExpenseDocumentsForAdmin,
   exportExpenseReportsForAdmin,
   getExpenseAdminSummary,
   getExpenseReceiptFileForAdmin,
@@ -18,6 +19,8 @@ import {
   streamExpenseReceiptFile,
   updateExpenseReportAdmin,
   updateExpenseReportRecord,
+  updateExpenseReportStatusesForAdmin,
+  ExpenseReportError,
 } from '../services/expenseReportService.js';
 import {
   EXPENSE_REPORT_STATUSES,
@@ -128,6 +131,57 @@ const adminFilterQuerystringProperties = {
   to: { type: 'string' },
 } as const;
 
+const adminSelectionQuerystringProperties = {
+  ...adminFilterQuerystringProperties,
+  ids: {
+    type: 'string',
+    description: 'Comma-separated expense report ids. When present, the other filters are ignored.',
+  },
+} as const;
+
+const MAX_SELECTED_EXPENSE_REPORTS = 500;
+
+const adminSelectionQuerySchema = adminFilterQuerySchema.extend({
+  ids: z.string().max(12_000).optional(),
+});
+
+function selectedReportIdsFromQuery(value: string | undefined): number[] | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+  const parts = trimmed.split(',').map((part) => part.trim()).filter(Boolean);
+  if (parts.length === 0) return undefined;
+  if (parts.length > MAX_SELECTED_EXPENSE_REPORTS) {
+    throw new ExpenseReportError('Select 500 expense reports or fewer.', 400);
+  }
+  const ids = new Set<number>();
+  for (const part of parts) {
+    if (!/^[1-9]\d*$/.test(part)) {
+      throw new ExpenseReportError('Expense report ids must be positive integers.', 400);
+    }
+    const id = Number(part);
+    if (!Number.isSafeInteger(id)) {
+      throw new ExpenseReportError('Expense report ids must be positive integers.', 400);
+    }
+    ids.add(id);
+  }
+  return [...ids];
+}
+
+const bulkStatusSchema = z.object({
+  ids: z.array(z.number().int().positive()).min(1).max(MAX_SELECTED_EXPENSE_REPORTS),
+  status: z.enum(EXPENSE_REPORT_STATUSES),
+});
+
+const bulkStatusResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    updatedCount: { type: 'number' },
+    unchangedCount: { type: 'number' },
+  },
+  required: ['updatedCount', 'unchangedCount'],
+} as const;
+
 function adminFiltersFromQuery(query: z.infer<typeof adminFilterQuerySchema>) {
   return {
     status: query.status || undefined,
@@ -135,6 +189,13 @@ function adminFiltersFromQuery(query: z.infer<typeof adminFilterQuerySchema>) {
     range: query.range || undefined,
     from: query.from,
     to: query.to,
+  };
+}
+
+function adminSelectionFromQuery(query: z.infer<typeof adminSelectionQuerySchema>) {
+  return {
+    ...adminFiltersFromQuery(query),
+    ids: selectedReportIdsFromQuery(query.ids),
   };
 }
 
@@ -345,10 +406,10 @@ export async function protectedExpenseRoutes(fastify: FastifyInstance): Promise<
         querystring: {
           type: 'object',
           additionalProperties: false,
-          properties: adminFilterQuerystringProperties,
+          properties: adminSelectionQuerystringProperties,
         },
         response: {
-          200: { type: 'string', description: 'CSV of expense reports matching the filters' },
+          200: { type: 'string', description: 'CSV of expense reports matching the filters or selection' },
           400: apiErrorResponseSchema,
           403: apiErrorResponseSchema,
         },
@@ -357,13 +418,99 @@ export async function protectedExpenseRoutes(fastify: FastifyInstance): Promise<
     async (request, reply) => {
       if (!requireExpensesRead(request, reply)) return;
       try {
-        const query = adminFilterQuerySchema.parse(request.query);
-        const result = await exportExpenseReportsForAdmin(adminFiltersFromQuery(query));
+        const query = adminSelectionQuerySchema.parse(request.query);
+        const result = await exportExpenseReportsForAdmin(adminSelectionFromQuery(query));
         return reply
           .header('Content-Type', 'text/csv; charset=utf-8')
           .header('Content-Disposition', `attachment; filename="${result.filename}"`)
           .header('Cache-Control', 'private, no-store')
           .send(result.csv);
+      } catch (err) {
+        return handleExpenseError(reply, err);
+      }
+    }
+  );
+
+  fastify.get(
+    '/admin/expenses/documents',
+    {
+      schema: {
+        tags: ['expenses'],
+        description: 'ZIP of receipts and other documents for the filtered or selected expense reports',
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: adminSelectionQuerystringProperties,
+        },
+        response: {
+          400: apiErrorResponseSchema,
+          403: apiErrorResponseSchema,
+          404: apiErrorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      if (!requireExpensesRead(request, reply)) return;
+      try {
+        const query = adminSelectionQuerySchema.parse(request.query);
+        const result = await downloadExpenseDocumentsForAdmin(adminSelectionFromQuery(query));
+        return reply
+          .header('Content-Type', 'application/zip')
+          .header('Content-Length', String(result.zip.length))
+          .header('Content-Disposition', `attachment; filename="${result.filename}"`)
+          .header('Cache-Control', 'private, no-store')
+          .send(result.zip);
+      } catch (err) {
+        return handleExpenseError(reply, err);
+      }
+    }
+  );
+
+  fastify.post(
+    '/admin/expenses/status',
+    {
+      schema: {
+        tags: ['expenses'],
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['ids', 'status'],
+          properties: {
+            ids: {
+              type: 'array',
+              minItems: 1,
+              maxItems: MAX_SELECTED_EXPENSE_REPORTS,
+              items: { type: 'number' },
+            },
+            status: { type: 'string', enum: [...EXPENSE_REPORT_STATUSES] },
+          },
+        },
+        response: {
+          200: bulkStatusResponseSchema,
+          400: apiErrorResponseSchema,
+          403: apiErrorResponseSchema,
+          404: apiErrorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      if (!requireExpensesManage(request, reply)) return;
+      const member = request.member;
+      if (!member) {
+        sendApiError(reply, 401, 'Unauthorized');
+        return;
+      }
+      const parsed = bulkStatusSchema.safeParse(request.body);
+      if (!parsed.success) {
+        sendApiError(reply, 400, 'Choose a status and at least one expense report.');
+        return;
+      }
+      try {
+        return await updateExpenseReportStatusesForAdmin(
+          parsed.data.ids,
+          parsed.data.status,
+          staffActorFromMember(member)
+        );
       } catch (err) {
         return handleExpenseError(reply, err);
       }
