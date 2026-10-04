@@ -5,6 +5,7 @@ import {
   compareUnfrozenWaitlistEntries,
   lifetimeInsertIndex,
   nextFrozenEntryCountAfterRemoval,
+  resolveSingleWaitlistMove,
   sortWaitlistQueue,
   stableWaitlistTieBreak,
   type WaitlistQueueOrderEntry,
@@ -79,6 +80,42 @@ describe('waitlistQueueOrder', () => {
     // Staff may park a non-lifetime member above lifetime members; a new lifetime join still
     // goes after the last frozen lifetime member, not to the top of the prefix.
     expect(lifetimeInsertIndex([{ isLifetimeMember: false }, { isLifetimeMember: true }])).toBe(2);
+  });
+
+  test('a reorder records the dragged entry, including an adjacent swap', () => {
+    expect(
+      resolveSingleWaitlistMove({
+        previousIds: [1, 2, 3, 4, 5],
+        nextIds: [1, 3, 4, 2, 5],
+        movedEntryId: 2,
+      }),
+    ).toEqual({ entryId: 2, fromPosition: 2, toPosition: 4 });
+
+    expect(
+      resolveSingleWaitlistMove({
+        previousIds: [1, 2, 3],
+        nextIds: [2, 1, 3],
+        movedEntryId: 1,
+      }),
+    ).toEqual({ entryId: 1, fromPosition: 1, toPosition: 2 });
+  });
+
+  test('a reorder infers the one entry that moved farther than the rows it passed', () => {
+    expect(
+      resolveSingleWaitlistMove({
+        previousIds: [1, 2, 3, 4, 5],
+        nextIds: [1, 3, 4, 2, 5],
+      }),
+    ).toEqual({ entryId: 2, fromPosition: 2, toPosition: 4 });
+  });
+
+  test('an adjacent swap is not guessed when the dragged entry is unknown', () => {
+    expect(
+      resolveSingleWaitlistMove({
+        previousIds: [1, 2, 3],
+        nextIds: [2, 1, 3],
+      }),
+    ).toBeNull();
   });
 
   test('removing a frozen row decrements N; removing an unfrozen row does not', () => {

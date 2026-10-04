@@ -262,6 +262,49 @@ interface LeagueRosterMember {
   previousSessionLeagues?: string[];
 }
 
+function RosterMemberActions({
+  entry,
+  saving,
+  removeVariant,
+  onToggleSpotType,
+  onRemove,
+}: {
+  entry: LeagueRosterMember;
+  saving: boolean;
+  removeVariant: 'danger' | 'outline-danger';
+  onToggleSpotType: (entry: LeagueRosterMember) => void;
+  onRemove: (entry: LeagueRosterMember) => void;
+}) {
+  const temporary = entry.isTemporarySabbaticalFill === true;
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Button
+        type="button"
+        variant="secondary"
+        disabled={saving}
+        aria-label={
+          temporary
+            ? `Mark ${entry.name} as a permanent spot`
+            : `Mark ${entry.name} as a temporary fill`
+        }
+        onClick={() => onToggleSpotType(entry)}
+      >
+        {saving ? 'Saving...' : temporary ? 'Make permanent' : 'Make temporary fill'}
+      </Button>
+      <Button
+        type="button"
+        variant={removeVariant}
+        className="shrink-0"
+        onClick={() => onRemove(entry)}
+        disabled={Boolean(entry.assignedTeamId) || saving}
+        aria-label={`Remove ${entry.name} from the roster`}
+      >
+        Remove
+      </Button>
+    </div>
+  );
+}
+
 function emailEntriesForRosterMembers(members: LeagueRosterMember[]): string[] {
   return namedCopyEmailEntries(
     members.map((member) => ({
@@ -457,6 +500,7 @@ export default function LeagueDetail() {
   const [waitlistActionLoading, setWaitlistActionLoading] = useState(false);
 
   const [rosterMembers, setRosterMembers] = useState<LeagueRosterMember[]>([]);
+  const [rosterSpotTypeMemberId, setRosterSpotTypeMemberId] = useState<number | null>(null);
   const [rosterExportOpen, setRosterExportOpen] = useState(false);
   const [rosterExportTsv, setRosterExportTsv] = useState('');
   const rosterExportTsvId = useId();
@@ -1360,6 +1404,40 @@ export default function LeagueDetail() {
     } catch (error: unknown) {
       console.error('Failed to add roster member:', error);
       showAlert(formatApiError(error, 'Failed to add to roster'), 'error');
+    }
+  };
+
+  const handleToggleRosterSpotType = async (rosterMember: LeagueRosterMember) => {
+    const makeTemporary = rosterMember.isTemporarySabbaticalFill !== true;
+    const confirmed = await confirm({
+      title: makeTemporary ? 'Mark as temporary fill' : 'Mark as permanent',
+      message: makeTemporary
+        ? `${rosterMember.name} will occupy a temporary sabbatical-fill spot for this session. The seat is not a permanent placement. A registration tied to this seat receives the sabbatical-fill discount.`
+        : `${rosterMember.name} will occupy a permanent spot for this session. A registration tied to this seat is billed as a regular league placement.`,
+      variant: 'warning',
+      confirmText: makeTemporary ? 'Mark as temporary fill' : 'Mark as permanent',
+    });
+    if (!confirmed) return;
+
+    setRosterSpotTypeMemberId(rosterMember.memberId);
+    try {
+      await patch(
+        '/leagues/{id}/roster/{memberId}',
+        { isTemporarySabbaticalFill: makeTemporary },
+        { id: String(numericLeagueId), memberId: String(rosterMember.memberId) },
+      );
+      await loadRoster();
+      showAlert(
+        makeTemporary
+          ? `${rosterMember.name} now has a temporary fill spot`
+          : `${rosterMember.name} now has a permanent spot`,
+        'success',
+      );
+    } catch (error: unknown) {
+      console.error('Failed to update roster spot type:', error);
+      showAlert(formatApiError(error, 'Failed to update roster spot type'), 'error');
+    } finally {
+      setRosterSpotTypeMemberId(null);
     }
   };
 
@@ -3499,7 +3577,9 @@ export default function LeagueDetail() {
                   <p className="text-sm text-gray-600 dark:text-gray-400">
                     Members eligible for team assignments.
                     {canViewRosterPlacement
-                      ? ' Placement labels show how each member was added. Temporary fill means they are occupying a sabbatical seat.'
+                      ? ` Placement labels show how each member was added. Temporary fill means they occupy a sabbatical seat for this session.${
+                          canManageRoster ? ' League administrators can change that spot type.' : ''
+                        }`
                       : ''}
                   </p>
                 </div>
@@ -3622,15 +3702,13 @@ export default function LeagueDetail() {
                                       {canManageRoster ? (
                                         <td className="app-table-td">
                                           {rosterEntry ? (
-                                            <Button
-                                              variant="outline-danger"
-                                              className="shrink-0"
-                                              onClick={() => handleRemoveRosterMember(rosterEntry)}
-                                              disabled={Boolean(rosterEntry.assignedTeamId)}
-                                              aria-label={`Remove ${rosterEntry.name} from the roster`}
-                                            >
-                                              Remove
-                                            </Button>
+                                            <RosterMemberActions
+                                              entry={rosterEntry}
+                                              saving={rosterSpotTypeMemberId === rosterEntry.memberId}
+                                              removeVariant="outline-danger"
+                                              onToggleSpotType={(member) => void handleToggleRosterSpotType(member)}
+                                              onRemove={(member) => void handleRemoveRosterMember(member)}
+                                            />
                                           ) : null}
                                         </td>
                                       ) : null}
@@ -3746,13 +3824,13 @@ export default function LeagueDetail() {
                           </td>
                           {canManageRoster ? (
                             <td className="app-table-td">
-                              <Button
-                                variant="danger"
-                                onClick={() => handleRemoveRosterMember(entry)}
-                                disabled={Boolean(entry.assignedTeamId)}
-                              >
-                                Remove
-                              </Button>
+                              <RosterMemberActions
+                                entry={entry}
+                                saving={rosterSpotTypeMemberId === entry.memberId}
+                                removeVariant="danger"
+                                onToggleSpotType={(member) => void handleToggleRosterSpotType(member)}
+                                onRemove={(member) => void handleRemoveRosterMember(member)}
+                              />
                             </td>
                           ) : null}
                         </tr>

@@ -827,6 +827,7 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
     const previousIds = orderedEntries.map((entry) => entry.id);
     const nextIds = nextEntries.map((entry) => entry.id);
     if (previousIds.join(',') === nextIds.join(',')) return;
+    const movedEntryId = orderedEntries[meta.activeIndex]?.id;
     const nextFrozen = nextFrozenCountAfterMove({
       frozenCount,
       activeIndex: meta.activeIndex,
@@ -842,6 +843,7 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
         await api.post(`/waitlists/${waitlistId}/entries/reorder`, {
           entryIds: nextIds,
           frozenEntryCount: nextFrozen,
+          ...(movedEntryId != null ? { movedEntryId } : {}),
           reason,
         });
         setOrderedEntries(

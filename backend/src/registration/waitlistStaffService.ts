@@ -63,6 +63,7 @@ import {
   releaseFrozenSlotIfNeeded,
   setWaitlistFrozenEntryCount,
 } from './waitlistQueueService.js';
+import { compactWaitlistPositionSortKey, resolveSingleWaitlistMove } from './waitlistQueueOrder.js';
 import {
   shouldOfferPermanentWaitlistEntry,
   skipLowerPriorityWaitlistEntriesAfterAcceptance,
@@ -329,6 +330,8 @@ async function createAuditEvent(
     actorMemberName?: string | null;
     summary?: string | null;
     position?: number | null;
+    fromPosition?: number | null;
+    toPosition?: number | null;
     queueTotal?: number | null;
     offerType?: string | null;
   }
@@ -916,6 +919,7 @@ export async function reorderWaitlistEntries(input: {
   waitlistId: number;
   entryIds: number[];
   frozenEntryCount?: number;
+  movedEntryId?: number;
   actorMemberId: number;
   reason: string;
 }) {
@@ -928,12 +932,7 @@ export async function reorderWaitlistEntries(input: {
 
   const currentFrozenCount = await loadFrozenEntryCount(input.waitlistId);
   const placement = await resolvePlacementLeagueForWaitlist(input.waitlistId);
-  const persisted = await persistStaffWaitlistOrder({
-    waitlistId: input.waitlistId,
-    entryIds: input.entryIds,
-    frozenEntryCount: input.frozenEntryCount ?? currentFrozenCount,
-  });
-
+  const previousOrder = await loadRenderedWaitlistOrder(input.waitlistId);
   const entries = await db
     .select()
     .from(schema.waitlistEntries)
@@ -945,31 +944,63 @@ export async function reorderWaitlistEntries(input: {
       )
     );
   const entryById = new Map(entries.map((entry) => [entry.id, entry]));
+  if (input.movedEntryId != null && !entryById.has(input.movedEntryId)) {
+    throw new WaitlistStaffValidationError({
+      movedEntryId: 'The moved waitlist entry was not found on this waitlist.',
+    });
+  }
 
-  await db.transaction(async (tx) => {
-    for (let index = 0; index < persisted.entryIds.length; index += 1) {
-      const entryId = persisted.entryIds[index]!;
-      const entry = entryById.get(entryId);
-      if (!entry) continue;
+  const persisted = await persistStaffWaitlistOrder({
+    waitlistId: input.waitlistId,
+    entryIds: input.entryIds,
+    frozenEntryCount: input.frozenEntryCount ?? currentFrozenCount,
+  });
+  const nextOrder = await loadRenderedWaitlistOrder(input.waitlistId);
+  const moved = resolveSingleWaitlistMove({
+    previousIds: previousOrder.entries.map((entry) => entry.id),
+    nextIds: nextOrder.entries.map((entry) => entry.id),
+    movedEntryId: input.movedEntryId,
+  });
+  const entry = moved ? entryById.get(moved.entryId) : undefined;
+
+  if (moved && entry && moved.fromPosition !== moved.toPosition) {
+    const storedIndex = persisted.entryIds.indexOf(moved.entryId);
+    await db.transaction(async (tx) => {
       await createAuditEvent(tx, {
-        waitlistEntryId: entryId,
+        waitlistEntryId: moved.entryId,
         leagueId: placement?.leagueId ?? null,
         memberId: entry.member_id,
         actorMemberId: input.actorMemberId,
         source: 'staff_action',
         action: 'entry_reordered',
         reason,
-        before: { positionSortKey: entry.position_sort_key, frozenEntryCount: currentFrozenCount },
+        before: {
+          positionSortKey: entry.position_sort_key,
+          position: moved.fromPosition,
+          frozenEntryCount: currentFrozenCount,
+        },
         after: {
-          positionSortKey: `${String(index + 1).padStart(6, '0')}:${entryId}`,
+          positionSortKey:
+            storedIndex >= 0
+              ? compactWaitlistPositionSortKey(storedIndex, moved.entryId)
+              : entry.position_sort_key,
+          position: moved.toPosition,
           frozenEntryCount: persisted.frozenEntryCount,
         },
-        metadata: { waitlistId: input.waitlistId, position: index + 1, frozenEntryCount: persisted.frozenEntryCount },
-        position: index + 1,
-        queueTotal: persisted.entryIds.length,
+        metadata: {
+          waitlistId: input.waitlistId,
+          fromPosition: moved.fromPosition,
+          toPosition: moved.toPosition,
+          position: moved.toPosition,
+          frozenEntryCount: persisted.frozenEntryCount,
+        },
+        fromPosition: moved.fromPosition,
+        toPosition: moved.toPosition,
+        position: moved.toPosition,
+        queueTotal: nextOrder.entries.length,
       });
-    }
-  });
+    });
+  }
 
   return { waitlistId: input.waitlistId, entryIds: persisted.entryIds, frozenEntryCount: persisted.frozenEntryCount };
 }

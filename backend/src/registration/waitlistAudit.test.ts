@@ -46,6 +46,17 @@ describe('waitlist audit summaries', () => {
     ).toBe("John Smith's waitlist offer preference changed");
   });
 
+  test('entry_reordered names the member and both positions', () => {
+    expect(
+      formatWaitlistAuditSummary({
+        action: 'entry_reordered',
+        memberName: 'Jane Doe',
+        fromPosition: 2,
+        toPosition: 5,
+      })
+    ).toBe('Jane Doe moved from position #2 to position #5 on the waitlist');
+  });
+
   test('entry_priority_changed names the member', () => {
     expect(
       formatWaitlistAuditSummary({

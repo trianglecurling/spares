@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mergeRegistrationChargeSets } from './registrationBillingChargeSet.js';
+import { mergeRegistrationChargeSets, sessionPlacementChargeSet } from './registrationBillingChargeSet.js';
 
 describe('mergeRegistrationChargeSets', () => {
   test('unions roster, team, and entered play-in leagues', () => {
@@ -24,6 +24,24 @@ describe('mergeRegistrationChargeSets', () => {
     ).toEqual({
       chargedLeagueIds: [10, 11],
       temporaryFillLeagueIds: [10],
+    });
+  });
+});
+
+describe('sessionPlacementChargeSet', () => {
+  test('discounts a temporary-fill roster seat that is not linked to a registration', () => {
+    expect(
+      sessionPlacementChargeSet({
+        teamLeagueIds: [],
+        playInLeagueIds: [],
+        rosterSeats: [
+          { leagueId: 27, temporaryFill: 0 },
+          { leagueId: 34, temporaryFill: 1 },
+        ],
+      }),
+    ).toEqual({
+      chargedLeagueIds: [27, 34],
+      temporaryFillLeagueIds: [34],
     });
   });
 });

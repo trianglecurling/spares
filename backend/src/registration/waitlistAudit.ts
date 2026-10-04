@@ -45,6 +45,8 @@ export type WaitlistAuditInput = {
   actorMemberName?: string | null;
   summary?: string | null;
   position?: number | null;
+  fromPosition?: number | null;
+  toPosition?: number | null;
   queueTotal?: number | null;
   offerType?: string | null;
 };
@@ -106,6 +108,8 @@ export function formatWaitlistAuditSummary(input: {
   memberName?: string | null;
   actorMemberName?: string | null;
   position?: number | null;
+  fromPosition?: number | null;
+  toPosition?: number | null;
   queueTotal?: number | null;
   offerType?: string | null;
   movedToBottom?: boolean;
@@ -127,6 +131,9 @@ export function formatWaitlistAuditSummary(input: {
     case 'entry_created':
       return `${memberName}${positionText} added to waitlist${teamSuffix}`;
     case 'entry_reordered':
+      if (input.fromPosition != null && input.toPosition != null) {
+        return `${memberName} moved from position #${input.fromPosition} to position #${input.toPosition} on the waitlist${teamSuffix}`;
+      }
       return input.position != null
         ? `${memberName} moved to position #${input.position} on the waitlist${teamSuffix}`
         : `${memberName} reordered on the waitlist${teamSuffix}`;
@@ -232,6 +239,8 @@ export async function insertWaitlistAuditEvent(
     ...(memberName ? { memberName } : {}),
     ...(actorMemberName ? { actorMemberName } : {}),
     ...(input.position != null ? { position: input.position } : {}),
+    ...(input.fromPosition != null ? { fromPosition: input.fromPosition } : {}),
+    ...(input.toPosition != null ? { toPosition: input.toPosition } : {}),
     ...(input.queueTotal != null ? { queueTotal: input.queueTotal } : {}),
     ...(input.offerType ? { offerType: input.offerType } : {}),
     ...(teamRosterText ? { teamRosterText } : {}),
@@ -244,6 +253,8 @@ export async function insertWaitlistAuditEvent(
       memberName,
       actorMemberName,
       position: input.position,
+      fromPosition: input.fromPosition,
+      toPosition: input.toPosition,
       queueTotal: input.queueTotal,
       offerType: input.offerType,
       movedToBottom: input.metadata?.movedToBottom === true,
@@ -337,6 +348,8 @@ export function serializeWaitlistAuditEvent(row: Record<string, unknown>) {
       memberName: typeof metadata?.memberName === 'string' ? metadata.memberName : null,
       actorMemberName: typeof metadata?.actorMemberName === 'string' ? metadata.actorMemberName : null,
       position: typeof metadata?.position === 'number' ? metadata.position : null,
+      fromPosition: typeof metadata?.fromPosition === 'number' ? metadata.fromPosition : null,
+      toPosition: typeof metadata?.toPosition === 'number' ? metadata.toPosition : null,
       queueTotal: typeof metadata?.queueTotal === 'number' ? metadata.queueTotal : null,
       offerType: typeof metadata?.offerType === 'string' ? metadata.offerType : null,
       teamRosterText,

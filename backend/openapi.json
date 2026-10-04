@@ -14386,6 +14386,69 @@
             }
           }
         }
+      },
+      "patch": {
+        "tags": [
+          "league-setup"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "isTemporarySabbaticalFill": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "isTemporarySabbaticalFill"
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "memberId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "isTemporarySabbaticalFill": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "isTemporarySabbaticalFill"
+                  ]
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/leagues/{id}/managers": {

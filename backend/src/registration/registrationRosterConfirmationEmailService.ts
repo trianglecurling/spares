@@ -520,7 +520,8 @@ async function loadRosterConfirmationRecipients(input: {
     existing.leagues.set(row.leagueId, {
       leagueId: row.leagueId,
       leagueName: row.leagueName,
-      isTemporarySabbaticalFill: prior?.isTemporarySabbaticalFill === true || row.isTemporarySabbaticalFill === 1,
+      isTemporarySabbaticalFill:
+        prior?.isTemporarySabbaticalFill === true || Number(row.isTemporarySabbaticalFill) === 1,
     });
     drafts.set(row.memberId, existing);
   }
