@@ -9,7 +9,9 @@ import {
 function emptyDraw(games: Record<string, TournamentGameNode>): TournamentDrawState {
   return {
     version: 1,
-    setup: { eventCount: 1, events: [{ id: 'A', name: 'A', code: 'A', order: 0, color: '#000' }] },
+    setup: { eventCount: 1, events: [{ id: 'A', name: 'A', code: 'A', order: 0, color: '#000', phaseId: 'b' }] },
+    phases: [{ id: 'b', name: 'Bracket', order: 0, kind: 'bracket' }],
+    pools: [],
     canvas: { zoom: 1, panX: 0, panY: 0 },
     games,
     connections: [],
@@ -27,6 +29,7 @@ function twoSlotGame(
   return {
     id,
     eventId: 'A',
+    phaseId: 'b',
     label: id,
     depth: 0,
     verticalOrder: 0,

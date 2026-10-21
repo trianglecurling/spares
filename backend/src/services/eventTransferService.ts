@@ -83,12 +83,18 @@ function fieldCompatibilityIssue(
 function registrationReferencedInDrawJson(drawJson: string | null | undefined, registrationId: number): boolean {
   if (!drawJson || !drawJson.trim()) return false;
   try {
-    const parsed = JSON.parse(drawJson) as { games?: Array<{ slots?: Array<{ sourceType?: string; registrationId?: number }> }> };
-    for (const game of parsed.games ?? []) {
-      for (const slot of game.slots ?? []) {
-        if (slot?.sourceType === 'registration' && slot.registrationId === registrationId) {
-          return true;
-        }
+    type Slot = { sourceType?: string; registrationId?: number };
+    const parsed = JSON.parse(drawJson) as {
+      games?: Record<string, { slots?: Slot[] }>;
+      pools?: Array<{ entries?: Array<{ source?: Slot }> }>;
+    };
+    const slots: Array<Slot | undefined> = [
+      ...Object.values(parsed.games ?? {}).flatMap((game) => game?.slots ?? []),
+      ...(parsed.pools ?? []).flatMap((pool) => (pool?.entries ?? []).map((entry) => entry?.source)),
+    ];
+    for (const slot of slots) {
+      if (slot?.sourceType === 'registration' && slot.registrationId === registrationId) {
+        return true;
       }
     }
   } catch {

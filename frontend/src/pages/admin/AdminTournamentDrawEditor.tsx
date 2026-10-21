@@ -31,6 +31,7 @@ import {
   createAddedBracketEvent,
   emptyTournamentDraw,
   MAX_BRACKET_EVENT_COUNT,
+  MAX_PHASE_COUNT,
   nextAvailableBracketEventCode,
 } from '../../utils/tournamentDrawBuilders';
 import {
@@ -42,6 +43,7 @@ import {
   type TournamentConnectionEdge,
   type TournamentDrawState,
   type TournamentGameNode,
+  type TournamentPhaseKind,
   type TournamentSlotSource,
   type TournamentTextNode,
 } from '../../utils/tournamentDrawModel';
@@ -50,7 +52,12 @@ import {
   formatFeederPipeLabel,
   normalizeDrawState,
 } from '../../utils/tournamentDrawRouting';
-import { formatTeamDisplayName } from '../../utils/tournamentDisplay';
+import { bracketPhaseView, isPoolPhaseGame, phasesInOrder } from '../../utils/tournamentDrawPhases';
+import { buildSlotSourceOptions, CUSTOM_STANDING_OPTION_VALUE } from '../../utils/tournamentSlotOptions';
+import CustomStandingDialog from '../../components/tournament/CustomStandingDialog';
+import TournamentPhaseBar from '../../components/tournament/TournamentPhaseBar';
+import TournamentPoolPhaseEditor from '../../components/tournament/TournamentPoolPhaseEditor';
+import { addPhaseToDraw, movePhaseInDraw, removePhaseFromDraw } from '../../utils/tournamentDrawPhaseEdits';
 import {
   buildTournamentDrawTemplate,
   downloadTournamentDrawTemplate,
@@ -502,6 +509,24 @@ export default function AdminTournamentDrawEditor({
 
   const teamsById = useMemo(() => new Map(teams.map((t) => [t.id, t])), [teams]);
 
+  const [activePhaseIdState, setActivePhaseId] = useState<string | null>(null);
+  const phases = useMemo(() => (draw ? phasesInOrder(draw) : []), [draw]);
+  const activePhase = phases.find((p) => p.id === activePhaseIdState) ?? phases[0] ?? null;
+  const activePhaseId = activePhase?.id ?? null;
+  const activeIsPool = activePhase?.kind === 'pool';
+  /** The bracket canvas only sees the active phase's lanes and notes. */
+  const phaseView = useMemo(
+    () => (draw && activePhaseId && !activeIsPool ? bracketPhaseView(draw, activePhaseId) : null),
+    [draw, activePhaseId, activeIsPool],
+  );
+  const phaseEvents = useMemo(
+    () => (phaseView ? sortedBracketEvents(phaseView.setup.events) : []),
+    [phaseView],
+  );
+  const [customStandingTarget, setCustomStandingTarget] = useState<{ gameId: string; slotIndex: number } | null>(
+    null,
+  );
+
   const navigateDrawHash = useCallback(
     (nextHash: string, replace: boolean) => {
       navigate(
@@ -670,7 +695,7 @@ export default function AdminTournamentDrawEditor({
   }, [workspaceTab]);
 
   useEffect(() => {
-    if (workspaceTab !== 'structure') return;
+    if (workspaceTab !== 'structure' || activeIsPool) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'f' && e.key !== 'F') return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -685,6 +710,7 @@ export default function AdminTournamentDrawEditor({
     return () => document.removeEventListener('keydown', onKey);
   }, [
     workspaceTab,
+    activeIsPool,
     bracketEventsModalOpen,
     structureToolbarAddMenuOpen,
     structureToolbarMoreMenuOpen,
@@ -697,8 +723,12 @@ export default function AdminTournamentDrawEditor({
     if (g) lastInteractedGameEventIdRef.current = g.eventId;
   }, [draw, selectedGameId]);
 
-  const layout = useMemo(() => (draw ? layoutDraw(draw) : null), [
-    draw,
+  useEffect(() => {
+    if (activeIsPool) setStructureFullWindow(false);
+  }, [activeIsPool]);
+
+  const layout = useMemo(() => (phaseView ? layoutDraw(phaseView) : null), [
+    phaseView,
     // Layout is derived from module constants too; include them so memo invalidates when geometry changes (e.g. HMR) while `draw` is referentially stable.
     COL_W,
     CARD_W,
@@ -710,14 +740,14 @@ export default function AdminTournamentDrawEditor({
   ]);
 
   const edgePaths = useMemo(() => {
-    if (!draw || !layout) return [];
-    return computeBracketEdgePaths(draw, layout);
-  }, [draw, layout]);
+    if (!phaseView || !layout) return [];
+    return computeBracketEdgePaths(phaseView, layout);
+  }, [phaseView, layout]);
 
   const textConnectorPaths = useMemo(() => {
-    if (!draw || !layout) return [];
-    return computeTextConnectorPaths(draw, layout);
-  }, [draw, layout]);
+    if (!phaseView || !layout) return [];
+    return computeTextConnectorPaths(phaseView, layout);
+  }, [phaseView, layout]);
 
   const clearCanvasSelection = useCallback(() => {
     setSelectedGameId(null);
@@ -861,7 +891,7 @@ export default function AdminTournamentDrawEditor({
   }, []);
 
   const addBracketEvent = useCallback(() => {
-    if (!draw) return;
+    if (!draw || !activePhaseId) return;
     if (draw.setup.events.length >= MAX_BRACKET_EVENT_COUNT) {
       showAlert(`You can add at most ${MAX_BRACKET_EVENT_COUNT} events.`, 'error');
       return;
@@ -871,8 +901,8 @@ export default function AdminTournamentDrawEditor({
       showAlert(`You can add at most ${MAX_BRACKET_EVENT_COUNT} events.`, 'error');
       return;
     }
-    const order = draw.setup.events.length;
-    const nextEvent = createAddedBracketEvent(code, order);
+    const order = phaseEvents.length;
+    const nextEvent = createAddedBracketEvent(code, order, activePhaseId);
     updateDraw((d) => ({
       ...d,
       setup: {
@@ -881,13 +911,13 @@ export default function AdminTournamentDrawEditor({
         events: [...d.setup.events, nextEvent],
       },
     }));
-  }, [draw, showAlert, updateDraw]);
+  }, [draw, activePhaseId, phaseEvents.length, showAlert, updateDraw]);
 
   const deleteBracketEvent = useCallback(
     (eventId: string) => {
       if (!draw) return;
-      if (draw.setup.events.length <= 1) {
-        showAlert('At least one event is required.', 'error');
+      if (phaseEvents.length <= 1) {
+        showAlert('Each bracket phase needs at least one event.', 'error');
         return;
       }
       const hasGames = Object.values(draw.games).some((g) => g.eventId === eventId);
@@ -898,9 +928,9 @@ export default function AdminTournamentDrawEditor({
         );
         return;
       }
-      const nextEvents = sortedBracketEvents(draw.setup.events)
-        .filter((e) => e.id !== eventId)
-        .map((e, i) => ({ ...e, order: i }));
+      const remaining = phaseEvents.filter((e) => e.id !== eventId).map((e, i) => ({ ...e, order: i }));
+      const others = draw.setup.events.filter((e) => e.phaseId !== activePhaseId);
+      const nextEvents = [...others, ...remaining];
       updateDraw((d) => ({
         ...d,
         setup: {
@@ -910,10 +940,50 @@ export default function AdminTournamentDrawEditor({
         },
       }));
     },
+    [draw, activePhaseId, phaseEvents, showAlert, updateDraw],
+  );
+
+  const addPhase = useCallback(
+    (kind: TournamentPhaseKind) => {
+      if (!draw) return;
+      if (draw.phases.length >= MAX_PHASE_COUNT) {
+        showAlert(`You can add at most ${MAX_PHASE_COUNT} phases.`, 'error');
+        return;
+      }
+      const { draw: next, phaseId } = addPhaseToDraw(draw, kind);
+      updateDraw(() => next);
+      setActivePhaseId(phaseId);
+      setSelectedGameId(null);
+      setSelectedTextNodeId(null);
+    },
     [draw, showAlert, updateDraw],
   );
 
-  const createBlankDraw = async () => {
+  const deletePhase = useCallback(
+    async (phaseId: string) => {
+      if (!draw || draw.phases.length <= 1) return;
+      const phase = draw.phases.find((p) => p.id === phaseId);
+      if (!phase) return;
+      const gameCount = Object.values(draw.games).filter((g) => g.phaseId === phaseId).length;
+      const ok = await confirm({
+        title: `Delete ${phase.name}?`,
+        message:
+          gameCount > 0
+            ? `This removes its ${gameCount === 1 ? 'game' : `${gameCount} games`}${phase.kind === 'pool' ? ' and pools' : ' and events'}. Later phases that use its results switch to TBD.`
+            : 'Later phases that use its results switch to TBD.',
+        confirmText: 'Delete phase',
+        variant: 'danger',
+      });
+      if (!ok) return;
+      updateDraw((d) => removePhaseFromDraw(d, phaseId));
+      setActivePhaseId(null);
+      setSelectedGameId(null);
+      setSelectedTextNodeId(null);
+    },
+    [draw, confirm, updateDraw],
+  );
+
+  const createBlankDraw = async (startWithPools = false) => {
     let club = clubSheets;
     if (club.length === 0) {
       try {
@@ -924,11 +994,27 @@ export default function AdminTournamentDrawEditor({
         /* sheets optional */
       }
     }
-    const next: TournamentDrawState = {
+    let next: TournamentDrawState = {
       ...emptyTournamentDraw(4),
       sheets: club.length > 0 ? sheetsFromClubSheets(club) : [],
     };
+    let firstPhaseId: string | null = null;
+    if (startWithPools) {
+      const added = addPhaseToDraw(
+        { ...next, setup: { eventCount: 0, events: [] } },
+        'pool',
+      );
+      const bracket = { ...next.phases[0]!, name: 'Playoffs', order: 1 };
+      const pool = added.draw.phases.find((p) => p.id === added.phaseId)!;
+      next = {
+        ...added.draw,
+        setup: next.setup,
+        phases: [{ ...pool, order: 0 }, bracket],
+      };
+      firstPhaseId = added.phaseId;
+    }
     setDraw(normalizeDrawState(next));
+    setActivePhaseId(firstPhaseId);
     setDirty(true);
     selectWorkspaceTabReplaceHash('structure');
   };
@@ -937,50 +1023,40 @@ export default function AdminTournamentDrawEditor({
   const selectedTextNode =
     draw && selectedTextNodeId ? draw.textNodes.find((t) => t.id === selectedTextNodeId) : undefined;
 
-  const slotOptions: ChoiceOption<string>[] = useMemo(() => {
-    if (!draw) return [];
-    const opts: ChoiceOption<string>[] = [
-      { value: encodeSlotSource({ sourceType: 'tbd' }), label: 'TBD' },
-      { value: encodeSlotSource({ sourceType: 'bye' }), label: 'Bye' },
-    ];
-    for (const t of [...teams].sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id)) {
-      opts.push({
-        value: encodeSlotSource({ sourceType: 'registration', registrationId: t.id }),
-        label: formatTeamDisplayName(t.teamName, t.sortOrder),
-      });
-    }
-    for (const g of Object.values(draw.games)) {
-      const k = g.slots.length;
-      for (let p = 1; p <= k; p++) {
-        if (selectedGameId && g.id === selectedGameId) continue;
-        const label =
-          k <= 2
-            ? p === 1
-              ? `Winner of ${g.label}`
-              : `Loser of ${g.label}`
-            : `${ordinalPlaceLabel(p)} of ${g.label}`;
-        opts.push({
-          value: encodeSlotSource({ sourceType: 'game_place', gameId: g.id, place: p }),
-          label,
-        });
-      }
-    }
-    return opts;
-  }, [draw, teams, selectedGameId]);
+  const slotOptionsForSlot = useCallback(
+    (slot: TournamentSlotSource): ChoiceOption<string>[] => {
+      if (!draw || !activePhaseId) return [];
+      return buildSlotSourceOptions(
+        draw,
+        teams,
+        teamsById,
+        { kind: 'bracket_game', phaseId: activePhaseId, gameId: selectedGameId },
+        slot,
+      );
+    },
+    [draw, teams, teamsById, activePhaseId, selectedGameId],
+  );
 
   const routingGameOptions: ChoiceOption<string>[] = useMemo(() => {
     if (!draw) return [{ value: '', label: 'Select game…' }];
     return [
       { value: '', label: 'Select game…' },
       ...Object.values(draw.games)
+        .filter((g) => !isPoolPhaseGame(draw, g))
         .sort((a, b) => a.label.localeCompare(b.label))
         .map((g) => ({ value: g.id, label: g.label })),
     ];
   }, [draw]);
 
+  const customStandingInitial = useMemo(() => {
+    if (!draw || !customStandingTarget) return null;
+    const s = draw.games[customStandingTarget.gameId]?.slots[customStandingTarget.slotIndex];
+    return s?.sourceType === 'standing' ? s : null;
+  }, [draw, customStandingTarget]);
+
   const addGame = () => {
-    if (!draw || draw.setup.events.length === 0) return;
-    const sortedEvents = [...draw.setup.events].sort((a, b) => a.order - b.order);
+    if (!draw || !activePhaseId || phaseEvents.length === 0) return;
+    const sortedEvents = phaseEvents;
     const defaultEventId = sortedEvents[0]!.id;
     const fromRef = lastInteractedGameEventIdRef.current;
     const eventId =
@@ -997,6 +1073,7 @@ export default function AdminTournamentDrawEditor({
     const game: TournamentGameNode = {
       id,
       eventId,
+      phaseId: activePhaseId,
       label,
       depth: atDepth,
       verticalOrder: nextVo,
@@ -1037,6 +1114,7 @@ export default function AdminTournamentDrawEditor({
       showConnector: true,
       connectorLineStyle: 'solid',
       connectorColor: '#64748b',
+      phaseId: activePhaseId ?? undefined,
     };
     updateDraw((d) => ({ ...d, textNodes: [...d.textNodes, node] }));
     setSelectedGameId(null);
@@ -1053,7 +1131,7 @@ export default function AdminTournamentDrawEditor({
     }
     if (!selectedGameId) return;
     const id = selectedGameId;
-    const positions = layoutDraw(draw).positions;
+    const positions = layoutDraw(phaseView ?? draw).positions;
     updateDraw((d) => {
       const removedConnIds = new Set(
         d.connections.filter((c) => c.fromGameId === id || c.toGameId === id).map((c) => c.id),
@@ -1105,7 +1183,15 @@ export default function AdminTournamentDrawEditor({
         }
         return tn;
       });
-      return { ...d, games: cleaned, connections, textNodes };
+      const pools = d.pools.map((p) => ({
+        ...p,
+        entries: p.entries.map((e) =>
+          e.source.sourceType === 'game_place' && e.source.gameId === id
+            ? { ...e, source: { sourceType: 'tbd' as const } }
+            : e,
+        ),
+      }));
+      return { ...d, games: cleaned, connections, textNodes, pools };
     });
     setSelectedGameId(null);
   };
@@ -1138,9 +1224,14 @@ export default function AdminTournamentDrawEditor({
             title="No tournament draw yet"
             description="Create a blank draw with four event lanes (A–D). Then use Structure to build games, assign teams from the roster, and set draw times and sheets here on Setup."
           />
-          <Button type="button" variant="primary" onClick={() => void createBlankDraw()}>
-            Create draw
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="primary" onClick={() => void createBlankDraw()}>
+              Create draw
+            </Button>
+            <Button type="button" variant="secondary" onClick={() => void createBlankDraw(true)}>
+              Start with pool play
+            </Button>
+          </div>
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col gap-4">
@@ -1195,7 +1286,36 @@ export default function AdminTournamentDrawEditor({
         </div>
       )}
 
-      {workspaceTab === 'structure' && layout && (
+      {workspaceTab === 'structure' && (
+        <TournamentPhaseBar
+          phases={phases}
+          activePhaseId={activePhaseId}
+          canAdd={phases.length < MAX_PHASE_COUNT}
+          onSelect={(id) => {
+            setActivePhaseId(id);
+            setSelectedGameId(null);
+            setSelectedTextNodeId(null);
+          }}
+          onAdd={addPhase}
+          onRename={(id, name) =>
+            updateDraw((d) => ({ ...d, phases: d.phases.map((p) => (p.id === id ? { ...p, name } : p)) }))
+          }
+          onMove={(id, delta) => updateDraw((d) => movePhaseInDraw(d, id, delta))}
+          onDelete={(id) => void deletePhase(id)}
+        />
+      )}
+
+      {workspaceTab === 'structure' && activeIsPool && activePhaseId && (
+        <TournamentPoolPhaseEditor
+          draw={draw}
+          phaseId={activePhaseId}
+          teams={teams}
+          teamsById={teamsById}
+          updateDraw={updateDraw}
+        />
+      )}
+
+      {workspaceTab === 'structure' && layout && phaseView && (
         <div
           className={
             structureFullWindow
@@ -1467,7 +1587,7 @@ export default function AdminTournamentDrawEditor({
                   }}
                 >
                   <TournamentDrawBracketScene
-                    draw={draw}
+                    draw={phaseView}
                     layout={layout}
                     edgePaths={edgePaths}
                     textConnectorPaths={textConnectorPaths}
@@ -1518,8 +1638,12 @@ export default function AdminTournamentDrawEditor({
                 draw={draw}
                 selectedGame={selectedGame!}
                 updateDraw={updateDraw}
-                slotOptions={slotOptions}
+                slotOptionsForSlot={slotOptionsForSlot}
                 routingGameOptions={routingGameOptions}
+                phaseEvents={phaseEvents}
+                onCustomStanding={(slotIndex) =>
+                  setCustomStandingTarget({ gameId: selectedGame!.id, slotIndex })
+                }
               />
             )}
           </FormSection>
@@ -1549,19 +1673,16 @@ export default function AdminTournamentDrawEditor({
             </Button>
           </div>
           <SortableList
-            items={sortedBracketEvents(draw.setup.events)}
+            items={phaseEvents}
             getId={(ev) => ev.id}
             getItemLabel={(ev) => `${ev.code}: ${ev.name}`}
             itemNoun="bracket event"
             onReorder={(nextItems) => {
-              updateDraw((d) => ({
-                ...d,
-                setup: {
-                  ...d.setup,
-                  eventCount: nextItems.length,
-                  events: nextItems.map((e, i) => ({ ...e, order: i })),
-                },
-              }));
+              updateDraw((d) => {
+                const others = d.setup.events.filter((e) => e.phaseId !== activePhaseId);
+                const events = [...others, ...nextItems.map((e, i) => ({ ...e, order: i }))];
+                return { ...d, setup: { ...d.setup, eventCount: events.length, events } };
+              });
             }}
             renderItem={({ item: ev, dragHandle, isDragging, isOverlay }) => (
               <SortableRow
@@ -1649,6 +1770,28 @@ export default function AdminTournamentDrawEditor({
             </Button>
           </div>
         </Modal>
+      ) : null}
+      {activePhaseId ? (
+        <CustomStandingDialog
+          isOpen={customStandingTarget != null}
+          draw={draw}
+          contextPhaseId={activePhaseId}
+          allowSamePhase={false}
+          initial={customStandingInitial}
+          onCancel={() => setCustomStandingTarget(null)}
+          onConfirm={(source) => {
+            const target = customStandingTarget;
+            setCustomStandingTarget(null);
+            if (!target) return;
+            updateDraw((d) => {
+              const g = d.games[target.gameId];
+              if (!g) return d;
+              const slots = [...g.slots];
+              slots[target.slotIndex] = source;
+              return { ...d, games: { ...d.games, [g.id]: { ...g, slots } } };
+            });
+          }}
+        />
       ) : null}
         </div>
       )}
@@ -1849,16 +1992,20 @@ type InspectorPanelProps = {
   draw: TournamentDrawState;
   selectedGame: TournamentGameNode;
   updateDraw: (fn: (d: TournamentDrawState) => TournamentDrawState, opts?: { markDirty?: boolean }) => void;
-  slotOptions: ChoiceOption<string>[];
+  slotOptionsForSlot: (slot: TournamentSlotSource) => ChoiceOption<string>[];
   routingGameOptions: ChoiceOption<string>[];
+  phaseEvents: TournamentBracketEvent[];
+  onCustomStanding: (slotIndex: number) => void;
 };
 
 function InspectorPanel({
   draw,
   selectedGame,
   updateDraw,
-  slotOptions,
+  slotOptionsForSlot,
   routingGameOptions,
+  phaseEvents,
+  onCustomStanding,
 }: InspectorPanelProps) {
   const labelId = useId();
   const eventLaneId = useId();
@@ -1973,11 +2120,8 @@ function InspectorPanel({
   };
 
   const eventLaneOptions: ChoiceOption<string>[] = useMemo(
-    () =>
-      [...draw.setup.events]
-        .sort((a, b) => a.order - b.order)
-        .map((e) => ({ value: e.id, label: `${e.code} — ${e.name}` })),
-    [draw.setup.events],
+    () => phaseEvents.map((e) => ({ value: e.id, label: `${e.code} — ${e.name}` })),
+    [phaseEvents],
   );
 
   return (
@@ -2096,10 +2240,14 @@ function InspectorPanel({
               <ChoiceInput<string>
                 inputId={`${slotFieldBase}-${idx}`}
                 listboxLabel={`Competitor entry ${idx + 1}`}
-                options={slotOptions}
+                options={slotOptionsForSlot(slot)}
                 value={encodeSlotSource(slot)}
                 onChange={(v) => {
                   if (v == null || Array.isArray(v)) return;
+                  if (v === CUSTOM_STANDING_OPTION_VALUE) {
+                    onCustomStanding(idx);
+                    return;
+                  }
                   updateDraw((d) => {
                     const g = d.games[selectedGame.id]!;
                     const nextSlots = [...g.slots];

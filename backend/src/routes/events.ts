@@ -108,7 +108,11 @@ import {
   listConfirmedRegistrationIdsForEvent,
   type TournamentTeamRow,
 } from '../services/eventTournamentTeamsService.js';
-import { tournamentDrawStateSchema, tournamentGameResultSchema } from '../services/eventTournamentDrawSchema.js';
+import {
+  tournamentDrawStateSchema,
+  tournamentGameResultSchema,
+  tournamentGameStandingSchema,
+} from '../services/eventTournamentDrawSchema.js';
 import {
   getTournamentDrawForEvent,
   saveTournamentDrawForEvent,
@@ -127,9 +131,12 @@ const patchTournamentGameResultBodySchema = z.object({
   result: tournamentGameResultSchema.nullable().optional(),
   /** Set which slot gets sheet stoneColor1; null clears the assignment. */
   rockColor1Slot: z.union([z.literal(0), z.literal(1), z.null()]).optional(),
-}).refine((body) => body.result !== undefined || body.rockColor1Slot !== undefined, {
-  message: 'Provide result and/or rockColor1Slot',
-});
+  /** Pool games: standings points and tiebreak values per side; null clears. */
+  standing: tournamentGameStandingSchema.nullable().optional(),
+}).refine(
+  (body) => body.result !== undefined || body.rockColor1Slot !== undefined || body.standing !== undefined,
+  { message: 'Provide result, rockColor1Slot, and/or standing' },
+);
 import { isArchivedAt } from '../utils/softDelete.js';
 import { optionalAuthMiddleware } from '../middleware/auth.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
@@ -1875,6 +1882,7 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
         const draw = await patchTournamentDrawGameResult(eventId, gameId, {
           result: parsedBody.data.result,
           rockColor1Slot: parsedBody.data.rockColor1Slot,
+          standing: parsedBody.data.standing,
         });
         broadcastTournamentDrawUpdated(eventId);
         return { draw };

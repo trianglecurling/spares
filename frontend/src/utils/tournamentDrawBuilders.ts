@@ -1,27 +1,79 @@
-import type { TournamentBracketEvent, TournamentDrawState } from './tournamentDrawModel';
+import type {
+  TournamentBracketEvent,
+  TournamentDrawState,
+  TournamentPhase,
+  TournamentPhaseKind,
+  TournamentPool,
+} from './tournamentDrawModel';
+import {
+  DEFAULT_BRACKET_PHASE_ID,
+  DEFAULT_POOL_STANDINGS_SETTINGS,
+} from '../../../backend/src/utils/tournamentPoolStandings';
 
 const LANE_COLORS = ['#0d9488', '#6366f1', '#d97706', '#db2777', '#64748b', '#059669', '#7c3aed', '#ca8a04'];
 
 export const MAX_BRACKET_EVENT_COUNT = 16;
+export const MAX_PHASE_COUNT = 12;
+export const MAX_POOL_COUNT = 64;
 
-export function createBracketEvent(code: string, order: number): TournamentBracketEvent {
+export function createBracketEvent(
+  code: string,
+  order: number,
+  phaseId: string = DEFAULT_BRACKET_PHASE_ID,
+): TournamentBracketEvent {
   return {
     id: `lane-${code.toLowerCase()}`,
     name: `${code} event`,
     code,
     order,
     color: LANE_COLORS[order % LANE_COLORS.length]!,
+    phaseId,
   };
 }
 
 /** Events added after initial setup. Id must not depend on code because codes can be renamed later. */
-export function createAddedBracketEvent(code: string, order: number): TournamentBracketEvent {
+export function createAddedBracketEvent(code: string, order: number, phaseId: string): TournamentBracketEvent {
   return {
     id: crypto.randomUUID(),
     name: `${code} event`,
     code,
     order,
     color: LANE_COLORS[order % LANE_COLORS.length]!,
+    phaseId,
+  };
+}
+
+export function createPhase(kind: TournamentPhaseKind, order: number): TournamentPhase {
+  if (kind === 'pool') {
+    return {
+      id: crypto.randomUUID(),
+      name: 'Pool play',
+      order,
+      kind,
+      standings: { ...DEFAULT_POOL_STANDINGS_SETTINGS },
+      advancing: [],
+    };
+  }
+  return { id: crypto.randomUUID(), name: order === 0 ? 'Bracket' : 'Playoffs', order, kind };
+}
+
+export function nextAvailablePoolCode(pools: TournamentPool[]): string | null {
+  const used = new Set(pools.map((p) => p.code.toUpperCase()));
+  for (const letter of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') {
+    if (!used.has(letter)) return letter;
+  }
+  return null;
+}
+
+export function createPool(phaseId: string, code: string, order: number): TournamentPool {
+  return {
+    id: crypto.randomUUID(),
+    phaseId,
+    name: `Pool ${code}`,
+    code,
+    order,
+    color: LANE_COLORS[order % LANE_COLORS.length]!,
+    entries: [],
   };
 }
 
@@ -75,6 +127,8 @@ export function emptyTournamentDraw(eventCount: number): TournamentDrawState {
       eventCount,
       events,
     },
+    phases: [{ id: DEFAULT_BRACKET_PHASE_ID, name: 'Bracket', order: 0, kind: 'bracket' }],
+    pools: [],
     canvas: { zoom: 1, panX: 0, panY: 0 },
     games: {},
     connections: [],

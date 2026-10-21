@@ -31,6 +31,7 @@ import {
 import type { TournamentFormat } from '../utils/tournamentDisplay';
 import type { TournamentTeamApi } from '../types/tournamentTeam';
 import { hammerSlotForEnd } from '../utils/tournamentEndsHammer';
+import { isPoolPhaseGame } from '../utils/tournamentDrawPhases';
 
 type Props = {
   draw: TournamentDrawState;
@@ -202,6 +203,9 @@ function LiveScoreGameCard({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-600 dark:text-gray-400">
           <span className="font-semibold text-gray-900 dark:text-gray-100">Game {game.label}</span>
+          {isPoolPhaseGame(draw, game) ? (
+            <span>{(game.poolId && draw.pools.find((p) => p.id === game.poolId)?.name) || 'Cross-pool'}</span>
+          ) : null}
           <span>Draw {row.drawLabel}</span>
           <span>{row.sheetLabel}</span>
           {timeLabel ? <span>{timeLabel}</span> : null}

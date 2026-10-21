@@ -8,7 +8,11 @@ import {
 } from 'react';
 import api, { ensureAccessToken, formatApiError } from '../utils/api';
 import { useAlert } from '../contexts/AlertContext';
-import type { TournamentDrawState, TournamentGameResult } from '../utils/tournamentDrawModel';
+import type {
+  TournamentDrawState,
+  TournamentGameResult,
+  TournamentGameStanding,
+} from '../utils/tournamentDrawModel';
 import { normalizeDrawState } from '../utils/tournamentDrawRouting';
 import { setGameResult } from '../utils/tournamentDrawResultsRows';
 import type { TournamentTeamApi } from '../types/tournamentTeam';
@@ -17,6 +21,7 @@ export type PersistGamePatch = {
   gameId: string;
   result?: TournamentGameResult | null;
   rockColor1Slot?: 0 | 1 | null;
+  standing?: TournamentGameStanding | null;
   /** Override default per-game PATCH debounce (ms). */
   debounceMs?: number;
 };
@@ -34,6 +39,7 @@ const DRAW_STREAM_RETRY_MS = 2000;
 type PendingGamePatch = {
   result?: TournamentGameResult | null;
   rockColor1Slot?: 0 | 1 | null;
+  standing?: TournamentGameStanding | null;
 };
 
 /** Keep in-progress local scores when a remote draw arrives. */
@@ -52,6 +58,7 @@ function overlayDirtyGames(
       ...serverGame,
       result: localGame.result,
       rockColor1Slot: localGame.rockColor1Slot,
+      standing: localGame.standing,
     };
   }
   return { ...server, games };
@@ -109,7 +116,7 @@ export function useTournamentGameResultPersist(
 
   const flushGamePatch = useCallback(
     async (gameId: string, patch: PendingGamePatch) => {
-      if (patch.result === undefined && patch.rockColor1Slot === undefined) {
+      if (patch.result === undefined && patch.rockColor1Slot === undefined && patch.standing === undefined) {
         releaseDirtyGame(gameId);
         return;
       }
@@ -118,6 +125,7 @@ export function useTournamentGameResultPersist(
         const body: Record<string, unknown> = {};
         if (patch.result !== undefined) body.result = patch.result;
         if (patch.rockColor1Slot !== undefined) body.rockColor1Slot = patch.rockColor1Slot;
+        if (patch.standing !== undefined) body.standing = patch.standing;
         await api.patch(
           `/events/${eventId}/tournament-draw/games/${encodeURIComponent(gameId)}/result`,
           body,
@@ -144,12 +152,13 @@ export function useTournamentGameResultPersist(
       });
       const patch = opts?.persistGameResult;
       if (!patch) return;
-      const { gameId, result, rockColor1Slot, debounceMs } = patch;
+      const { gameId, result, rockColor1Slot, standing, debounceMs } = patch;
       dirtyGameIdsRef.current.add(gameId);
       const delay = debounceMs ?? RESULT_PATCH_DEBOUNCE_MS;
       const pending = pendingPatchesRef.current[gameId] ?? {};
       if (result !== undefined) pending.result = result;
       if (rockColor1Slot !== undefined) pending.rockColor1Slot = rockColor1Slot;
+      if (standing !== undefined) pending.standing = standing;
       pendingPatchesRef.current[gameId] = pending;
       const timers = resultPatchTimersRef.current;
       if (timers[gameId]) {

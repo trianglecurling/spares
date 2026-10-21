@@ -10,7 +10,7 @@ import {
 } from 'react-icons/hi2';
 import PublicLayout from '../components/PublicLayout';
 import PublicStateCard from '../components/PublicStateCard';
-import PublicTournamentDrawBracket from '../components/PublicTournamentDrawBracket';
+import PublicTournamentDrawPhases from '../components/PublicTournamentDrawPhases';
 import PublicEventLiveScores from '../components/PublicEventLiveScores';
 import PageTabs from '../components/PageTabs';
 import { ArticleMarkdown } from '../components/ArticleMarkdown';
@@ -766,7 +766,7 @@ export default function PublicEventDetailPage() {
             </div>
           ) : publicDraw != null ? (
             <div className="flex flex-1 min-h-0 flex-col w-full min-w-0 text-gray-700 dark:text-gray-300">
-              <PublicTournamentDrawBracket
+              <PublicTournamentDrawPhases
                 draw={publicDraw}
                 teamsById={drawTabTeamsById}
                 title={displayTitle}

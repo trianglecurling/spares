@@ -12,6 +12,7 @@ import {
 } from '../utils/tournamentDrawPdfExport';
 import { printGameCardHeight } from '../utils/tournamentDrawPrintCard';
 import { normalizeDrawState } from '../utils/tournamentDrawRouting';
+import { bracketPhaseView } from '../utils/tournamentDrawPhases';
 import {
   BRACKET_LANE_BACKDROP_LEFT_INSET,
   PRINT_BRACKET_LAYOUT_METRICS,
@@ -43,6 +44,8 @@ type PublicTournamentDrawBracketProps = {
   /** Padded content column (e.g. tab bar wrapper) so the default pan lines up with public page text. */
   alignContentColumnRef?: RefObject<HTMLElement | null>;
   tournamentFormat?: TournamentFormat;
+  /** Show only this bracket phase's lanes. */
+  phaseId?: string | null;
 };
 
 /**
@@ -55,11 +58,15 @@ export default function PublicTournamentDrawBracket({
   filenameBase,
   alignContentColumnRef,
   tournamentFormat = 'fours',
+  phaseId = null,
 }: PublicTournamentDrawBracketProps) {
   const { showAlert } = useAlert();
   const printSceneRef = useRef<HTMLDivElement>(null);
   const [exporting, setExporting] = useState(false);
-  const draw = useMemo(() => normalizeDrawState(rawDraw), [rawDraw]);
+  const draw = useMemo(() => {
+    const normalized = normalizeDrawState(rawDraw);
+    return phaseId ? bracketPhaseView(normalized, phaseId) : normalized;
+  }, [rawDraw, phaseId]);
 
   const layout = useMemo(() => layoutDraw(draw), [draw, CARD_W, CARD_H, LANE_HEADER]);
   const printLayout = useMemo(

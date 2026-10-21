@@ -271,10 +271,29 @@ async function applyPreviewServerSettings(pool: Pool): Promise<void> {
   console.log('Destination /admin/config: enabled test mode and bypass login verification.');
 }
 
+async function dropDestinationForeignKeys(pool: Pool): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const foreignKeys = await listForeignKeys(client);
+    console.log(
+      `Dropping ${foreignKeys.length} destination foreign keys so pg_restore can replace primary keys...`
+    );
+    await dropForeignKeys(client, foreignKeys);
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 async function copyWithLibpq(
   tools: LibpqTools,
   source: LoadedProfile,
   dest: LoadedProfile,
+  destPool: Pool,
   destBackupPath: string
 ): Promise<void> {
   const sourceDumpPath = path.join(os.tmpdir(), `broomstack-db-copy-${Date.now()}.dump`);
@@ -284,6 +303,13 @@ async function copyWithLibpq(
 
     console.log(`Dumping source to ${sourceDumpPath}...`);
     await dumpDatabase(tools.dump, source.postgres, sourceDumpPath);
+
+    // pg_restore --clean drops a primary key with DROP CONSTRAINT, which fails
+    // when a destination foreign key still depends on that index. That happens
+    // when preview's constraint name differs from production (bootstrap uses
+    // REFERENCES, which Postgres names *_fkey; Drizzle names *_members_id_fk).
+    // The backup above still has the original foreign keys.
+    await dropDestinationForeignKeys(destPool);
 
     console.log('Restoring dump over destination (--clean replaces existing objects)...');
     await runCommand(
@@ -387,7 +413,7 @@ async function main(): Promise<void> {
     }
 
     if (tools) {
-      await copyWithLibpq(tools, source, dest, destBackupPath);
+      await copyWithLibpq(tools, source, dest, destConn.pool, destBackupPath);
     } else {
       console.log(`Dumping destination to ${destBackupPath}...`);
       await writeSqlBackup(destConn.pool, dest, destBackupPath);

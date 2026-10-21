@@ -5,6 +5,7 @@ import type {
 } from './tournamentDrawModel';
 import { resolveResultsTableSideLabel } from './tournamentDrawRouting';
 import { multiScoreRanking } from './tournamentDrawResult';
+import { hasStandingPoints } from '../../../backend/src/utils/tournamentPoolStandings';
 import type { TournamentTeamApi } from '../types/tournamentTeam';
 
 export type TournamentResultsTeamMeta = { teamName: string | null; sortOrder: number };
@@ -163,12 +164,13 @@ export function clearAllGameResults(draw: TournamentDrawState): TournamentDrawSt
   let changed = false;
   const games: TournamentDrawState['games'] = {};
   for (const [id, game] of Object.entries(draw.games)) {
-    if (game.result == null) {
+    if (game.result == null && game.standing == null) {
       games[id] = game;
       continue;
     }
-    const { result: _drop, ...rest } = game;
+    const { result: _drop, standing: _dropStanding, ...rest } = game;
     void _drop;
+    void _dropStanding;
     games[id] = rest;
     changed = true;
   }
@@ -178,12 +180,13 @@ export function clearAllGameResults(draw: TournamentDrawState): TournamentDrawSt
 export function countGamesWithResults(draw: TournamentDrawState): number {
   let n = 0;
   for (const game of Object.values(draw.games)) {
-    if (game.result != null) n += 1;
+    if (game.result != null || hasStandingPoints(game)) n += 1;
   }
   return n;
 }
 
 export function gameHasRecordedResult(game: TournamentGameNode): boolean {
+  if (hasStandingPoints(game)) return true;
   if (game.result == null) return false;
   // In-progress end-by-end scores are saved but the game is not finished yet.
   if (game.result.entryKind === 'ends') {

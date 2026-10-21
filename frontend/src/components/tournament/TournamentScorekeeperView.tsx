@@ -18,7 +18,9 @@ import ScorekeeperSettingsDialog, {
 import type { UpdateDrawForResults } from '../../hooks/useTournamentDrawResults';
 import type {
   TournamentDrawState,
+  TournamentGameNode,
   TournamentGameResult,
+  TournamentGameStanding,
   TournamentResultType,
 } from '../../utils/tournamentDrawModel';
 import type { TournamentFormat } from '../../utils/tournamentDisplay';
@@ -60,11 +62,28 @@ import {
 import type { ClubSheet } from '../../utils/tournamentDrawSchedule';
 import type { TournamentTeamApi } from '../../types/tournamentTeam';
 import api from '../../utils/api';
+import PageTabs from '../PageTabs';
+import PoolStandingsTables from './PoolStandingsTables';
+import {
+  computePhaseStandings,
+  hasPoolPhase,
+  isPoolPhaseGame,
+  phasesInOrder,
+  poolSettings,
+} from '../../utils/tournamentDrawPhases';
+import {
+  pointsPossibleForGame,
+  setGameStanding,
+  standingAfterResultChange,
+  tieStanding,
+} from '../../utils/tournamentPoolScoring';
+import { hasStandingPoints } from '../../../../backend/src/utils/tournamentPoolStandings';
 
 export type ScorekeeperStatusFilter = 'all' | 'needs' | 'completed';
 
 /** Debounce network PATCHes for final / multi scores after the last input. */
 const FINAL_SCORE_DEBOUNCE_MS = 5000;
+const STANDING_DEBOUNCE_MS = 1500;
 
 type TournamentScorekeeperViewProps = {
   eventId: number;
@@ -213,39 +232,84 @@ export default function TournamentScorekeeperView({
     return allRows.filter((row) => !gameHasRecordedResult(row.game));
   }, [allRows, statusFilter, needsSessionIds]);
 
-  const setPickWinner = useCallback(
-    (gameId: string, slot: 0 | 1) => {
-      const next: TournamentGameResult = { entryKind: 'pick_winner', winnerSlot: slot };
-      updateDraw((d) => setGameResult(d, gameId, next), {
-        persistGameResult: { gameId, result: next },
-      });
+  const drawRef = useRef(draw);
+  drawRef.current = draw;
+
+  /** Records a result; pool games also get standings points that follow it. */
+  const applyResult = useCallback(
+    (gameId: string, result: TournamentGameResult | null, opts?: { debounceMs?: number; force?: boolean }) => {
+      const current = drawRef.current;
+      const game = current.games[gameId];
+      const standing = game
+        ? standingAfterResultChange(current, game, result, { force: opts?.force })
+        : undefined;
+      updateDraw(
+        (d) => {
+          const next = setGameResult(d, gameId, result);
+          return standing ? setGameStanding(next, gameId, standing) : next;
+        },
+        {
+          persistGameResult: {
+            gameId,
+            result,
+            ...(standing ? { standing } : {}),
+            debounceMs: opts?.debounceMs,
+          },
+        },
+      );
     },
     [updateDraw],
+  );
+
+  const setPickWinner = useCallback(
+    (gameId: string, slot: 0 | 1) => {
+      applyResult(gameId, { entryKind: 'pick_winner', winnerSlot: slot }, { force: true });
+    },
+    [applyResult],
   );
 
   const clearResult = useCallback(
     (gameId: string) => {
-      updateDraw((d) => setGameResult(d, gameId, null), {
-        persistGameResult: { gameId, result: null },
-      });
+      applyResult(gameId, null, { force: true });
     },
-    [updateDraw],
+    [applyResult],
   );
 
   const setFinalScore = useCallback(
     (gameId: string, scores: [number, number]) => {
-      const next: TournamentGameResult = { entryKind: 'final_score', finalScores: scores };
-      updateDraw((d) => setGameResult(d, gameId, next), {
-        persistGameResult: { gameId, result: next, debounceMs: FINAL_SCORE_DEBOUNCE_MS },
+      applyResult(
+        gameId,
+        { entryKind: 'final_score', finalScores: scores },
+        { debounceMs: FINAL_SCORE_DEBOUNCE_MS },
+      );
+    },
+    [applyResult],
+  );
+
+  const setEndsResult = useCallback(
+    (gameId: string, result: TournamentGameResult | null) => {
+      applyResult(gameId, result);
+    },
+    [applyResult],
+  );
+
+  const setPoolTie = useCallback(
+    (gameId: string) => {
+      const current = drawRef.current;
+      const game = current.games[gameId];
+      if (!game) return;
+      const standing = tieStanding(current, game);
+      updateDraw((d) => setGameStanding(setGameResult(d, gameId, null), gameId, standing), {
+        persistGameResult: { gameId, result: null, standing },
       });
     },
     [updateDraw],
   );
 
-  const setEndsResult = useCallback(
-    (gameId: string, result: TournamentGameResult | null) => {
-      updateDraw((d) => setGameResult(d, gameId, result), {
-        persistGameResult: { gameId, result },
+  const setStanding = useCallback(
+    (gameId: string, standing: TournamentGameStanding) => {
+      updateDraw((d) => setGameStanding(d, gameId, standing), {
+        persistGameResult: { gameId, standing, debounceMs: STANDING_DEBOUNCE_MS },
       });
     },
     [updateDraw],
@@ -360,8 +424,42 @@ export default function TournamentScorekeeperView({
     );
   }
 
+  const showViewTabs = hasPoolPhase(draw);
+  const view = showViewTabs && searchParams.get('view') === 'standings' ? 'standings' : 'games';
+  const setView = (next: 'games' | 'standings') =>
+    setSearchParams(
+      (prev) => {
+        const params = new URLSearchParams(prev);
+        if (next === 'games') params.delete('view');
+        else params.set('view', next);
+        return params;
+      },
+      { replace: true },
+    );
+
+  const viewTabs = showViewTabs ? (
+    <PageTabs
+      ariaLabel="Scorekeeper view"
+      className="!mb-0"
+      items={[
+        { key: 'games', label: 'Games', isActive: view === 'games', onClick: () => setView('games') },
+        { key: 'standings', label: 'Standings', isActive: view === 'standings', onClick: () => setView('standings') },
+      ]}
+    />
+  ) : null;
+
+  if (view === 'standings') {
+    return (
+      <div className="space-y-4">
+        {viewTabs}
+        <ScorekeeperStandings draw={draw} teamsById={teamsById} />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
+      {viewTabs}
       <AppPageControlsRow
         left={
           <div className="flex flex-wrap items-end gap-3">
@@ -428,6 +526,8 @@ export default function TournamentScorekeeperView({
               rockColorMode={rockColorMode}
               tournamentFormat={tournamentFormat}
               onPickWinner={setPickWinner}
+              onPoolTie={setPoolTie}
+              onStanding={setStanding}
               onClearResult={clearResult}
               onFinalScore={setFinalScore}
               onEndsResult={setEndsResult}
@@ -461,6 +561,8 @@ function ScorekeeperGameCard({
   rockColorMode,
   tournamentFormat,
   onPickWinner,
+  onPoolTie,
+  onStanding,
   onClearResult,
   onFinalScore,
   onEndsResult,
@@ -474,6 +576,8 @@ function ScorekeeperGameCard({
   rockColorMode: ReturnType<typeof resolveRockColorMode>;
   tournamentFormat: TournamentFormat;
   onPickWinner: (gameId: string, slot: 0 | 1) => void;
+  onPoolTie: (gameId: string) => void;
+  onStanding: (gameId: string, standing: TournamentGameStanding) => void;
   onClearResult: (gameId: string) => void;
   onFinalScore: (gameId: string, scores: [number, number]) => void;
   onEndsResult: (gameId: string, result: TournamentGameResult | null) => void;
@@ -482,6 +586,8 @@ function ScorekeeperGameCard({
 }) {
   const { game } = row;
   const multi = game.slots.length >= 3;
+  const poolGame = !multi && isPoolPhaseGame(draw, game);
+  const pool = poolGame && game.poolId ? draw.pools.find((p) => p.id === game.poolId) : undefined;
   const locked = resultLocksTableRadios(game.result);
   const completed = gameHasRecordedResult(game);
   const outcome = outcomeFromResult(game);
@@ -540,11 +646,12 @@ function ScorekeeperGameCard({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-sm text-gray-600 dark:text-gray-400">
           <span className="font-semibold text-gray-900 dark:text-gray-100">Game {game.label}</span>
+          {poolGame ? <span>{pool?.name ?? 'Cross-pool'}</span> : null}
           <span>Draw {row.drawLabel}</span>
           <span>{row.sheetLabel}</span>
           {timeLabel ? <span>{timeLabel}</span> : null}
         </div>
-        {resultType === 'pick' && !multi && game.result != null ? (
+        {resultType === 'pick' && !multi && (game.result != null || hasStandingPoints(game)) ? (
           <button
             type="button"
             title="Clear result"
@@ -657,8 +764,154 @@ function ScorekeeperGameCard({
               </button>
             );
           })}
+          {poolGame && !locked ? (
+            <div className="flex justify-center sm:col-span-2">
+              <button
+                type="button"
+                aria-pressed={tie}
+                onClick={() => onPoolTie(game.id)}
+                className={`rounded-lg border px-4 py-1.5 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40 ${
+                  tie
+                    ? 'border-amber-400 bg-amber-50 text-amber-900 dark:border-amber-600 dark:bg-amber-950/30 dark:text-amber-100'
+                    : 'border-gray-300 text-gray-700 hover:border-amber-400 dark:border-gray-600 dark:text-gray-300'
+                }`}
+              >
+                Tie
+              </button>
+            </div>
+          ) : null}
         </div>
       )}
+      {poolGame ? (
+        <PoolStandingEntry
+          draw={draw}
+          game={game}
+          order={[display0, display1]}
+          labelFor={labelFor}
+          onChange={(standing) => onStanding(game.id, standing)}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function parseOptionalNumber(raw: string): number | null | undefined {
+  const t = raw.trim();
+  if (t === '') return null;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+/** Number input that keeps partial typing (e.g. "0.") while syncing with saved values. */
+function StandingNumberInput({
+  id,
+  value,
+  min,
+  max,
+  onCommit,
+}: {
+  id: string;
+  value: number | null;
+  min?: number;
+  max?: number;
+  onCommit: (value: number | null) => void;
+}) {
+  const [text, setText] = useState(value == null ? '' : String(value));
+  useEffect(() => {
+    setText((prev) => (parseOptionalNumber(prev) === value ? prev : value == null ? '' : String(value)));
+  }, [value]);
+  return (
+    <input
+      id={id}
+      type="number"
+      inputMode="decimal"
+      step="any"
+      min={min}
+      max={max}
+      className="app-input w-full tabular-nums"
+      value={text}
+      onChange={(e) => {
+        setText(e.target.value);
+        const parsed = parseOptionalNumber(e.target.value);
+        if (parsed === undefined) return;
+        if (parsed != null && ((min != null && parsed < min) || (max != null && parsed > max))) return;
+        onCommit(parsed);
+      }}
+    />
+  );
+}
+
+function PoolStandingEntry({
+  draw,
+  game,
+  order,
+  labelFor,
+  onChange,
+}: {
+  draw: TournamentDrawState;
+  game: TournamentGameNode;
+  order: [0 | 1, 0 | 1];
+  labelFor: (logical: 0 | 1) => string;
+  onChange: (standing: TournamentGameStanding) => void;
+}) {
+  const baseId = useId();
+  const settings = poolSettings(draw.phases.find((p) => p.id === game.phaseId));
+  const possible = pointsPossibleForGame(draw, game);
+  const standing: TournamentGameStanding = game.standing ?? { points: [null, null], tiebreak: [null, null] };
+  const update = (field: 'points' | 'tiebreak', logical: 0 | 1, value: number | null) => {
+    const nextPair: [number | null, number | null] = [...standing[field]];
+    nextPair[logical] = value;
+    onChange({ ...standing, [field]: nextPair });
+  };
+  return (
+    <div className="mt-4 grid gap-3 border-t border-gray-200 pt-3 sm:grid-cols-2 dark:border-gray-700">
+      {order.map((logical) => (
+        <div key={logical} role="group" aria-label={labelFor(logical)} className="grid grid-cols-2 gap-2">
+          <FormField label="Points" htmlFor={`${baseId}-p${logical}`}>
+            <StandingNumberInput
+              id={`${baseId}-p${logical}`}
+              value={standing.points[logical]}
+              min={0}
+              max={possible}
+              onCommit={(v) => update('points', logical, v)}
+            />
+          </FormField>
+          <FormField label={settings.tiebreakLabel} htmlFor={`${baseId}-t${logical}`}>
+            <StandingNumberInput
+              id={`${baseId}-t${logical}`}
+              value={standing.tiebreak[logical]}
+              onCommit={(v) => update('tiebreak', logical, v)}
+            />
+          </FormField>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ScorekeeperStandings({
+  draw,
+  teamsById,
+}: {
+  draw: TournamentDrawState;
+  teamsById: Map<number, { teamName: string | null; sortOrder: number }>;
+}) {
+  const poolPhases = phasesInOrder(draw).filter((p) => p.kind === 'pool');
+  return (
+    <div className="space-y-8">
+      {poolPhases.map((phase) => {
+        const standings = computePhaseStandings(draw, phase.id);
+        return (
+          <section key={phase.id} className="space-y-4">
+            {poolPhases.length > 1 ? <h2 className="app-section-title text-lg">{phase.name}</h2> : null}
+            {standings ? (
+              <PoolStandingsTables standings={standings} teamsById={teamsById} />
+            ) : (
+              <AppStateCard title="Standings unavailable" description="" />
+            )}
+          </section>
+        );
+      })}
     </div>
   );
 }

@@ -11,6 +11,7 @@ import type {
   TournamentTextNode,
 } from './tournamentDrawModel';
 import { sheetsFromClubSheets, type ClubSheet } from './tournamentDrawSchedule';
+import { migrateDrawPhasesJson } from '../../../backend/src/utils/tournamentPoolStandings';
 
 export const TOURNAMENT_DRAW_TEMPLATE_KIND = 'trianglecurling.tournament-draw-template' as const;
 /** Bump when the JSON envelope or required fields change. */
@@ -29,6 +30,9 @@ export type TournamentDrawTemplateDocument = {
   title?: string;
   structure: {
     setup: Pick<TournamentDrawState['setup'], 'eventCount' | 'events'>;
+    /** Omitted in templates exported before phases existed. */
+    phases?: TournamentDrawState['phases'];
+    pools?: TournamentDrawState['pools'];
     canvas: TournamentDrawState['canvas'];
     games: Record<string, TournamentDrawTemplateGameNode>;
     connections: TournamentConnectionEdge[];
@@ -65,8 +69,9 @@ export function buildTournamentDrawTemplate(
   void _teams;
   const games: Record<string, TournamentDrawTemplateGameNode> = {};
   for (const [id, g] of Object.entries(draw.games)) {
-    const { result: _omit, ...rest } = g;
+    const { result: _omit, standing: _standing, ...rest } = g;
     void _omit;
+    void _standing;
     games[id] = {
       ...rest,
       slots: g.slots.map((s) => templateSlotToLive(s)),
@@ -81,6 +86,8 @@ export function buildTournamentDrawTemplate(
         eventCount: draw.setup.eventCount,
         events: draw.setup.events,
       },
+      phases: draw.phases.map((p) => ({ ...p })),
+      pools: draw.pools.map((p) => ({ ...p, entries: p.entries.map((e) => ({ ...e })) })),
       canvas: { ...draw.canvas },
       games,
       connections: draw.connections.map((c) => ({ ...c })),
@@ -163,6 +170,8 @@ export function parseTournamentDrawTemplate(
         eventCount: setup.eventCount as number,
         events: setup.events as TournamentDrawState['setup']['events'],
       },
+      phases: Array.isArray(structure.phases) ? (structure.phases as TournamentDrawState['phases']) : undefined,
+      pools: Array.isArray(structure.pools) ? (structure.pools as TournamentDrawState['pools']) : undefined,
       canvas: structure.canvas as TournamentDrawState['canvas'],
       games: structure.games as Record<string, TournamentDrawTemplateGameNode>,
       connections: structure.connections as TournamentConnectionEdge[],
@@ -226,17 +235,19 @@ export function tournamentDrawStateFromTemplate(
     }
   }
 
-  return {
+  return migrateDrawPhasesJson({
     version: 1,
     setup: {
       eventCount: st.setup.eventCount,
       events: st.setup.events.map((e) => ({ ...e })),
     },
+    ...(st.phases ? { phases: st.phases.map((p) => ({ ...p })) } : {}),
+    ...(st.pools ? { pools: st.pools.map((p) => ({ ...p, entries: p.entries.map((e) => ({ ...e })) })) } : {}),
     canvas: { ...st.canvas },
     games,
     connections: st.connections.map((c) => ({ ...c })),
     drawBlocks: st.drawBlocks.map((b) => ({ ...b })),
     sheets,
     textNodes: st.textNodes.map((t) => ({ ...t })),
-  };
+  }) as TournamentDrawState;
 }

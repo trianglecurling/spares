@@ -5,8 +5,17 @@ import type {
   TournamentSlotSource,
 } from './tournamentDrawModel';
 import { ordinalPlaceLabel } from './tournamentDrawModel';
-import { multiScoreRanking, outcomeFromResult } from './tournamentDrawResult';
 import { formatTeamDisplayName } from './tournamentDisplay';
+import {
+  describeQualifierSource,
+  describeStandingSource,
+  findPoolEntry,
+  isPoolPhaseGame,
+  poolEntryCode,
+  resolveGameSlotRegistrationId,
+  resolveSourceDetail,
+  slotIndexForPlace,
+} from '../../../backend/src/utils/tournamentPoolStandings';
 import { ensureUniqueBracketEventIds } from './tournamentDrawBuilders';
 import { migrateTournamentDrawJson } from './tournamentDrawMigration';
 import { migrateSheetsArray } from './tournamentDrawSchedule';
@@ -117,6 +126,7 @@ function ensureIncomingTargetsHaveEnoughSlots(draw: TournamentDrawState): Tourna
 function ensureConnectionsForSlots(draw: TournamentDrawState): TournamentDrawState {
   const connections = [...draw.connections];
   for (const g of Object.values(draw.games)) {
+    if (isPoolPhaseGame(draw, g)) continue;
     const k = g.slots.length;
     for (let p = 1; p <= k; p++) {
       if (!connections.some((c) => c.fromGameId === g.id && c.place === p)) {
@@ -190,21 +200,7 @@ export function incomingGameFeedersSorted(
  * Three or more: multi_score only; ranks by highest score (tie-break lower slot index).
  */
 export function slotIndexForPlaceAfterResult(game: TournamentGameNode, place: number): number | null {
-  const k = game.slots.length;
-  if (place < 1 || place > k) return null;
-
-  if (k === 2) {
-    const outcome = outcomeFromResult(game);
-    if (outcome == null || outcome === 'tie') return null;
-    const winnerSlot = outcome === 'slot0' ? 0 : 1;
-    const loserSlot = 1 - winnerSlot;
-    return place === 1 ? winnerSlot : loserSlot;
-  }
-
-  const ranking = multiScoreRanking(game);
-  if (!ranking || ranking.length !== k) return null;
-  const row = ranking[place - 1];
-  return row != null ? row.slotIndex : null;
+  return slotIndexForPlace(game, place);
 }
 
 /**
@@ -258,12 +254,16 @@ export function resolveSlotSourceForBracketDisplay(
     case 'bye':
       return 'Bye';
     case 'registration':
-      return formatSlotSourceLabel(slot, teamsById, draw.games);
+      return formatSlotSourceLabel(slot, teamsById, draw);
+    case 'pool_entry':
+    case 'standing':
+    case 'qualifier':
+      return resolvePoolSourceLabel(draw, slot, teamsById);
     case 'game_place': {
       const gid = slot.gameId;
       if (!gid) return '…';
       if (visitingGameIds.has(gid)) {
-        return formatSlotSourceLabel(slot, teamsById, draw.games);
+        return formatSlotSourceLabel(slot, teamsById, draw);
       }
       const og = draw.games[gid];
       if (!og) return '…';
@@ -296,7 +296,7 @@ export function resolveResultsTableSideLabel(
   if (visitingGameIds.has(g.id)) {
     const slot = g.slots[slotIndex];
     if (!slot) return '—';
-    return formatSlotSourceLabel(slot, teamsById, draw.games);
+    return formatSlotSourceLabel(slot, teamsById, draw);
   }
   visitingGameIds.add(g.id);
   try {
@@ -326,35 +326,45 @@ export function resolveResultsTableSideRegistrationId(
   slotIndex: number,
   visitingGameIds: Set<string> = new Set()
 ): number | null {
-  if (visitingGameIds.has(g.id)) {
-    const slot = g.slots[slotIndex];
-    return slot?.sourceType === 'registration' ? (slot.registrationId ?? null) : null;
+  return resolveGameSlotRegistrationId(draw, g, slotIndex, visitingGameIds);
+}
+
+function teamLabel(teamsById: Map<number, TeamRow>, id: number): string {
+  const t = teamsById.get(id);
+  return t ? formatTeamDisplayName(t.teamName, t.sortOrder) : `Team #${id}`;
+}
+
+/** Unresolved label for a pool-play source: "A2", "Pool A 1st", "Q7". */
+export function formatPoolSourceLabel(draw: TournamentDrawState, slot: TournamentSlotSource): string {
+  if (slot.sourceType === 'pool_entry') {
+    const found = findPoolEntry(draw, slot.entryId);
+    return found ? poolEntryCode(found.pool, found.index) : '…';
   }
-  visitingGameIds.add(g.id);
-  try {
-    const feeders = incomingGameFeedersSorted(draw, g.id);
-    if (slotIndex < feeders.length) {
-      const edge = feeders[slotIndex]!;
-      const from = draw.games[edge.fromGameId];
-      if (!from) return null;
-      const finisherSlotIdx = slotIndexForPlaceAfterResult(from, edge.place);
-      if (finisherSlotIdx == null) return null;
-      return resolveResultsTableSideRegistrationId(draw, from, finisherSlotIdx, visitingGameIds);
+  if (slot.sourceType === 'standing') return describeStandingSource(draw, slot);
+  if (slot.sourceType === 'qualifier') return describeQualifierSource(draw, slot);
+  return '—';
+}
+
+/** Team name once known; otherwise the source label, with tied teams when a tie blocks it. */
+export function resolvePoolSourceLabel(
+  draw: TournamentDrawState,
+  slot: TournamentSlotSource,
+  teamsById: Map<number, TeamRow>,
+): string {
+  const detail = resolveSourceDetail(draw, slot);
+  if (detail.registrationId != null) return teamLabel(teamsById, detail.registrationId);
+  let base = formatPoolSourceLabel(draw, slot);
+  if (slot.sourceType === 'pool_entry') {
+    const found = findPoolEntry(draw, slot.entryId);
+    const inner = found?.entry.source;
+    if (inner && inner.sourceType !== 'tbd' && inner.sourceType !== 'registration') {
+      base = `${base} · ${formatSlotSourceLabel(inner, teamsById, draw)}`;
     }
-    const slot = g.slots[slotIndex];
-    if (!slot) return null;
-    if (slot.sourceType === 'registration') return slot.registrationId ?? null;
-    if (slot.sourceType === 'game_place' && slot.gameId) {
-      const og = draw.games[slot.gameId];
-      if (!og) return null;
-      const idx = slotIndexForPlaceAfterResult(og, slot.place);
-      if (idx == null) return null;
-      return resolveResultsTableSideRegistrationId(draw, og, idx, visitingGameIds);
-    }
-    return null;
-  } finally {
-    visitingGameIds.delete(g.id);
   }
+  if (detail.tiedRegistrationIds.length > 0) {
+    return `${base} · Tied: ${detail.tiedRegistrationIds.map((id) => teamLabel(teamsById, id)).join(', ')}`;
+  }
+  return base;
 }
 
 function withRegistrationIds(
@@ -372,7 +382,7 @@ function withRegistrationIds(
 export function formatSlotSourceLabel(
   slot: TournamentSlotSource,
   teamsById: Map<number, TeamRow>,
-  games: Record<string, TournamentGameNode>,
+  draw: TournamentDrawState,
 ): string {
   switch (slot.sourceType) {
     case 'tbd':
@@ -381,13 +391,16 @@ export function formatSlotSourceLabel(
       return 'Bye';
     case 'registration': {
       if (slot.registrationId == null) return 'Team…';
-      const t = teamsById.get(slot.registrationId);
-      return t ? formatTeamDisplayName(t.teamName, t.sortOrder) : `Team #${slot.registrationId}`;
+      return teamLabel(teamsById, slot.registrationId);
     }
     case 'game_place': {
-      const og = slot.gameId ? games[slot.gameId] : undefined;
+      const og = slot.gameId ? draw.games[slot.gameId] : undefined;
       return og ? formatFeederPipeLabel(og, slot.place) : '…';
     }
+    case 'pool_entry':
+    case 'standing':
+    case 'qualifier':
+      return formatPoolSourceLabel(draw, slot);
     default:
       return '—';
   }

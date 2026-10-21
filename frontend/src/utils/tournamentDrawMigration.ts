@@ -1,7 +1,9 @@
 /**
  * Migrates legacy tournament draw JSON (slot1/slot2, winner/loser connections, game_winner/game_loser)
- * to the current shape: `games[].slots[]`, `connections[].place`, `game_place` slot sources.
+ * to the current shape: `games[].slots[]`, `connections[].place`, `game_place` slot sources,
+ * and `phases` / `pools` (legacy draws become one bracket phase).
  */
+import { migrateDrawPhasesJson } from '../../../backend/src/utils/tournamentPoolStandings';
 
 function migrateSlotSource(raw: unknown): unknown {
   if (raw == null || typeof raw !== 'object') return { sourceType: 'tbd' };
@@ -76,7 +78,7 @@ function stripCanvasViewMode(obj: Record<string, unknown>): Record<string, unkno
 }
 
 function stripDrawLegacyFields(obj: Record<string, unknown>): Record<string, unknown> {
-  return stripCanvasViewMode(stripSetupToCore(obj));
+  return migrateDrawPhasesJson(stripCanvasViewMode(stripSetupToCore(obj)));
 }
 
 /** Deep migrate parsed JSON before Zod / UI (idempotent on already-migrated data). */

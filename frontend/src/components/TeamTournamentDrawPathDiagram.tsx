@@ -34,6 +34,8 @@ import {
   orderCompetitorSegmentsFocusedTeamFirst,
 } from '../utils/tournamentDrawRouting';
 import { outcomeFromResult } from '../utils/tournamentDrawResult';
+import { isPoolPhaseGame } from '../utils/tournamentDrawPhases';
+import { resolveGameSlotRegistrationId } from '../../../backend/src/utils/tournamentPoolStandings';
 import {
   formatGameScheduleParts,
   formatGameScheduleSummary,
@@ -73,11 +75,17 @@ const V_GAP = 36;
 function collectSeedGameIds(draw: TournamentDrawState, teamId: number): Set<string> {
   const seeds = new Set<string>();
   for (const [id, g] of Object.entries(draw.games)) {
-    for (const s of g.slots) {
+    if (isPoolPhaseGame(draw, g)) continue;
+    g.slots.forEach((s, i) => {
       if (s.sourceType === 'registration' && s.registrationId === teamId) {
         seeds.add(id);
+      } else if (
+        (s.sourceType === 'qualifier' || s.sourceType === 'standing' || s.sourceType === 'pool_entry') &&
+        resolveGameSlotRegistrationId(draw, g, i) === teamId
+      ) {
+        seeds.add(id);
       }
-    }
+    });
   }
   return seeds;
 }
