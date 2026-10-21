@@ -638,6 +638,27 @@
       "when": 1788495600000,
       "tag": "0091_add_spare_notification_processor_id",
       "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1788496200000,
+      "tag": "0092_add_expense_reimbursement_checks",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1788496800000,
+      "tag": "0093_expense_report_approved_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1788497400000,
+      "tag": "0094_expense_reimbursement_check_number",
+      "breakpoints": true
     }
   ]
 }

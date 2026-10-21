@@ -17,6 +17,8 @@ import {
   listExpenseReportsForAdmin,
   listExpenseReportsForMember,
   streamExpenseReceiptFile,
+  issueExpenseReimbursementCheck,
+  previewExpenseReimbursementCheck,
   updateExpenseReportAdmin,
   updateExpenseReportRecord,
   updateExpenseReportStatusesForAdmin,
@@ -31,6 +33,7 @@ import {
   expenseListItemSchema,
   expenseReportViewSchema,
   handleExpenseError,
+  mailingAddressJsonSchema,
   parseExpenseWriteRequest,
 } from './publicExpenses.js';
 
@@ -171,6 +174,55 @@ const bulkStatusSchema = z.object({
   ids: z.array(z.number().int().positive()).min(1).max(MAX_SELECTED_EXPENSE_REPORTS),
   status: z.enum(EXPENSE_REPORT_STATUSES),
 });
+
+const issueCheckSchema = z.object({
+  ids: z.array(z.number().int().positive()).min(1).max(MAX_SELECTED_EXPENSE_REPORTS),
+  checkNumber: z.string().trim().min(1).max(40),
+});
+
+const checkPreviewReportSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    id: { type: 'number' },
+    kind: { type: 'string' },
+    submittedAt: { type: 'string' },
+    amountMinor: { type: 'number' },
+    currency: { type: 'string' },
+    description: { type: ['string', 'null'] },
+  },
+  required: ['id', 'kind', 'submittedAt', 'amountMinor', 'currency', 'description'],
+} as const;
+
+const checkPreviewResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    payeeName: { type: 'string' },
+    payeePhone: { type: ['string', 'null'] },
+    payeeAddress: mailingAddressJsonSchema,
+    amountMinor: { type: 'number' },
+    currency: { type: 'string' },
+    reports: { type: 'array', items: checkPreviewReportSchema },
+  },
+  required: ['payeeName', 'payeePhone', 'payeeAddress', 'amountMinor', 'currency', 'reports'],
+} as const;
+
+const issueCheckResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    id: { type: 'number' },
+    checkNumber: { type: 'string' },
+    payeeName: { type: 'string' },
+    payeeEmail: { type: 'string' },
+    amountMinor: { type: 'number' },
+    currency: { type: 'string' },
+    reportIds: { type: 'array', items: { type: 'number' } },
+    emailSent: { type: 'boolean' },
+  },
+  required: ['id', 'checkNumber', 'payeeName', 'payeeEmail', 'amountMinor', 'currency', 'reportIds', 'emailSent'],
+} as const;
 
 const bulkStatusResponseSchema = {
   type: 'object',
@@ -509,6 +561,102 @@ export async function protectedExpenseRoutes(fastify: FastifyInstance): Promise<
         return await updateExpenseReportStatusesForAdmin(
           parsed.data.ids,
           parsed.data.status,
+          staffActorFromMember(member)
+        );
+      } catch (err) {
+        return handleExpenseError(reply, err);
+      }
+    }
+  );
+
+  fastify.post(
+    '/admin/expenses/checks/preview',
+    {
+      schema: {
+        tags: ['expenses'],
+        description: 'Preview one reimbursement check for the selected expense reports before it is issued.',
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['ids'],
+          properties: {
+            ids: {
+              type: 'array',
+              minItems: 1,
+              maxItems: MAX_SELECTED_EXPENSE_REPORTS,
+              items: { type: 'number' },
+            },
+          },
+        },
+        response: {
+          200: checkPreviewResponseSchema,
+          400: apiErrorResponseSchema,
+          403: apiErrorResponseSchema,
+          404: apiErrorResponseSchema,
+          409: apiErrorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      if (!requireExpensesManage(request, reply)) return;
+      const parsed = issueCheckSchema.pick({ ids: true }).safeParse(request.body);
+      if (!parsed.success) {
+        sendApiError(reply, 400, 'Select at least one expense report.');
+        return;
+      }
+      try {
+        return await previewExpenseReimbursementCheck(parsed.data.ids);
+      } catch (err) {
+        return handleExpenseError(reply, err);
+      }
+    }
+  );
+
+  fastify.post(
+    '/admin/expenses/checks',
+    {
+      schema: {
+        tags: ['expenses'],
+        description: 'Issue one reimbursement check covering the selected expense reports for a single person.',
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['ids', 'checkNumber'],
+          properties: {
+            ids: {
+              type: 'array',
+              minItems: 1,
+              maxItems: MAX_SELECTED_EXPENSE_REPORTS,
+              items: { type: 'number' },
+            },
+            checkNumber: { type: 'string', minLength: 1, maxLength: 40 },
+          },
+        },
+        response: {
+          200: issueCheckResponseSchema,
+          400: apiErrorResponseSchema,
+          403: apiErrorResponseSchema,
+          404: apiErrorResponseSchema,
+          409: apiErrorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      if (!requireExpensesManage(request, reply)) return;
+      const member = request.member;
+      if (!member) {
+        sendApiError(reply, 401, 'Unauthorized');
+        return;
+      }
+      const parsed = issueCheckSchema.safeParse(request.body);
+      if (!parsed.success) {
+        sendApiError(reply, 400, 'Enter the check number and select at least one expense report.');
+        return;
+      }
+      try {
+        return await issueExpenseReimbursementCheck(
+          parsed.data.ids,
+          parsed.data.checkNumber,
           staffActorFromMember(member)
         );
       } catch (err) {

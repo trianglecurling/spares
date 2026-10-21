@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Navigate,
   useLocation,
@@ -6,7 +6,6 @@ import {
   useParams,
   useSearchParams,
 } from 'react-router-dom';
-import { format } from 'date-fns';
 import api from '../utils/api';
 import { AppPage, AppPageHeader } from '../components/AppPage';
 import BackButton from '../components/BackButton';
@@ -20,15 +19,16 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import { useClubTimeZone } from '../contexts/ClubTimeZoneContext';
 import { invalidateCalendarEventsCache } from '../utils/calendarEventsCache';
+import { calendarReturnPath } from '../utils/calendarViewCursor';
 import { parseClubDateParam } from '../utils/clubTime';
+import { canManageCalendar } from '../utils/permissions';
 
 type LocationState = { calendarEvent?: CalendarEvent; copyFromEvent?: CalendarEvent } | null;
 
 export default function CalendarEventFormPage() {
-  const { member } = useAuth();
+  const { member, isLoading, sessionSettled } = useAuth();
   const timeZone = useClubTimeZone();
-  const canEditCalendar =
-    member?.isCalendarAdmin ?? member?.isAdmin ?? member?.isServerAdmin ?? false;
+  const canEditCalendar = canManageCalendar(member);
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
@@ -47,6 +47,11 @@ export default function CalendarEventFormPage() {
   const [sheets, setSheets] = useState<Array<{ id: number; name: string }>>([]);
   const [event, setEvent] = useState<CalendarEvent | null | undefined>(undefined);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const loadedForRef = useRef<string | null>(null);
+  const timeZoneRef = useRef(timeZone);
+  timeZoneRef.current = timeZone;
+  const locationStateRef = useRef(location.state);
+  locationStateRef.current = location.state;
 
   useEffect(() => {
     api
@@ -60,17 +65,21 @@ export default function CalendarEventFormPage() {
 
   useEffect(() => {
     if (!sourceId) {
+      loadedForRef.current = null;
       setEvent(null);
       setLoadError(null);
       return;
     }
+    // Reloading when location.state or the club zone changes unmounted the form
+    // and discarded in-progress edits. Load once per event id.
+    if (loadedForRef.current === sourceId) return;
 
-    const fromState = location.state as LocationState;
+    const fromState = locationStateRef.current as LocationState;
     const stateEvent = eventId
       ? fromState?.calendarEvent
       : fromState?.copyFromEvent ?? fromState?.calendarEvent;
     let canceled = false;
-    setEvent(undefined);
+    setEvent((current) => (current && current.id === sourceId ? current : undefined));
     setLoadError(null);
 
     (async () => {
@@ -80,11 +89,15 @@ export default function CalendarEventFormPage() {
           `/calendar/events/${encodeURIComponent(sourceId)}`
         );
         if (canceled) return;
-        setEvent(apiEventToCalendar(data, timeZone));
+        loadedForRef.current = sourceId;
+        setEvent((current) =>
+          current && current.id === sourceId ? current : apiEventToCalendar(data, timeZoneRef.current)
+        );
       } catch {
         if (canceled) return;
         if (stateEvent && stateEvent.id === sourceId) {
-          setEvent(stateEvent);
+          loadedForRef.current = sourceId;
+          setEvent((current) => (current && current.id === sourceId ? current : stateEvent));
           return;
         }
         setLoadError(
@@ -99,20 +112,29 @@ export default function CalendarEventFormPage() {
     return () => {
       canceled = true;
     };
-  }, [sourceId, eventId, isCopy, location.state, timeZone]);
+  }, [sourceId, eventId, isCopy]);
 
-  const goBackToCalendar = (focusDate?: Date) => {
-    const date = focusDate ?? initialDate;
-    navigate(`/calendar?date=${format(date, 'yyyy-MM-dd')}&view=month`);
+  const goBackToCalendar = () => {
+    navigate(calendarReturnPath(searchParams));
   };
 
   const handleSaved = () => {
     invalidateCalendarEventsCache();
-    goBackToCalendar(event?.start ?? initialDate);
+    goBackToCalendar();
   };
 
+  if (isLoading || !sessionSettled || !member) {
+    return (
+      <div className="px-4 sm:px-6 lg:px-8 py-8 flex-1 min-h-0 flex flex-col">
+        <AppPage narrow>
+          <p className="text-sm text-gray-600 dark:text-gray-400">Loading event…</p>
+        </AppPage>
+      </div>
+    );
+  }
+
   if (!canEditCalendar) {
-    return <Navigate to="/calendar" replace />;
+    return <Navigate to={calendarReturnPath(searchParams)} replace />;
   }
 
   const title = eventId ? 'Edit event' : 'New event';
@@ -129,7 +151,7 @@ export default function CalendarEventFormPage() {
           <AppPage narrow>
             <AppPageHeader title={title} description={subtitle} />
             <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">{loadError}</p>
-            <BackButton label="Calendar" onClick={() => goBackToCalendar()} />
+            <BackButton label="Calendar" onClick={goBackToCalendar} />
           </AppPage>
         </div>
       </>
@@ -158,7 +180,7 @@ export default function CalendarEventFormPage() {
               League games are managed elsewhere. Member ice bookings can be edited or canceled from
               the calendar event details.
             </p>
-            <BackButton label="Calendar" onClick={() => goBackToCalendar(event.start)} />
+            <BackButton label="Calendar" onClick={goBackToCalendar} />
           </AppPage>
         </div>
       </>
@@ -173,10 +195,7 @@ export default function CalendarEventFormPage() {
             title={title}
             description={subtitle}
             actions={
-              <BackButton
-                label="Calendar"
-                onClick={() => goBackToCalendar(event?.start ?? initialDate)}
-              />
+              <BackButton label="Calendar" onClick={goBackToCalendar} />
             }
           />
           <div className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800 sm:p-6">
@@ -188,7 +207,7 @@ export default function CalendarEventFormPage() {
               eventTypes={DEFAULT_EVENT_TYPES}
               initialDate={initialDate}
               onSaved={handleSaved}
-              onCancel={eventId ? undefined : () => goBackToCalendar(event?.start ?? initialDate)}
+              onCancel={eventId ? undefined : goBackToCalendar}
             />
           </div>
         </AppPage>

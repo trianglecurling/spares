@@ -142,6 +142,8 @@ type PgSchema = {
   expenseDocuments: typeof pgSchema.expenseDocumentsPg;
   expenseReportNotes: typeof pgSchema.expenseReportNotesPg;
   expenseReportChanges: typeof pgSchema.expenseReportChangesPg;
+  expenseReimbursementChecks: typeof pgSchema.expenseReimbursementChecksPg;
+  expenseReimbursementCheckReports: typeof pgSchema.expenseReimbursementCheckReportsPg;
 };
 
 type DrizzleDb = NodePgDatabase<PgSchema>;
@@ -306,6 +308,8 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       expenseDocuments: sqliteSchema.expenseDocumentsSqlite,
       expenseReportNotes: sqliteSchema.expenseReportNotesSqlite,
       expenseReportChanges: sqliteSchema.expenseReportChangesSqlite,
+      expenseReimbursementChecks: sqliteSchema.expenseReimbursementChecksSqlite,
+      expenseReimbursementCheckReports: sqliteSchema.expenseReimbursementCheckReportsSqlite,
     } as unknown as DrizzleSchema;
   } else if (config.type === 'postgres') {
     if (!config.postgres) {
@@ -459,6 +463,8 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       expenseDocuments: pgSchema.expenseDocumentsPg,
       expenseReportNotes: pgSchema.expenseReportNotesPg,
       expenseReportChanges: pgSchema.expenseReportChangesPg,
+      expenseReimbursementChecks: pgSchema.expenseReimbursementChecksPg,
+      expenseReimbursementCheckReports: pgSchema.expenseReimbursementCheckReportsPg,
     } as DrizzleSchema;
   } else {
     throw new Error(`Unsupported database type: ${config.type}`);

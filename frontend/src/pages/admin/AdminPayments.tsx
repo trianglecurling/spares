@@ -15,13 +15,14 @@ import { formatClubDateTime } from '../../utils/clubTime';
 import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
 import PageTabs from '../../components/PageTabs';
 import AdminPaymentItemNames from './AdminPaymentItemNames';
+import AdminPaymentRefunds from './AdminPaymentRefunds';
 import {
   formatPaymentOrderStatusLabel,
   paymentOrderStatusClassName,
   type PaymentOrderStatus,
 } from '../../utils/paymentOrderDisplay';
 
-type AdminPaymentsTab = 'activity' | 'item-names';
+type AdminPaymentsTab = 'activity' | 'refunds' | 'item-names';
 
 type AdminPaymentsProps = {
   activeTab?: AdminPaymentsTab;
@@ -343,6 +344,12 @@ export default function AdminPayments({ activeTab = 'activity' }: AdminPaymentsP
       isActive: activeTab === 'activity',
     },
     {
+      key: 'refunds',
+      label: 'Refunds',
+      to: '/admin/payments/refunds',
+      isActive: activeTab === 'refunds',
+    },
+    {
       key: 'item-names',
       label: 'Item names',
       to: '/admin/payments/item-names',
@@ -435,7 +442,9 @@ export default function AdminPayments({ activeTab = 'activity' }: AdminPaymentsP
           description={
             activeTab === 'item-names'
               ? 'Configure Square line item names for season registration and upcoming event registrations.'
-              : 'Inspect payment orders, provider reconciliation details, and recent webhook processing events.'
+              : activeTab === 'refunds'
+                ? 'Review refunds issued through the app, who received them, and open each refund receipt.'
+                : 'Inspect payment orders, provider reconciliation details, and recent webhook processing events.'
           }
           actions={
             activeTab === 'activity' ? (
@@ -455,6 +464,8 @@ export default function AdminPayments({ activeTab = 'activity' }: AdminPaymentsP
         />
 
         <PageTabs items={tabs} />
+
+        {activeTab === 'refunds' ? <AdminPaymentRefunds /> : null}
 
         {activeTab === 'item-names' ? <AdminPaymentItemNames /> : null}
 

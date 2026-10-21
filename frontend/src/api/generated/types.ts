@@ -2976,6 +2976,13 @@ export interface paths {
                             statusChangedByName?: null | string;
                             statusChangedAt?: null | string;
                             lastUpdatedByName?: null | string;
+                            reimbursementCheck?: null | {
+                                id: number;
+                                checkNumber: string;
+                                amountMinor: number;
+                                currency: string;
+                                issuedAt: string;
+                            };
                             notes?: {
                                 id: number;
                                 authorName: string;
@@ -3109,6 +3116,13 @@ export interface paths {
                             statusChangedByName?: null | string;
                             statusChangedAt?: null | string;
                             lastUpdatedByName?: null | string;
+                            reimbursementCheck?: null | {
+                                id: number;
+                                checkNumber: string;
+                                amountMinor: number;
+                                currency: string;
+                                issuedAt: string;
+                            };
                             notes?: {
                                 id: number;
                                 authorName: string;
@@ -3234,6 +3248,13 @@ export interface paths {
                             statusChangedByName?: null | string;
                             statusChangedAt?: null | string;
                             lastUpdatedByName?: null | string;
+                            reimbursementCheck?: null | {
+                                id: number;
+                                checkNumber: string;
+                                amountMinor: number;
+                                currency: string;
+                                issuedAt: string;
+                            };
                             notes?: {
                                 id: number;
                                 authorName: string;
@@ -15461,6 +15482,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/payments/refunds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    limit?: number;
+                    offset?: number;
+                    search?: string;
+                    provider?: "stripe" | "paypal" | "square";
+                    subjectType?: "donation" | "membership" | "event_registration" | "curling_registration";
+                    status?: "requested" | "approved" | "rejected" | "processing" | "succeeded" | "failed";
+                    range?: "this_month" | "last_month" | "this_fiscal_year" | "custom";
+                    from?: string;
+                    to?: string;
+                    sort?: "issuedAt" | "amount" | "status" | "recipient" | "subject" | "provider" | "issuedBy";
+                    order?: "asc" | "desc";
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/payments/events": {
         parameters: {
             query?: never;
@@ -24791,6 +24857,7 @@ export interface paths {
                                 kind: string;
                                 status: string;
                                 statusLabel: string;
+                                memberId: null | number;
                                 submitterName: string;
                                 submitterEmail: string;
                                 totalAmountMinor: number;
@@ -24900,6 +24967,13 @@ export interface paths {
                             statusChangedByName?: null | string;
                             statusChangedAt?: null | string;
                             lastUpdatedByName?: null | string;
+                            reimbursementCheck?: null | {
+                                id: number;
+                                checkNumber: string;
+                                amountMinor: number;
+                                currency: string;
+                                issuedAt: string;
+                            };
                             notes?: {
                                 id: number;
                                 authorName: string;
@@ -25047,6 +25121,13 @@ export interface paths {
                             statusChangedByName?: null | string;
                             statusChangedAt?: null | string;
                             lastUpdatedByName?: null | string;
+                            reimbursementCheck?: null | {
+                                id: number;
+                                checkNumber: string;
+                                amountMinor: number;
+                                currency: string;
+                                issuedAt: string;
+                            };
                             notes?: {
                                 id: number;
                                 authorName: string;
@@ -25186,6 +25267,13 @@ export interface paths {
                             statusChangedByName?: null | string;
                             statusChangedAt?: null | string;
                             lastUpdatedByName?: null | string;
+                            reimbursementCheck?: null | {
+                                id: number;
+                                checkNumber: string;
+                                amountMinor: number;
+                                currency: string;
+                                issuedAt: string;
+                            };
                             notes?: {
                                 id: number;
                                 authorName: string;
@@ -25342,6 +25430,7 @@ export interface paths {
                                 kind: string;
                                 status: string;
                                 statusLabel: string;
+                                memberId: null | number;
                                 submitterName: string;
                                 submitterEmail: string;
                                 totalAmountMinor: number;
@@ -25563,7 +25652,7 @@ export interface paths {
                     "application/json": {
                         ids: number[];
                         /** @enum {string} */
-                        status: "pending_review" | "processing" | "check_mailed" | "complete";
+                        status: "pending_review" | "processing" | "approved" | "complete";
                     };
                 };
             };
@@ -25610,6 +25699,233 @@ export interface paths {
                 };
                 /** @description Default Response */
                 404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/expenses/checks/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Preview one reimbursement check for the selected expense reports before it is issued. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        ids: number[];
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            payeeName: string;
+                            payeePhone: null | string;
+                            payeeAddress: null | {
+                                addressLine1?: string;
+                                addressLine2?: string;
+                                city?: string;
+                                state?: string;
+                                country?: string;
+                                postalCode?: string;
+                            };
+                            amountMinor: number;
+                            currency: string;
+                            reports: {
+                                id: number;
+                                kind: string;
+                                submittedAt: string;
+                                amountMinor: number;
+                                currency: string;
+                                description: null | string;
+                            }[];
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/expenses/checks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Issue one reimbursement check covering the selected expense reports for a single person. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        ids: number[];
+                        checkNumber: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: number;
+                            checkNumber: string;
+                            payeeName: string;
+                            payeeEmail: string;
+                            amountMinor: number;
+                            currency: string;
+                            reportIds: number[];
+                            emailSent: boolean;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -25770,6 +26086,13 @@ export interface paths {
                             statusChangedByName?: null | string;
                             statusChangedAt?: null | string;
                             lastUpdatedByName?: null | string;
+                            reimbursementCheck?: null | {
+                                id: number;
+                                checkNumber: string;
+                                amountMinor: number;
+                                currency: string;
+                                issuedAt: string;
+                            };
                             notes?: {
                                 id: number;
                                 authorName: string;
@@ -25889,7 +26212,7 @@ export interface paths {
                 content: {
                     "application/json": {
                         /** @enum {string} */
-                        status?: "pending_review" | "processing" | "check_mailed" | "complete";
+                        status?: "pending_review" | "processing" | "approved" | "complete";
                     };
                 };
             };
@@ -25963,6 +26286,13 @@ export interface paths {
                             statusChangedByName?: null | string;
                             statusChangedAt?: null | string;
                             lastUpdatedByName?: null | string;
+                            reimbursementCheck?: null | {
+                                id: number;
+                                checkNumber: string;
+                                amountMinor: number;
+                                currency: string;
+                                issuedAt: string;
+                            };
                             notes?: {
                                 id: number;
                                 authorName: string;
@@ -26112,6 +26442,13 @@ export interface paths {
                             statusChangedByName?: null | string;
                             statusChangedAt?: null | string;
                             lastUpdatedByName?: null | string;
+                            reimbursementCheck?: null | {
+                                id: number;
+                                checkNumber: string;
+                                amountMinor: number;
+                                currency: string;
+                                issuedAt: string;
+                            };
                             notes?: {
                                 id: number;
                                 authorName: string;
@@ -26277,6 +26614,13 @@ export interface paths {
                             statusChangedByName?: null | string;
                             statusChangedAt?: null | string;
                             lastUpdatedByName?: null | string;
+                            reimbursementCheck?: null | {
+                                id: number;
+                                checkNumber: string;
+                                amountMinor: number;
+                                currency: string;
+                                issuedAt: string;
+                            };
                             notes?: {
                                 id: number;
                                 authorName: string;

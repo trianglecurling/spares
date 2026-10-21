@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   differenceInDays,
   differenceInMinutes,
@@ -86,10 +86,21 @@ export default function CalendarEventForm({
   const [editScope, setEditScope] = useState<'this' | 'all'>('this');
   const [linkedArticle, setLinkedArticle] = useState<ArticleOption | null>(template?.article ?? null);
   const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
   const [activeTab, setActiveTab] = useState<'details' | 'description'>('details');
   const [descriptionDraft, setDescriptionDraft] = useState(template?.description ?? '');
   const descriptionEditorRef = useRef<MarkdownDescriptionEditorRef>(null);
   const { resolvedTheme } = useTheme();
+
+  useEffect(() => {
+    if (!dirty) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [dirty]);
 
   const captureDescriptionFromEditor = () => {
     const markdown = descriptionEditorRef.current?.getMarkdown?.();
@@ -192,6 +203,7 @@ export default function CalendarEventForm({
       } else {
         await api.post('/calendar/events', payload);
       }
+      setDirty(false);
       onSaved();
     } catch {
       showAlert('Failed to save event', 'error');
@@ -200,7 +212,12 @@ export default function CalendarEventForm({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-6">
+    <form
+      onSubmit={handleSubmit}
+      onChangeCapture={() => setDirty(true)}
+      onInputCapture={() => setDirty(true)}
+      className="flex flex-col gap-6"
+    >
       <PageTabs
         className="shrink-0"
         items={[

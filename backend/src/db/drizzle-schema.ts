@@ -1,5 +1,5 @@
 import { sql, eq } from 'drizzle-orm';
-import { sqliteTable, text, integer, index, uniqueIndex, real } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, index, uniqueIndex, real, primaryKey } from 'drizzle-orm/sqlite-core';
 import {
   pgTable,
   text as textPg,
@@ -11,6 +11,7 @@ import {
   uniqueIndex as uniqueIndexPg,
   doublePrecision,
   jsonb,
+  primaryKey as primaryKeyPg,
 } from 'drizzle-orm/pg-core';
 
 // We'll create schemas for both SQLite and PostgreSQL
@@ -2445,7 +2446,7 @@ export const eventSpecialLinksSqlite = sqliteTable('event_special_links', {
 export type VolunteerSignupStatus = 'confirmed' | 'cancelled';
 
 export type ExpenseReportKind = 'expense' | 'mileage';
-export type ExpenseReportStatus = 'pending_review' | 'processing' | 'check_mailed' | 'complete';
+export type ExpenseReportStatus = 'pending_review' | 'processing' | 'approved' | 'complete';
 export type ExpenseFromKind = 'home' | 'other';
 export type ExpenseToKind = 'club' | 'other';
 export type ExpenseTripPurpose =
@@ -2768,6 +2769,32 @@ export const expenseReportChangesSqlite = sqliteTable('expense_report_changes', 
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
 }, (table) => ({
   reportIdx: index('idx_expense_report_changes_report_id').on(table.report_id),
+}));
+
+export const expenseReimbursementChecksSqlite = sqliteTable('expense_reimbursement_checks', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  payee_member_id: integer('payee_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
+  payee_name: text('payee_name').notNull(),
+  payee_email: text('payee_email').notNull(),
+  check_number: text('check_number').notNull(),
+  amount_minor: integer('amount_minor').notNull(),
+  currency: text('currency').default('usd').notNull(),
+  issued_by_member_id: integer('issued_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
+  issued_by_name: text('issued_by_name').notNull(),
+  issued_at: text('issued_at').default(sql`datetime('now')`).notNull(),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  payeeMemberIdx: index('idx_expense_reimbursement_checks_payee_member_id').on(table.payee_member_id),
+  issuedAtIdx: index('idx_expense_reimbursement_checks_issued_at').on(table.issued_at),
+}));
+
+export const expenseReimbursementCheckReportsSqlite = sqliteTable('expense_reimbursement_check_reports', {
+  check_id: integer('check_id').notNull().references(() => expenseReimbursementChecksSqlite.id, { onDelete: 'cascade' }),
+  report_id: integer('report_id').notNull().references(() => expenseReportsSqlite.id, { onDelete: 'cascade' }),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.check_id, table.report_id] }),
+  reportUnique: uniqueIndex('expense_reimbursement_check_reports_report_unique').on(table.report_id),
+  checkIdx: index('idx_expense_reimbursement_check_reports_check_id').on(table.check_id),
 }));
 
 // ========== PostgreSQL Schema ==========
@@ -5245,6 +5272,32 @@ export const expenseReportChangesPg = pgTable('expense_report_changes', {
   reportIdx: indexPg('idx_expense_report_changes_report_id').on(table.report_id),
 }));
 
+export const expenseReimbursementChecksPg = pgTable('expense_reimbursement_checks', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  payee_member_id: integerPg('payee_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
+  payee_name: textPg('payee_name').notNull(),
+  payee_email: textPg('payee_email').notNull(),
+  check_number: textPg('check_number').notNull(),
+  amount_minor: integerPg('amount_minor').notNull(),
+  currency: textPg('currency').default('usd').notNull(),
+  issued_by_member_id: integerPg('issued_by_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
+  issued_by_name: textPg('issued_by_name').notNull(),
+  issued_at: timestamp('issued_at', { withTimezone: false }).defaultNow().notNull(),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  payeeMemberIdx: indexPg('idx_expense_reimbursement_checks_payee_member_id').on(table.payee_member_id),
+  issuedAtIdx: indexPg('idx_expense_reimbursement_checks_issued_at').on(table.issued_at),
+}));
+
+export const expenseReimbursementCheckReportsPg = pgTable('expense_reimbursement_check_reports', {
+  check_id: integerPg('check_id').notNull().references(() => expenseReimbursementChecksPg.id, { onDelete: 'cascade' }),
+  report_id: integerPg('report_id').notNull().references(() => expenseReportsPg.id, { onDelete: 'cascade' }),
+}, (table) => ({
+  pk: primaryKeyPg({ columns: [table.check_id, table.report_id] }),
+  reportUnique: uniqueIndexPg('expense_reimbursement_check_reports_report_unique').on(table.report_id),
+  checkIdx: indexPg('idx_expense_reimbursement_check_reports_check_id').on(table.check_id),
+}));
+
 // Export schema objects for use in database initialization
 export const sqliteSchema = {
   members: membersSqlite,
@@ -5379,6 +5432,8 @@ export const sqliteSchema = {
   expenseDocuments: expenseDocumentsSqlite,
   expenseReportNotes: expenseReportNotesSqlite,
   expenseReportChanges: expenseReportChangesSqlite,
+  expenseReimbursementChecks: expenseReimbursementChecksSqlite,
+  expenseReimbursementCheckReports: expenseReimbursementCheckReportsSqlite,
 };
 
 export const pgSchema = {
@@ -5514,4 +5569,6 @@ export const pgSchema = {
   expenseDocuments: expenseDocumentsPg,
   expenseReportNotes: expenseReportNotesPg,
   expenseReportChanges: expenseReportChangesPg,
+  expenseReimbursementChecks: expenseReimbursementChecksPg,
+  expenseReimbursementCheckReports: expenseReimbursementCheckReportsPg,
 };

@@ -1,6 +1,6 @@
 import path from 'path';
 import { randomUUID } from 'crypto';
-import { and, asc, desc, eq, gte, inArray, isNull, lt, notInArray, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import type {
   ExpenseDocumentType,
@@ -38,12 +38,15 @@ import {
   type ExpenseDateRange,
 } from './expenseReportDateRange.js';
 import {
+  expenseReportRequiresReimbursement,
   isSubmitterEditableStatus,
-  shouldSendCheckMailedEmail,
+  manualExpenseReportStatusError,
+  planReimbursementCheck,
   validateExpenseReportPayload,
   type ExpenseItemInput,
   type ExpenseMailingAddressInput,
   type ExpenseReportPayloadInput,
+  type ReimbursementCheckReportInput,
 } from './expenseReportValidation.js';
 
 export class ExpenseReportError extends Error {
@@ -142,6 +145,13 @@ export type ExpenseReportView = {
   lastUpdatedByName?: string | null;
   notes?: ExpenseReportNoteView[];
   changes?: ExpenseReportChangeView[];
+  reimbursementCheck?: {
+    id: number;
+    checkNumber: string;
+    amountMinor: number;
+    currency: string;
+    issuedAt: string;
+  } | null;
   manageUrl?: string;
   accessToken?: string;
 };
@@ -153,6 +163,7 @@ export type ExpenseReportListItem = {
   kind: ExpenseReportKind;
   status: ExpenseReportStatus;
   statusLabel: string;
+  memberId: number | null;
   submitterName: string;
   submitterEmail: string;
   totalAmountMinor: number;
@@ -371,6 +382,7 @@ function mapListItem(row: ReportRow, itemTotalMinor?: number): ExpenseReportList
     kind: String(row.kind) as ExpenseReportKind,
     status,
     statusLabel: EXPENSE_STATUS_LABELS[status] ?? status,
+    memberId: row.member_id == null ? null : asInt(row.member_id),
     submitterName: String(row.submitter_name ?? ''),
     submitterEmail: String(row.submitter_email ?? ''),
     totalAmountMinor: itemTotalMinor ?? requestedAmountMinor,
@@ -1216,12 +1228,41 @@ export async function getExpenseReportForAdmin(reportId: number): Promise<Expens
     loadNotes(reportId),
     loadChanges(reportId),
   ]);
-  return mapReport(row, expenseData, {
+  const view = mapReport(row, expenseData, {
     includeManage: true,
     includeAdminReview: true,
     notes,
     changes,
   });
+  view.reimbursementCheck = await loadReimbursementCheck(reportId);
+  return view;
+}
+
+async function loadReimbursementCheck(reportId: number): Promise<ExpenseReportView['reimbursementCheck']> {
+  const { db, schema } = getDrizzleDb();
+  const [row] = await db
+    .select({
+      id: schema.expenseReimbursementChecks.id,
+      checkNumber: schema.expenseReimbursementChecks.check_number,
+      amountMinor: schema.expenseReimbursementChecks.amount_minor,
+      currency: schema.expenseReimbursementChecks.currency,
+      issuedAt: schema.expenseReimbursementChecks.issued_at,
+    })
+    .from(schema.expenseReimbursementCheckReports)
+    .innerJoin(
+      schema.expenseReimbursementChecks,
+      eq(schema.expenseReimbursementChecks.id, schema.expenseReimbursementCheckReports.check_id)
+    )
+    .where(eq(schema.expenseReimbursementCheckReports.report_id, reportId))
+    .limit(1);
+  if (!row) return null;
+  return {
+    id: asInt(row.id),
+    checkNumber: String(row.checkNumber ?? ''),
+    amountMinor: asInt(row.amountMinor),
+    currency: String(row.currency ?? 'usd'),
+    issuedAt: asIso(row.issuedAt),
+  };
 }
 
 export async function listExpenseReportsForMember(
@@ -1557,11 +1598,24 @@ export async function updateExpenseReportStatusesForAdmin(
     .select({
       id: schema.expenseReports.id,
       status: schema.expenseReports.status,
+      requestedAmountMinor: schema.expenseReports.requested_amount_minor,
+      usedClubCreditCard: schema.expenseReports.used_club_credit_card,
     })
     .from(schema.expenseReports)
     .where(inArray(schema.expenseReports.id, uniqueIds));
   if (existing.length !== uniqueIds.length) {
     throw new ExpenseReportError('One or more expense reports were not found.', 404);
+  }
+  for (const row of existing) {
+    if (String(row.status) === status) continue;
+    const statusError = manualExpenseReportStatusError({
+      nextStatus: status,
+      requiresReimbursement: expenseReportRequiresReimbursement({
+        usedClubCreditCard: asBool(row.usedClubCreditCard) === true,
+        requestedAmountMinor: asInt(row.requestedAmountMinor),
+      }),
+    });
+    if (statusError) throw new ExpenseReportError(statusError, 400);
   }
   const statusById = new Map(existing.map((row) => [asInt(row.id), String(row.status)]));
   let updatedCount = 0;
@@ -1585,6 +1639,16 @@ export async function updateExpenseReportAdmin(
   if (!existing) throw new ExpenseReportError('Expense report not found.', 404);
   const previousStatus = String(existing.status) as ExpenseReportStatus;
   const nextStatus = patch.status ?? previousStatus;
+  if (nextStatus !== previousStatus) {
+    const statusError = manualExpenseReportStatusError({
+      nextStatus,
+      requiresReimbursement: expenseReportRequiresReimbursement({
+        usedClubCreditCard: asBool(existing.used_club_credit_card) === true,
+        requestedAmountMinor: asInt(existing.requested_amount_minor),
+      }),
+    });
+    if (statusError) throw new ExpenseReportError(statusError, 400);
+  }
   const { db, schema } = getDrizzleDb();
   const statusChanged = nextStatus !== previousStatus;
   await db
@@ -1618,22 +1682,297 @@ export async function updateExpenseReportAdmin(
     });
   }
 
-  if (shouldSendCheckMailedEmail(previousStatus, nextStatus)) {
-    const expenseData = await loadExpenseData(reportId);
-    const view = mapReport(
-      { ...existing, status: nextStatus },
-      expenseData,
-      { includeManage: true }
-    );
-    const accessToken = String(existing.access_token ?? '');
-    await sendExpenseReportCheckMailedEmail({
-      to: view.submitterEmail,
-      recipientName: view.submitterName,
-      manageUrl: accessToken ? expenseReportManageUrl(accessToken) : undefined,
-    });
+  return getExpenseReportForAdmin(reportId);
+}
+
+function reimbursementCheckCandidate(row: ReportRow): ReimbursementCheckReportInput {
+  return {
+    id: asInt(row.id),
+    status: String(row.status ?? ''),
+    memberId: row.member_id == null ? null : asInt(row.member_id),
+    submitterName: String(row.submitter_name ?? ''),
+    submitterEmail: String(row.submitter_email ?? ''),
+    requestedAmountMinor: asInt(row.requested_amount_minor),
+    requestedCurrency: String(row.requested_currency ?? 'usd'),
+    usedClubCreditCard: asBool(row.used_club_credit_card) === true,
+    submittedAt: asIso(row.submitted_at),
+  };
+}
+
+function reportDescription(row: ReportRow): string | null {
+  const purpose = row.purpose == null ? '' : String(row.purpose).trim();
+  if (purpose) return purpose;
+  const trip = row.trip_purpose == null ? '' : String(row.trip_purpose).trim();
+  if (!trip) return null;
+  if (trip === 'other') {
+    const other = String(row.trip_purpose_other ?? '').trim();
+    return other || 'Other';
+  }
+  return EXPENSE_TRIP_PURPOSE_LABELS[trip as keyof typeof EXPENSE_TRIP_PURPOSE_LABELS] ?? trip;
+}
+
+export type ReimbursementCheckPreview = {
+  payeeName: string;
+  payeePhone: string | null;
+  payeeAddress: ExpenseMailingAddressInput | null;
+  amountMinor: number;
+  currency: string;
+  reports: Array<{
+    id: number;
+    kind: string;
+    submittedAt: string;
+    amountMinor: number;
+    currency: string;
+    description: string | null;
+  }>;
+};
+
+function buildReimbursementCheckPreview(
+  rows: ReportRow[],
+  plan: { payeeName: string; amountMinor: number; currency: string; reportIds: number[] }
+): ReimbursementCheckPreview {
+  const newestFirst = [...rows].sort((left, right) => {
+    const byDate = asIso(right.submitted_at).localeCompare(asIso(left.submitted_at));
+    if (byDate !== 0) return byDate;
+    return asInt(right.id) - asInt(left.id);
+  });
+  let phone = '';
+  let address: ExpenseMailingAddressInput | null = null;
+  for (const row of newestFirst) {
+    if (!phone) {
+      const candidate = row.submitter_phone == null ? '' : String(row.submitter_phone).trim();
+      if (candidate) phone = candidate;
+    }
+    if (!address) {
+      address = parseMailingAddress(row.mailing_address);
+    }
+  }
+  const rowsById = new Map(rows.map((row) => [asInt(row.id), row]));
+  return {
+    payeeName: plan.payeeName,
+    payeePhone: phone || null,
+    payeeAddress: address
+      ? {
+          addressLine1: address.addressLine1,
+          addressLine2: address.addressLine2 ?? '',
+          city: address.city,
+          state: address.state,
+          country: address.country,
+          postalCode: address.postalCode,
+        }
+      : null,
+    amountMinor: plan.amountMinor,
+    currency: plan.currency,
+    reports: plan.reportIds.flatMap((reportId) => {
+      const row = rowsById.get(reportId);
+      if (!row) return [];
+      return [
+        {
+          id: reportId,
+          kind: String(row.kind ?? 'expense'),
+          submittedAt: asIso(row.submitted_at),
+          amountMinor: asInt(row.requested_amount_minor),
+          currency: String(row.requested_currency ?? plan.currency),
+          description: reportDescription(row),
+        },
+      ];
+    }),
+  };
+}
+
+function normalizeCheckNumber(value: string): string {
+  const checkNumber = value.trim();
+  if (!checkNumber) {
+    throw new ExpenseReportError('Enter the check number.', 400);
+  }
+  if (checkNumber.length > 40) {
+    throw new ExpenseReportError('Check numbers must be 40 characters or fewer.', 400);
+  }
+  return checkNumber;
+}
+
+async function loadCheckReportRows(ids: number[]): Promise<ReportRow[]> {
+  const uniqueIds = [...new Set(ids)];
+  if (uniqueIds.length === 0) {
+    throw new ExpenseReportError('Select at least one expense report.', 400);
+  }
+  if (uniqueIds.length > 500) {
+    throw new ExpenseReportError('Select 500 expense reports or fewer.', 400);
+  }
+  const { db, schema } = getDrizzleDb();
+  const rows = await db
+    .select()
+    .from(schema.expenseReports)
+    .where(inArray(schema.expenseReports.id, uniqueIds));
+  if (rows.length !== uniqueIds.length) {
+    throw new ExpenseReportError('One or more expense reports were not found.', 404);
+  }
+  const linked = await db
+    .select({ reportId: schema.expenseReimbursementCheckReports.report_id })
+    .from(schema.expenseReimbursementCheckReports)
+    .where(inArray(schema.expenseReimbursementCheckReports.report_id, uniqueIds));
+  if (linked.length > 0) {
+    throw new ExpenseReportError('One of these reports is already covered by a reimbursement check.', 409);
+  }
+  return rows as ReportRow[];
+}
+
+export async function previewExpenseReimbursementCheck(ids: number[]): Promise<ReimbursementCheckPreview> {
+  const rows = await loadCheckReportRows(ids);
+  const planned = planReimbursementCheck(rows.map((row) => reimbursementCheckCandidate(row)));
+  if (!planned.ok) {
+    throw new ExpenseReportError(planned.message, 400);
+  }
+  return buildReimbursementCheckPreview(rows, planned.plan);
+}
+
+export async function issueExpenseReimbursementCheck(
+  ids: number[],
+  checkNumberInput: string,
+  actor: StaffActor
+): Promise<{
+  id: number;
+  checkNumber: string;
+  payeeName: string;
+  payeeEmail: string;
+  amountMinor: number;
+  currency: string;
+  reportIds: number[];
+  emailSent: boolean;
+}> {
+  const checkNumber = normalizeCheckNumber(checkNumberInput);
+  const uniqueIds = [...new Set(ids)];
+  if (uniqueIds.length === 0) {
+    throw new ExpenseReportError('Select at least one expense report.', 400);
+  }
+  if (uniqueIds.length > 500) {
+    throw new ExpenseReportError('Select 500 expense reports or fewer.', 400);
   }
 
-  return getExpenseReportForAdmin(reportId);
+  const { db, schema } = getDrizzleDb();
+  const issued = await db.transaction(async (tx) => {
+    const rows = await tx
+      .select()
+      .from(schema.expenseReports)
+      .where(inArray(schema.expenseReports.id, uniqueIds));
+    if (rows.length !== uniqueIds.length) {
+      throw new ExpenseReportError('One or more expense reports were not found.', 404);
+    }
+    const linked = await tx
+      .select({ reportId: schema.expenseReimbursementCheckReports.report_id })
+      .from(schema.expenseReimbursementCheckReports)
+      .where(inArray(schema.expenseReimbursementCheckReports.report_id, uniqueIds));
+    if (linked.length > 0) {
+      throw new ExpenseReportError('One of these reports is already covered by a reimbursement check.', 409);
+    }
+
+    const planned = planReimbursementCheck(rows.map((row) => reimbursementCheckCandidate(row as ReportRow)));
+    if (!planned.ok) {
+      throw new ExpenseReportError(planned.message, 400);
+    }
+
+    const now = new Date();
+    const [created] = await tx
+      .insert(schema.expenseReimbursementChecks)
+      .values({
+        payee_member_id: planned.plan.memberId,
+        payee_name: planned.plan.payeeName,
+        payee_email: planned.plan.payeeEmail,
+        check_number: checkNumber,
+        amount_minor: planned.plan.amountMinor,
+        currency: planned.plan.currency,
+        issued_by_member_id: actor.id,
+        issued_by_name: actor.name,
+        issued_at: now as any,
+        created_at: now as any,
+      })
+      .returning({ id: schema.expenseReimbursementChecks.id });
+    if (!created) {
+      throw new ExpenseReportError('Could not issue the reimbursement check.', 500);
+    }
+
+    await tx.insert(schema.expenseReimbursementCheckReports).values(
+      planned.plan.reportIds.map((reportId) => ({
+        check_id: created.id,
+        report_id: reportId,
+      }))
+    );
+
+    const rowsById = new Map(rows.map((row) => [asInt(row.id), row]));
+    for (const reportId of planned.plan.reportIds) {
+      const row = rowsById.get(reportId);
+      if (!row) continue;
+      const previousStatus = String(row.status) as ExpenseReportStatus;
+      await tx
+        .update(schema.expenseReports)
+        .set({
+          status: 'complete',
+          updated_at: now as any,
+          status_changed_by_member_id: actor.id,
+          status_changed_by_name: actor.name,
+          status_changed_at: now as any,
+        })
+        .where(eq(schema.expenseReports.id, reportId));
+      await tx.insert(schema.expenseReportChanges).values({
+        report_id: reportId,
+        actor_member_id: actor.id,
+        actor_name: actor.name,
+        kind: 'status',
+        summary: `Issued check ${checkNumber} and changed status from ${EXPENSE_STATUS_LABELS[previousStatus] ?? previousStatus} to ${EXPENSE_STATUS_LABELS.complete}`,
+        details: JSON.stringify([
+          {
+            field: 'Status',
+            from: EXPENSE_STATUS_LABELS[previousStatus] ?? previousStatus,
+            to: EXPENSE_STATUS_LABELS.complete,
+          },
+        ]),
+        created_at: now as any,
+      });
+    }
+
+    return { id: asInt(created.id), plan: planned.plan, rowsById };
+  });
+
+  const emailReports = issued.plan.reportIds.flatMap((reportId) => {
+    const row = issued.rowsById.get(reportId);
+    if (!row) return [];
+    const accessToken = row.access_token ? String(row.access_token) : '';
+    return [
+      {
+        id: reportId,
+        kind: String(row.kind ?? 'expense'),
+        amountMinor: asInt(row.requested_amount_minor),
+        currency: String(row.requested_currency ?? issued.plan.currency),
+        manageUrl: accessToken ? expenseReportManageUrl(accessToken) : undefined,
+      },
+    ];
+  });
+
+  let emailSent = false;
+  try {
+    await sendExpenseReportCheckMailedEmail({
+      to: issued.plan.payeeEmail,
+      recipientName: issued.plan.payeeName,
+      checkNumber,
+      amountMinor: issued.plan.amountMinor,
+      currency: issued.plan.currency,
+      reports: emailReports,
+    });
+    emailSent = true;
+  } catch {
+    emailSent = false;
+  }
+
+  return {
+    id: issued.id,
+    checkNumber,
+    payeeName: issued.plan.payeeName,
+    payeeEmail: issued.plan.payeeEmail,
+    amountMinor: issued.plan.amountMinor,
+    currency: issued.plan.currency,
+    reportIds: issued.plan.reportIds,
+    emailSent,
+  };
 }
 
 export async function addExpenseReportNote(
@@ -1697,17 +2036,10 @@ export async function getExpenseAdminSummary(): Promise<ExpenseAdminSummary> {
     .from(schema.expenseReports)
     .where(eq(schema.expenseReports.status, 'pending_review'));
 
-  const awaitingWhere = and(
-    notInArray(schema.expenseReports.status, ['check_mailed', 'complete']),
-    or(
-      eq(schema.expenseReports.kind, 'mileage'),
-      sql`coalesce(${schema.expenseReports.used_club_credit_card}, 0) = 0`
-    )
-  );
   const [awaitingRow] = await db
     .select({ count: sql<number>`count(*)` })
     .from(schema.expenseReports)
-    .where(awaitingWhere);
+    .where(eq(schema.expenseReports.status, 'approved'));
 
   // Join items instead of a correlated subquery. A single-table select strips
   // table prefixes, so `id` would bind to expense_report_items.id and miss every total.

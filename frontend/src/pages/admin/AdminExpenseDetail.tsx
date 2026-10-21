@@ -25,6 +25,10 @@ import ExpenseReportForm, {
   type ExpenseFormOptions,
 } from '../../components/ExpenseReportForm';
 import FormField from '../../components/FormField';
+import {
+  IssueReimbursementCheckDialog,
+  useIssueReimbursementCheck,
+} from '../../components/IssueReimbursementCheckDialog';
 import InlineStateMessage from '../../components/InlineStateMessage';
 import { useAlert } from '../../contexts/AlertContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -38,6 +42,8 @@ import {
 } from '../../utils/expenseReportSubmit';
 import {
   EXPENSE_STATUS_OPTIONS,
+  expenseReportRequiresReimbursement,
+  expenseWorkflowStatusOptions,
   expenseDocumentTypeLabel,
   expenseKindLabel,
   formatExpenseMoney,
@@ -56,7 +62,7 @@ function statusBadgeClass(status: string): string {
   if (status === 'complete') {
     return 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900/70 dark:bg-emerald-950/40 dark:text-emerald-200';
   }
-  if (status === 'check_mailed') {
+  if (status === 'approved') {
     return 'border-blue-200 bg-blue-50 text-blue-800 dark:border-blue-900/70 dark:bg-blue-950/40 dark:text-blue-200';
   }
   if (status === 'processing') {
@@ -142,6 +148,11 @@ export default function AdminExpenseDetail() {
       setLoading(false);
     }
   }, [reportId]);
+
+  const issueCheck = useIssueReimbursementCheck(() => {
+    void load();
+  });
+  const checkBusy = issueCheck.preparing || issueCheck.issuing;
 
   useEffect(() => {
     void load();
@@ -279,6 +290,12 @@ export default function AdminExpenseDetail() {
 
   const statusLabel =
     EXPENSE_STATUS_OPTIONS.find((option) => option.value === status)?.label ?? status;
+  const statusOptions = report
+    ? expenseWorkflowStatusOptions(report)
+    : EXPENSE_STATUS_OPTIONS.filter((option) => option.value !== 'approved');
+  const canIssueCheck = Boolean(
+    canManage && report && report.status === 'approved' && expenseReportRequiresReimbursement(report),
+  );
   const committee = report?.committeeCustom || report?.committeeName || 'Not specified';
   const paymentMethod = report?.usedClubCreditCard
     ? `Club credit card${report.clubCreditCardOwnerName ? ` · ${report.clubCreditCardOwnerName}` : ''}`
@@ -658,7 +675,7 @@ export default function AdminExpenseDetail() {
               <div>
                 <h2 className="app-section-title text-lg">Review</h2>
                 <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                  Update the report and its workflow status together.
+                  Set Processing while a report is in review. For a reimbursement, set Approved, then issue a check to mark it Complete. For a report with no reimbursement, set Complete when it is approved.
                 </p>
               </div>
               <FormField label="Status" htmlFor={statusId} required>
@@ -666,20 +683,29 @@ export default function AdminExpenseDetail() {
                   inputId={statusId}
                   layout="popover"
                   value={status}
-                  disabled={!canManage || savingReport || deleting}
+                  disabled={!canManage || savingReport || deleting || checkBusy}
                   onChange={(value) => {
                     const next = Array.isArray(value) ? value[0] : value;
-                    if (
-                      EXPENSE_STATUS_OPTIONS.some(
-                        (option) => option.value === next,
-                      )
-                    ) {
+                    if (statusOptions.some((option) => option.value === next)) {
                       setStatus(next as ExpenseReportStatus);
                     }
                   }}
-                  options={[...EXPENSE_STATUS_OPTIONS]}
+                  options={[...statusOptions]}
                 />
               </FormField>
+              {report.reimbursementCheck ? (
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  {report.reimbursementCheck.checkNumber
+                    ? `Check ${report.reimbursementCheck.checkNumber}`
+                    : `Reimbursement check ${report.reimbursementCheck.id}`}{' '}
+                  for{' '}
+                  {formatExpenseMoney(
+                    report.reimbursementCheck.amountMinor,
+                    report.reimbursementCheck.currency,
+                  )}{' '}
+                  was issued {formatSubmittedAt(report.reimbursementCheck.issuedAt)}.
+                </p>
+              ) : null}
               {status !== report.status ? (
                 <InlineStateMessage
                   title={`Ready to change status to ${statusLabel}`}
@@ -700,14 +726,27 @@ export default function AdminExpenseDetail() {
                 </p>
               ) : null}
               {canManage ? (
-                <Button
-                  type="submit"
-                  form={reviewFormId}
-                  className="w-full"
-                  disabled={savingReport || deleting}
-                >
-                  {savingReport ? 'Saving changes…' : 'Save changes'}
-                </Button>
+                <div className="space-y-3">
+                  <Button
+                    type="submit"
+                    form={reviewFormId}
+                    className="w-full"
+                    disabled={savingReport || deleting || checkBusy}
+                  >
+                    {savingReport ? 'Saving changes…' : 'Save changes'}
+                  </Button>
+                  {canIssueCheck ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      className="w-full"
+                      disabled={savingReport || deleting || checkBusy}
+                      onClick={() => void issueCheck.start([report.id])}
+                    >
+                      {issueCheck.preparing ? 'Preparing check…' : 'Issue check'}
+                    </Button>
+                  ) : null}
+                </div>
               ) : (
                 <InlineStateMessage
                   title="Read-only access"
@@ -768,6 +807,15 @@ export default function AdminExpenseDetail() {
           </aside>
         </div>
       )}
+      <IssueReimbursementCheckDialog
+        preview={issueCheck.preview}
+        checkNumber={issueCheck.checkNumber}
+        checkNumberError={issueCheck.checkNumberError}
+        issuing={issueCheck.issuing}
+        onCheckNumberChange={issueCheck.setCheckNumber}
+        onConfirm={() => void issueCheck.confirm()}
+        onCancel={issueCheck.cancel}
+      />
     </AppPage>
   );
 }

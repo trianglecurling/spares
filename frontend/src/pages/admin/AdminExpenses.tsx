@@ -9,6 +9,10 @@ import Button from '../../components/Button';
 import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
 import DataTable from '../../components/table/DataTable';
 import FormField from '../../components/FormField';
+import {
+  IssueReimbursementCheckDialog,
+  useIssueReimbursementCheck,
+} from '../../components/IssueReimbursementCheckDialog';
 import type { DataTableColumn } from '../../components/table/tableTypes';
 import { useAlert } from '../../contexts/AlertContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -21,6 +25,7 @@ import {
   formatExpenseMoney,
   formatSubmittedAt,
   EXPENSE_STATUS_OPTIONS,
+  reimbursementCheckSelectionError,
   type ExpenseAdminSummary,
   type ExpenseReportListItem,
   type ExpenseReportStatus,
@@ -88,8 +93,14 @@ export default function AdminExpenses() {
   const [exporting, setExporting] = useState(false);
   const [downloadingDocuments, setDownloadingDocuments] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [selectedById, setSelectedById] = useState<Map<number, ExpenseReportListItem>>(new Map());
   const [refreshToken, setRefreshToken] = useState(0);
+  const issueCheck = useIssueReimbursementCheck(() => {
+    setSelectedById(new Map());
+    setRefreshToken((current) => current + 1);
+  });
+  const checkBusy = issueCheck.preparing || issueCheck.issuing;
+  const selectedIds = useMemo(() => [...selectedById.keys()], [selectedById]);
   const pageSize = 25;
 
   const range = asDateRange(filters.range);
@@ -137,8 +148,22 @@ export default function AdminExpenses() {
   const [selectionFilterKey, setSelectionFilterKey] = useState(filterKey);
   if (selectionFilterKey !== filterKey) {
     setSelectionFilterKey(filterKey);
-    setSelectedIds([]);
+    setSelectedById(new Map());
   }
+
+  useEffect(() => {
+    setSelectedById((current) => {
+      if (current.size === 0) return current;
+      let changed = false;
+      const next = new Map(current);
+      for (const row of items) {
+        if (!next.has(row.id)) continue;
+        next.set(row.id, row);
+        changed = true;
+      }
+      return changed ? next : current;
+    });
+  }, [items]);
 
   const downloadParams = selectedIds.length > 0 ? { ids: selectedIds.join(',') } : filterParams;
 
@@ -184,16 +209,12 @@ export default function AdminExpenses() {
 
   const handleBulkStatus = async (nextStatus: string) => {
     const option = EXPENSE_STATUS_OPTIONS.find((item) => item.value === nextStatus);
-    if (!option || selectedIds.length === 0 || updatingStatus) return;
-    const emailNote =
-      option.value === 'check_mailed'
-        ? ' Submitters whose reports are not already check mailed will receive an email.'
-        : '';
+    if (!option || selectedIds.length === 0 || updatingStatus || checkBusy) return;
     const confirmed = await confirm({
       title: 'Update status',
-      message: `Update ${reportCountLabel(selectedIds.length)} to ${option.label}?${emailNote}`,
+      message: `Update ${reportCountLabel(selectedIds.length)} to ${option.label}?`,
       confirmText: 'Update status',
-      variant: option.value === 'check_mailed' ? 'warning' : 'info',
+      variant: 'info',
     });
     if (!confirmed) return;
     setUpdatingStatus(true);
@@ -233,21 +254,30 @@ export default function AdminExpenses() {
     exportUnavailableReason ??
     (selectedIds.length > 0 ? `${reportCountLabel(selectedIds.length)} selected` : undefined);
 
+  const selectedReports = useMemo(() => [...selectedById.values()], [selectedById]);
+  const issueCheckReason =
+    selectedIds.length === 0
+      ? 'Select at least one expense report.'
+      : reimbursementCheckSelectionError(selectedReports);
+
   const handleToggleRow = useCallback((row: ExpenseReportListItem, checked: boolean) => {
-    setSelectedIds((current) =>
-      checked
-        ? Array.from(new Set([...current, row.id]))
-        : current.filter((id) => id !== row.id)
-    );
+    setSelectedById((current) => {
+      const next = new Map(current);
+      if (checked) next.set(row.id, row);
+      else next.delete(row.id);
+      return next;
+    });
   }, []);
 
   const handleTogglePage = useCallback((rows: ExpenseReportListItem[], checked: boolean) => {
-    const rowIds = rows.map((row) => row.id);
-    setSelectedIds((current) =>
-      checked
-        ? Array.from(new Set([...current, ...rowIds]))
-        : current.filter((id) => !rowIds.includes(id))
-    );
+    setSelectedById((current) => {
+      const next = new Map(current);
+      for (const row of rows) {
+        if (checked) next.set(row.id, row);
+        else next.delete(row.id);
+      }
+      return next;
+    });
   }, []);
 
   const selectionConfig = useMemo(
@@ -374,124 +404,164 @@ export default function AdminExpenses() {
       ) : null}
       <AppPageControlsRow
         left={
-          <>
-            <FormField label="Search" htmlFor={searchId}>
-              <input
-                id={searchId}
-                className="app-input"
-                value={draftFilters.search}
-                onChange={(event) => setDraftFilter('search', event.target.value)}
-                placeholder="Name or email"
-              />
-            </FormField>
-            <FormField label="Status" htmlFor={statusId}>
-              <ChoiceInput
-                inputId={statusId}
-                layout="popover"
-                value={filters.status}
-                onChange={(value) => {
-                  const next = Array.isArray(value) ? value[0] : value;
-                  setFilter('status', typeof next === 'string' ? next : '');
-                  setPage(1);
-                }}
-                options={statusOptions}
-              />
-            </FormField>
-            <FormField label="Submitted" htmlFor={rangeId}>
-              <ChoiceInput
-                inputId={rangeId}
-                layout="popover"
-                value={filters.range}
-                onChange={(value) => {
-                  const next = Array.isArray(value) ? value[0] : value;
-                  setFilter('range', typeof next === 'string' ? next : 'all');
-                }}
-                options={DATE_RANGE_OPTIONS}
-              />
-            </FormField>
-            {isCustomRange ? (
-              <>
-                <FormField label="From" htmlFor={fromId}>
-                  <input
-                    id={fromId}
-                    type="date"
-                    className="app-input"
-                    value={draftFilters.from}
-                    max={draftFilters.to || undefined}
-                    onChange={(event) => setDraftFilter('from', event.target.value)}
-                  />
-                </FormField>
-                <FormField label="To" htmlFor={toId} error={dateRangeError}>
-                  {({ describedBy, invalid }) => (
+          <div className="flex w-full flex-col gap-4">
+            <div className="flex flex-wrap items-end gap-3">
+              <FormField label="Search" htmlFor={searchId} className="w-full sm:w-64">
+                <input
+                  id={searchId}
+                  className="app-input"
+                  value={draftFilters.search}
+                  onChange={(event) => setDraftFilter('search', event.target.value)}
+                  placeholder="Name or email"
+                />
+              </FormField>
+              <FormField label="Status" htmlFor={statusId} className="w-full sm:w-44">
+                <ChoiceInput
+                  inputId={statusId}
+                  layout="popover"
+                  value={filters.status}
+                  onChange={(value) => {
+                    const next = Array.isArray(value) ? value[0] : value;
+                    setFilter('status', typeof next === 'string' ? next : '');
+                  }}
+                  options={statusOptions}
+                  inputClassName="app-input max-w-none"
+                />
+              </FormField>
+              <FormField label="Submitted" htmlFor={rangeId} className="w-full sm:w-48">
+                <ChoiceInput
+                  inputId={rangeId}
+                  layout="popover"
+                  value={filters.range}
+                  onChange={(value) => {
+                    const next = Array.isArray(value) ? value[0] : value;
+                    setFilter('range', typeof next === 'string' ? next : 'all');
+                  }}
+                  options={DATE_RANGE_OPTIONS}
+                  inputClassName="app-input max-w-none"
+                />
+              </FormField>
+              {isCustomRange ? (
+                <>
+                  <FormField label="From" htmlFor={fromId} className="w-full sm:w-40">
+                    <input
+                      id={fromId}
+                      type="date"
+                      className="app-input"
+                      value={draftFilters.from}
+                      max={draftFilters.to || undefined}
+                      onChange={(event) => setDraftFilter('from', event.target.value)}
+                    />
+                  </FormField>
+                  <FormField label="To" htmlFor={toId} className="w-full sm:w-40">
                     <input
                       id={toId}
                       type="date"
                       className="app-input"
                       value={draftFilters.to}
                       min={draftFilters.from || undefined}
-                      aria-describedby={describedBy}
-                      aria-invalid={invalid || undefined}
+                      aria-invalid={dateRangeError ? true : undefined}
                       onChange={(event) => setDraftFilter('to', event.target.value)}
                     />
-                  )}
-                </FormField>
-              </>
-            ) : null}
-          </>
-        }
-        right={
-          <div className="flex flex-wrap items-end justify-end gap-3">
-            {canManage && selectedIds.length > 0 ? (
-              <FormField
-                label="Update status"
-                htmlFor={bulkStatusId}
-                className="w-56"
-                labelAccessory={
-                  <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
-                    {selectedIds.length} selected
-                  </span>
-                }
-              >
-                <ChoiceInput
-                  inputId={bulkStatusId}
-                  layout="popover"
-                  value={null}
-                  placeholder={updatingStatus ? 'Updating…' : 'Choose a status'}
-                  disabled={updatingStatus || exporting || downloadingDocuments || loading}
-                  onChange={(value) => {
-                    const next = Array.isArray(value) ? value[0] : value;
-                    if (typeof next === 'string' && next) void handleBulkStatus(next);
-                  }}
-                  options={EXPENSE_STATUS_OPTIONS.map((option) => ({
-                    value: option.value,
-                    label: option.label,
-                  }))}
-                  inputClassName="app-input max-w-none"
-                />
-              </FormField>
-            ) : null}
-            <span title={actionTitle}>
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => void handleDownloadDocuments()}
-                disabled={
-                  downloadingDocuments || exporting || loading || Boolean(exportUnavailableReason)
-                }
-              >
-                {downloadingDocuments ? 'Downloading…' : 'Download receipts'}
-              </Button>
-            </span>
-            <span title={actionTitle}>
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => void handleExport()}
-                disabled={exporting || downloadingDocuments || loading || Boolean(exportUnavailableReason)}
-              >
-                {exporting ? 'Exporting…' : 'Export CSV'}
-              </Button>
-            </span>
+                  </FormField>
+                </>
+              ) : null}
+            </div>
+            <div className="flex flex-wrap items-end justify-start gap-3 sm:justify-end">
+              {canManage ? (
+                <span
+                  title={issueCheckReason ?? undefined}
+                  tabIndex={issueCheckReason ? 0 : undefined}
+                  aria-label={issueCheckReason ? `Issue check unavailable. ${issueCheckReason}` : undefined}
+                  className={
+                    issueCheckReason
+                      ? 'inline-flex cursor-not-allowed rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40'
+                      : 'inline-flex'
+                  }
+                >
+                  <Button
+                    type="button"
+                    onClick={() => void issueCheck.start(selectedIds)}
+                    disabled={
+                      Boolean(issueCheckReason) ||
+                      checkBusy ||
+                      updatingStatus ||
+                      exporting ||
+                      downloadingDocuments ||
+                      loading
+                    }
+                    className={`min-w-44 whitespace-nowrap ${issueCheckReason ? 'pointer-events-none' : ''}`}
+                  >
+                    {issueCheck.preparing ? 'Preparing check…' : 'Issue check'}
+                  </Button>
+                </span>
+              ) : null}
+              {canManage ? (
+                <span
+                  title={selectedIds.length === 0 ? 'Select at least one expense report.' : undefined}
+                  className={`inline-flex w-full shrink-0 sm:w-60 ${selectedIds.length === 0 ? 'cursor-not-allowed' : ''}`}
+                >
+                  <FormField
+                    label="Update status"
+                    htmlFor={bulkStatusId}
+                    className={`w-full ${selectedIds.length === 0 ? 'pointer-events-none' : ''}`}
+                    labelAccessory={
+                      <span className="whitespace-nowrap text-xs font-medium text-gray-500 dark:text-gray-400">
+                        {selectedIds.length} selected
+                      </span>
+                    }
+                  >
+                    <ChoiceInput
+                      inputId={bulkStatusId}
+                      layout="popover"
+                      value={null}
+                      placeholder={updatingStatus ? 'Updating…' : 'Choose a status'}
+                      disabled={
+                        selectedIds.length === 0 ||
+                        updatingStatus ||
+                        checkBusy ||
+                        exporting ||
+                        downloadingDocuments ||
+                        loading
+                      }
+                      onChange={(value) => {
+                        const next = Array.isArray(value) ? value[0] : value;
+                        if (typeof next === 'string' && next) void handleBulkStatus(next);
+                      }}
+                      options={EXPENSE_STATUS_OPTIONS.map((option) => ({
+                        value: option.value,
+                        label: option.label,
+                      }))}
+                      inputClassName="app-input max-w-none"
+                    />
+                  </FormField>
+                </span>
+              ) : null}
+              <span title={actionTitle} className="inline-flex">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => void handleDownloadDocuments()}
+                  disabled={
+                    downloadingDocuments || exporting || loading || Boolean(exportUnavailableReason)
+                  }
+                  className="whitespace-nowrap"
+                >
+                  {downloadingDocuments ? 'Downloading…' : 'Download receipts'}
+                </Button>
+              </span>
+              <span title={actionTitle} className="inline-flex">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => void handleExport()}
+                  disabled={exporting || downloadingDocuments || loading || Boolean(exportUnavailableReason)}
+                  className="whitespace-nowrap"
+                >
+                  {exporting ? 'Exporting…' : 'Export CSV'}
+                </Button>
+              </span>
+            </div>
           </div>
         }
       />
@@ -528,6 +598,15 @@ export default function AdminExpenses() {
           }}
         />
       )}
+      <IssueReimbursementCheckDialog
+        preview={issueCheck.preview}
+        checkNumber={issueCheck.checkNumber}
+        checkNumberError={issueCheck.checkNumberError}
+        issuing={issueCheck.issuing}
+        onCheckNumberChange={issueCheck.setCheckNumber}
+        onConfirm={() => void issueCheck.confirm()}
+        onCancel={issueCheck.cancel}
+      />
     </AppPage>
   );
 }

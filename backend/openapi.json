@@ -3721,6 +3721,37 @@
                         "string"
                       ]
                     },
+                    "reimbursementCheck": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "number"
+                        },
+                        "checkNumber": {
+                          "type": "string"
+                        },
+                        "amountMinor": {
+                          "type": "number"
+                        },
+                        "currency": {
+                          "type": "string"
+                        },
+                        "issuedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "checkNumber",
+                        "amountMinor",
+                        "currency",
+                        "issuedAt"
+                      ]
+                    },
                     "notes": {
                       "type": "array",
                       "items": {
@@ -4136,6 +4167,37 @@
                         "string"
                       ]
                     },
+                    "reimbursementCheck": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "number"
+                        },
+                        "checkNumber": {
+                          "type": "string"
+                        },
+                        "amountMinor": {
+                          "type": "number"
+                        },
+                        "currency": {
+                          "type": "string"
+                        },
+                        "issuedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "checkNumber",
+                        "amountMinor",
+                        "currency",
+                        "issuedAt"
+                      ]
+                    },
                     "notes": {
                       "type": "array",
                       "items": {
@@ -4547,6 +4609,37 @@
                       "type": [
                         "null",
                         "string"
+                      ]
+                    },
+                    "reimbursementCheck": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "number"
+                        },
+                        "checkNumber": {
+                          "type": "string"
+                        },
+                        "amountMinor": {
+                          "type": "number"
+                        },
+                        "currency": {
+                          "type": "string"
+                        },
+                        "issuedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "checkNumber",
+                        "amountMinor",
+                        "currency",
+                        "issuedAt"
                       ]
                     },
                     "notes": {
@@ -26423,6 +26516,146 @@
         }
       }
     },
+    "/payments/refunds": {
+      "get": {
+        "tags": [
+          "payments"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "number"
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "number"
+            },
+            "in": "query",
+            "name": "offset",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "search",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "stripe",
+                "paypal",
+                "square"
+              ]
+            },
+            "in": "query",
+            "name": "provider",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "donation",
+                "membership",
+                "event_registration",
+                "curling_registration"
+              ]
+            },
+            "in": "query",
+            "name": "subjectType",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "requested",
+                "approved",
+                "rejected",
+                "processing",
+                "succeeded",
+                "failed"
+              ]
+            },
+            "in": "query",
+            "name": "status",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "this_month",
+                "last_month",
+                "this_fiscal_year",
+                "custom"
+              ]
+            },
+            "in": "query",
+            "name": "range",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "from",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "to",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "issuedAt",
+                "amount",
+                "status",
+                "recipient",
+                "subject",
+                "provider",
+                "issuedBy"
+              ]
+            },
+            "in": "query",
+            "name": "sort",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            },
+            "in": "query",
+            "name": "order",
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/payments/events": {
       "get": {
         "tags": [
@@ -36520,6 +36753,12 @@
                           "statusLabel": {
                             "type": "string"
                           },
+                          "memberId": {
+                            "type": [
+                              "null",
+                              "number"
+                            ]
+                          },
                           "submitterName": {
                             "type": "string"
                           },
@@ -36547,6 +36786,7 @@
                           "kind",
                           "status",
                           "statusLabel",
+                          "memberId",
                           "submitterName",
                           "submitterEmail",
                           "totalAmountMinor",
@@ -36879,6 +37119,37 @@
                       "type": [
                         "null",
                         "string"
+                      ]
+                    },
+                    "reimbursementCheck": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "number"
+                        },
+                        "checkNumber": {
+                          "type": "string"
+                        },
+                        "amountMinor": {
+                          "type": "number"
+                        },
+                        "currency": {
+                          "type": "string"
+                        },
+                        "issuedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "checkNumber",
+                        "amountMinor",
+                        "currency",
+                        "issuedAt"
                       ]
                     },
                     "notes": {
@@ -37316,6 +37587,37 @@
                         "string"
                       ]
                     },
+                    "reimbursementCheck": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "number"
+                        },
+                        "checkNumber": {
+                          "type": "string"
+                        },
+                        "amountMinor": {
+                          "type": "number"
+                        },
+                        "currency": {
+                          "type": "string"
+                        },
+                        "issuedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "checkNumber",
+                        "amountMinor",
+                        "currency",
+                        "issuedAt"
+                      ]
+                    },
                     "notes": {
                       "type": "array",
                       "items": {
@@ -37749,6 +38051,37 @@
                         "string"
                       ]
                     },
+                    "reimbursementCheck": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "number"
+                        },
+                        "checkNumber": {
+                          "type": "string"
+                        },
+                        "amountMinor": {
+                          "type": "number"
+                        },
+                        "currency": {
+                          "type": "string"
+                        },
+                        "issuedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "checkNumber",
+                        "amountMinor",
+                        "currency",
+                        "issuedAt"
+                      ]
+                    },
                     "notes": {
                       "type": "array",
                       "items": {
@@ -38058,6 +38391,12 @@
                           "statusLabel": {
                             "type": "string"
                           },
+                          "memberId": {
+                            "type": [
+                              "null",
+                              "number"
+                            ]
+                          },
                           "submitterName": {
                             "type": "string"
                           },
@@ -38085,6 +38424,7 @@
                           "kind",
                           "status",
                           "statusLabel",
+                          "memberId",
                           "submitterName",
                           "submitterEmail",
                           "totalAmountMinor",
@@ -38434,7 +38774,7 @@
                     "enum": [
                       "pending_review",
                       "processing",
-                      "check_mailed",
+                      "approved",
                       "complete"
                     ]
                   }
@@ -38508,6 +38848,391 @@
             }
           },
           "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/expenses/checks/preview": {
+      "post": {
+        "tags": [
+          "expenses"
+        ],
+        "description": "Preview one reimbursement check for the selected expense reports before it is issued.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "ids"
+                ],
+                "properties": {
+                  "ids": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 500,
+                    "items": {
+                      "type": "number"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "payeeName": {
+                      "type": "string"
+                    },
+                    "payeePhone": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "payeeAddress": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "addressLine1": {
+                          "type": "string"
+                        },
+                        "addressLine2": {
+                          "type": "string"
+                        },
+                        "city": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "country": {
+                          "type": "string"
+                        },
+                        "postalCode": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "amountMinor": {
+                      "type": "number"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "reports": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "kind": {
+                            "type": "string"
+                          },
+                          "submittedAt": {
+                            "type": "string"
+                          },
+                          "amountMinor": {
+                            "type": "number"
+                          },
+                          "currency": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "kind",
+                          "submittedAt",
+                          "amountMinor",
+                          "currency",
+                          "description"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "payeeName",
+                    "payeePhone",
+                    "payeeAddress",
+                    "amountMinor",
+                    "currency",
+                    "reports"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/expenses/checks": {
+      "post": {
+        "tags": [
+          "expenses"
+        ],
+        "description": "Issue one reimbursement check covering the selected expense reports for a single person.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "ids",
+                  "checkNumber"
+                ],
+                "properties": {
+                  "ids": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 500,
+                    "items": {
+                      "type": "number"
+                    }
+                  },
+                  "checkNumber": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "number"
+                    },
+                    "checkNumber": {
+                      "type": "string"
+                    },
+                    "payeeName": {
+                      "type": "string"
+                    },
+                    "payeeEmail": {
+                      "type": "string"
+                    },
+                    "amountMinor": {
+                      "type": "number"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "reportIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "number"
+                      }
+                    },
+                    "emailSent": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "checkNumber",
+                    "payeeName",
+                    "payeeEmail",
+                    "amountMinor",
+                    "currency",
+                    "reportIds",
+                    "emailSent"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
             "description": "Default Response",
             "content": {
               "application/json": {
@@ -38879,6 +39604,37 @@
                         "string"
                       ]
                     },
+                    "reimbursementCheck": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "number"
+                        },
+                        "checkNumber": {
+                          "type": "string"
+                        },
+                        "amountMinor": {
+                          "type": "number"
+                        },
+                        "currency": {
+                          "type": "string"
+                        },
+                        "issuedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "checkNumber",
+                        "amountMinor",
+                        "currency",
+                        "issuedAt"
+                      ]
+                    },
                     "notes": {
                       "type": "array",
                       "items": {
@@ -39037,7 +39793,7 @@
                     "enum": [
                       "pending_review",
                       "processing",
-                      "check_mailed",
+                      "approved",
                       "complete"
                     ]
                   }
@@ -39332,6 +40088,37 @@
                       "type": [
                         "null",
                         "string"
+                      ]
+                    },
+                    "reimbursementCheck": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "number"
+                        },
+                        "checkNumber": {
+                          "type": "string"
+                        },
+                        "amountMinor": {
+                          "type": "number"
+                        },
+                        "currency": {
+                          "type": "string"
+                        },
+                        "issuedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "checkNumber",
+                        "amountMinor",
+                        "currency",
+                        "issuedAt"
                       ]
                     },
                     "notes": {
@@ -39829,6 +40616,37 @@
                         "string"
                       ]
                     },
+                    "reimbursementCheck": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "number"
+                        },
+                        "checkNumber": {
+                          "type": "string"
+                        },
+                        "amountMinor": {
+                          "type": "number"
+                        },
+                        "currency": {
+                          "type": "string"
+                        },
+                        "issuedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "checkNumber",
+                        "amountMinor",
+                        "currency",
+                        "issuedAt"
+                      ]
+                    },
                     "notes": {
                       "type": "array",
                       "items": {
@@ -40301,6 +41119,37 @@
                       "type": [
                         "null",
                         "string"
+                      ]
+                    },
+                    "reimbursementCheck": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "number"
+                        },
+                        "checkNumber": {
+                          "type": "string"
+                        },
+                        "amountMinor": {
+                          "type": "number"
+                        },
+                        "currency": {
+                          "type": "string"
+                        },
+                        "issuedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "checkNumber",
+                        "amountMinor",
+                        "currency",
+                        "issuedAt"
                       ]
                     },
                     "notes": {

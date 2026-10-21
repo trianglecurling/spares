@@ -62,6 +62,12 @@ import { useAuth } from '../contexts/AuthContext';
 import { useClubTimeZone } from '../contexts/ClubTimeZoneContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import { useMediaQuery } from '../hooks/useMediaQuery';
+import { canManageCalendar } from '../utils/permissions';
+import {
+  calendarLocationSearch,
+  isCalendarDateParam,
+  writeCalendarViewCursor,
+} from '../utils/calendarViewCursor';
 import {
   calendarRangeCacheKey,
   getCachedCalendarRange,
@@ -585,8 +591,7 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
   const { confirm } = useConfirm();
   const timeZone = useClubTimeZone();
   const navigate = useNavigate();
-  const canEditCalendar =
-    !publicMode && (member?.isCalendarAdmin ?? member?.isAdmin ?? member?.isServerAdmin ?? false);
+  const canEditCalendar = !publicMode && canManageCalendar(member);
 
   const [searchParams, setSearchParams] = useSearchParams();
   const dateParam = searchParams.get('date');
@@ -618,6 +623,7 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
   const eventTypes = DEFAULT_EVENT_TYPES;
   const isCompactLayout = useMediaQuery('(max-width: 767px)');
   const jumpDateFieldId = useId();
+  const jumpDateTouchedAtRef = useRef(0);
   const eventTypeFilterFieldId = useId();
   const eventTypeFilterDesktopId = useId();
   const allEventTypesSelected = selectedTypeIds.length === eventTypes.length;
@@ -891,16 +897,22 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
   };
 
   const updateUrl = (date: Date, v: CalendarView) => {
-    setSearchParams({ date: format(date, 'yyyy-MM-dd'), view: v });
+    const dateStr = format(date, 'yyyy-MM-dd');
+    const resolvedView = isCompactLayout && v === 'week' ? 'day' : v;
+    writeCalendarViewCursor(publicMode, { date: dateStr, view: resolvedView });
+    setSearchParams({ date: dateStr, view: resolvedView }, { replace: true });
   };
 
-  // Mobile has no week tab — treat legacy ?view=week as day (compact week UI).
+  // Remember a dated calendar URL for the editor's return path. A URL with no
+  // date stays on the current month. Mobile has no week tab — treat ?view=week as day.
   useEffect(() => {
-    if (isCompactLayout && view === 'week') {
-      updateUrl(currentDate, 'day');
+    if (!isCalendarDateParam(dateParam)) return;
+    const resolvedView = isCompactLayout && view === 'week' ? 'day' : view;
+    writeCalendarViewCursor(publicMode, { date: dateParam, view: resolvedView });
+    if (resolvedView !== view) {
+      setSearchParams({ date: dateParam, view: resolvedView }, { replace: true });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only coerce when compact+week
-  }, [isCompactLayout, view, currentDate]);
+  }, [dateParam, isCompactLayout, publicMode, setSearchParams, view]);
 
   // Navigation helpers
   const goPrev = () => {
@@ -925,24 +937,34 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
 
   // Jump-to-date inputs
   const jumpTarget = format(currentDate, 'yyyy-MM-dd');
+  const markJumpDateTouched = () => {
+    jumpDateTouchedAtRef.current = Date.now();
+  };
+  // This handler navigates the calendar. Ignore a change that did not just
+  // follow focus or blur on this control.
   const onJumpDate = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (Date.now() - jumpDateTouchedAtRef.current > 1000) return;
     const v = e.target.value;
-    if (v) updateUrl(parseClubDateParam(v, timeZone), view);
+    if (!v || v === jumpTarget) return;
+    updateUrl(parseClubDateParam(v, timeZone), view);
   };
 
   const onViewChange = (v: CalendarView) => updateUrl(currentDate, v);
   const goToDayView = (date: Date) => updateUrl(date, 'day');
   const openNewEventForDate = (date: Date) => {
-    navigate(`/calendar/events/new?date=${format(date, 'yyyy-MM-dd')}`);
+    navigate(`/calendar/events/new?${calendarLocationSearch(format(date, 'yyyy-MM-dd'), view)}`);
   };
 
   const openEditEvent = (ev: CalendarEvent) => {
-    navigate(`/calendar/events/edit/${encodeURIComponent(ev.id)}`, { state: { calendarEvent: ev } });
+    navigate(
+      `/calendar/events/edit/${encodeURIComponent(ev.id)}?${calendarLocationSearch(format(currentDate, 'yyyy-MM-dd'), view)}`,
+      { state: { calendarEvent: ev } }
+    );
   };
 
   const openCopyEvent = (ev: CalendarEvent) => {
     navigate(
-      `/calendar/events/new?copy=${encodeURIComponent(ev.id)}&date=${format(ev.start, 'yyyy-MM-dd')}`,
+      `/calendar/events/new?copy=${encodeURIComponent(ev.id)}&${calendarLocationSearch(format(ev.start, 'yyyy-MM-dd'), view)}`,
       { state: { copyFromEvent: ev } }
     );
   };
@@ -1020,7 +1042,7 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
               {canEditCalendar && (
                 <Button
                   variant="primary"
-                  onClick={() => navigate(`/calendar/events/new?date=${format(currentDate, 'yyyy-MM-dd')}`)}
+                  onClick={() => openNewEventForDate(currentDate)}
                   className="ml-auto inline-flex items-center justify-center p-2.5"
                   aria-label="New event"
                 >
@@ -1109,6 +1131,8 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
                 <input
                   type="date"
                   value={jumpTarget}
+                  onFocus={markJumpDateTouched}
+                  onBlur={markJumpDateTouched}
                   onChange={onJumpDate}
                   className="px-2 py-1 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 text-sm"
                 />
@@ -1139,7 +1163,7 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
                   <div className="h-6 w-px bg-gray-300 dark:bg-gray-600" aria-hidden />
                   <Button
                     variant="primary"
-                    onClick={() => navigate(`/calendar/events/new?date=${format(currentDate, 'yyyy-MM-dd')}`)}
+                    onClick={() => openNewEventForDate(currentDate)}
                     className="inline-flex items-center gap-1.5 px-4 py-2 text-sm"
                   >
                     <HiPlus className="w-4 h-4" />
@@ -1291,9 +1315,11 @@ export default function Calendar({ publicMode = false }: CalendarProps) {
               id={jumpDateFieldId}
               type="date"
               value={jumpTarget}
+              onFocus={markJumpDateTouched}
+              onBlur={markJumpDateTouched}
               onChange={(e) => {
                 onJumpDate(e);
-                if (e.target.value) setGoToDateOpen(false);
+                if (e.target.value && e.target.value !== jumpTarget) setGoToDateOpen(false);
               }}
               className="app-input w-full"
             />
