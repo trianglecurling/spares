@@ -1094,7 +1094,10 @@ export interface paths {
                                     source: string;
                                     /** @enum {string} */
                                     kind: "league" | "bonspiel" | "other";
+                                    /** @description Activity label. Member ice bookings use "Member ice booking — {name}" when the booker is known. */
                                     title: string;
+                                    /** @description Member who booked the ice. Present for member ice bookings. */
+                                    memberName?: string;
                                     start: string;
                                     end: string;
                                     slug?: string;

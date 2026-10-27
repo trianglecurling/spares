@@ -18,6 +18,7 @@ import {
   listTournamentTeamsForEvent,
   type TournamentTeamRow,
 } from './eventTournamentTeamsService.js';
+import { PUBLIC_MEMBER_ICE_BOOKING_TITLE } from './iceBookingsCalendar.js';
 import {
   resolveRegistrationIdForGameSlot,
   stoneColorForSlot,
@@ -55,6 +56,8 @@ export type IceDayScheduleActivity = {
   end: string;
   slug?: string;
   gameLabel?: string;
+  /** Booker, for member ice bookings. */
+  memberName?: string;
   teams?: IceDayScheduleTeam[];
 };
 
@@ -80,8 +83,16 @@ type FeedItem = {
   end: string | Date;
   source: string;
   slug?: string;
+  memberName?: string;
   locations?: Array<{ type: string; sheetId?: number; sheetName?: string }>;
 };
+
+/** Title for a member ice booking on the ice-day schedule, including the booker when known. */
+export function iceDayIceBookingTitle(memberName: string | null | undefined, fallbackTitle: string): string {
+  const name = memberName?.trim();
+  if (!name) return fallbackTitle;
+  return `${PUBLIC_MEMBER_ICE_BOOKING_TITLE} — ${name}`;
+}
 
 export function parseLeagueCalendarEventId(
   id: string
@@ -152,16 +163,18 @@ function roleSortKey(role: string): number {
 }
 
 function occupancyActivity(item: FeedItem, startIso: string, endIso: string): IceDayScheduleActivity {
+  const memberName = item.source === 'ice-booking' ? item.memberName?.trim() || undefined : undefined;
   return {
     id: item.id,
     calendarEventId: item.id,
     typeId: item.typeId,
     source: item.source,
     kind: activityKind(item),
-    title: item.title,
+    title: memberName ? iceDayIceBookingTitle(memberName, item.title) : item.title,
     start: startIso,
     end: endIso,
     ...(item.slug ? { slug: item.slug } : {}),
+    ...(memberName ? { memberName } : {}),
   };
 }
 
@@ -372,7 +385,12 @@ export async function getIceDaySchedule(input: {
       .from(schema.sheets)
       .where(eq(schema.sheets.is_active, 1))
       .orderBy(asc(schema.sheets.sort_order), asc(schema.sheets.name)),
-    getCalendarFeed({ start: queryStart, end: queryEnd, member: input.member }),
+    getCalendarFeed({
+      start: queryStart,
+      end: queryEnd,
+      member: input.member,
+      includeIceBookingMemberNames: true,
+    }),
     getLeagueCalendarFeed(queryStart, queryEnd),
   ]);
 

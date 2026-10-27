@@ -29,6 +29,8 @@ export type CalendarFeedInput = {
   start: string;
   end: string;
   member?: Member;
+  /** Ice-day schedule only. Public calendar feeds keep booker names off the payload. */
+  includeIceBookingMemberNames?: boolean;
 };
 
 function parseRange(start: string, end: string) {
@@ -67,7 +69,9 @@ export async function getCalendarFeed(input: CalendarFeedInput) {
 
   const [direct, ice, eventItems, signupMap] = await Promise.all([
     fetchDirectCalendarEventsForRange(rangeStart, rangeEnd),
-    fetchIceBookingsAsCalendarEvents(rangeStart, rangeEnd, iceViewer),
+    fetchIceBookingsAsCalendarEvents(rangeStart, rangeEnd, iceViewer, {
+      includeMemberName: input.includeIceBookingMemberNames,
+    }),
     getEventTimespansForCalendar(input.start, input.end, visibilityFilter),
     calendarSignupsByDirectEventId({ forPublic: !input.member }),
   ]);

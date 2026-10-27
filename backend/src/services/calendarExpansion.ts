@@ -18,6 +18,8 @@ export type ExpandedDirectCalendarEvent = {
   description?: string;
   locations?: Array<{ type: string; sheetId?: number; sheetName?: string }>;
   source: string;
+  /** Set for member ice bookings when the caller asked for the booker's name. */
+  memberName?: string;
   isRecurring?: boolean;
   recurrenceDate?: string;
   recurrenceRrule?: string;

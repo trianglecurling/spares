@@ -4,6 +4,9 @@ import type { ExpandedDirectCalendarEvent } from './calendarExpansion.js';
 
 export type IceBookingsCalendarViewer = 'public' | 'member' | 'admin';
 
+/** Title used when the booker's name is hidden from this viewer. */
+export const PUBLIC_MEMBER_ICE_BOOKING_TITLE = 'Member ice booking';
+
 /** Display label for the booking purpose (visible to all calendar viewers). */
 export function iceBookingPurposeLabel(purpose: string): string {
   const map: Record<string, string> = {
@@ -40,7 +43,8 @@ function buildAdminPurposeNotes(
 export async function fetchIceBookingsAsCalendarEvents(
   rangeStart: Date,
   rangeEnd: Date,
-  viewer: IceBookingsCalendarViewer
+  viewer: IceBookingsCalendarViewer,
+  options?: { includeMemberName?: boolean }
 ): Promise<ExpandedDirectCalendarEvent[]> {
   const { db, schema } = getDrizzleDb();
   const rangeStartIso = rangeStart.toISOString();
@@ -69,8 +73,9 @@ export async function fetchIceBookingsAsCalendarEvents(
     );
 
   return rows.map((row) => {
+    const memberName = row.member_name?.trim() || undefined;
     const title =
-      viewer === 'public' ? 'Member ice booking' : (row.member_name ?? 'Member ice booking');
+      viewer === 'public' ? PUBLIC_MEMBER_ICE_BOOKING_TITLE : (memberName ?? PUBLIC_MEMBER_ICE_BOOKING_TITLE);
 
     const purposeBlock = `**Purpose:** ${iceBookingPurposeLabel(row.purpose)}`;
     const adminNotes = buildAdminPurposeNotes(row.purpose, row.purpose_other, row.guest_names);
@@ -95,6 +100,7 @@ export async function fetchIceBookingsAsCalendarEvents(
         },
       ],
       source: 'ice-booking',
+      ...(options?.includeMemberName && memberName ? { memberName } : {}),
     };
   });
 }

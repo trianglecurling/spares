@@ -246,7 +246,15 @@ export async function publicRoutes(fastify: FastifyInstance) {
                           typeId: { type: 'string' },
                           source: { type: 'string' },
                           kind: { type: 'string', enum: ['league', 'bonspiel', 'other'] },
-                          title: { type: 'string' },
+                          title: {
+                            type: 'string',
+                            description:
+                              'Activity label. Member ice bookings use "Member ice booking — {name}" when the booker is known.',
+                          },
+                          memberName: {
+                            type: 'string',
+                            description: 'Member who booked the ice. Present for member ice bookings.',
+                          },
                           start: { type: 'string' },
                           end: { type: 'string' },
                           slug: { type: 'string' },

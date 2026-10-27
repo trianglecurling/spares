@@ -2085,7 +2085,12 @@
                                   ]
                                 },
                                 "title": {
-                                  "type": "string"
+                                  "type": "string",
+                                  "description": "Activity label. Member ice bookings use \"Member ice booking — {name}\" when the booker is known."
+                                },
+                                "memberName": {
+                                  "type": "string",
+                                  "description": "Member who booked the ice. Present for member ice bookings."
                                 },
                                 "start": {
                                   "type": "string"

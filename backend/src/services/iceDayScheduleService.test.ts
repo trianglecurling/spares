@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   activityKind,
+  iceDayIceBookingTitle,
   iceDayOccupancySheetIds,
   parseEventCalendarEventId,
   parseLeagueCalendarEventId,
@@ -41,6 +42,19 @@ describe('activityKind', () => {
   test('treats bonspiel types as bonspiel', () => {
     expect(activityKind({ source: 'events', typeId: 'bonspiel' })).toBe('bonspiel');
     expect(activityKind({ source: 'events', typeId: 'bonspiel-fours' })).toBe('bonspiel');
+  });
+});
+
+describe('iceDayIceBookingTitle', () => {
+  test('includes the booker on member ice booking entries', () => {
+    expect(iceDayIceBookingTitle('Alex Curler', 'Member ice booking')).toBe(
+      'Member ice booking — Alex Curler'
+    );
+  });
+
+  test('keeps the fallback title when the booker name is blank', () => {
+    expect(iceDayIceBookingTitle('  ', 'Member ice booking')).toBe('Member ice booking');
+    expect(iceDayIceBookingTitle(null, 'Practice')).toBe('Practice');
   });
 });
 
