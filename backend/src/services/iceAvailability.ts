@@ -28,13 +28,10 @@ const MS_MINUTE = 60 * 1000;
 const MS_DAY = 24 * 60 * MS_MINUTE;
 
 /** Granularity of offered start times, in minutes. */
-export const ICE_SLOT_MINUTES = 30;
+export const ICE_SLOT_MINUTES = 15;
 
 /** Members may book through the end of this many calendar days ahead. */
 export const ICE_MAX_ADVANCE_DAYS = 7;
-
-export const ICE_DURATION_HOURS = [1, 2] as const;
-export type IceDurationHours = (typeof ICE_DURATION_HOURS)[number];
 
 /** Slots that already started are treated as past once they are this far behind. */
 const PAST_GRACE_MS = 60_000;
@@ -64,7 +61,7 @@ export type IceDaySlot = {
 
 export type IceDayAvailability = {
   date: string;
-  durationHours: IceDurationHours;
+  durationMinutes: number;
   slotMinutes: number;
   dayStart: string;
   dayEnd: string;
@@ -244,11 +241,11 @@ export async function hasIceSheetConflict(
 /** Offered start times for one club-local day, plus what is already on the ice. */
 export async function getIceDayAvailability(params: {
   date: string;
-  durationHours: IceDurationHours;
+  durationMinutes: number;
   member: Member;
   now?: Date;
 }): Promise<IceDayAvailability> {
-  const { date, durationHours, member } = params;
+  const { date, durationMinutes, member } = params;
   const now = params.now ?? new Date();
 
   const dayStart = localDateTimeToUtcDate(date, '00:00', config.timeZone);
@@ -262,7 +259,7 @@ export async function getIceDayAvailability(params: {
 
   const dayStartMs = dayStart.getTime();
   const dayEndMs = dayEnd.getTime();
-  const durationMs = durationHours * 60 * MS_MINUTE;
+  const durationMs = durationMinutes * MS_MINUTE;
   const stepMs = ICE_SLOT_MINUTES * MS_MINUTE;
   const earliestStartMs = now.getTime() - PAST_GRACE_MS;
 
@@ -301,7 +298,7 @@ export async function getIceDayAvailability(params: {
 
   return {
     date,
-    durationHours,
+    durationMinutes,
     slotMinutes: ICE_SLOT_MINUTES,
     dayStart: dayStart.toISOString(),
     dayEnd: dayEnd.toISOString(),

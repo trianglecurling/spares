@@ -8,6 +8,7 @@ import axios from 'axios';
 import Button from './Button';
 import ChoiceInput, { type ChoiceOption } from './ChoiceInput';
 import FormField from './FormField';
+import IceDurationField from './IceDurationField';
 import ClubTimeHint from './ClubTimeHint';
 import Modal from './Modal';
 import type { CalendarEvent } from '../pages/Calendar';
@@ -15,8 +16,7 @@ import { useAlert } from '../contexts/AlertContext';
 import { useConfirm } from '../contexts/ConfirmContext';
 import api, { formatApiError } from '../utils/api';
 import { dateTimeLocalToIso } from '../utils/clubTime';
-
-type DurationHours = 1 | 2;
+import { snapIceDurationMinutes } from '../utils/iceDuration';
 
 type SheetOption = { id: number; name: string };
 
@@ -27,11 +27,6 @@ type AdminIceBookingEditorProps = {
   onSaved: () => void;
   onCanceled: () => void;
 };
-
-const DURATION_OPTIONS: ChoiceOption<DurationHours>[] = [
-  { value: 1, label: '1 hour' },
-  { value: 2, label: '2 hours' },
-];
 
 export function parseIceBookingId(eventId: string): number | null {
   const match = /^ice-booking:(\d+)$/.exec(eventId);
@@ -45,9 +40,8 @@ function toDatetimeLocalValue(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-function durationHoursFromEvent(start: Date, end: Date): DurationHours {
-  const hours = Math.round((end.getTime() - start.getTime()) / (60 * 60 * 1000));
-  return hours === 2 ? 2 : 1;
+function durationMinutesFromEvent(start: Date, end: Date): number {
+  return snapIceDurationMinutes((end.getTime() - start.getTime()) / (60 * 1000));
 }
 
 function sheetIdFromEvent(event: CalendarEvent): number | null {
@@ -70,8 +64,8 @@ export default function AdminIceBookingEditor({
 
   const bookingId = parseIceBookingId(event.id);
   const [startLocal, setStartLocal] = useState(() => toDatetimeLocalValue(event.start));
-  const [durationHours, setDurationHours] = useState<DurationHours>(() =>
-    durationHoursFromEvent(event.start, event.end)
+  const [durationMinutes, setDurationMinutes] = useState(() =>
+    durationMinutesFromEvent(event.start, event.end)
   );
   const [sheetId, setSheetId] = useState<number | null>(() => sheetIdFromEvent(event));
   const [saving, setSaving] = useState(false);
@@ -79,7 +73,7 @@ export default function AdminIceBookingEditor({
 
   useEffect(() => {
     setStartLocal(toDatetimeLocalValue(event.start));
-    setDurationHours(durationHoursFromEvent(event.start, event.end));
+    setDurationMinutes(durationMinutesFromEvent(event.start, event.end));
     setSheetId(sheetIdFromEvent(event));
   }, [event]);
 
@@ -112,7 +106,7 @@ export default function AdminIceBookingEditor({
       await api.patch(`/ice-bookings/${bookingId}`, {
         sheetId,
         start: dateTimeLocalToIso(startLocal),
-        durationHours,
+        durationMinutes,
       });
       showAlert('Ice booking updated. The member was emailed.', 'success');
       onSaved();
@@ -170,15 +164,10 @@ export default function AdminIceBookingEditor({
         </FormField>
 
         <FormField label="Duration" labelId={durationFieldId} required>
-          <ChoiceInput<DurationHours>
-            layout="inline"
-            name="admin-ice-duration"
-            ariaLabelledBy={durationFieldId}
-            options={DURATION_OPTIONS}
-            value={durationHours}
-            onChange={(next) => {
-              if (next === 1 || next === 2) setDurationHours(next);
-            }}
+          <IceDurationField
+            value={durationMinutes}
+            onChange={setDurationMinutes}
+            labelledBy={durationFieldId}
           />
         </FormField>
 

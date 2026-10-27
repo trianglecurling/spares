@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
 import { addDays, format, isSameDay, parseISO, startOfDay } from 'date-fns';
@@ -8,6 +8,7 @@ import BookingDayGrid, { type BookingDaySlot } from '../components/BookingDayGri
 import ChoiceInput, { type ChoiceOption } from '../components/ChoiceInput';
 import FormField from '../components/FormField';
 import FormSection from '../components/FormSection';
+import IceDurationField from '../components/IceDurationField';
 import InlineStateMessage from '../components/InlineStateMessage';
 import { useAuth } from '../contexts/AuthContext';
 import { useAlert } from '../contexts/AlertContext';
@@ -22,6 +23,7 @@ import {
   instantToFloatingDate,
 } from '../utils/clubTime';
 import { useClubTimeZone } from '../contexts/ClubTimeZoneContext';
+import { ICE_DURATION_DEFAULT_MINUTES, ICE_DURATION_MIN_MINUTES } from '../utils/iceDuration';
 
 /** Members may book today through this many days ahead; mirrors the server window. */
 const MAX_ADVANCE_DAYS = 7;
@@ -32,8 +34,6 @@ type Purpose = 'practice' | 'makeup_game' | 'other';
 
 /** Legacy bookings may still carry retired guest purposes; they are read-only now. */
 type StoredPurpose = Purpose | 'guests_new' | 'guests_experienced';
-
-type DurationHours = 1 | 2;
 
 type MyIceBooking = {
   id: number;
@@ -48,7 +48,7 @@ type MyIceBooking = {
 
 type AvailabilityResponse = {
   date: string;
-  durationHours: DurationHours;
+  durationMinutes: number;
   slotMinutes: number;
   sheets: Array<{ id: number; name: string }>;
   events: Array<{
@@ -84,11 +84,6 @@ const PURPOSE_OPTIONS: Array<{ value: Purpose; label: string }> = [
   { value: 'practice', label: 'Practice' },
   { value: 'makeup_game', label: 'Make-up game' },
   { value: 'other', label: 'Other' },
-];
-
-const DURATION_OPTIONS: ChoiceOption<DurationHours>[] = [
-  { value: 1, label: '1 hour' },
-  { value: 2, label: '2 hours' },
 ];
 
 const STORED_PURPOSE_LABELS: Record<StoredPurpose, string> = {
@@ -158,14 +153,21 @@ export default function BookIceTime() {
 
   const [bookingKind, setBookingKind] = useState<BookingKind | null>(null);
   const [dateParam, setDateParam] = useState(() => formatDateInTimeZone(new Date()) ?? toDateParam(new Date()));
-  const [durationHours, setDurationHours] = useState<DurationHours>(1);
+  const [durationMinutes, setDurationMinutes] = useState(ICE_DURATION_DEFAULT_MINUTES);
+  // Fetches wait until the slider stops. Updating on every step unmounts the day grid.
+  const [scheduledDurationMinutes, setScheduledDurationMinutes] = useState(durationMinutes);
   const [selectedStartIso, setSelectedStartIso] = useState<string | null>(null);
+  const selectedStartRef = useRef(selectedStartIso);
+  selectedStartRef.current = selectedStartIso;
   const [sheetId, setSheetId] = useState<number | null>(null);
   const [purpose, setPurpose] = useState<Purpose>('practice');
   const [purposeOther, setPurposeOther] = useState('');
 
   const [availability, setAvailability] = useState<AvailabilityResponse | null>(null);
+  const availabilityRef = useRef(availability);
+  availabilityRef.current = availability;
   const [availabilityLoading, setAvailabilityLoading] = useState(false);
+  const [availabilityRefreshing, setAvailabilityRefreshing] = useState(false);
   const [availabilityError, setAvailabilityError] = useState<string | null>(null);
   const [availabilityReloadKey, setAvailabilityReloadKey] = useState(0);
 
@@ -212,36 +214,51 @@ export default function BookIceTime() {
   }, [isSocialMember, loadBookings]);
 
   useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setScheduledDurationMinutes(durationMinutes);
+    }, 300);
+    return () => window.clearTimeout(timeoutId);
+  }, [durationMinutes]);
+
+  useEffect(() => {
     if (isSocialMember || bookingKind !== 'ice') return;
     const controller = new AbortController();
-    setAvailabilityLoading(true);
+    const existing = availabilityRef.current;
+    // Keep the day grid mounted while a new duration loads. Replacing it with the
+    // loading message collapses the page under the slider.
+    const keepCalendar = existing != null && existing.date === dateParam;
+    if (keepCalendar) {
+      setAvailabilityRefreshing(true);
+    } else {
+      setAvailabilityLoading(true);
+    }
     setAvailabilityError(null);
     api
       .get<AvailabilityResponse>('/ice-bookings/availability', {
-        params: { date: dateParam, durationHours },
+        params: { date: dateParam, durationMinutes: scheduledDurationMinutes },
         signal: controller.signal,
       })
       .then(({ data }) => {
         setAvailability(data);
         // Keep the chosen time across a duration change when it still fits.
-        setSelectedStartIso((current) => {
-          if (!current) return null;
-          const match = data.slots.find((slot) => slot.start === current);
-          return match && !match.unavailableReason && match.availableSheetIds.length > 0
-            ? current
-            : null;
-        });
+        const current = selectedStartRef.current;
+        const match = current ? data.slots.find((slot) => slot.start === current) : undefined;
+        const available = match && !match.unavailableReason ? match.availableSheetIds : [];
+        setSelectedStartIso(available.length > 0 ? current : null);
+        setSheetId((sheet) => (sheet != null && available.includes(sheet) ? sheet : null));
       })
       .catch((err: unknown) => {
         if (axios.isCancel(err)) return;
-        setAvailability(null);
+        if (!keepCalendar) setAvailability(null);
         setAvailabilityError(formatApiError(err, 'Could not load ice availability'));
       })
       .finally(() => {
-        if (!controller.signal.aborted) setAvailabilityLoading(false);
+        if (controller.signal.aborted) return;
+        setAvailabilityLoading(false);
+        setAvailabilityRefreshing(false);
       });
     return () => controller.abort();
-  }, [bookingKind, dateParam, durationHours, isSocialMember, availabilityReloadKey]);
+  }, [bookingKind, dateParam, scheduledDurationMinutes, isSocialMember, availabilityReloadKey]);
 
   const sheets = availability?.sheets ?? [];
   const sheetNameById = useMemo(
@@ -274,8 +291,14 @@ export default function BookIceTime() {
     () => slots.find((slot) => floatingDateToIso(slot.start, timeZone) === selectedStartIso) ?? null,
     [slots, selectedStartIso, timeZone]
   );
-  // While availability is refetching, the slot in hand may not match the new duration yet.
-  const confirmedSlot = availabilityLoading || availabilityError ? null : selectedSlot;
+  // Loaded slots lag the slider. Leave the grid and any selected start in place so the
+  // page does not jump, and only allow booking once this duration has been checked.
+  const scheduleReady =
+    !availabilityLoading &&
+    !availabilityRefreshing &&
+    availability?.date === dateParam &&
+    availability.durationMinutes === durationMinutes;
+  const confirmedSlot = availability?.date === dateParam ? selectedSlot : null;
 
   const hasOpenSlots = slots.some(
     (slot) => !slot.unavailableReason && slot.availableSheetIds.length > 0
@@ -317,7 +340,7 @@ export default function BookIceTime() {
     e.preventDefault();
     if (isSocialMember || bookingKind !== 'ice') return;
 
-    if (!selectedSlot) {
+    if (!selectedSlot || !scheduleReady) {
       showAlert('Choose a start time on the calendar.', 'warning');
       return;
     }
@@ -342,7 +365,7 @@ export default function BookIceTime() {
       }>('/ice-bookings', {
         sheetId,
         start: floatingDateToIso(selectedSlot.start, timeZone),
-        durationHours,
+        durationMinutes,
         purpose,
         purposeOther: purpose === 'other' ? purposeOther.trim() : undefined,
       });
@@ -486,7 +509,7 @@ export default function BookIceTime() {
         description={
           bookingKind === 'ice' ? (
             <>
-              Reserve 1 or 2 hours on one sheet, up to {MAX_ADVANCE_DAYS} days ahead. Only times with
+              Reserve 15 minutes to 3 hours on one sheet, up to {MAX_ADVANCE_DAYS} days ahead. Only times with
               a free sheet can be selected. See everything else on the{' '}
               <Link to="/calendar" className="text-primary-teal-link hover:underline">
                 club calendar
@@ -566,36 +589,33 @@ export default function BookIceTime() {
               </FormField>
 
               <FormField label="Duration" labelId={durationFieldId} required>
-                <ChoiceInput<DurationHours>
-                  layout="inline"
-                  name="ice-duration"
-                  ariaLabelledBy={durationFieldId}
-                  options={DURATION_OPTIONS}
-                  value={durationHours}
-                  onChange={(next) => {
-                    if (next === 1 || next === 2) setDurationHours(next);
-                  }}
+                <IceDurationField
+                  value={durationMinutes}
+                  onChange={setDurationMinutes}
+                  labelledBy={durationFieldId}
                 />
               </FormField>
 
               <FormField label="Start time" labelId={timeFieldId} required>
-                {availabilityLoading ? (
-                  <InlineStateMessage title="Loading the day's schedule..." />
-                ) : availabilityError ? (
-                  <InlineStateMessage
-                    tone="error"
-                    title="Could not load ice availability"
-                    description={availabilityError}
-                    action={
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        onClick={() => setAvailabilityReloadKey((key) => key + 1)}
-                      >
-                        Try again
-                      </Button>
-                    }
-                  />
+                {availabilityLoading || !availability ? (
+                  availabilityError ? (
+                    <InlineStateMessage
+                      tone="error"
+                      title="Could not load ice availability"
+                      description={availabilityError}
+                      action={
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          onClick={() => setAvailabilityReloadKey((key) => key + 1)}
+                        >
+                          Try again
+                        </Button>
+                      }
+                    />
+                  ) : (
+                    <InlineStateMessage title="Loading the day's schedule..." />
+                  )
                 ) : sheets.length === 0 ? (
                   <InlineStateMessage
                     tone="warning"
@@ -603,7 +623,7 @@ export default function BookIceTime() {
                     description="Ice cannot be booked until an admin sets up the sheets."
                   />
                 ) : (
-                  <div className="space-y-3">
+                  <div className="space-y-3" aria-busy={availabilityRefreshing}>
                     <BookingDayGrid
                       date={selectedDate}
                       slots={slots}
@@ -614,12 +634,28 @@ export default function BookIceTime() {
                       onSelect={handleSelectSlot}
                       labelledBy={timeFieldId}
                     />
+                    {availabilityError && (
+                      <InlineStateMessage
+                        tone="error"
+                        title="Could not refresh ice availability"
+                        description={availabilityError}
+                        action={
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            onClick={() => setAvailabilityReloadKey((key) => key + 1)}
+                          >
+                            Try again
+                          </Button>
+                        }
+                      />
+                    )}
                     {!hasOpenSlots && (
                       <InlineStateMessage
                         title="No open ice on this day"
                         description={
-                          durationHours === 2
-                            ? 'Try a 1-hour booking or a different day.'
+                          (availability.durationMinutes ?? durationMinutes) > ICE_DURATION_MIN_MINUTES
+                            ? 'Try a shorter booking or a different day.'
                             : 'Try a different day.'
                         }
                       />
@@ -700,7 +736,7 @@ export default function BookIceTime() {
               <Button
                 type="submit"
                 variant="primary"
-                disabled={submitting || !confirmedSlot || sheetId == null}
+                disabled={submitting || !scheduleReady || !confirmedSlot || sheetId == null}
               >
                 {submitting ? 'Booking…' : 'Book now'}
               </Button>

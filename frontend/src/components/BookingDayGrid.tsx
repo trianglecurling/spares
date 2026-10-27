@@ -14,10 +14,13 @@ import {
   getVisibleHours,
   HOUR_HEIGHT,
 } from '../utils/calendarDayGrid';
+import { blockedStartRanges, hatchBands, startSlotIsBlocked } from '../utils/bookingStartOccupancy';
 import { getCalendarEventType } from '../utils/calendarEventTypeRegistry';
 
 const PX_PER_MINUTE = HOUR_HEIGHT / 60;
-const DEFAULT_STEP_MINUTES = 30;
+const DEFAULT_STEP_MINUTES = 15;
+/** Keep a quarter-hour row at least as tall as the old half-hour row. */
+const MIN_SLOT_HEIGHT_PX = 30;
 const EVENT_GUTTER_PX = 4;
 
 /** Diagonal hatch marking start times that cannot fit the chosen duration. */
@@ -54,30 +57,6 @@ type BookingDayGridProps = {
   labelledBy: string;
   describedBy?: string;
 };
-
-function isSelectable(slot: BookingDaySlot): boolean {
-  return !slot.unavailableReason && slot.availableSheetIds.length > 0;
-}
-
-/** Merge contiguous unavailable start slots into continuous vertical ranges for one hatch paint. */
-function mergeUnavailableRanges(
-  slots: BookingDaySlot[],
-  slotHeightPx: number,
-  topFor: (value: Date) => number
-): Array<{ top: number; height: number }> {
-  const ranges: Array<{ top: number; height: number }> = [];
-  for (const slot of slots) {
-    if (isSelectable(slot)) continue;
-    const top = topFor(slot.start);
-    const last = ranges[ranges.length - 1];
-    if (last && Math.abs(last.top + last.height - top) < 0.5) {
-      last.height += slotHeightPx;
-    } else {
-      ranges.push({ top, height: slotHeightPx });
-    }
-  }
-  return ranges;
-}
 
 function minutesFromMidnight(day: Date, value: Date): number {
   const midnight = new Date(day.getFullYear(), day.getMonth(), day.getDate());
@@ -136,25 +115,30 @@ export default function BookingDayGrid({
     slots.length > 1
       ? Math.max(1, (slots[1]!.start.getTime() - slots[0]!.start.getTime()) / 60_000)
       : DEFAULT_STEP_MINUTES;
+  const slotHeightPx = Math.max(stepMinutes * PX_PER_MINUTE, MIN_SLOT_HEIGHT_PX);
+  const pxPerMinute = slotHeightPx / stepMinutes;
+  const hourHeightPx = pxPerMinute * 60;
 
   const visibleSlots = useMemo(
     () =>
       slots.filter((slot) => {
         const startMinutes = minutesFromMidnight(date, slot.start);
-        const endMinutes = minutesFromMidnight(date, slot.end);
-        return startMinutes >= gridStartMinutes && endMinutes <= gridEndMinutes;
+        return startMinutes >= gridStartMinutes && startMinutes < gridEndMinutes;
       }),
     [slots, date, gridStartMinutes, gridEndMinutes]
   );
 
+  const sheetIds = useMemo(() => [...sheetNameById.keys()], [sheetNameById]);
+  const slotIsSelectable = (slot: BookingDaySlot) => !startSlotIsBlocked(slot, sheetIds, events);
+
   const selectedIndex = selectedStart
     ? visibleSlots.findIndex((slot) => slot.start.getTime() === selectedStart.getTime())
     : -1;
-  const firstSelectableIndex = visibleSlots.findIndex(isSelectable);
+  const firstSelectableIndex = visibleSlots.findIndex(slotIsSelectable);
   const activeIndex = selectedIndex >= 0 ? selectedIndex : firstSelectableIndex;
 
   const topFor = (value: Date) =>
-    (minutesFromMidnight(date, value) - gridStartMinutes) * PX_PER_MINUTE;
+    (minutesFromMidnight(date, value) - gridStartMinutes) * pxPerMinute;
 
   const dayKey = format(date, 'yyyy-MM-dd');
   useLayoutEffect(() => {
@@ -162,7 +146,7 @@ export default function BookingDayGrid({
     if (!el) return;
     const target = selectedIndex >= 0 ? selectedIndex : firstSelectableIndex;
     const slot = target >= 0 ? visibleSlots[target] : undefined;
-    el.scrollTop = slot ? Math.max(0, topFor(slot.start) - HOUR_HEIGHT) : 0;
+    el.scrollTop = slot ? Math.max(0, topFor(slot.start) - hourHeightPx) : 0;
     // Re-anchor only when the day changes; scrolling on every selection would fight the user.
   }, [dayKey]);
 
@@ -173,7 +157,7 @@ export default function BookingDayGrid({
 
   const nextSelectable = (from: number, direction: 1 | -1): number | null => {
     for (let i = from + direction; i >= 0 && i < visibleSlots.length; i += direction) {
-      if (isSelectable(visibleSlots[i]!)) return i;
+      if (slotIsSelectable(visibleSlots[i]!)) return i;
     }
     return null;
   };
@@ -197,27 +181,10 @@ export default function BookingDayGrid({
 
   const eventLayout = useMemo(() => computeEventLayout(events), [events]);
 
-  const slotHeightPx = stepMinutes * PX_PER_MINUTE;
   const unavailableRanges = useMemo(
-    () =>
-      mergeUnavailableRanges(visibleSlots, slotHeightPx, (value) =>
-        (minutesFromMidnight(date, value) - gridStartMinutes) * PX_PER_MINUTE
-      ),
-    [visibleSlots, slotHeightPx, date, gridStartMinutes]
+    () => blockedStartRanges(visibleSlots, stepMinutes, sheetIds, events),
+    [visibleSlots, stepMinutes, sheetIds, events]
   );
-  const unavailableMask = useMemo(() => {
-    if (unavailableRanges.length === 0) return undefined;
-    return {
-      WebkitMaskImage: unavailableRanges.map(() => 'linear-gradient(#000 0 0)').join(', '),
-      WebkitMaskSize: unavailableRanges.map((range) => `100% ${range.height}px`).join(', '),
-      WebkitMaskPosition: unavailableRanges.map((range) => `0 ${range.top}px`).join(', '),
-      WebkitMaskRepeat: 'no-repeat',
-      maskImage: unavailableRanges.map(() => 'linear-gradient(#000 0 0)').join(', '),
-      maskSize: unavailableRanges.map((range) => `100% ${range.height}px`).join(', '),
-      maskPosition: unavailableRanges.map((range) => `0 ${range.top}px`).join(', '),
-      maskRepeat: 'no-repeat',
-    } as const;
-  }, [unavailableRanges]);
 
   const previewSlot =
     previewIndex != null && previewIndex !== selectedIndex ? visibleSlots[previewIndex] : undefined;
@@ -245,7 +212,7 @@ export default function BookingDayGrid({
             <div
               key={hour}
               className="px-1 text-xs text-gray-500 dark:text-gray-400"
-              style={{ height: HOUR_HEIGHT }}
+              style={{ height: hourHeightPx }}
             >
               {formatHourLabel(hour)}
             </div>
@@ -257,28 +224,37 @@ export default function BookingDayGrid({
             <div
               key={hour}
               className="relative border-b border-gray-200 dark:border-gray-600/60"
-              style={{ height: HOUR_HEIGHT }}
+              style={{ height: hourHeightPx }}
             >
-              <div className="absolute inset-x-0 top-1/2 border-b border-dashed border-gray-100 dark:border-gray-700/60" />
+              <div className="absolute inset-x-0 top-1/2 border-b border-dashed border-gray-200 dark:border-gray-600/70" />
+              {stepMinutes <= 15 && (
+                <>
+                  <div className="absolute inset-x-0 top-1/4 border-b border-dotted border-gray-100 dark:border-gray-700/80" />
+                  <div className="absolute inset-x-0 top-3/4 border-b border-dotted border-gray-100 dark:border-gray-700/80" />
+                </>
+              )}
             </div>
           ))}
 
-          {/* One continuous hatch, masked to unavailable ranges so stripes align hour-to-hour. */}
-          {unavailableMask && (
+          {/* Painted rectangles, not a CSS mask: mask-position was clipping the last 30 minutes. */}
+          {hatchBands(unavailableRanges, topFor).map((band) => (
             <div
-              className="pointer-events-none absolute inset-0 z-10"
+              key={band.top}
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-x-0 z-10"
               style={{
+                top: band.top,
+                height: band.height,
                 backgroundImage: UNAVAILABLE_HATCH,
-                ...unavailableMask,
               }}
             />
-          )}
+          ))}
 
           <div className="pointer-events-none absolute inset-0 z-20">
             {events.map((event) => {
               const top = Math.max(0, topFor(event.start));
               const bottom = Math.min(
-                (gridEndMinutes - gridStartMinutes) * PX_PER_MINUTE,
+                (gridEndMinutes - gridStartMinutes) * pxPerMinute,
                 topFor(event.end)
               );
               if (bottom <= top) return null;
@@ -332,7 +308,7 @@ export default function BookingDayGrid({
                   height:
                     (minutesFromMidnight(date, previewSlot.end) -
                       minutesFromMidnight(date, previewSlot.start)) *
-                    PX_PER_MINUTE,
+                    pxPerMinute,
                 }}
               />
             )}
@@ -344,7 +320,7 @@ export default function BookingDayGrid({
                   height:
                     (minutesFromMidnight(date, selectedSlot.end) -
                       minutesFromMidnight(date, selectedSlot.start)) *
-                    PX_PER_MINUTE,
+                    pxPerMinute,
                 }}
               >
                 <span className="max-w-full truncate rounded-full bg-white/95 px-2.5 py-0.5 text-xs font-semibold text-primary-teal-on-tint shadow-sm dark:bg-gray-900/95 dark:text-white">
@@ -363,7 +339,7 @@ export default function BookingDayGrid({
             className="absolute inset-0 z-40"
           >
             {visibleSlots.map((slot, index) => {
-              const selectable = isSelectable(slot);
+              const selectable = slotIsSelectable(slot);
               const selected = index === selectedIndex;
               const label = selectable
                 ? `${formatTimeRange(slot.start, slot.end)}, ${slot.availableSheetIds.length} ${
@@ -393,7 +369,7 @@ export default function BookingDayGrid({
                   className={`absolute inset-x-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-teal ${
                     selectable ? 'cursor-pointer' : 'cursor-not-allowed'
                   }`}
-                  style={{ top: topFor(slot.start), height: stepMinutes * PX_PER_MINUTE }}
+                  style={{ top: topFor(slot.start), height: slotHeightPx }}
                 />
               );
             })}

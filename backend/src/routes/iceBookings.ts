@@ -16,24 +16,36 @@ import {
   ICE_MAX_ADVANCE_DAYS,
   isWithinIceBookingWindow,
   memberCanBookIce,
-  type IceDurationHours,
 } from '../services/iceAvailability.js';
 import { isCalendarAdmin } from '../utils/auth.js';
+import {
+  ICE_DURATION_INVALID_MESSAGE,
+  isIceDurationMinutes,
+} from '../utils/iceDuration.js';
 
-const MS_HOUR = 60 * 60 * 1000;
+const MS_MINUTE = 60 * 1000;
 
-const durationHoursSchema = z.union([z.literal(1), z.literal(2)]);
+const durationMinutesSchema = z.preprocess(
+  (value) => {
+    if (typeof value === 'string' && value.trim() !== '') {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : value;
+    }
+    return value;
+  },
+  z.number().refine(isIceDurationMinutes, { message: ICE_DURATION_INVALID_MESSAGE })
+);
 
 const availabilityQuerySchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'date must be YYYY-MM-DD'),
-  durationHours: z.coerce.number().pipe(durationHoursSchema),
+  durationMinutes: durationMinutesSchema,
 });
 
 const createBodySchema = z
   .object({
     sheetId: z.number().int().positive(),
     start: z.string().min(1),
-    durationHours: durationHoursSchema,
+    durationMinutes: durationMinutesSchema,
     purpose: z.enum(['practice', 'makeup_game', 'other']),
     purposeOther: z.string().max(500).optional(),
   })
@@ -48,7 +60,7 @@ const createBodySchema = z
 const adminUpdateBodySchema = z.object({
   sheetId: z.number().int().positive(),
   start: z.string().min(1),
-  durationHours: durationHoursSchema,
+  durationMinutes: durationMinutesSchema,
 });
 
 type IceBookingRow = {
@@ -124,7 +136,7 @@ export async function iceBookingRoutes(fastify: FastifyInstance) {
 
     return getIceDayAvailability({
       date: parsed.data.date,
-      durationHours: parsed.data.durationHours as IceDurationHours,
+      durationMinutes: parsed.data.durationMinutes,
       member,
     });
   });
@@ -190,7 +202,7 @@ export async function iceBookingRoutes(fastify: FastifyInstance) {
       return sendApiError(reply, 400, 'Invalid start time');
     }
 
-    const end = new Date(start.getTime() + body.durationHours * MS_HOUR);
+    const end = new Date(start.getTime() + body.durationMinutes * MS_MINUTE);
 
     if (start.getTime() < Date.now() - 60_000) {
       return sendApiError(reply, 400, 'Booking must be in the future');
@@ -328,7 +340,7 @@ export async function iceBookingRoutes(fastify: FastifyInstance) {
     if (Number.isNaN(start.getTime())) {
       return sendApiError(reply, 400, 'Invalid start time');
     }
-    const end = new Date(start.getTime() + body.durationHours * MS_HOUR);
+    const end = new Date(start.getTime() + body.durationMinutes * MS_MINUTE);
     const startIso = start.toISOString();
     const endIso = end.toISOString();
 
