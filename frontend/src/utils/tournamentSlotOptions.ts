@@ -7,13 +7,7 @@ import {
   type TournamentDrawState,
   type TournamentSlotSource,
 } from './tournamentDrawModel';
-import {
-  computeAdvancingSeeds,
-  earlierPhases,
-  isPoolPhaseGame,
-  poolEntryCode,
-  poolsForPhase,
-} from './tournamentDrawPhases';
+import { earlierPhases, isPoolPhaseGame, poolEntryCode, poolsForPhase } from './tournamentDrawPhases';
 import { formatSlotSourceLabel, resolvePoolSourceLabel } from './tournamentDrawRouting';
 
 export const CUSTOM_STANDING_OPTION_VALUE = '__custom_standing';
@@ -54,30 +48,13 @@ function sortedGameIds(draw: TournamentDrawState, filter: (id: string) => boolea
     .map((g) => g.id);
 }
 
-/** Advancing teams and end-of-phase pool finishes from pool phases before `phaseId`. */
-function earlierPoolPhaseOptions(
-  draw: TournamentDrawState,
-  phaseId: string,
-  teamsById: TeamsById,
-): ChoiceOption<string>[] {
+/** End-of-phase pool finishes from pool phases before `phaseId`. */
+function earlierPoolPhaseOptions(draw: TournamentDrawState, phaseId: string): ChoiceOption<string>[] {
   const opts: ChoiceOption<string>[] = [];
   const poolPhases = earlierPhases(draw, phaseId).filter((p) => p.kind === 'pool');
   const multiple = poolPhases.length > 1;
   for (const phase of poolPhases) {
     const prefix = multiple ? `${phase.name}: ` : '';
-    const seeds = computeAdvancingSeeds(draw, phase.id) ?? [];
-    if (seeds.length > 0) {
-      opts.push(divider(`${prefix}Advancing teams`, `adv-${phase.id}`));
-      for (const seed of seeds) {
-        const source: TournamentSlotSource = { sourceType: 'qualifier', phaseId: phase.id, seed: seed.seed };
-        const who = seed.projectedRegistrationId != null ? teamsById.get(seed.projectedRegistrationId) : undefined;
-        opts.push({
-          value: encodeSlotSource(source),
-          label: `Q${seed.seed} · ${seed.description}`,
-          description: who ? formatTeamDisplayName(who.teamName, who.sortOrder) : undefined,
-        });
-      }
-    }
     const pools = poolsForPhase(draw, phase.id);
     if (pools.length > 0) {
       opts.push(divider(`${prefix}Pool finishes`, `fin-${phase.id}`));
@@ -150,7 +127,7 @@ export function buildSlotSourceOptions(
         });
       }
     }
-    opts.push(...earlierPoolPhaseOptions(draw, ctx.phaseId, teamsById));
+    opts.push(...earlierPoolPhaseOptions(draw, ctx.phaseId));
     const bracketGameIds = sortedGameIds(draw, (id) => {
       const g = draw.games[id]!;
       if (isPoolPhaseGame(draw, g)) return false;

@@ -185,6 +185,12 @@ export function countGamesWithResults(draw: TournamentDrawState): number {
   return n;
 }
 
+/** A scorekeeper result or standings points have been saved on at least one game. */
+export function drawHasRecordedScores(draw: TournamentDrawState | null | undefined): boolean {
+  if (!draw) return false;
+  return countGamesWithResults(draw) > 0;
+}
+
 export function gameHasRecordedResult(game: TournamentGameNode): boolean {
   if (hasStandingPoints(game)) return true;
   if (game.result == null) return false;

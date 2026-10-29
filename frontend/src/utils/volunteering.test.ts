@@ -22,8 +22,10 @@ import {
   roundVolunteerHoursUp,
   VOLUNTEER_HOUR_LOG_MAX_MESSAGE,
   volunteerCredentialIsValidOn,
+  volunteerProgramDefaultDayKey,
   volunteerShiftDayKey,
   volunteerShiftHasEnded,
+  volunteerShiftHasStarted,
   defaultVolunteerCreditHours,
   volunteerCreditHoursFromShift,
   compareVolunteerProgramsForList,
@@ -327,6 +329,53 @@ describe('volunteerProgramSignupTotals', () => {
         '2026-08-15T00:00:00.000Z'
       )
     ).toEqual({ signedUp: 4, needed: 4 });
+  });
+});
+
+describe('volunteerShiftHasStarted', () => {
+  test('is true once the start time is reached', () => {
+    expect(volunteerShiftHasStarted('2026-08-15T18:00:00.000Z', '2026-08-15T17:59:59.000Z')).toBe(
+      false
+    );
+    expect(volunteerShiftHasStarted('2026-08-15T18:00:00.000Z', '2026-08-15T18:00:00.000Z')).toBe(
+      true
+    );
+    expect(volunteerShiftHasStarted('2026-08-15T18:00:00.000Z', '2026-08-15T18:00:01.000Z')).toBe(
+      true
+    );
+  });
+});
+
+describe('volunteerProgramDefaultDayKey', () => {
+  const days = [
+    { dayKey: '2026-08-01', remainingSpots: 2 },
+    { dayKey: '2026-08-15', remainingSpots: 0 },
+    { dayKey: '2026-08-22', remainingSpots: 1 },
+  ];
+
+  test('prefers the next today-or-later day that still has open spots', () => {
+    expect(volunteerProgramDefaultDayKey(days, '2026-08-10')).toBe('2026-08-22');
+  });
+
+  test('stays on today when it still has open spots', () => {
+    expect(volunteerProgramDefaultDayKey(days, '2026-08-01')).toBe('2026-08-01');
+  });
+
+  test('uses the first upcoming day when every upcoming day is full', () => {
+    expect(
+      volunteerProgramDefaultDayKey(
+        [
+          { dayKey: '2026-08-01', remainingSpots: 3 },
+          { dayKey: '2026-08-15', remainingSpots: 0 },
+          { dayKey: '2026-08-22', remainingSpots: 0 },
+        ],
+        '2026-08-10'
+      )
+    ).toBe('2026-08-15');
+  });
+
+  test('falls back to the most recent past day when nothing is left', () => {
+    expect(volunteerProgramDefaultDayKey(days, '2026-09-01')).toBe('2026-08-22');
   });
 });
 

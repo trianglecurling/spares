@@ -857,34 +857,54 @@ function PoolStandingEntry({
   const baseId = useId();
   const settings = poolSettings(draw.phases.find((p) => p.id === game.phaseId));
   const possible = pointsPossibleForGame(draw, game);
+  const showPoints = possible !== 1;
   const standing: TournamentGameStanding = game.standing ?? { points: [null, null], tiebreak: [null, null] };
   const update = (field: 'points' | 'tiebreak', logical: 0 | 1, value: number | null) => {
     const nextPair: [number | null, number | null] = [...standing[field]];
     nextPair[logical] = value;
     onChange({ ...standing, [field]: nextPair });
   };
+  const inlineLabel = (teamLabel: string, fieldLabel: string) => (
+    <span className="flex min-w-0 items-baseline gap-x-2">
+      <span className="min-w-0 truncate text-gray-900 dark:text-gray-100">{teamLabel}</span>
+      <span className="shrink-0 font-normal text-gray-500 dark:text-gray-400">{fieldLabel}</span>
+    </span>
+  );
   return (
     <div className="mt-4 grid gap-3 border-t border-gray-200 pt-3 sm:grid-cols-2 dark:border-gray-700">
-      {order.map((logical) => (
-        <div key={logical} role="group" aria-label={labelFor(logical)} className="grid grid-cols-2 gap-2">
-          <FormField label="Points" htmlFor={`${baseId}-p${logical}`}>
-            <StandingNumberInput
-              id={`${baseId}-p${logical}`}
-              value={standing.points[logical]}
-              min={0}
-              max={possible}
-              onCommit={(v) => update('points', logical, v)}
-            />
-          </FormField>
-          <FormField label={settings.tiebreakLabel} htmlFor={`${baseId}-t${logical}`}>
-            <StandingNumberInput
-              id={`${baseId}-t${logical}`}
-              value={standing.tiebreak[logical]}
-              onCommit={(v) => update('tiebreak', logical, v)}
-            />
-          </FormField>
-        </div>
-      ))}
+      {order.map((logical) => {
+        const teamLabel = labelFor(logical);
+        return (
+          <div key={logical} className={showPoints ? 'grid min-w-0 grid-cols-2 gap-2' : 'min-w-0'}>
+            {showPoints ? (
+              <FormField
+                label={inlineLabel(teamLabel, 'Points')}
+                labelClassName="min-w-0 max-w-full flex-nowrap"
+                htmlFor={`${baseId}-p${logical}`}
+              >
+                <StandingNumberInput
+                  id={`${baseId}-p${logical}`}
+                  value={standing.points[logical]}
+                  min={0}
+                  max={possible}
+                  onCommit={(v) => update('points', logical, v)}
+                />
+              </FormField>
+            ) : null}
+            <FormField
+              label={showPoints ? settings.tiebreakLabel : inlineLabel(teamLabel, settings.tiebreakLabel)}
+              labelClassName={showPoints ? undefined : 'min-w-0 max-w-full flex-nowrap'}
+              htmlFor={`${baseId}-t${logical}`}
+            >
+              <StandingNumberInput
+                id={`${baseId}-t${logical}`}
+                value={standing.tiebreak[logical]}
+                onCommit={(v) => update('tiebreak', logical, v)}
+              />
+            </FormField>
+          </div>
+        );
+      })}
     </div>
   );
 }

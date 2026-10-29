@@ -2,8 +2,6 @@ import type { TournamentDrawState, TournamentGameNode, TournamentPhase } from '.
 import { sortedPhases } from '../../../backend/src/utils/tournamentPoolStandings';
 
 export {
-  advancingSeedCount,
-  computeAdvancingSeeds,
   computePhaseStandings,
   DEFAULT_POOL_STANDINGS_SETTINGS,
   findPoolEntry,
@@ -13,7 +11,6 @@ export {
   poolsForPhase,
   resolveSourceDetail,
   sortedPhases,
-  type AdvancingSeed,
   type PhaseStandings,
   type PoolStandingRow,
 } from '../../../backend/src/utils/tournamentPoolStandings';

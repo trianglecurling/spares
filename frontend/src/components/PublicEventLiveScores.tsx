@@ -5,6 +5,7 @@ import type { PublicTournamentDrawTeamRef } from './PublicTournamentDrawBracket'
 import { RockColorSwatch } from './tournament/ScorekeeperRockColorControl';
 import {
   consecutiveFilledEndCount,
+  EndScoreStack,
   entriesFromEndsArrays,
   visibleEndsLayout,
   type EndScoreEntry,
@@ -517,44 +518,20 @@ function ReadOnlyEndsBoard({
                   />
                 </th>
                 {Array.from({ length: columnCount }, (_, i) => {
-                  const entry = entries[i] ?? null;
-                  const display =
-                    entry == null ? '' : side === 0 ? String(entry.side0) : String(entry.side1);
-                  const isBlank = entry != null && entry.side0 === 0 && entry.side1 === 0;
                   const hasPowerPlay = isDoubles && ppEnd === i + 1;
                   const showHammerPlaceholder =
-                    display === '' && nextEndHammerSlot === side && i === nextUnplayedEndIndex;
+                    (entries[i] ?? null) == null &&
+                    nextEndHammerSlot === side &&
+                    i === nextUnplayedEndIndex;
                   return (
                     <td key={i} className="px-1 py-1 text-center">
-                      {xColumnIndex === i ? (
-                        <span className="inline-flex h-9 w-full items-center justify-center font-semibold text-gray-400">
-                          X
-                        </span>
-                      ) : (
-                        <div className="flex flex-col items-center gap-0.5">
-                          {hasPowerPlay ? (
-                            <span
-                              className="text-[0.65rem] font-medium leading-none text-primary-teal"
-                              title="Power play"
-                            >
-                              PP
-                            </span>
-                          ) : null}
-                          <span
-                            className={`inline-flex h-9 w-full min-w-0 items-center justify-center rounded-md border border-gray-200 bg-gray-50 text-sm tabular-nums dark:border-gray-600 dark:bg-gray-800 ${
-                              isBlank ? 'text-gray-400' : 'text-gray-900 dark:text-gray-100'
-                            }`}
-                          >
-                            {showHammerPlaceholder ? (
-                              <IoHammer className="h-3.5 w-3.5 text-primary-teal" aria-hidden />
-                            ) : display === '' ? (
-                              '·'
-                            ) : (
-                              display
-                            )}
-                          </span>
-                        </div>
-                      )}
+                      <EndScoreValue
+                        entry={entries[i] ?? null}
+                        side={side}
+                        isX={xColumnIndex === i}
+                        hasPowerPlay={hasPowerPlay}
+                        showHammerPlaceholder={showHammerPlaceholder}
+                      />
                     </td>
                   );
                 })}
@@ -658,33 +635,27 @@ function EndScoreValue({
 }) {
   const display = entry == null ? '' : side === 0 ? String(entry.side0) : String(entry.side1);
   const isBlank = entry != null && entry.side0 === 0 && entry.side1 === 0;
-  if (isX) {
-    return (
-      <span className="inline-flex h-9 w-full items-center justify-center font-semibold text-gray-400">
-        X
-      </span>
-    );
-  }
   return (
-    <div className="flex flex-col items-center gap-0.5 px-0.5">
-      {hasPowerPlay ? (
-        <span className="text-[0.65rem] font-medium leading-none text-primary-teal" title="Power play">
-          PP
+    <EndScoreStack powerPlay={hasPowerPlay} className="px-0.5">
+      {isX ? (
+        <span className="inline-flex h-9 w-full items-center justify-center font-semibold text-gray-400">
+          X
         </span>
-      ) : null}
-      <span
-        className={`inline-flex h-9 w-full min-w-0 items-center justify-center rounded-md border border-gray-200 bg-gray-50 text-sm tabular-nums dark:border-gray-600 dark:bg-gray-800 ${
-          isBlank ? 'text-gray-400' : 'text-gray-900 dark:text-gray-100'
-        }`}
-      >
-        {showHammerPlaceholder ? (
-          <IoHammer className="h-3.5 w-3.5 text-primary-teal" aria-hidden />
-        ) : display === '' ? (
-          '·'
-        ) : (
-          display
-        )}
-      </span>
-    </div>
+      ) : (
+        <span
+          className={`inline-flex h-9 w-full min-w-0 items-center justify-center rounded-md border border-gray-200 bg-gray-50 text-sm tabular-nums dark:border-gray-600 dark:bg-gray-800 ${
+            isBlank ? 'text-gray-400' : 'text-gray-900 dark:text-gray-100'
+          }`}
+        >
+          {showHammerPlaceholder ? (
+            <IoHammer className="h-3.5 w-3.5 text-primary-teal" aria-hidden />
+          ) : display === '' ? (
+            '·'
+          ) : (
+            display
+          )}
+        </span>
+      )}
+    </EndScoreStack>
   );
 }

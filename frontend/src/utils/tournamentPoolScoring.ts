@@ -30,6 +30,7 @@ function emptyStanding(game: TournamentGameNode): TournamentGameStanding {
 /**
  * New standing for a pool game whose result is changing, or undefined to leave it alone.
  * Points follow the result unless the scorekeeper already typed different points.
+ * When a game is worth at most 1 point, there is no points field, so a win is 1 and a loss is 0.
  */
 export function standingAfterResultChange(
   draw: TournamentDrawState,
@@ -43,6 +44,7 @@ export function standingAfterResultChange(
   const previous = pointsFromResult(possible, game.result);
   const followsResult =
     opts?.force ||
+    possible === 1 ||
     current == null ||
     current[0] == null ||
     current[1] == null ||

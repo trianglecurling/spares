@@ -2326,11 +2326,13 @@ async function resolveVolunteerProgramId(slugOrId: string): Promise<number | nul
 export async function getHubProgram(member: Member, slugOrId: string): Promise<VolunteerProgramView> {
   const programId = await resolveVolunteerProgramId(slugOrId);
   if (programId == null) throw new VolunteeringServiceError('Program not found', 404);
+  // Keep past shifts so the program page can show who signed up after a date has passed.
+  // The hub list stays upcoming-only.
   const programs = await buildProgramViews({
     member,
     includeArchived: false,
     programIds: [programId],
-    upcomingOnly: true,
+    upcomingOnly: false,
     forHub: true,
   });
   if (!programs[0]) throw new VolunteeringServiceError('Program not found', 404);

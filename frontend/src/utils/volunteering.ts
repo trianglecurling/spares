@@ -599,6 +599,34 @@ export function volunteerShiftHasEnded(endDt: string, nowIso: string): boolean {
   return endDt < nowIso;
 }
 
+/** Signup closes once the shift start time has been reached. */
+export function volunteerShiftHasStarted(startDt: string, nowIso: string): boolean {
+  return startDt <= nowIso;
+}
+
+/** Club-local today (YYYY-MM-DD), for choosing a default day on a program. */
+export function volunteerClubTodayKey(now: Date = new Date()): string {
+  return formatDateInTimeZone(now) ?? now.toISOString().slice(0, 10);
+}
+
+/**
+ * Day to open when the URL has no matching day.
+ * `dayGroups` must be sorted by `dayKey` ascending.
+ * Prefer the first today-or-later day that still has open spots, then any
+ * today-or-later day, then the most recent past day.
+ */
+export function volunteerProgramDefaultDayKey(
+  dayGroups: Array<{ dayKey: string; remainingSpots: number }>,
+  todayKey: string
+): string | null {
+  if (dayGroups.length === 0) return null;
+  const currentOrLater = dayGroups.filter((group) => group.dayKey >= todayKey);
+  const withSpots = currentOrLater.find((group) => group.remainingSpots > 0);
+  if (withSpots) return withSpots.dayKey;
+  if (currentOrLater.length > 0) return currentOrLater[0].dayKey;
+  return dayGroups[dayGroups.length - 1].dayKey;
+}
+
 /**
  * True when the program has shifts and the last one has already ended.
  * Used as a derived archive (no job writes archived_at).

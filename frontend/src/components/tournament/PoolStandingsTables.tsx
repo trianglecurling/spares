@@ -37,6 +37,7 @@ export default function PoolStandingsTables({
   const { settings } = standings;
   const allRows = standings.overall.rows;
   const showTies = allRows.some((r) => r.ties > 0);
+  const showPoints = settings.pointsPossiblePerGame !== 1;
   const showPercent = settings.rankBy === 'percentage';
   const showTiebreak = allRows.some((r) => r.tiebreak != null);
   const poolNameById = new Map(standings.pools.map((p) => [p.pool.id, p.pool.name]));
@@ -69,7 +70,7 @@ export default function PoolStandingsTables({
                 <th scope="col" className="app-table-th text-right">W</th>
                 <th scope="col" className="app-table-th text-right">L</th>
                 {showTies ? <th scope="col" className="app-table-th text-right">T</th> : null}
-                <th scope="col" className="app-table-th text-right">Points</th>
+                {showPoints ? <th scope="col" className="app-table-th text-right">Points</th> : null}
                 {showPercent ? <th scope="col" className="app-table-th text-right">%</th> : null}
                 {showTiebreak ? (
                   <th scope="col" className="app-table-th text-right">{settings.tiebreakLabel}</th>
@@ -82,14 +83,7 @@ export default function PoolStandingsTables({
                 const highlighted = highlightRegistrationId === row.registrationId;
                 return (
                   <tr key={row.registrationId} className={highlighted ? 'bg-primary-teal/10' : undefined}>
-                    <td className="app-table-td whitespace-nowrap tabular-nums">
-                      {row.rank}
-                      {row.tied ? (
-                        <span className="ml-1.5 rounded bg-amber-100 px-1.5 py-0.5 text-xs font-medium text-amber-900 dark:bg-amber-900/40 dark:text-amber-100">
-                          Tied
-                        </span>
-                      ) : null}
-                    </td>
+                    <td className="app-table-td whitespace-nowrap tabular-nums">{row.rank}</td>
                     <th scope="row" className="app-table-td text-left font-medium text-gray-900 dark:text-gray-100">
                       {renderTeam ? renderTeam(row.registrationId, name) : name}
                     </th>
@@ -97,7 +91,9 @@ export default function PoolStandingsTables({
                     <td className="app-table-td text-right tabular-nums">{row.wins}</td>
                     <td className="app-table-td text-right tabular-nums">{row.losses}</td>
                     {showTies ? <td className="app-table-td text-right tabular-nums">{row.ties}</td> : null}
-                    <td className="app-table-td text-right tabular-nums">{formatNumber(row.points)}</td>
+                    {showPoints ? (
+                      <td className="app-table-td text-right tabular-nums">{formatNumber(row.points)}</td>
+                    ) : null}
                     {showPercent ? (
                       <td className="app-table-td text-right tabular-nums">{formatPercent(row.percentage)}</td>
                     ) : null}

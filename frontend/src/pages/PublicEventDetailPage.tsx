@@ -21,6 +21,7 @@ import api from '../utils/api';
 import { waitlistEntryCountLabel } from '../components/registration/registrationViewEditShared';
 import { teamIdsAssignedOnDraw, type TournamentDrawState } from '../utils/tournamentDrawModel';
 import { getEarliestStartMs, isLiveScoresWindowOpen } from '../utils/fiscalSeason';
+import { drawHasRecordedScores } from '../utils/tournamentDrawResultsRows';
 import { isBonspielCalendarType } from '../utils/eventCalendarTypes';
 import {
   clubCalendarDate,
@@ -303,8 +304,11 @@ export default function PublicEventDetailPage() {
     const cal = event.calendarTypeIds ?? [];
     const showT = isBonspielCalendarType(cal) && (event.tournamentTeamsPublished ?? 0) === 1;
     const showD = isBonspielCalendarType(cal) && (event.tournamentDrawPublished ?? 0) === 1;
-    const showScores =
-      showD && isLiveScoresWindowOpen(event.timespans, Date.now() + serverOffsetMs);
+    const nowMs = Date.now() + serverOffsetMs;
+    const windowOpen = isLiveScoresWindowOpen(event.timespans, nowMs);
+    const showScores = showD && (windowOpen || drawHasRecordedScores(publicDraw));
+    // The draw may still be loading; don't drop ?tab=scores before we can see recorded scores.
+    const scoresDecisionPending = showD && !windowOpen && publicDraw === undefined;
     const showBar = showT || showD;
     const t = searchParams.get('tab');
     const clearTab = () => {
@@ -330,10 +334,10 @@ export default function PublicEventDetailPage() {
       clearTab();
     } else if (t === 'draw' && !showD) {
       clearTab();
-    } else if (t === 'scores' && !showScores) {
+    } else if (t === 'scores' && !showScores && !scoresDecisionPending) {
       clearTab();
     }
-  }, [event, loading, searchParams, setSearchParams, serverOffsetMs, scoresClock]);
+  }, [event, loading, publicDraw, searchParams, setSearchParams, serverOffsetMs, scoresClock]);
 
   const serverNowMs = useMemo(
     () => Date.now() + serverOffsetMs,
@@ -595,9 +599,11 @@ export default function PublicEventDetailPage() {
     isBonspielCalendarType(calendarTypeIds) && (event.tournamentTeamsPublished ?? 0) === 1;
   const showPublicDraw =
     isBonspielCalendarType(calendarTypeIds) && (event.tournamentDrawPublished ?? 0) === 1;
-  const showLiveScores = showPublicDraw && isLiveScoresWindowOpen(event.timespans, serverNowMs);
+  const showLiveScores =
+    showPublicDraw &&
+    (isLiveScoresWindowOpen(event.timespans, serverNowMs) || drawHasRecordedScores(publicDraw));
   const showEventTabs = showPublicTeams || showPublicDraw;
-  // Live scores opens 24 hours before the event starts, including while the draw is still loading.
+  // Live scores opens 24 hours before the event starts, or as soon as any score is recorded.
   const publicView: 'details' | 'teams' | 'draw' | 'scores' =
     tabParam === 'teams' && showPublicTeams
       ? 'teams'

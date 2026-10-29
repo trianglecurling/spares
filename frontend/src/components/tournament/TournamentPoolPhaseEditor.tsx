@@ -1,7 +1,8 @@
-import { Fragment, useId, useMemo, useState } from 'react';
+import { Fragment, useCallback, useId, useMemo, useState, type ReactNode } from 'react';
 import { HiTrash, HiXMark } from 'react-icons/hi2';
 import Button from '../Button';
 import ChoiceInput, { type ChoiceOption } from '../ChoiceInput';
+import SortableGroups from '../dragDrop/SortableGroups';
 import FormField from '../FormField';
 import FormSection from '../FormSection';
 import InlineStateMessage from '../InlineStateMessage';
@@ -16,15 +17,18 @@ import {
   type TournamentDrawState,
   type TournamentGameNode,
   type TournamentPool,
+  type TournamentPoolEntry,
   type TournamentSlotSource,
 } from '../../utils/tournamentDrawModel';
 import { gamesForPhase, poolEntryCode, poolsForPhase } from '../../utils/tournamentDrawPhases';
 import { formatDrawBlockOptionLabel } from '../../utils/tournamentDrawSchedule';
+import { formatSlotSourceLabel } from '../../utils/tournamentDrawRouting';
 import {
   addPoolEntry,
   addPoolGame,
   addPoolToPhase,
   addRoundRobinGames,
+  arrangePoolEntries,
   fillPools,
   removeGame,
   removePool,
@@ -137,21 +141,16 @@ export default function TournamentPoolPhaseEditor({
         {pools.length === 0 ? (
           <InlineStateMessage title="No pools yet" />
         ) : (
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {pools.map((pool) => (
-              <PoolCard
-                key={pool.id}
-                draw={draw}
-                pool={pool}
-                phaseId={phaseId}
-                teams={teams}
-                teamsById={teamsById}
-                updateDraw={updateDraw}
-                onDelete={() => void deletePool(pool)}
-                onCustom={(entryId) => setCustomTarget({ kind: 'entry', poolId: pool.id, entryId })}
-              />
-            ))}
-          </div>
+          <PoolEntryBoard
+            draw={draw}
+            phaseId={phaseId}
+            pools={pools}
+            teams={teams}
+            teamsById={teamsById}
+            updateDraw={updateDraw}
+            onDelete={(pool) => void deletePool(pool)}
+            onCustom={(poolId, entryId) => setCustomTarget({ kind: 'entry', poolId, entryId })}
+          />
         )}
       </FormSection>
 
@@ -186,7 +185,7 @@ export default function TournamentPoolPhaseEditor({
         }}
       />
 
-      <TournamentPoolPhaseSettings draw={draw} phaseId={phaseId} teamsById={teamsById} updateDraw={updateDraw} />
+      <TournamentPoolPhaseSettings draw={draw} phaseId={phaseId} updateDraw={updateDraw} />
 
       <CustomStandingDialog
         isOpen={customTarget != null}
@@ -220,23 +219,113 @@ function patchGame(d: TournamentDrawState, gameId: string, patch: Partial<Tourna
   return { ...d, games: { ...d.games, [gameId]: { ...g, ...patch } } };
 }
 
-type PoolCardProps = {
+type PoolEntryBoardProps = {
   draw: TournamentDrawState;
-  pool: TournamentPool;
   phaseId: string;
+  pools: TournamentPool[];
   teams: TournamentTeamApi[];
   teamsById: Map<number, TournamentTeamApi>;
   updateDraw: UpdateDraw;
-  onDelete: () => void;
-  onCustom: (entryId: string) => void;
+  onDelete: (pool: TournamentPool) => void;
+  onCustom: (poolId: string, entryId: string) => void;
 };
 
-function PoolCard({ draw, pool, phaseId, teams, teamsById, updateDraw, onDelete, onCustom }: PoolCardProps) {
+function PoolEntryBoard({
+  draw,
+  phaseId,
+  pools,
+  teams,
+  teamsById,
+  updateDraw,
+  onDelete,
+  onCustom,
+}: PoolEntryBoardProps) {
+  const getEntryId = useCallback((entry: TournamentPoolEntry) => entry.id, []);
+  const getEntryLabel = useCallback(
+    (entry: TournamentPoolEntry) => formatSlotSourceLabel(entry.source, teamsById, draw),
+    [draw, teamsById],
+  );
+  const getPoolLabel = useCallback(
+    (poolId: string | number) => pools.find((pool) => pool.id === String(poolId))?.name ?? 'Pool',
+    [pools],
+  );
+
+  return (
+    <SortableGroups
+      className="grid gap-4 md:grid-cols-2 xl:grid-cols-3"
+      groups={pools.map((pool) => ({ id: pool.id, items: pool.entries }))}
+      getId={getEntryId}
+      getItemLabel={getEntryLabel}
+      getGroupLabel={getPoolLabel}
+      itemNoun="team"
+      onReorder={(groups) => {
+        const entryIdsByPoolId: Record<string, string[]> = {};
+        for (const group of groups) entryIdsByPoolId[String(group.id)] = group.items.map((entry) => entry.id);
+        updateDraw((current) => arrangePoolEntries(current, phaseId, entryIdsByPoolId));
+      }}
+      renderGroup={({ groupId, items, isDropTarget, setDropRef, children }) => {
+        const pool = pools.find((candidate) => candidate.id === groupId);
+        if (!pool) return null;
+        return (
+          <PoolCard
+            pool={{ ...pool, entries: items }}
+            updateDraw={updateDraw}
+            isDropTarget={isDropTarget}
+            setDropRef={setDropRef}
+            onDelete={() => onDelete(pool)}
+          >
+            {children}
+          </PoolCard>
+        );
+      }}
+      renderItem={({ item, groupId, index, isDragging, isOverlay, dragHandle }) => {
+        const pool = pools.find((candidate) => candidate.id === groupId);
+        if (!pool) return null;
+        return (
+          <PoolEntryRow
+            draw={draw}
+            pool={pool}
+            entry={item}
+            code={poolEntryCode(pool, index)}
+            phaseId={phaseId}
+            teams={teams}
+            teamsById={teamsById}
+            updateDraw={updateDraw}
+            dragHandle={dragHandle}
+            isDragging={isDragging}
+            isOverlay={isOverlay}
+            onCustom={(entryId) => onCustom(pool.id, entryId)}
+          />
+        );
+      }}
+    />
+  );
+}
+
+type PoolCardProps = {
+  pool: TournamentPool;
+  updateDraw: UpdateDraw;
+  isDropTarget: boolean;
+  setDropRef: (element: HTMLElement | null) => void;
+  onDelete: () => void;
+  children: ReactNode;
+};
+
+function PoolCard({
+  pool,
+  updateDraw,
+  isDropTarget,
+  setDropRef,
+  onDelete,
+  children,
+}: PoolCardProps) {
   const nameId = useId();
-  const entryBase = useId();
   return (
     <div
-      className="space-y-3 rounded-lg border border-gray-200 border-t-4 bg-white p-3 dark:border-gray-600 dark:bg-gray-800"
+      ref={setDropRef}
+      className={`space-y-3 rounded-lg border border-gray-200 border-t-4 bg-white p-3 dark:border-gray-600 dark:bg-gray-800 ${
+        isDropTarget ? 'ring-2 ring-primary-teal/40' : ''
+      }`}
       style={{ borderTopColor: pool.color }}
     >
       <div className="flex items-end gap-2">
@@ -269,53 +358,9 @@ function PoolCard({ draw, pool, phaseId, teams, teamsById, updateDraw, onDelete,
       {pool.entries.length === 0 ? (
         <p className="text-sm text-gray-600 dark:text-gray-400">No teams yet.</p>
       ) : (
-        <ol className="space-y-2">
-          {pool.entries.map((entry, i) => {
-            const code = poolEntryCode(pool, i);
-            const inputId = `${entryBase}-${entry.id}`;
-            return (
-              <li key={entry.id} className="flex items-center gap-2">
-                <label
-                  htmlFor={inputId}
-                  className="w-9 shrink-0 font-mono text-sm font-semibold text-gray-700 dark:text-gray-300"
-                >
-                  {code}
-                </label>
-                <div className="min-w-0 flex-1">
-                  <ChoiceInput<string>
-                    inputId={inputId}
-                    listboxLabel={`${pool.name} ${code}`}
-                    options={buildSlotSourceOptions(
-                      draw,
-                      teams,
-                      teamsById,
-                      { kind: 'pool_entry', phaseId, entryId: entry.id },
-                      entry.source,
-                    )}
-                    value={encodeSlotSource(entry.source)}
-                    onChange={(v) => {
-                      if (typeof v !== 'string') return;
-                      if (v === CUSTOM_STANDING_OPTION_VALUE) {
-                        onCustom(entry.id);
-                        return;
-                      }
-                      updateDraw((d) => setPoolEntrySource(d, pool.id, entry.id, decodeSlotSource(v)));
-                    }}
-                  />
-                </div>
-                <button
-                  type="button"
-                  className="rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/30 dark:hover:bg-gray-700 dark:hover:text-gray-200"
-                  aria-label={`Remove ${code}`}
-                  title="Remove"
-                  onClick={() => updateDraw((d) => removePoolEntry(d, pool.id, entry.id))}
-                >
-                  <HiXMark className="h-4 w-4" aria-hidden />
-                </button>
-              </li>
-            );
-          })}
-        </ol>
+        <div role="list" aria-label={`${pool.name} teams`} className="space-y-2">
+          {children}
+        </div>
       )}
       <button
         type="button"
@@ -323,6 +368,86 @@ function PoolCard({ draw, pool, phaseId, teams, teamsById, updateDraw, onDelete,
         onClick={() => updateDraw((d) => addPoolEntry(d, pool.id))}
       >
         Add team
+      </button>
+    </div>
+  );
+}
+
+function PoolEntryRow({
+  draw,
+  pool,
+  entry,
+  code,
+  phaseId,
+  teams,
+  teamsById,
+  updateDraw,
+  dragHandle,
+  isDragging,
+  isOverlay,
+  onCustom,
+}: {
+  draw: TournamentDrawState;
+  pool: TournamentPool;
+  entry: TournamentPoolEntry;
+  code: string;
+  phaseId: string;
+  teams: TournamentTeamApi[];
+  teamsById: Map<number, TournamentTeamApi>;
+  updateDraw: UpdateDraw;
+  dragHandle: ReactNode;
+  isDragging: boolean;
+  isOverlay: boolean;
+  onCustom: (entryId: string) => void;
+}) {
+  const inputId = useId();
+  if (isOverlay) {
+    return (
+      <div className="flex items-center gap-2 rounded-md border border-gray-200 bg-white px-2 py-1.5 shadow-lg dark:border-gray-600 dark:bg-gray-800">
+        {dragHandle}
+        <span className="w-9 shrink-0 font-mono text-sm font-semibold text-gray-700 dark:text-gray-300">{code}</span>
+        <span className="min-w-0 truncate text-sm text-gray-900 dark:text-gray-100">
+          {formatSlotSourceLabel(entry.source, teamsById, draw)}
+        </span>
+      </div>
+    );
+  }
+  return (
+    <div className={`flex items-center gap-2 ${isDragging ? 'opacity-0' : ''}`}>
+      {dragHandle}
+      <label htmlFor={inputId} className="w-9 shrink-0 font-mono text-sm font-semibold text-gray-700 dark:text-gray-300">
+        {code}
+      </label>
+      <div className="min-w-0 flex-1">
+        <ChoiceInput<string>
+          inputId={inputId}
+          listboxLabel={`${pool.name} ${code}`}
+          options={buildSlotSourceOptions(
+            draw,
+            teams,
+            teamsById,
+            { kind: 'pool_entry', phaseId, entryId: entry.id },
+            entry.source,
+          )}
+          value={encodeSlotSource(entry.source)}
+          onChange={(v) => {
+            if (typeof v !== 'string') return;
+            if (v === CUSTOM_STANDING_OPTION_VALUE) {
+              onCustom(entry.id);
+              return;
+            }
+            updateDraw((d) => setPoolEntrySource(d, pool.id, entry.id, decodeSlotSource(v)));
+          }}
+        />
+      </div>
+      <button
+        type="button"
+        className="rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/30 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+        aria-label={`Remove ${code}`}
+        title="Remove"
+        onClick={() => updateDraw((d) => removePoolEntry(d, pool.id, entry.id))}
+      >
+        <HiXMark className="h-4 w-4" aria-hidden />
       </button>
     </div>
   );

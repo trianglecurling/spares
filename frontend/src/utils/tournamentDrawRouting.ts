@@ -329,7 +329,7 @@ export function resolveResultsTableSideRegistrationId(
   return resolveGameSlotRegistrationId(draw, g, slotIndex, visitingGameIds);
 }
 
-function teamLabel(teamsById: Map<number, TeamRow>, id: number): string {
+function teamLabel(teamsById: { get(id: number): TeamRow | undefined }, id: number): string {
   const t = teamsById.get(id);
   return t ? formatTeamDisplayName(t.teamName, t.sortOrder) : `Team #${id}`;
 }
@@ -345,7 +345,10 @@ export function formatPoolSourceLabel(draw: TournamentDrawState, slot: Tournamen
   return '—';
 }
 
-/** Team name once known; otherwise the source label, with tied teams when a tie blocks it. */
+/**
+ * Confirmed team name, or the source description (for example "Overall 1st") when that
+ * place is still open or shared by a tie. Tied teams stay off bracket nodes.
+ */
 export function resolvePoolSourceLabel(
   draw: TournamentDrawState,
   slot: TournamentSlotSource,
@@ -360,9 +363,6 @@ export function resolvePoolSourceLabel(
     if (inner && inner.sourceType !== 'tbd' && inner.sourceType !== 'registration') {
       base = `${base} · ${formatSlotSourceLabel(inner, teamsById, draw)}`;
     }
-  }
-  if (detail.tiedRegistrationIds.length > 0) {
-    return `${base} · Tied: ${detail.tiedRegistrationIds.map((id) => teamLabel(teamsById, id)).join(', ')}`;
   }
   return base;
 }
@@ -381,7 +381,7 @@ function withRegistrationIds(
 
 export function formatSlotSourceLabel(
   slot: TournamentSlotSource,
-  teamsById: Map<number, TeamRow>,
+  teamsById: { get(id: number): TeamRow | undefined },
   draw: TournamentDrawState,
 ): string {
   switch (slot.sourceType) {

@@ -5,7 +5,7 @@ import type {
   TournamentPool,
   TournamentSlotSource,
 } from './tournamentDrawModel';
-import { computeAdvancingSeeds, earlierPhases, gamesForPhase, poolsForPhase } from './tournamentDrawPhases';
+import { gamesForPhase, poolsForPhase } from './tournamentDrawPhases';
 
 function replacePool(draw: TournamentDrawState, pool: TournamentPool): TournamentDrawState {
   return { ...draw, pools: draw.pools.map((p) => (p.id === pool.id ? pool : p)) };
@@ -70,6 +70,52 @@ export function setPoolEntrySource(
   });
 }
 
+/**
+ * Reorders entries inside one phase, including moves from one pool to another.
+ * Entry objects stay the same, so games that point at an entry id keep that team.
+ * Returns the same draw when the request is not a permutation of this phase's entries.
+ */
+export function arrangePoolEntries(
+  draw: TournamentDrawState,
+  phaseId: string,
+  entryIdsByPoolId: Readonly<Record<string, readonly string[]>>,
+): TournamentDrawState {
+  const phasePools = poolsForPhase(draw, phaseId);
+  const requestedIds = Object.keys(entryIdsByPoolId);
+  if (requestedIds.length !== phasePools.length) return draw;
+  if (phasePools.some((pool) => entryIdsByPoolId[pool.id] == null)) return draw;
+
+  const byEntry = new Map<string, TournamentPool['entries'][number]>();
+  for (const pool of phasePools) {
+    for (const entry of pool.entries) byEntry.set(entry.id, entry);
+  }
+
+  const seen = new Set<string>();
+  for (const poolId of requestedIds) {
+    if (!phasePools.some((pool) => pool.id === poolId)) return draw;
+    for (const entryId of entryIdsByPoolId[poolId] ?? []) {
+      if (!byEntry.has(entryId) || seen.has(entryId)) return draw;
+      seen.add(entryId);
+    }
+  }
+  if (seen.size !== byEntry.size) return draw;
+
+  const unchanged = phasePools.every((pool) => {
+    const ids = entryIdsByPoolId[pool.id] ?? [];
+    return ids.length === pool.entries.length && ids.every((id, index) => pool.entries[index]?.id === id);
+  });
+  if (unchanged) return draw;
+
+  return {
+    ...draw,
+    pools: draw.pools.map((pool) => {
+      const ids = entryIdsByPoolId[pool.id];
+      if (!ids || pool.phaseId !== phaseId) return pool;
+      return { ...pool, entries: ids.map((id) => byEntry.get(id)!) };
+    }),
+  };
+}
+
 export function removePoolEntry(draw: TournamentDrawState, poolId: string, entryId: string): TournamentDrawState {
   const pool = draw.pools.find((p) => p.id === poolId);
   if (!pool) return draw;
@@ -77,7 +123,7 @@ export function removePoolEntry(draw: TournamentDrawState, poolId: string, entry
   return clearEntryReferences(next, new Set([entryId]));
 }
 
-/** Sources not yet placed in this phase, in seed order: earlier-phase qualifiers, else roster teams. */
+/** Roster teams not yet placed in this phase, in seed order. */
 function unplacedSources(
   draw: TournamentDrawState,
   phaseId: string,
@@ -87,14 +133,10 @@ function unplacedSources(
   for (const pool of poolsForPhase(draw, phaseId)) {
     for (const e of pool.entries) placed.add(JSON.stringify(e.source));
   }
-  const prevPool = [...earlierPhases(draw, phaseId)].reverse().find((p) => p.kind === 'pool');
-  const candidates: TournamentSlotSource[] = prevPool
-    ? (computeAdvancingSeeds(draw, prevPool.id) ?? []).map((s) => ({
-        sourceType: 'qualifier' as const,
-        phaseId: prevPool.id,
-        seed: s.seed,
-      }))
-    : teamIdsInSeedOrder.map((id) => ({ sourceType: 'registration' as const, registrationId: id }));
+  const candidates: TournamentSlotSource[] = teamIdsInSeedOrder.map((id) => ({
+    sourceType: 'registration' as const,
+    registrationId: id,
+  }));
   return candidates.filter((s) => !placed.has(JSON.stringify(s)));
 }
 
