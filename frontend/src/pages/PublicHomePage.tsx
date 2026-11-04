@@ -19,6 +19,7 @@ import PublicLayout from '../components/PublicLayout';
 import PublicStateCard from '../components/PublicStateCard';
 import SeoMeta, { formatHomeDocumentTitle, resolveSiteName } from '../components/SeoMeta';
 import { ArticleMarkdown } from '../components/ArticleMarkdown';
+import FeaturedEventHomeCard, { type FeaturedHomeEvent } from '../components/FeaturedEventHomeCard';
 import { useAuth } from '../contexts/AuthContext';
 import { syncSiteBrandingFromBootstrap, useSiteBranding } from '../hooks/useSiteBranding';
 
@@ -51,6 +52,7 @@ interface HomeData {
     /** When set, this featured item is an event detail article; link to the event page. */
     eventSlug?: string | null;
   }>;
+  featuredEvents: FeaturedHomeEvent[];
   showcaseImages: Array<{
     id: number;
     url: string;
@@ -717,7 +719,7 @@ export default function PublicHomePage() {
           <section className="public-home-band" aria-labelledby="home-updates-heading">
             <div className="public-container py-12 sm:py-16">
               <SectionHeading title="Latest updates" id="home-updates-heading" />
-              {data.featuredArticles.length === 0 ? (
+              {(data.featuredEvents?.length ?? 0) === 0 && data.featuredArticles.length === 0 ? (
                 <div className="mt-6">
                   <PublicStateCard
                     title="No featured resources yet."
@@ -726,6 +728,11 @@ export default function PublicHomePage() {
                 </div>
               ) : (
                 <ul className="mt-6 divide-y divide-gray-300 border-t border-gray-300">
+                  {(data.featuredEvents ?? []).map((event) => (
+                    <li key={`event-${event.id}`}>
+                      <FeaturedEventHomeCard event={event} />
+                    </li>
+                  ))}
                   {data.featuredArticles.map((article) => {
                     const featuredHref = article.eventSlug
                       ? `/events/${article.eventSlug}`

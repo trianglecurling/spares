@@ -6,6 +6,7 @@ import { getDefaultPaymentProvider } from '../../../services/paymentService.js';
 import { getUpcomingBonspiels } from '../../calendar/queries/calendarReadFacade.js';
 import { publicFileUrl } from '../../../utils/managedFiles.js';
 import { notArchivedCondition } from '../../../utils/softDelete.js';
+import { loadFeaturedHomeEvents } from './featuredHomeEvents.js';
 
 export type MenuItemNode = {
   id: number;
@@ -203,7 +204,8 @@ export async function getPublicHomeData() {
       ),
   );
 
-  const [siteConfig, featuredArticleRows, showcaseRows, sponsorshipRows, upcomingBonspielsResult] = await Promise.all([
+  const [siteConfig, featuredArticleRows, showcaseRows, sponsorshipRows, upcomingBonspielsResult, featuredHome] =
+    await Promise.all([
     getPublicSiteConfig(),
     db
       .select({
@@ -256,6 +258,7 @@ export async function getPublicHomeData() {
       )
       .orderBy(asc(schema.sponsorshipLevels.sort_order), asc(schema.sponsorships.id)),
     getUpcomingBonspiels(),
+    loadFeaturedHomeEvents(),
   ]);
   const upcomingBonspiels = upcomingBonspielsResult.items;
   const upcomingBonspielsHasMore = upcomingBonspielsResult.hasMore;
@@ -286,21 +289,24 @@ export async function getPublicHomeData() {
 
   return {
     siteConfig,
-    featuredArticles: featuredArticleRows.map((article) => {
-      const { snippet, hasMore } = getEffectiveArticleSnippet(
-        article.content ?? '',
-        article.snippet,
-        (article.content_type ?? 'markdown') as 'markdown' | 'html',
-      );
-      return {
-        id: article.id,
-        title: article.title,
-        slug: article.slug,
-        snippet,
-        hasMore,
-        eventSlug: eventSlugByArticleId.get(article.id) ?? null,
-      };
-    }),
+    featuredArticles: featuredArticleRows
+      .filter((article) => !featuredHome.articleIds.has(article.id))
+      .map((article) => {
+        const { snippet, hasMore } = getEffectiveArticleSnippet(
+          article.content ?? '',
+          article.snippet,
+          (article.content_type ?? 'markdown') as 'markdown' | 'html',
+        );
+        return {
+          id: article.id,
+          title: article.title,
+          slug: article.slug,
+          snippet,
+          hasMore,
+          eventSlug: eventSlugByArticleId.get(article.id) ?? null,
+        };
+      }),
+    featuredEvents: featuredHome.events,
     showcaseImages: showcaseRows.map((img) => ({
       id: img.id,
       url: img.url,

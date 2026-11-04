@@ -2260,6 +2260,9 @@ export const eventsSqlite = sqliteTable('events', {
   image_file_id: integer('image_file_id').references(() => filesSqlite.id, { onDelete: 'set null' }),
   visibility: text('visibility').default('public').notNull().$type<EventVisibility>(),
   published: integer('published').default(0).notNull(),
+  /** When 1, the event is featured on the public homepage. */
+  featured: integer('featured').default(0).notNull(),
+  featured_sort_order: integer('featured_sort_order').default(0).notNull(),
   capacity: integer('capacity'),
   fee_minor: integer('fee_minor').default(0).notNull(),
   /** When set, logged-in members pay this per-person amount instead of fee_minor. */
@@ -2300,6 +2303,7 @@ export const eventsSqlite = sqliteTable('events', {
 }, (table) => ({
   slugIdx: uniqueIndex('events_slug_unique').on(table.slug),
   publishedIdx: index('idx_events_published').on(table.published),
+  featuredIdx: index('idx_events_featured').on(table.featured),
   visibilityIdx: index('idx_events_visibility').on(table.visibility),
   archivedAtIdx: index('idx_events_archived_at').on(table.archived_at),
   transferGroupIdx: index('idx_events_transfer_group_id').on(table.transfer_group_id),
@@ -4774,6 +4778,9 @@ export const eventsPg = pgTable('events', {
   image_file_id: integerPg('image_file_id').references(() => filesPg.id, { onDelete: 'set null' }),
   visibility: textPg('visibility').default('public').notNull().$type<EventVisibility>(),
   published: integerPg('published').default(0).notNull(),
+  /** When 1, the event is featured on the public homepage. */
+  featured: integerPg('featured').default(0).notNull(),
+  featured_sort_order: integerPg('featured_sort_order').default(0).notNull(),
   capacity: integerPg('capacity'),
   fee_minor: integerPg('fee_minor').default(0).notNull(),
   member_fee_minor: integerPg('member_fee_minor'),
@@ -4808,6 +4815,7 @@ export const eventsPg = pgTable('events', {
 }, (table) => ({
   slugIdx: uniqueIndexPg('events_slug_unique_pg').on(table.slug),
   publishedIdx: indexPg('idx_events_published').on(table.published),
+  featuredIdx: indexPg('idx_events_featured').on(table.featured),
   visibilityIdx: indexPg('idx_events_visibility').on(table.visibility),
   archivedAtIdx: indexPg('idx_events_archived_at').on(table.archived_at),
   transferGroupIdx: indexPg('idx_events_transfer_group_id').on(table.transfer_group_id),
