@@ -327,6 +327,8 @@ export async function createEvent(input: CreateEventInput): Promise<{ id: number
       image_file_id: input.imageFileId ?? null,
       visibility: input.visibility ?? 'public',
       published: input.published ? 1 : 0,
+      featured: 0,
+      featured_sort_order: 0,
       capacity: input.capacity ?? null,
       fee_minor: input.feeMinor ?? 0,
       member_fee_minor: input.memberFeeMinor ?? null,

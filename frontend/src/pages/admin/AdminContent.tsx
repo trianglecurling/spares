@@ -15,6 +15,7 @@ import ContentFileEditModal, { type ManagedFile } from '../../components/Content
 import Modal from '../../components/Modal';
 import PageTabs from '../../components/PageTabs';
 import ArticleAutocomplete, { type ArticleOption } from '../../components/ArticleAutocomplete';
+import EventAutocomplete, { type EventOption } from '../../components/EventAutocomplete';
 import DataTable from '../../components/table/DataTable';
 import type { DataTableColumn } from '../../components/table/tableTypes';
 import useTableQueryState from '../../hooks/useTableQueryState';
@@ -75,7 +76,25 @@ type ArticlesListResponse = {
   page: number;
   pageSize: number;
 };
+type FeaturedHomeEvent = {
+  id: number;
+  title: string;
+  slug: string;
+  published: boolean;
+  visibility: string;
+  archived: boolean;
+  featured: boolean;
+  featuredSortOrder?: number;
+};
 type ShowcaseImage = { id: number; url: string; caption: string | null; sortOrder: number };
+
+function featuredEventAvailability(event: FeaturedHomeEvent): string | null {
+  if (event.archived) return 'Archived';
+  if (!event.published) return 'Draft';
+  if (event.visibility === 'active_members') return 'Active members';
+  if (event.visibility === 'ice_members') return 'Ice members';
+  return null;
+}
 
 type FilesListResponse = {
   items: ManagedFile[];
@@ -291,8 +310,10 @@ export default function AdminContent() {
   } | null>(null);
   const [articles, setArticles] = useState<Article[]>([]);
   const [featuredHomeArticles, setFeaturedHomeArticles] = useState<Article[]>([]);
+  const [featuredHomeEvents, setFeaturedHomeEvents] = useState<FeaturedHomeEvent[]>([]);
   /** Resolved from lookup selection; do not derive from `menuArticleOptions` (articles list is capped server-side). */
   const [pendingFeaturedArticle, setPendingFeaturedArticle] = useState<ArticleOption | null>(null);
+  const [pendingFeaturedEvent, setPendingFeaturedEvent] = useState<EventOption | null>(null);
   const [menuArticleOptions, setMenuArticleOptions] = useState<Article[]>([]);
   const [articleTotal, setArticleTotal] = useState(0);
   const [articlesLoaded, setArticlesLoaded] = useState(false);
@@ -515,6 +536,7 @@ export default function AdminContent() {
       const [
         configRes,
         featuredHomeRes,
+        featuredHomeEventsRes,
         menuArticlesRes,
         showcaseRes,
         showcaseFilesRes,
@@ -522,6 +544,7 @@ export default function AdminContent() {
       ] = await Promise.all([
         api.get('/content/site-config'),
         api.get<Article[]>('/content/homepage/featured-articles'),
+        api.get<FeaturedHomeEvent[]>('/content/homepage/featured-events'),
         api.get<ArticlesListResponse>('/content/articles', { params: { page: 1, pageSize: 1000, sort: 'title', order: 'asc' } }),
         api.get('/content/showcase-images'),
         api.get<FilesListResponse>('/content/files', { params: { page: 1, pageSize: 1000, visibility: 'public', type: 'image' } }),
@@ -530,6 +553,7 @@ export default function AdminContent() {
       if (requestId !== loadDataRequestIdRef.current) return;
       setSiteConfig(configRes.data);
       setFeaturedHomeArticles(featuredHomeRes.data);
+      setFeaturedHomeEvents(featuredHomeEventsRes.data);
       setMenuArticleOptions(menuArticlesRes.data.items);
       setShowcaseImages(showcaseRes.data);
       setShowcaseSelectableFiles(showcaseFilesRes.data.items);
@@ -778,6 +802,40 @@ export default function AdminContent() {
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
       showAlert(msg || 'Failed to reorder featured articles', 'error');
+      await loadContentData();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSetFeaturedEvent = async (eventId: number, featured: boolean) => {
+    setSaving(true);
+    try {
+      await api.patch('/content/homepage/featured-events', { eventId, featured });
+      await loadContentData();
+      notifyPublicBootstrapChanged();
+      if (!featured) {
+        showAlert('Featured designation removed', 'success');
+      }
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      showAlert(msg || 'Failed to update featured status', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleFeaturedEventReorder = async (reordered: FeaturedHomeEvent[]) => {
+    setFeaturedHomeEvents(reordered);
+    setSaving(true);
+    try {
+      await api.patch('/content/homepage/featured-events/reorder', {
+        ids: reordered.map((event) => event.id),
+      });
+      notifyPublicBootstrapChanged();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error;
+      showAlert(msg || 'Failed to reorder featured events', 'error');
       await loadContentData();
     } finally {
       setSaving(false);
@@ -2132,6 +2190,94 @@ export default function AdminContent() {
                     )}
                   />
                 )}
+                </FormSection>
+
+                <FormSection
+                  title="Featured events"
+                  description="Shown in the latest updates section of the homepage, with the event snippet, schedule, and tournament tabs when those are published."
+                  surface="plain"
+                >
+                  <div className="mb-4 flex flex-wrap items-end gap-3">
+                    <FormField
+                      label="Add featured event"
+                      htmlFor={`${formFieldId}-home-featured-event`}
+                      className="min-w-[280px]"
+                    >
+                      <EventAutocomplete
+                        inputId={`${formFieldId}-home-featured-event`}
+                        value={pendingFeaturedEvent}
+                        onChange={setPendingFeaturedEvent}
+                        excludeIds={featuredHomeEvents.map((event) => event.id)}
+                        placeholder="Search for an event to feature"
+                      />
+                    </FormField>
+                    <Button
+                      type="button"
+                      disabled={!pendingFeaturedEvent || saving}
+                      onClick={() => {
+                        if (!pendingFeaturedEvent) return;
+                        void handleSetFeaturedEvent(pendingFeaturedEvent.id, true);
+                        setPendingFeaturedEvent(null);
+                      }}
+                    >
+                      Add as featured
+                    </Button>
+                  </div>
+                  <p className="text-sm text-gray-500 mb-3">
+                    Drag featured events to reorder how they appear on the home page.
+                  </p>
+                  {featuredHomeEvents.length === 0 ? (
+                    <p className="text-sm text-gray-500">No featured events selected.</p>
+                  ) : (
+                    <SortableList
+                      items={featuredHomeEvents}
+                      getId={(event) => event.id}
+                      getItemLabel={(event) => event.title}
+                      itemNoun="featured event"
+                      onReorder={(nextEvents) => void handleFeaturedEventReorder(nextEvents)}
+                      renderItem={({ item: event, isDragging, isOverlay, dragHandle }) => {
+                        const availability = featuredEventAvailability(event);
+                        return (
+                          <SortableRow
+                            isDragging={isDragging}
+                            isOverlay={isOverlay}
+                            className="border-gray-200 px-3 py-2 dark:border-gray-700"
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="flex min-w-0 items-center gap-3">
+                                {dragHandle}
+                                <div className="min-w-0">
+                                  <div className="truncate font-medium">{event.title}</div>
+                                  <div className="truncate text-xs text-gray-500">
+                                    /events/{event.slug}
+                                    {availability ? ` · ${availability}` : ''}
+                                  </div>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => void handleSetFeaturedEvent(event.id, false)}
+                                className="text-sm text-red-600 dark:text-red-400 hover:underline"
+                              >
+                                Remove
+                              </button>
+                            </div>
+                          </SortableRow>
+                        );
+                      }}
+                      renderOverlay={(event) => (
+                        <SortableRow isDragging isOverlay className="px-3 py-2">
+                          <div className="flex items-center gap-3">
+                            <DragHandle label={`Reorder ${event.title}`} disabled />
+                            <div className="min-w-0">
+                              <div className="truncate font-medium">{event.title}</div>
+                              <div className="truncate text-xs text-gray-500">/events/{event.slug}</div>
+                            </div>
+                          </div>
+                        </SortableRow>
+                      )}
+                    />
+                  )}
                 </FormSection>
               </div>
             )}

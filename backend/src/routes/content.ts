@@ -26,6 +26,7 @@ import {
   type DashboardSectionKey,
 } from '../domains/content/dashboardSections.js';
 import { isEventOwner, listOwnedEventIds } from '../services/eventService.js';
+import { isArchivedAt, notArchivedCondition } from '../utils/softDelete.js';
 import { listManagedProgramIds } from '../services/volunteeringService.js';
 
 function markPublicArticleCachesDirty(): void {
@@ -707,6 +708,193 @@ export async function contentRoutes(fastify: FastifyInstance) {
           .update(schema.articles)
           .set({ featured_sort_order: index })
           .where(eq(schema.articles.id, uniqueIds[index]));
+      }
+    });
+
+    return { success: true };
+  });
+
+  fastify.get<{
+    Querystring: {
+      q?: string;
+      limit?: string;
+    };
+  }>('/content/homepage/event-lookup', async (request, reply) => {
+    if (!requireContentAdmin(request, reply)) return;
+    const { db, schema } = getDrizzleDb();
+    const q = (request.query.q ?? '').trim();
+    const limitRaw = Number.parseInt(request.query.limit ?? '10', 10) || 10;
+    const limit = Math.max(1, Math.min(25, limitRaw));
+    const notArchived = notArchivedCondition(schema.events.archived_at);
+
+    const mapRow = (row: {
+      id: number;
+      title: string;
+      slug: string;
+      published: number;
+      visibility: string;
+      updatedAt: string | Date;
+    }) => ({
+      id: row.id,
+      title: row.title,
+      slug: row.slug,
+      published: row.published === 1,
+      visibility: row.visibility,
+      updatedAt: row.updatedAt,
+    });
+
+    if (!q) {
+      const rows = await db
+        .select({
+          id: schema.events.id,
+          title: schema.events.title,
+          slug: schema.events.slug,
+          published: schema.events.published,
+          visibility: schema.events.visibility,
+          updatedAt: schema.events.updated_at,
+        })
+        .from(schema.events)
+        .where(notArchived)
+        .orderBy(desc(schema.events.updated_at), desc(schema.events.id))
+        .limit(limit);
+      return rows.map(mapRow);
+    }
+
+    const rows = await db
+      .select({
+        id: schema.events.id,
+        title: schema.events.title,
+        slug: schema.events.slug,
+        published: schema.events.published,
+        visibility: schema.events.visibility,
+        updatedAt: schema.events.updated_at,
+      })
+      .from(schema.events)
+      .where(
+        and(
+          notArchived,
+          sql`lower(${schema.events.title}) like ${`%${q.toLowerCase()}%`} OR lower(${schema.events.slug}) like ${`%${q.toLowerCase()}%`}`,
+        ),
+      )
+      .limit(250);
+
+    return rows
+      .map((row) => {
+        const score = Math.max(fuzzyScore(row.title, q), fuzzyScore(row.slug, q));
+        return { ...row, score };
+      })
+      .filter((row) => row.score >= 0)
+      .sort((a, b) => b.score - a.score || String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? '')))
+      .slice(0, limit)
+      .map(mapRow);
+  });
+
+  fastify.get('/content/homepage/featured-events', async (request, reply) => {
+    if (!requireContentAdmin(request, reply)) return;
+    const { db, schema } = getDrizzleDb();
+    const rows = await db
+      .select({
+        id: schema.events.id,
+        title: schema.events.title,
+        slug: schema.events.slug,
+        published: schema.events.published,
+        visibility: schema.events.visibility,
+        archivedAt: schema.events.archived_at,
+        featured: schema.events.featured,
+        featuredSortOrder: schema.events.featured_sort_order,
+      })
+      .from(schema.events)
+      .where(eq(schema.events.featured, 1))
+      .orderBy(asc(schema.events.featured_sort_order), asc(schema.events.id));
+    return rows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      slug: row.slug,
+      published: row.published === 1,
+      visibility: row.visibility,
+      archived: isArchivedAt(row.archivedAt),
+      featured: row.featured === 1,
+      featuredSortOrder: row.featuredSortOrder ?? 0,
+    }));
+  });
+
+  const featuredEventToggleSchema = z.object({
+    eventId: z.number().int().positive(),
+    featured: z.boolean(),
+  });
+
+  fastify.patch('/content/homepage/featured-events', async (request, reply) => {
+    if (!requireContentAdmin(request, reply)) return;
+    const parsed = featuredEventToggleSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'Invalid request', details: parsed.error.flatten() });
+    }
+    const { eventId, featured } = parsed.data;
+    const { db, schema } = getDrizzleDb();
+    const [event] = await db
+      .select({
+        id: schema.events.id,
+        featured: schema.events.featured,
+        archivedAt: schema.events.archived_at,
+      })
+      .from(schema.events)
+      .where(eq(schema.events.id, eventId))
+      .limit(1);
+    if (!event) return reply.code(404).send({ error: 'Event not found' });
+    if (featured && isArchivedAt(event.archivedAt)) {
+      return reply.code(400).send({ error: 'Archived events cannot be featured' });
+    }
+    if ((event.featured === 1) === featured) return { success: true };
+
+    let featuredSortOrder = 0;
+    if (featured) {
+      const [maxFeaturedRow] = await db
+        .select({ maxSort: sql<number>`coalesce(max(${schema.events.featured_sort_order}), 0)` })
+        .from(schema.events)
+        .where(eq(schema.events.featured, 1));
+      featuredSortOrder = Number(maxFeaturedRow?.maxSort ?? 0) + 1;
+    }
+
+    await db
+      .update(schema.events)
+      .set({
+        featured: featured ? 1 : 0,
+        featured_sort_order: featuredSortOrder,
+        updated_at: sql`CURRENT_TIMESTAMP`,
+      })
+      .where(eq(schema.events.id, eventId));
+
+    return { success: true };
+  });
+
+  fastify.patch('/content/homepage/featured-events/reorder', async (request, reply) => {
+    if (!requireContentAdmin(request, reply)) return;
+    const parsed = featuredArticleReorderSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'Invalid request', details: parsed.error.flatten() });
+    }
+    const { ids } = parsed.data;
+    const { db, schema } = getDrizzleDb();
+    const uniqueIds = Array.from(new Set(ids));
+    if (uniqueIds.length !== ids.length) {
+      return reply.code(400).send({ error: 'Duplicate event ids in reorder list' });
+    }
+    if (uniqueIds.length === 0) return { success: true };
+
+    const rows = await db
+      .select({ id: schema.events.id })
+      .from(schema.events)
+      .where(and(eq(schema.events.featured, 1), inArray(schema.events.id, uniqueIds)));
+    if (rows.length !== uniqueIds.length) {
+      return reply.code(400).send({ error: 'Reorder list must contain only featured event ids' });
+    }
+
+    await db.transaction(async (tx) => {
+      for (let index = 0; index < uniqueIds.length; index += 1) {
+        await tx
+          .update(schema.events)
+          .set({ featured_sort_order: index })
+          .where(eq(schema.events.id, uniqueIds[index]));
       }
     });
 
