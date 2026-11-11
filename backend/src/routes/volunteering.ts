@@ -46,17 +46,22 @@ import {
   updateAdminHourLog,
   updateMyHourLog,
 } from '../services/volunteerHourLogService.js';
+import { exportVolunteerReport } from '../services/volunteerReportService.js';
 import {
   VOLUNTEER_HOUR_LOG_ADDITIONAL_MEMBERS_MAX,
   VolunteerHourLogValidationError,
 } from '../utils/volunteerHourLogs.js';
+import {
+  parseVolunteerReportRange,
+  VolunteerReportValidationError,
+} from '../utils/volunteerReport.js';
 
 interface AuthenticatedRequest extends FastifyRequest {
   member: Member;
 }
 
 async function handleServiceError(reply: any, err: unknown) {
-  if (err instanceof VolunteerHourLogValidationError) {
+  if (err instanceof VolunteerHourLogValidationError || err instanceof VolunteerReportValidationError) {
     return sendValidationError(reply, err.message, err.details);
   }
   if (err instanceof VolunteeringServiceError) {
@@ -849,6 +854,26 @@ export async function volunteeringRoutes(fastify: FastifyInstance): Promise<void
       try {
         await removeSignupAsManager(signupId, member);
         return reply.code(204).send();
+      } catch (err) {
+        return handleServiceError(reply, err);
+      }
+    }
+  );
+
+  fastify.get<{ Querystring: { from?: string; to?: string } }>(
+    '/volunteering/admin/report',
+    { schema: { tags: ['volunteering'] } },
+    async (request, reply) => {
+      const member = getMember(request as AuthenticatedRequest);
+      if (!member) return sendApiError(reply, 401, 'Unauthorized');
+      try {
+        const range = parseVolunteerReportRange(request.query?.from, request.query?.to);
+        const result = await exportVolunteerReport(member, range);
+        return reply
+          .header('Content-Type', 'text/csv; charset=utf-8')
+          .header('Content-Disposition', `attachment; filename="${result.filename}"`)
+          .header('Cache-Control', 'private, no-store')
+          .send(result.csv);
       } catch (err) {
         return handleServiceError(reply, err);
       }

@@ -27,6 +27,7 @@ import {
   parseVolunteerSignupKind,
   type VolunteerProgramView,
 } from '../../utils/volunteering';
+import VolunteerReportDownload from '../../components/volunteering/VolunteerReportDownload';
 import AdminVolunteerProgramDuplicateModal from './AdminVolunteerProgramDuplicateModal';
 
 export default function AdminVolunteering() {
@@ -287,6 +288,7 @@ export function AdminVolunteeringPrograms() {
 
   return (
     <>
+      {!generalTab && canCreate ? <VolunteerReportDownload /> : null}
       {!loading ? (
         <AppPageControlsRow
           left={

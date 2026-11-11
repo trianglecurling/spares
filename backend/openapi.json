@@ -36632,6 +36632,18 @@
         }
       }
     },
+    "/volunteering/admin/report": {
+      "get": {
+        "tags": [
+          "volunteering"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/volunteering/admin/hour-logs": {
       "get": {
         "tags": [
