@@ -666,6 +666,20 @@
       "when": 1788498000000,
       "tag": "0095_add_events_featured",
       "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1788498600000,
+      "tag": "0096_add_leagues_ice_prep_minutes",
+      "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1788499200000,
+      "tag": "0097_move_ice_prep_to_draw_times",
+      "breakpoints": true
     }
   ]
 }

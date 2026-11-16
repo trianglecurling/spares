@@ -31,7 +31,10 @@ import {
 } from '../../utils/leagueProcessing';
 import {
   defaultDrawDurationMinutes,
+  ICE_PREP_MINUTES_MAX,
+  ICE_PREP_TIME_HELPER,
   extraDrawKey,
+  parseIcePrepMinutes,
   type LeagueExtraDraw,
   type LeaguePlayFormat,
 } from '../../utils/leagueSchedule';
@@ -160,6 +163,8 @@ interface League {
   publicNotes?: string | null;
   teamFormation?: 'coordinator' | 'skips_draft';
   drawDurationMinutes: number;
+  /** Ice prep minutes aligned with drawTimes. */
+  icePrepMinutes: number[];
   drawTimes: string[];
   exceptions: string[];
   extraDraws: LeagueExtraDraw[];
@@ -464,6 +469,7 @@ export default function LeagueDetail() {
     startDate: '',
     endDate: '',
     drawDurationMinutes: defaultDrawDurationMinutes('teams'),
+    icePrepMinutes: [0],
     drawTimes: [''],
     exceptions: [] as string[],
     extraDraws: [] as LeagueExtraDraw[],
@@ -1129,6 +1135,9 @@ export default function LeagueDetail() {
       drawDurationMinutes:
         league.drawDurationMinutes ?? defaultDrawDurationMinutes(league.format),
       drawTimes: league.drawTimes.length ? league.drawTimes : [''],
+      icePrepMinutes: (league.drawTimes.length ? league.drawTimes : ['']).map(
+        (_, index) => league.icePrepMinutes?.[index] ?? 0
+      ),
       exceptions: league.exceptions || [],
       extraDraws: (league.extraDraws || []).map((d) => ({
         date: d.date,
@@ -1171,6 +1180,7 @@ export default function LeagueDetail() {
     setLeagueForm({
       ...leagueForm,
       drawTimes: [...leagueForm.drawTimes, ''],
+      icePrepMinutes: [...leagueForm.icePrepMinutes, 0],
     });
   };
 
@@ -1180,10 +1190,17 @@ export default function LeagueDetail() {
     setLeagueForm({ ...leagueForm, drawTimes: nextTimes });
   };
 
+  const updateIcePrepMinutes = (index: number, value: string) => {
+    const next = [...leagueForm.icePrepMinutes];
+    next[index] = parseIcePrepMinutes(value);
+    setLeagueForm({ ...leagueForm, icePrepMinutes: next });
+  };
+
   const removeDrawTime = (index: number) => {
     setLeagueForm({
       ...leagueForm,
       drawTimes: leagueForm.drawTimes.filter((_, i) => i !== index),
+      icePrepMinutes: leagueForm.icePrepMinutes.filter((_, i) => i !== index),
     });
   };
 
@@ -1330,6 +1347,12 @@ export default function LeagueDetail() {
         return;
       }
 
+      const configuredDrawTimes = leagueForm.drawTimes
+        .map((time, index) => ({
+          time: time.trim(),
+          icePrepMinutes: leagueForm.icePrepMinutes[index] ?? 0,
+        }))
+        .filter((drawTime) => drawTime.time !== '');
       const uniqueExceptions = Array.from(new Set(leagueForm.exceptions)).sort();
       const uniqueExtraDraws = Array.from(
         new Map(
@@ -1345,7 +1368,8 @@ export default function LeagueDetail() {
         startDate: leagueForm.startDate,
         endDate: leagueForm.endDate,
         drawDurationMinutes: leagueForm.drawDurationMinutes,
-        drawTimes: leagueForm.drawTimes.filter((t) => t.trim() !== ''),
+        icePrepMinutes: configuredDrawTimes.map((drawTime) => drawTime.icePrepMinutes),
+        drawTimes: configuredDrawTimes.map((drawTime) => drawTime.time),
         exceptions: uniqueExceptions,
         extraDraws: uniqueExtraDraws,
       };
@@ -2013,7 +2037,13 @@ export default function LeagueDetail() {
                 </div>
                 <div>
                   <span className="font-medium dark:text-gray-300">Draw times:</span>{' '}
-                  {league.drawTimes.map(formatTime).join(', ')}
+                  {league.drawTimes
+                    .map((time, index) => {
+                      const minutes = league.icePrepMinutes?.[index] ?? 0;
+                      const prep = minutes > 0 ? `${minutes} min ice prep` : 'no ice prep';
+                      return `${formatTime(time)} (${prep})`;
+                    })
+                    .join(', ')}
                 </div>
                 <div>
                   <span className="font-medium dark:text-gray-300">Draw duration:</span>{' '}
@@ -2189,23 +2219,44 @@ export default function LeagueDetail() {
                 </div>
 
                 <div>
-                  <p id={`${leagueConfigDrawTimeId}-legend`} className="app-label">
+                  <p className="app-label">
                     Draw times <span className="text-red-500">*</span>
                   </p>
+                  <p id={`${leagueConfigDrawTimeId}-helper`} className="mb-2 text-sm text-gray-500 dark:text-gray-400">
+                    {ICE_PREP_TIME_HELPER}
+                  </p>
                   {leagueForm.drawTimes.map((time, index) => (
-                    <div key={`draw-${index}`} className="flex items-center space-x-2 mb-2">
-                      <label htmlFor={`${leagueConfigDrawTimeId}-${index}`} className="sr-only">
-                        Draw time {index + 1}
-                      </label>
-                      <input
-                        type="time"
-                        id={`${leagueConfigDrawTimeId}-${index}`}
-                        aria-labelledby={`${leagueConfigDrawTimeId}-legend`}
-                        value={time}
-                        onChange={(e) => updateDrawTime(index, e.target.value)}
-                        className="app-input flex-1"
-                        required
-                      />
+                    <div key={`draw-${index}`} className="mb-3 flex flex-wrap items-end gap-2">
+                      <div className="min-w-0 flex-1">
+                        <label htmlFor={`${leagueConfigDrawTimeId}-${index}`} className="app-label">
+                          Draw time {index + 1}
+                        </label>
+                        <input
+                          type="time"
+                          id={`${leagueConfigDrawTimeId}-${index}`}
+                          value={time}
+                          onChange={(e) => updateDrawTime(index, e.target.value)}
+                          aria-describedby={`${leagueConfigDrawTimeId}-helper`}
+                          className="app-input"
+                          required
+                        />
+                      </div>
+                      <div className="w-36">
+                        <label htmlFor={`${leagueConfigDrawTimeId}-ice-${index}`} className="app-label">
+                          Ice prep (minutes)
+                        </label>
+                        <input
+                          type="number"
+                          id={`${leagueConfigDrawTimeId}-ice-${index}`}
+                          min={0}
+                          max={ICE_PREP_MINUTES_MAX}
+                          step={1}
+                          value={leagueForm.icePrepMinutes[index] ?? 0}
+                          onChange={(e) => updateIcePrepMinutes(index, e.target.value)}
+                          aria-describedby={`${leagueConfigDrawTimeId}-helper`}
+                          className="app-input"
+                        />
+                      </div>
                       {leagueForm.drawTimes.length > 1 && (
                         <Button type="button" variant="secondary" onClick={() => removeDrawTime(index)}>
                           Remove

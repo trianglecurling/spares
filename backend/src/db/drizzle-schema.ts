@@ -1109,6 +1109,8 @@ export const leagueDrawTimesSqlite = sqliteTable('league_draw_times', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   league_id: integer('league_id').notNull().references(() => leaguesSqlite.id, { onDelete: 'cascade' }),
   draw_time: text('draw_time').notNull(),
+  /** Minutes before this regular draw that ice preparation begins. 0 means none. */
+  ice_prep_minutes: integer('ice_prep_minutes').notNull().default(0),
 }, (table) => ({
   leagueIdIdx: index('idx_league_draw_times_league_id').on(table.league_id),
 }));
@@ -3655,6 +3657,8 @@ export const leagueDrawTimesPg = pgTable('league_draw_times', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
   league_id: integerPg('league_id').notNull().references(() => leaguesPg.id, { onDelete: 'cascade' }),
   draw_time: time('draw_time').notNull(),
+  /** Minutes before this regular draw that ice preparation begins. 0 means none. */
+  ice_prep_minutes: integerPg('ice_prep_minutes').notNull().default(0),
 }, (table) => ({
   leagueIdIdx: indexPg('idx_league_draw_times_league_id').on(table.league_id),
 }));

@@ -6804,6 +6804,7 @@ export interface paths {
                             /** @enum {string} */
                             teamFormation: "coordinator" | "skips_draft";
                             drawDurationMinutes: number;
+                            icePrepMinutes: number[];
                             drawTimes: string[];
                             exceptions: string[];
                             extraDraws: {
@@ -6853,6 +6854,7 @@ export interface paths {
                         predecessorLeagueId?: number | null;
                         successorLeagueId?: number | null;
                         drawDurationMinutes?: number;
+                        icePrepMinutes?: number[];
                         drawTimes: string[];
                         exceptions?: string[];
                         extraDraws?: {
@@ -6907,6 +6909,7 @@ export interface paths {
                             /** @enum {string} */
                             teamFormation: "coordinator" | "skips_draft";
                             drawDurationMinutes: number;
+                            icePrepMinutes: number[];
                             drawTimes: string[];
                             exceptions: string[];
                             extraDraws: {
@@ -7037,6 +7040,7 @@ export interface paths {
                                 /** @enum {string} */
                                 teamFormation: "coordinator" | "skips_draft";
                                 drawDurationMinutes: number;
+                                icePrepMinutes: number[];
                                 drawTimes: string[];
                                 exceptions: string[];
                                 extraDraws: {
@@ -7143,6 +7147,7 @@ export interface paths {
                         /** @enum {string} */
                         teamFormation?: "coordinator" | "skips_draft";
                         drawDurationMinutes?: number;
+                        icePrepMinutes?: number[];
                         drawTimes?: string[];
                         exceptions?: string[];
                         extraDraws?: {
@@ -7197,6 +7202,7 @@ export interface paths {
                             /** @enum {string} */
                             teamFormation: "coordinator" | "skips_draft";
                             drawDurationMinutes: number;
+                            icePrepMinutes: number[];
                             drawTimes: string[];
                             exceptions: string[];
                             extraDraws: {
@@ -7241,6 +7247,7 @@ export interface paths {
                                 startDate: string;
                                 endDate: string;
                                 drawDurationMinutes: number;
+                                icePrepMinutes: number[];
                                 drawTimes: string[];
                                 exceptions: string[];
                                 extraDraws: {
@@ -7288,6 +7295,7 @@ export interface paths {
                             startDate: string;
                             endDate: string;
                             drawDurationMinutes?: number;
+                            icePrepMinutes?: number[];
                             drawTimes: string[];
                             exceptions?: string[];
                             extraDraws?: {
@@ -7346,6 +7354,7 @@ export interface paths {
                                 /** @enum {string} */
                                 teamFormation: "coordinator" | "skips_draft";
                                 drawDurationMinutes: number;
+                                icePrepMinutes: number[];
                                 drawTimes: string[];
                                 exceptions: string[];
                                 extraDraws: {

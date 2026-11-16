@@ -721,6 +721,7 @@ export const leagueResponseSchema = {
     publicNotes: { type: ['string', 'null'] },
     teamFormation: { type: 'string', enum: ['coordinator', 'skips_draft'] },
     drawDurationMinutes: { type: 'number' },
+    icePrepMinutes: { type: 'array', items: { type: 'number' } },
     drawTimes: { type: 'array', items: { type: 'string' } },
     exceptions: { type: 'array', items: { type: 'string' } },
     extraDraws: {
@@ -769,6 +770,7 @@ export const leagueResponseSchema = {
     'publicNotes',
     'teamFormation',
     'drawDurationMinutes',
+    'icePrepMinutes',
     'drawTimes',
     'exceptions',
     'extraDraws',
@@ -805,6 +807,7 @@ export const leagueExportResponseSchema = {
           startDate: { type: 'string' },
           endDate: { type: 'string' },
           drawDurationMinutes: { type: 'number' },
+          icePrepMinutes: { type: 'array', items: { type: 'number' } },
           drawTimes: { type: 'array', items: { type: 'string' } },
           exceptions: { type: 'array', items: { type: 'string' } },
           extraDraws: {
@@ -827,6 +830,7 @@ export const leagueExportResponseSchema = {
           'startDate',
           'endDate',
           'drawDurationMinutes',
+          'icePrepMinutes',
           'drawTimes',
           'exceptions',
           'extraDraws',

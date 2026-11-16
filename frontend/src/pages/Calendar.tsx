@@ -2902,17 +2902,16 @@ function DesktopWeekView({
                           tabIndex={0}
                           onClick={() => onEventClick?.(ev)}
                           onKeyDown={(e) => e.key === 'Enter' && onEventClick?.(ev)}
-                          className="absolute pointer-events-auto cursor-pointer hover:opacity-90 transition-opacity"
+                          className="absolute pointer-events-auto cursor-pointer overflow-hidden hover:opacity-90 transition-opacity"
                           style={{
                             top: topPx,
                             left: `calc(${leftPct}% + ${pad}px)`,
                             width: `calc(${colWidth}% - ${pad * 2}px)`,
                             height: totalHeightPx,
-                            minHeight: 24,
                           }}
                         >
                           <div
-                            className={`flex flex-col justify-center px-2 py-1 rounded border ${type.color} h-full min-w-0`}
+                            className={`flex h-full min-h-0 min-w-0 flex-col justify-center overflow-hidden rounded border px-2 py-1 ${type.color}`}
                           >
                             <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5 min-w-0">
                               {(() => {
@@ -3180,16 +3179,16 @@ function DayView({
                   tabIndex={0}
                   onClick={() => onEventClick?.(ev)}
                   onKeyDown={(e) => e.key === 'Enter' && onEventClick?.(ev)}
-                  className="absolute cursor-pointer hover:opacity-90 transition-opacity"
+                  className="absolute cursor-pointer overflow-hidden hover:opacity-90 transition-opacity"
                   style={{
                     top: topPx,
                     left: `calc(${leftPct}% + ${pad}px)`,
                     width: `calc(${colWidthPct}% - ${pad * 2}px)`,
-                    height: Math.max(heightPx, 48),
+                    height: heightPx,
                   }}
                 >
                   <div
-                    className={`flex flex-col justify-center px-3 py-2 rounded-lg border ${type.color} h-full min-w-0 shadow-sm`}
+                    className={`flex h-full min-h-0 min-w-0 flex-col justify-center overflow-hidden rounded-lg border px-3 py-2 shadow-sm ${type.color}`}
                   >
                     <DayTimedEventChipContent
                       title={ev.title}
