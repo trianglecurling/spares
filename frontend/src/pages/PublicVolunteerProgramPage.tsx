@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { HiChevronDown } from 'react-icons/hi2';
-import { Link, Navigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom';
 import Button from '../components/Button';
 import FormField from '../components/FormField';
 import Modal from '../components/Modal';
@@ -18,6 +18,7 @@ import {
   formatVolunteerDuration,
   formatVolunteerRange,
   formatVolunteerTimeRange,
+  volunteerProgramSharePath,
   volunteerShiftDayKey,
   type PublicVolunteerProgramView,
 } from '../utils/volunteering';
@@ -33,6 +34,8 @@ type SignupTarget = {
 
 export default function PublicVolunteerProgramPage() {
   const { slug: slugParam } = useParams<{ slug: string }>();
+  const [searchParams] = useSearchParams();
+  const shareToken = searchParams.get('token')?.trim() ?? '';
   const { member, token, isLoading: authLoading } = useAuth();
   const { showAlert } = useAlert();
   const nameId = useId();
@@ -62,7 +65,8 @@ export default function PublicVolunteerProgramPage() {
     setNotFound(false);
     try {
       const res = await api.get<{ program: PublicVolunteerProgramView }>(
-        `/public/volunteering/programs/${encodeURIComponent(slug)}`
+        `/public/volunteering/programs/${encodeURIComponent(slug)}`,
+        { params: shareToken ? { token: shareToken } : undefined }
       );
       setProgram(res.data.program);
     } catch (err) {
@@ -76,7 +80,7 @@ export default function PublicVolunteerProgramPage() {
     } finally {
       setLoading(false);
     }
-  }, [slug, showAlert]);
+  }, [slug, shareToken, showAlert]);
 
   useEffect(() => {
     void load();
@@ -117,7 +121,7 @@ export default function PublicVolunteerProgramPage() {
   }
 
   if (token && member && slug) {
-    return <Navigate to={`/volunteering/programs/${slug}`} replace />;
+    return <Navigate to={volunteerProgramSharePath('member', slug, shareToken)} replace />;
   }
 
   if (loading) {
@@ -135,17 +139,17 @@ export default function PublicVolunteerProgramPage() {
         <SeoMeta title="Volunteer program" />
         <PublicStateCard
           title="Program not found"
-          description="This volunteer sign-up page is unavailable. It may be unpublished or the link may be incorrect."
+          description="This volunteer sign-up page is unavailable. It may be unpublished, or the link may be incorrect or missing its access token."
         />
       </PublicLayout>
     );
   }
 
   if (slug !== program.slug) {
-    return <Navigate to={`/volunteering/public/programs/${program.slug}`} replace />;
+    return <Navigate to={volunteerProgramSharePath('public', program.slug, shareToken)} replace />;
   }
 
-  const memberLoginHref = `/login?redirect=${encodeURIComponent(`/volunteering/programs/${program.slug}`)}`;
+  const memberLoginHref = `/login?redirect=${encodeURIComponent(volunteerProgramSharePath('member', program.slug, shareToken))}`;
   const hasShifts = shiftsWithRoles.length > 0;
   const multiDay = dayGroups.length > 1;
 
@@ -186,6 +190,7 @@ export default function PublicVolunteerProgramPage() {
         name: trimmedName,
         email: trimmedEmail,
         comments: comments.trim() || null,
+        ...(shareToken ? { token: shareToken } : {}),
       });
       setSignupTarget(null);
       setName('');

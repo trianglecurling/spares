@@ -2691,7 +2691,10 @@ export interface paths {
         };
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    /** @description Share token required for unlisted sign-ups */
+                    token?: string;
+                };
                 header?: never;
                 path: {
                     slug: string;
@@ -23836,7 +23839,10 @@ export interface paths {
         };
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    /** @description Share token required for unlisted sign-ups */
+                    token?: string;
+                };
                 header?: never;
                 path: {
                     slug: string;

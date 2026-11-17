@@ -30,6 +30,7 @@ import {
   volunteerCreditHoursFromShift,
   compareVolunteerProgramsForList,
   volunteerProgramUiTerms,
+  volunteerProgramSharePath,
   snapVolunteerCreditHours,
   maxVolunteerCreditHoursOnStep,
 } from './volunteering';
@@ -803,5 +804,19 @@ describe('volunteerProgramUiTerms', () => {
       roleTab: 'Roles',
       shiftTab: 'Shifts',
     });
+  });
+});
+
+describe('volunteerProgramSharePath', () => {
+  test('adds the secret token for member and public sign-up URLs', () => {
+    expect(volunteerProgramSharePath('member', 'ice-scrape', 'abc123')).toBe(
+      '/volunteering/programs/ice-scrape?token=abc123'
+    );
+    expect(volunteerProgramSharePath('public', 'ice scrape', 'a b')).toBe(
+      '/volunteering/public/programs/ice%20scrape?token=a%20b'
+    );
+    expect(volunteerProgramSharePath('member', 'ice-scrape', '  ')).toBe(
+      '/volunteering/programs/ice-scrape'
+    );
   });
 });

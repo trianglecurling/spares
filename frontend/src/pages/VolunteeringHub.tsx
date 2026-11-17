@@ -85,6 +85,7 @@ export default function VolunteeringHub() {
         (program) =>
           parseVolunteerSignupKind(program.signupKind) ===
             (activeTab === 'other' ? 'general' : 'volunteering') &&
+          !program.unlisted &&
           volunteerProgramAppearsInDiscovery(program) &&
           volunteerProgramVisibleGivenCredentials(program, heldCredentialIds)
       ),

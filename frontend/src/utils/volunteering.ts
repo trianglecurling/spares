@@ -171,6 +171,9 @@ export type VolunteerProgramView = {
   location: string | null;
   startDate: string | null;
   published: boolean;
+  unlisted: boolean;
+  /** Set on admin reads. Hub responses leave this null. */
+  shareToken: string | null;
   featureOnDashboard: boolean;
   publicSignups: boolean;
   signupKind: VolunteerSignupKind;
@@ -184,6 +187,21 @@ export type VolunteerProgramView = {
   canManage: boolean;
   calendarEvent: VolunteerAttachedCalendarEvent | null;
 };
+
+/** Member or public sign-up path, including the secret token when one exists. */
+export function volunteerProgramSharePath(
+  audience: 'member' | 'public',
+  slug: string,
+  shareToken?: string | null
+): string {
+  const base =
+    audience === 'public'
+      ? `/volunteering/public/programs/${encodeURIComponent(slug)}`
+      : `/volunteering/programs/${encodeURIComponent(slug)}`;
+  const token = shareToken?.trim();
+  if (!token) return base;
+  return `${base}?token=${encodeURIComponent(token)}`;
+}
 
 export type PublicVolunteerProgramView = {
   id: number;

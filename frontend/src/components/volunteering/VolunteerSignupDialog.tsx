@@ -23,6 +23,8 @@ export type VolunteerSignupTarget = {
   /** Program owner adding people without pre-selecting themselves. */
   manageForOthers?: boolean;
   signedUpMemberIds?: number[];
+  /** Share token from the sign-up URL. Required when the program is unlisted. */
+  shareToken?: string;
 };
 
 type VolunteerSignupDialogProps = {
@@ -110,6 +112,7 @@ export default function VolunteerSignupDialog({
           comments: comments.trim() || null,
           memberIds: selectedIds,
           guestNames,
+          ...(target.shareToken ? { token: target.shareToken } : {}),
         },
         { id: String(target.shiftRoleId) }
       )) as { count?: number; ids?: number[] };

@@ -3248,6 +3248,15 @@
             "schema": {
               "type": "string"
             },
+            "in": "query",
+            "name": "token",
+            "required": false,
+            "description": "Share token required for unlisted sign-ups"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
             "in": "path",
             "name": "slug",
             "required": true
@@ -36069,6 +36078,15 @@
           "volunteering"
         ],
         "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "token",
+            "required": false,
+            "description": "Share token required for unlisted sign-ups"
+          },
           {
             "schema": {
               "type": "string"

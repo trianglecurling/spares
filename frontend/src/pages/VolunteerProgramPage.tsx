@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useId, useState } from 'react';
-import { Navigate, useParams } from 'react-router-dom';
+import { Navigate, useParams, useSearchParams } from 'react-router-dom';
 import { AppPage, AppPageHeader } from '../components/AppPage';
 import AppPageControlsRow from '../components/AppPageControlsRow';
 import AppStateCard from '../components/AppStateCard';
@@ -20,6 +20,7 @@ import {
   volunteerProgramHasIneligibleCredentialRoles,
   volunteerProgramHasOpenShifts,
   volunteerProgramShiftsForCaller,
+  volunteerProgramSharePath,
   volunteerProgramUiTerms,
   volunteerShiftsDistinctRoleCount,
   type VolunteerHubCredential,
@@ -28,6 +29,8 @@ import {
 
 export default function VolunteerProgramPage() {
   const { slug: slugParam } = useParams<{ slug: string }>();
+  const [searchParams] = useSearchParams();
+  const shareToken = searchParams.get('token')?.trim() ?? '';
   const groupById = useId();
   const { showAlert } = useAlert();
   const [loading, setLoading] = useState(true);
@@ -50,7 +53,11 @@ export default function VolunteerProgramPage() {
     setNotFound(false);
     try {
       const [programResult, credsResult] = await Promise.allSettled([
-        get('/volunteering/programs/{slug}', undefined, { slug }) as Promise<{
+        get(
+          '/volunteering/programs/{slug}',
+          shareToken ? { token: shareToken } : undefined,
+          { slug }
+        ) as Promise<{
           program: VolunteerProgramView;
         }>,
         get('/volunteering/my-credentials') as Promise<{ credentials: VolunteerHubCredential[] }>,
@@ -81,7 +88,7 @@ export default function VolunteerProgramPage() {
     } finally {
       setLoading(false);
     }
-  }, [slug, showAlert]);
+  }, [slug, shareToken, showAlert]);
 
   useEffect(() => {
     void load();
@@ -110,14 +117,14 @@ export default function VolunteerProgramPage() {
         />
         <AppStateCard
           title="Program not found"
-          description="This sign-up may be unpublished, archived, or no longer available."
+          description="This sign-up may be unpublished, archived, or the link may be missing its access token."
         />
       </AppPage>
     );
   }
 
   if (slug !== program.slug) {
-    return <Navigate to={`/volunteering/programs/${program.slug}`} replace />;
+    return <Navigate to={volunteerProgramSharePath('member', program.slug, shareToken)} replace />;
   }
 
   const visibleShifts = volunteerProgramShiftsForCaller(program);

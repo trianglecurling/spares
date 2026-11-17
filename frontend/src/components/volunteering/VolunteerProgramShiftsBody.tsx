@@ -177,6 +177,8 @@ export default function VolunteerProgramShiftsBody({
   const terms = volunteerProgramUiTerms(parseVolunteerSignupKind(program.signupKind));
   const [busyShiftRoleId, setBusyShiftRoleId] = useState<number | null>(null);
   const [signupTarget, setSignupTarget] = useState<VolunteerSignupTarget | null>(null);
+  const [searchParams] = useSearchParams();
+  const shareToken = searchParams.get('token')?.trim() || undefined;
 
   const openSignUp: SignUpHandler = (role, shift, manageForOthers = false) => {
     const remaining = Math.max(0, role.volunteersNeeded - role.volunteersRegistered);
@@ -192,6 +194,7 @@ export default function VolunteerProgramShiftsBody({
       signedUpMemberIds: role.signups
         .map((signup) => signup.memberId)
         .filter((id): id is number => id != null),
+      shareToken,
     });
   };
 

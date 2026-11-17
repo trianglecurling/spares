@@ -2475,6 +2475,10 @@ export const volunteerProgramsSqlite = sqliteTable('volunteer_programs', {
   start_date: text('start_date'), // YYYY-MM-DD, optional — used to auto-fill shift dates
   created_by_member_id: integer('created_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
   published: integer('published').default(0).notNull(),
+  /** Hidden from sign-up lists. Direct access requires `share_token` on the URL. */
+  unlisted: integer('unlisted').default(0).notNull(),
+  /** Unguessable token required on the URL while the program is unlisted. */
+  share_token: text('share_token'),
   feature_on_dashboard: integer('feature_on_dashboard').default(1).notNull(),
   public_signups: integer('public_signups').default(0).notNull(),
   /** volunteering = club volunteer work; general = other sign-ups that reuse this system. */
@@ -2489,6 +2493,7 @@ export const volunteerProgramsSqlite = sqliteTable('volunteer_programs', {
   createdByIdx: index('idx_volunteer_programs_created_by').on(table.created_by_member_id),
   slugUnique: uniqueIndex('volunteer_programs_slug_unique').on(table.slug),
   publishedIdx: index('idx_volunteer_programs_published').on(table.published),
+  shareTokenUnique: uniqueIndex('volunteer_programs_share_token_unique').on(table.share_token),
   featureOnDashboardIdx: index('idx_volunteer_programs_feature_on_dashboard').on(table.feature_on_dashboard),
   publicSignupsIdx: index('idx_volunteer_programs_public_signups').on(table.public_signups),
   signupKindIdx: index('idx_volunteer_programs_signup_kind').on(table.signup_kind),
@@ -4970,6 +4975,10 @@ export const volunteerProgramsPg = pgTable('volunteer_programs', {
   start_date: date('start_date'), // YYYY-MM-DD, optional — used to auto-fill shift dates
   created_by_member_id: integerPg('created_by_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
   published: integerPg('published').default(0).notNull(),
+  /** Hidden from sign-up lists. Direct access requires `share_token` on the URL. */
+  unlisted: integerPg('unlisted').default(0).notNull(),
+  /** Unguessable token required on the URL while the program is unlisted. */
+  share_token: textPg('share_token'),
   feature_on_dashboard: integerPg('feature_on_dashboard').default(1).notNull(),
   public_signups: integerPg('public_signups').default(0).notNull(),
   /** volunteering = club volunteer work; general = other sign-ups that reuse this system. */
@@ -4984,6 +4993,7 @@ export const volunteerProgramsPg = pgTable('volunteer_programs', {
   createdByIdx: indexPg('idx_volunteer_programs_created_by').on(table.created_by_member_id),
   slugUnique: uniqueIndexPg('volunteer_programs_slug_unique').on(table.slug),
   publishedIdx: indexPg('idx_volunteer_programs_published').on(table.published),
+  shareTokenUnique: uniqueIndexPg('volunteer_programs_share_token_unique').on(table.share_token),
   featureOnDashboardIdx: indexPg('idx_volunteer_programs_feature_on_dashboard').on(table.feature_on_dashboard),
   publicSignupsIdx: indexPg('idx_volunteer_programs_public_signups').on(table.public_signups),
   signupKindIdx: indexPg('idx_volunteer_programs_signup_kind').on(table.signup_kind),

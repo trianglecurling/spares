@@ -373,6 +373,11 @@ export function AdminVolunteeringPrograms() {
                               Unpublished
                             </span>
                           ) : null}
+                          {row.unlisted ? (
+                            <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                              Unlisted
+                            </span>
+                          ) : null}
                           {isArchivedAt(row.archivedAt) ? (
                             <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">
                               Archived

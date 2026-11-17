@@ -694,6 +694,13 @@
       "when": 1788586200000,
       "tag": "0099_remove_waitlist_entries_for_rostered_members",
       "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1788672600000,
+      "tag": "0100_volunteer_program_unlisted",
+      "breakpoints": true
     }
   ]
 }

@@ -86,6 +86,7 @@ const programBodySchema = z.object({
     .nullable()
     .optional(),
   published: z.boolean().optional(),
+  unlisted: z.boolean().optional(),
   featureOnDashboard: z.boolean().optional(),
   publicSignups: z.boolean().optional(),
   signupKind: z.enum(['volunteering', 'general']).optional(),
@@ -165,6 +166,7 @@ const signupBodySchema = z.object({
   comments: z.string().max(2000).nullable().optional(),
   memberIds: z.array(z.number().int().positive()).optional(),
   guestNames: z.array(z.string().min(1).max(200)).optional(),
+  token: z.string().max(200).optional(),
 });
 
 const signupCommentsBodySchema = z.object({
@@ -205,16 +207,26 @@ export async function volunteeringRoutes(fastify: FastifyInstance): Promise<void
     }
   });
 
-  fastify.get<{ Params: { slug: string } }>(
+  fastify.get<{ Params: { slug: string }; Querystring: { token?: string } }>(
     '/volunteering/programs/:slug',
-    { schema: { tags: ['volunteering'] } },
+    {
+      schema: {
+        tags: ['volunteering'],
+        querystring: {
+          type: 'object',
+          properties: {
+            token: { type: 'string', description: 'Share token required for unlisted sign-ups' },
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const member = getMember(request as AuthenticatedRequest);
       if (!member) return sendApiError(reply, 401, 'Unauthorized');
       const slug = request.params.slug?.trim();
       if (!slug) return sendApiError(reply, 400, 'Invalid program slug');
       try {
-        return { program: await getHubProgram(member, slug) };
+        return { program: await getHubProgram(member, slug, request.query.token) };
       } catch (err) {
         return handleServiceError(reply, err);
       }
