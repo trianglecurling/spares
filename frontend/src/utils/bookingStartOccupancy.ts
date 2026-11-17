@@ -11,6 +11,7 @@ export type SheetSpan = {
   start: Date;
   end: Date;
   sheetIds: number[];
+  title?: string;
 };
 
 export type StartSlotOccupancy = {
@@ -46,6 +47,119 @@ export function startSlotIsBlocked(
 ): boolean {
   if (slot.unavailableReason || slot.availableSheetIds.length === 0) return true;
   return startLeavesNoSheet(sheetIds, slot.start, slot.end, events);
+}
+
+export function sheetsFreeForInterval(
+  sheetIds: number[],
+  bookingStart: Date,
+  bookingEnd: Date,
+  events: SheetSpan[]
+): number[] {
+  const bookingStartMs = bookingStart.getTime();
+  const bookingEndMs = bookingEnd.getTime();
+  return sheetIds.filter(
+    (sheetId) =>
+      !events.some((event) => event.sheetIds.includes(sheetId) && overlaps(event, bookingStartMs, bookingEndMs))
+  );
+}
+
+function intervalOverlapsMember(
+  bookingStartMs: number,
+  bookingEndMs: number,
+  memberBookings: Array<{ start: Date; end: Date }>
+): boolean {
+  return memberBookings.some(
+    (booking) => booking.start.getTime() < bookingEndMs && booking.end.getTime() > bookingStartMs
+  );
+}
+
+/**
+ * Re-evaluate each start for the duration the member has selected.
+ * A fetched slot can still say "busy" for a longer booking after the slider moves;
+ * the events on the grid are what the member is looking at.
+ * Starts the server marked as already begun stay unavailable.
+ */
+export function refitSlotsToDuration(
+  slots: StartSlotOccupancy[],
+  durationMinutes: number,
+  sheetIds: number[],
+  events: SheetSpan[],
+  memberBookings: Array<{ start: Date; end: Date }> = []
+): StartSlotOccupancy[] {
+  if (sheetIds.length === 0) return slots;
+  const durationMs = durationMinutes * 60_000;
+  return slots.map((slot) => {
+    const end = new Date(slot.start.getTime() + durationMs);
+    if (slot.unavailableReason === 'past') {
+      return { ...slot, end, availableSheetIds: [], unavailableReason: 'past' };
+    }
+    if (intervalOverlapsMember(slot.start.getTime(), end.getTime(), memberBookings)) {
+      return { ...slot, end, availableSheetIds: [], unavailableReason: 'member_conflict' };
+    }
+    const availableSheetIds = sheetsFreeForInterval(sheetIds, slot.start, end, events);
+    if (availableSheetIds.length === 0) {
+      return { ...slot, end, availableSheetIds: [], unavailableReason: 'sheets_busy' };
+    }
+    return { start: slot.start, end, availableSheetIds };
+  });
+}
+
+export type ShorterDurationSuggestion = {
+  start: Date;
+  durationMinutes: number;
+  beforeTitle?: string;
+};
+
+function earliestLaterEventTitle(fittedEnd: Date, events: SheetSpan[]): string | undefined {
+  const endMs = fittedEnd.getTime();
+  const next = events
+    .filter((event) => event.sheetIds.length > 0 && event.start.getTime() >= endMs)
+    .sort((a, b) => a.start.getTime() - b.start.getTime())[0];
+  const title = next?.title?.trim();
+  return title || undefined;
+}
+
+/**
+ * When the selected duration fits nowhere still ahead, the earliest start that
+ * can take a shorter booking, and the longest step that fits there.
+ */
+export function suggestShorterDuration(params: {
+  slots: StartSlotOccupancy[];
+  durationMinutes: number;
+  sheetIds: number[];
+  events: SheetSpan[];
+  minMinutes: number;
+  stepMinutes: number;
+  memberBookings?: Array<{ start: Date; end: Date }>;
+}): ShorterDurationSuggestion | null {
+  const { slots, durationMinutes, sheetIds, events, minMinutes, stepMinutes } = params;
+  const memberBookings = params.memberBookings ?? [];
+  if (sheetIds.length === 0 || stepMinutes <= 0 || durationMinutes <= minMinutes) return null;
+
+  const ordered = [...slots].sort((a, b) => a.start.getTime() - b.start.getTime());
+  const ahead = ordered.filter((slot) => slot.unavailableReason !== 'past');
+  const fits = (start: Date, minutes: number) => {
+    const end = new Date(start.getTime() + minutes * 60_000);
+    if (intervalOverlapsMember(start.getTime(), end.getTime(), memberBookings)) return false;
+    return sheetsFreeForInterval(sheetIds, start, end, events).length > 0;
+  };
+
+  if (ahead.some((slot) => fits(slot.start, durationMinutes))) return null;
+
+  for (const slot of ahead) {
+    let best: number | null = null;
+    for (let minutes = minMinutes; minutes <= durationMinutes - stepMinutes; minutes += stepMinutes) {
+      if (fits(slot.start, minutes)) best = minutes;
+    }
+    if (best == null) continue;
+    const fittedEnd = new Date(slot.start.getTime() + best * 60_000);
+    return {
+      start: slot.start,
+      durationMinutes: best,
+      beforeTitle: earliestLaterEventTitle(fittedEnd, events),
+    };
+  }
+  return null;
 }
 
 /**

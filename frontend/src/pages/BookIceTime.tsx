@@ -23,7 +23,13 @@ import {
   instantToFloatingDate,
 } from '../utils/clubTime';
 import { useClubTimeZone } from '../contexts/ClubTimeZoneContext';
-import { ICE_DURATION_DEFAULT_MINUTES, ICE_DURATION_MIN_MINUTES } from '../utils/iceDuration';
+import {
+  ICE_DURATION_DEFAULT_MINUTES,
+  ICE_DURATION_MIN_MINUTES,
+  ICE_DURATION_STEP_MINUTES,
+  formatIceDuration,
+} from '../utils/iceDuration';
+import { refitSlotsToDuration, suggestShorterDuration } from '../utils/bookingStartOccupancy';
 
 /** Members may book today through this many days ahead; mirrors the server window. */
 const MAX_ADVANCE_DAYS = 7;
@@ -157,8 +163,6 @@ export default function BookIceTime() {
   // Fetches wait until the slider stops. Updating on every step unmounts the day grid.
   const [scheduledDurationMinutes, setScheduledDurationMinutes] = useState(durationMinutes);
   const [selectedStartIso, setSelectedStartIso] = useState<string | null>(null);
-  const selectedStartRef = useRef(selectedStartIso);
-  selectedStartRef.current = selectedStartIso;
   const [sheetId, setSheetId] = useState<number | null>(null);
   const [purpose, setPurpose] = useState<Purpose>('practice');
   const [purposeOther, setPurposeOther] = useState('');
@@ -240,12 +244,6 @@ export default function BookIceTime() {
       })
       .then(({ data }) => {
         setAvailability(data);
-        // Keep the chosen time across a duration change when it still fits.
-        const current = selectedStartRef.current;
-        const match = current ? data.slots.find((slot) => slot.start === current) : undefined;
-        const available = match && !match.unavailableReason ? match.availableSheetIds : [];
-        setSelectedStartIso(available.length > 0 ? current : null);
-        setSheetId((sheet) => (sheet != null && available.includes(sheet) ? sheet : null));
       })
       .catch((err: unknown) => {
         if (axios.isCancel(err)) return;
@@ -266,7 +264,7 @@ export default function BookIceTime() {
     [sheets]
   );
 
-  const slots = useMemo<BookingDaySlot[]>(
+  const fetchedSlots = useMemo<BookingDaySlot[]>(
     () =>
       (availability?.slots ?? []).map((slot) => ({
         start: instantToFloatingDate(slot.start, timeZone),
@@ -287,17 +285,44 @@ export default function BookIceTime() {
     [availability, timeZone]
   );
 
+  const upcomingBookings = useMemo(
+    () =>
+      iceBookings
+        .filter((b) => new Date(b.end).getTime() > Date.now())
+        .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime()),
+    [iceBookings]
+  );
+
+  const sheetIds = useMemo(() => sheets.map((sheet) => sheet.id), [sheets]);
+  const memberBookingSpans = useMemo(
+    () =>
+      upcomingBookings.map((booking) => ({
+        start: instantToFloatingDate(booking.start, timeZone),
+        end: instantToFloatingDate(booking.end, timeZone),
+      })),
+    [upcomingBookings, timeZone]
+  );
+  // The slider can move before the next availability response. Fit the duration
+  // against the events already on the grid so a shorter booking opens immediately.
+  const slots = useMemo(
+    () =>
+      refitSlotsToDuration(fetchedSlots, durationMinutes, sheetIds, events, memberBookingSpans),
+    [fetchedSlots, durationMinutes, sheetIds, events, memberBookingSpans]
+  );
+
   const selectedSlot = useMemo(
     () => slots.find((slot) => floatingDateToIso(slot.start, timeZone) === selectedStartIso) ?? null,
     [slots, selectedStartIso, timeZone]
   );
-  // Loaded slots lag the slider. Leave the grid and any selected start in place so the
-  // page does not jump, and only allow booking once this duration has been checked.
+  // The day grid uses the duration on the slider, not the last response, so booking
+  // can proceed while a refresh for that duration is still in flight. The server
+  // checks the sheet again on submit.
   const scheduleReady =
     !availabilityLoading &&
-    !availabilityRefreshing &&
     availability?.date === dateParam &&
-    availability.durationMinutes === durationMinutes;
+    selectedSlot != null &&
+    !selectedSlot.unavailableReason &&
+    selectedSlot.availableSheetIds.length > 0;
   const confirmedSlot = availability?.date === dateParam ? selectedSlot : null;
 
   const hasOpenSlots = slots.some(
@@ -319,13 +344,30 @@ export default function BookIceTime() {
     setSheetId((current) => (current != null && slot.availableSheetIds.includes(current) ? current : null));
   };
 
-  const upcomingBookings = useMemo(
+  const shorterDuration = useMemo(
     () =>
-      iceBookings
-        .filter((b) => new Date(b.end).getTime() > Date.now())
-        .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime()),
-    [iceBookings]
+      suggestShorterDuration({
+        slots,
+        durationMinutes,
+        sheetIds,
+        events,
+        minMinutes: ICE_DURATION_MIN_MINUTES,
+        stepMinutes: ICE_DURATION_STEP_MINUTES,
+        memberBookings: memberBookingSpans,
+      }),
+    [slots, durationMinutes, sheetIds, events, memberBookingSpans]
   );
+
+  useEffect(() => {
+    if (!selectedStartIso) return;
+    const slot = slots.find((item) => floatingDateToIso(item.start, timeZone) === selectedStartIso);
+    if (!slot || slot.unavailableReason || slot.availableSheetIds.length === 0) {
+      setSelectedStartIso(null);
+      setSheetId(null);
+      return;
+    }
+    setSheetId((current) => (current != null && slot.availableSheetIds.includes(current) ? current : null));
+  }, [slots, selectedStartIso, timeZone]);
 
   const resetForm = () => {
     setConfirmedSummary(null);
@@ -650,11 +692,35 @@ export default function BookIceTime() {
                         }
                       />
                     )}
-                    {!hasOpenSlots && (
+                    {shorterDuration && (
+                      <InlineStateMessage
+                        tone="warning"
+                        title={`${formatIceDuration(durationMinutes)} doesn't fit on the open ice`}
+                        description={
+                          shorterDuration.beforeTitle
+                            ? `${formatIceDuration(shorterDuration.durationMinutes)} fits at ${format(shorterDuration.start, 'h:mm a')}, before ${shorterDuration.beforeTitle}.`
+                            : `${formatIceDuration(shorterDuration.durationMinutes)} fits at ${format(shorterDuration.start, 'h:mm a')}.`
+                        }
+                        action={
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            onClick={() => {
+                              setDurationMinutes(shorterDuration.durationMinutes);
+                              setSelectedStartIso(floatingDateToIso(shorterDuration.start, timeZone));
+                              setSheetId(null);
+                            }}
+                          >
+                            Use {formatIceDuration(shorterDuration.durationMinutes)}
+                          </Button>
+                        }
+                      />
+                    )}
+                    {!hasOpenSlots && !shorterDuration && (
                       <InlineStateMessage
                         title="No open ice on this day"
                         description={
-                          (availability.durationMinutes ?? durationMinutes) > ICE_DURATION_MIN_MINUTES
+                          durationMinutes > ICE_DURATION_MIN_MINUTES
                             ? 'Try a shorter booking or a different day.'
                             : 'Try a different day.'
                         }
