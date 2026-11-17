@@ -264,7 +264,6 @@ export type SeasonMembershipTypeSqlite = 'regular' | 'social' | 'junior_recreati
 export type SeasonMembershipStatusSqlite = 'pending' | 'active' | 'cancelled' | 'refunded' | 'expired';
 export type IcePrivilegeSourceSqlite = 'league' | 'spare_only' | 'program' | 'staff_adjustment';
 
-export type LeagueRosterPlacementStatusSqlite = 'pending' | 'active' | 'cancelled' | 'removed' | 'completed';
 export type LeagueRosterPlacementTypeSqlite =
   | 'guaranteed_return'
   | 'guaranteed_fallback'
@@ -1324,7 +1323,6 @@ export const leagueRosterSqlite = sqliteTable('league_roster', {
   source_registration_id: integer('source_registration_id').references(() => curlingRegistrationsSqlite.id, {
     onDelete: 'set null',
   }),
-  status: text('status').default('active').notNull().$type<LeagueRosterPlacementStatusSqlite>(),
   placement_type: text('placement_type').$type<LeagueRosterPlacementTypeSqlite>(),
   is_temporary_sabbatical_fill: integer('is_temporary_sabbatical_fill').default(0).notNull(),
   related_sabbatical_id: integer('related_sabbatical_id').references(() => curlingLeagueSabbaticalsSqlite.id, {
@@ -3872,7 +3870,6 @@ export const leagueRosterPg = pgTable('league_roster', {
   source_registration_id: integerPg('source_registration_id').references(() => curlingRegistrationsPg.id, {
     onDelete: 'set null',
   }),
-  status: textPg('status').default('active').notNull().$type<LeagueRosterPlacementStatusSqlite>(),
   placement_type: textPg('placement_type').$type<LeagueRosterPlacementTypeSqlite>(),
   is_temporary_sabbatical_fill: integerPg('is_temporary_sabbatical_fill').default(0).notNull(),
   related_sabbatical_id: integerPg('related_sabbatical_id').references(() => curlingLeagueSabbaticalsPg.id, {

@@ -1,7 +1,9 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { getDatabaseConfig } from '../../db/config.js';
 import { getDrizzleDb } from '../../db/drizzle-db.js';
+import { removeMembersFromLeagueRoster } from '../leagueRosterRemoval.js';
 import { insertWaitlistAuditEvent } from '../waitlistAudit.js';
+import { removeWaitlistEntriesForRosteredMembers } from '../waitlistRosterExclusion.js';
 import { releaseFrozenSlotIfNeeded } from '../waitlistQueueService.js';
 import type { RosterRebuildPlacement, RosterRebuildSabbaticalMutation, WaitlistMutation } from './rosterRebuildTypes.js';
 
@@ -142,7 +144,6 @@ export async function applyRosterRebuildPlacements(
       league_id: placement.leagueId,
       member_id: placement.memberId,
       source_registration_id: placement.sourceRegistrationId,
-      status: 'active',
       placement_type: placement.placementType,
       is_temporary_sabbatical_fill: placement.isTemporarySabbaticalFill ? 1 : 0,
       related_sabbatical_id: remapSabbaticalId(placement.relatedSabbaticalId, sabbaticalIdMap),
@@ -241,6 +242,24 @@ export async function applyWaitlistMutations(
   return { placed, declined, temporaryFills };
 }
 
+/** Run after waitlist mutations so placed entries are already marked placed. */
+export async function removeWaitlistEntriesForPlacements(
+  placements: RosterRebuildPlacement[],
+  tx?: ApplyExecutor,
+): Promise<{ removed: number }> {
+  let removed = 0;
+  for (const leagueId of new Set(placements.map((placement) => placement.leagueId))) {
+    const removedIds = await removeWaitlistEntriesForRosteredMembers({
+      executor: tx,
+      leagueId,
+      memberIds: placements.filter((placement) => placement.leagueId === leagueId).map((placement) => placement.memberId),
+      source: 'placement_process',
+    });
+    removed += removedIds.length;
+  }
+  return { removed };
+}
+
 export async function clearSessionRosters(input: {
   leagueIds: number[];
   tx?: ApplyExecutor;
@@ -249,10 +268,16 @@ export async function clearSessionRosters(input: {
   const { db, schema } = getDrizzleDb();
   const executor = input.tx ?? db;
   const existing = await executor
-    .select({ id: schema.leagueRoster.id })
+    .select({ leagueId: schema.leagueRoster.league_id, memberId: schema.leagueRoster.member_id })
     .from(schema.leagueRoster)
     .where(inArray(schema.leagueRoster.league_id, input.leagueIds));
-  if (existing.length === 0) return { deleted: 0 };
-  await executor.delete(schema.leagueRoster).where(inArray(schema.leagueRoster.league_id, input.leagueIds));
-  return { deleted: existing.length };
+  let deleted = 0;
+  for (const leagueId of new Set(existing.map((row) => row.leagueId))) {
+    deleted += await removeMembersFromLeagueRoster({
+      executor,
+      leagueId,
+      memberIds: existing.filter((row) => row.leagueId === leagueId).map((row) => row.memberId),
+    });
+  }
+  return { deleted };
 }

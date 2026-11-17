@@ -427,7 +427,6 @@ async function loadRosterConfirmationRecipients(input: {
       .where(
         and(
           eq(schema.leagues.session_id, input.sessionId),
-          eq(schema.leagueRoster.status, 'active'),
           input.memberId != null ? eq(schema.leagueRoster.member_id, input.memberId) : undefined,
         ),
       ),

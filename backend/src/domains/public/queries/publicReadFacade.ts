@@ -411,8 +411,8 @@ export async function listPublicArticles(featuredOnly: boolean) {
 }
 
 /**
- * Article body for an event detail page: no standalone publish date required;
- * visibility is gated by a linked published public event.
+ * Article body for an event detail page: no standalone publish date required.
+ * Any published event (including member-only) may show its linked article.
  */
 export async function getPublicArticleBodyByIdForPublishedPublicEvent(articleId: number) {
   const { db, schema } = getDrizzleDb();
@@ -428,7 +428,6 @@ export async function getPublicArticleBodyByIdForPublishedPublicEvent(articleId:
       and(
         eq(schema.articles.id, articleId),
         eq(schema.events.published, 1),
-        eq(schema.events.visibility, 'public'),
         notArchivedCondition(schema.events.archived_at),
       ),
     )

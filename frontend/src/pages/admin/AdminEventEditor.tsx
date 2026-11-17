@@ -1565,7 +1565,12 @@ export default function AdminEventEditor() {
                       className="app-input"
                     />
                   </FormField>
-                  <FormField label="Visibility" htmlFor="admin-event-visibility" required>
+                  <FormField
+                    label="Visibility"
+                    htmlFor="admin-event-visibility"
+                    required
+                    helperText="Public events are open to everyone. Active members limits registration to people signed in with a current club membership, including social and spare-only, and those events still appear on the calendar for everyone. Ice members limits registration to current members who are not social, including spare-only. Event details stay visible at the event link."
+                  >
                     <ChoiceInput<string>
                       inputId="admin-event-visibility"
                       options={EVENT_VISIBILITY_OPTIONS}

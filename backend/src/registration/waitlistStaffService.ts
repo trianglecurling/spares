@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { and, asc, desc, eq, inArray, lt, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, lt, or, sql } from 'drizzle-orm';
 import { getDatabaseConfig } from '../db/config.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { canActorImpersonateTarget } from '../services/accountAccess.js';
@@ -47,11 +47,8 @@ import { assertMembersAvailableForWaitlist } from './waitlistMemberMembership.js
 import { WaitlistStaffValidationError } from './waitlistErrors.js';
 import { loadEarmarkedRegistrationDemandByLeagueId } from './leagueVacancyDemand.js';
 import type { LeagueConfig } from './registrationContext.js';
-import {
-  isTopRankedWaitlist,
-  loadTuesdayEveningBadgeMemberSets,
-  resolveTuesdayEveningBadge,
-} from './waitlistTuesdayEveningBadges.js';
+import { loadTuesdayEveningBadgeMemberSets, resolveTuesdayEveningBadge } from './waitlistTuesdayEveningBadges.js';
+import { assertWaitlistOfferSession, resolveWaitlistOfferSession } from './waitlistOfferSession.js';
 import {
   assignWaitlistJoinOrder,
   freezeAllWaitlistOrders,
@@ -390,7 +387,7 @@ async function activeRosterCountByLeague(leagueIds: number[]): Promise<Map<numbe
       temporary: sql<number>`SUM(CASE WHEN ${schema.leagueRoster.is_temporary_sabbatical_fill} = 1 THEN 1 ELSE 0 END)`,
     })
     .from(schema.leagueRoster)
-    .where(and(inArray(schema.leagueRoster.league_id, leagueIds), eq(schema.leagueRoster.status, 'active')))
+    .where(inArray(schema.leagueRoster.league_id, leagueIds))
     .groupBy(schema.leagueRoster.league_id);
   for (const row of rows) {
     const total = Number(row.total ?? 0);
@@ -549,7 +546,6 @@ export async function getLeagueWaitlistManager(leagueId: number) {
       firstName: schema.members.first_name,
       lastName: schema.members.last_name,
       registrationId: schema.leagueRoster.source_registration_id,
-      status: schema.leagueRoster.status,
       placementType: schema.leagueRoster.placement_type,
       temporary: schema.leagueRoster.is_temporary_sabbatical_fill,
       relatedSabbaticalId: schema.leagueRoster.related_sabbatical_id,
@@ -589,7 +585,6 @@ export async function getLeagueWaitlistManager(leagueId: number) {
     .filter((row): row is (typeof waitlistRows)[number] => row != null);
   const renderedById = new Map(rendered.entries.map((entry) => [entry.id, entry]));
   const tuesdayEveningBadgeSets = await loadTuesdayEveningBadgeMemberSets({
-    sessionIds: league.session_id != null ? [league.session_id] : [],
     memberIds: rendered.entries.flatMap((entry) => entry.rosterMemberIds),
   });
   const priorityLeagueIdsByMember =
@@ -618,7 +613,21 @@ export async function getLeagueWaitlistManager(leagueId: number) {
   const auditRows = await db
     .select()
     .from(schema.waitlistAuditEvents)
-    .where(eq(schema.waitlistAuditEvents.league_id, leagueId))
+    .where(
+      or(
+        inArray(
+          schema.waitlistAuditEvents.league_id,
+          db.select({ id: schema.leagues.id }).from(schema.leagues).where(eq(schema.leagues.waitlist_id, waitlistId)),
+        ),
+        inArray(
+          schema.waitlistAuditEvents.waitlist_entry_id,
+          db
+            .select({ id: schema.waitlistEntries.id })
+            .from(schema.waitlistEntries)
+            .where(eq(schema.waitlistEntries.waitlist_id, waitlistId)),
+        ),
+      ),
+    )
     .orderBy(desc(schema.waitlistAuditEvents.created_at), desc(schema.waitlistAuditEvents.id))
     .limit(100);
 
@@ -682,10 +691,11 @@ export async function getLeagueWaitlistManager(leagueId: number) {
         frozen: index < rendered.frozenEntryCount,
         isLifetimeMember: renderedEntry?.isLifetimeMember ?? false,
         tuesdayEveningBadge: resolveTuesdayEveningBadge({
+          waitlistId,
           memberIds: renderedEntry?.rosterMemberIds ?? [row.memberId],
           rosteredMemberIds: tuesdayEveningBadgeSets.rosteredMemberIds,
           playdownMemberIds: tuesdayEveningBadgeSets.playdownMemberIds,
-          isTopRankedWaitlist: isTopRankedWaitlist(row.priorityRank),
+          topWaitlistIdByMember: tuesdayEveningBadgeSets.topWaitlistIdByMember,
         }),
         clubTenureYears: renderedEntry?.clubTenureYears ?? 0,
         offerResponsePreference: preference,
@@ -798,6 +808,7 @@ export async function listWaitlistsOverview(input: { sessionId?: number | null }
   });
 
   return {
+    offerSession: await resolveWaitlistOfferSession(),
     waitlists: sortedWaitlists.map((waitlist) => {
       const attached = leaguesByWaitlist.get(waitlist.id) ?? [];
       const pendingOffers = attached.reduce((sum, league) => sum + (offersByLeague.get(league.id) ?? 0), 0);
@@ -875,7 +886,7 @@ export async function getWaitlistManagerById(input: {
   const placementLeague =
     input.placementLeagueId != null
       ? attachedLeagues.find((league) => league.id === input.placementLeagueId)
-      : attachedLeagues[attachedLeagues.length - 1];
+      : attachedLeagues.reduce((latest, league) => (league.id > latest.id ? league : latest));
   if (!placementLeague) {
     throw new WaitlistStaffValidationError({ placementLeagueId: 'Placement league is not attached to this waitlist.' });
   }
@@ -891,6 +902,16 @@ export async function getWaitlistManagerById(input: {
       : [];
   const sessionNameById = new Map(sessions.map((session) => [session.id, session.name]));
 
+  const offerSession = await resolveWaitlistOfferSession();
+  const offerLeagueRow = offerSession
+    ? attachedLeagues.find((league) => league.session_id === offerSession.id)
+    : undefined;
+  const offerLeagueVacancies = offerLeagueRow
+    ? (await loadLeagueVacancyCountsByLeagueId([{ id: offerLeagueRow.id, capacityValue: offerLeagueRow.capacity_value ?? 0 }])).get(
+        offerLeagueRow.id,
+      )
+    : undefined;
+
   return {
     waitlist: {
       id: waitlist.id,
@@ -899,6 +920,15 @@ export async function getWaitlistManagerById(input: {
       frozenEntryCount: manager.frozenEntryCount,
     },
     placementLeagueId: placementLeague.id,
+    offerLeague:
+      offerSession && offerLeagueRow
+        ? {
+            id: offerLeagueRow.id,
+            name: offerLeagueRow.name,
+            sessionName: offerSession.name,
+            permanentVacancies: offerLeagueVacancies?.permanentVacancies ?? 0,
+          }
+        : null,
     attachedLeagues: attachedLeagues.map((league) => ({
       id: league.id,
       name: league.name,
@@ -1067,8 +1097,7 @@ async function validateOfferCandidate(input: {
     .where(
       and(
         eq(schema.leagueRoster.league_id, input.placementLeagueId),
-        eq(schema.leagueRoster.member_id, input.entry.member_id),
-        eq(schema.leagueRoster.status, 'active')
+        eq(schema.leagueRoster.member_id, input.entry.member_id)
       )
     )
     .limit(1);
@@ -1180,6 +1209,7 @@ export async function sendWaitlistOffers(input: {
   const expiresAt = parseOfferExpiresAt(input.expiresAt);
   const { db, schema } = getDrizzleDb();
   const league = await loadLeague(input.leagueId);
+  await assertWaitlistOfferSession(league.session_id ?? null);
   await runDueWaitlistOfferMaintenance();
   const entries = await selectOfferEntries({
     ...input,
@@ -1270,6 +1300,7 @@ export async function processBatchVacancyOffers(input: {
   expiresAt: Date | string;
   override?: boolean;
 }) {
+  await assertWaitlistOfferSession(input.sessionId);
   const dashboard = await getWaitlistDashboard({ sessionId: input.sessionId });
   const vacancyField =
     input.offerType === 'temporary_sabbatical_fill' ? 'temporarySabbaticalFillVacancies' : 'permanentVacancies';
@@ -1349,7 +1380,6 @@ async function placeAcceptedOffer(
     .limit(1);
   const rosterValues = {
     source_registration_id: input.entry.source_registration_id ?? input.offer.source_registration_id ?? null,
-    status: 'active',
     placement_type: placementType,
     is_temporary_sabbatical_fill: input.offer.offer_type === 'temporary_sabbatical_fill' ? 1 : 0,
     related_sabbatical_id: relatedSabbaticalId,

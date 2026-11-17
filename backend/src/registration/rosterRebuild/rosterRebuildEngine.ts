@@ -21,12 +21,7 @@ import type {
   WaitlistMutation,
 } from './rosterRebuildTypes.js';
 
-const ACTIVE_ROSTER_STATUSES = new Set(['active', 'completed']);
 const MAX_WAITLIST_PASSES = 10_000;
-
-export function isCountedRosterStatus(status: string): boolean {
-  return ACTIVE_ROSTER_STATUSES.has(status);
-}
 
 export function resolveDesiredLeagueCount(value: number | null | undefined): number {
   if (value == null) return 2;
@@ -1047,7 +1042,7 @@ function recordDecline(input: {
   emitEvent?: boolean;
 }): void {
   if (input.declinedEntries.has(input.entry.id)) return;
-  const immune = hasDeclineImmunity(input.snapshot, input.entry.memberId, input.league.id);
+  const immune = hasDeclineImmunity(input.snapshot, input.entry.memberId, input.entry.waitlistId);
   const before = input.entry.declineCount;
   const after = immune ? before : before + 1;
   const outcome: WaitlistEventOutcome =
@@ -1586,12 +1581,11 @@ function snapshotPreflightNotes(snapshot: RosterRebuildSnapshot): RosterRebuildN
   return notes;
 }
 
-function hasDeclineImmunity(snapshot: RosterRebuildSnapshot, memberId: number, leagueId: number): boolean {
+function hasDeclineImmunity(snapshot: RosterRebuildSnapshot, memberId: number, waitlistId: number): boolean {
   const member = snapshot.members.get(memberId);
   if (member?.isLifetimeMember) return true;
   if (!snapshot.tuesdayEveningRosterMemberIds.has(memberId)) return false;
-  const registration = snapshot.registrations.find((row) => row.memberId === memberId);
-  return registrationRank(registration, leagueId) === 1;
+  return snapshot.topWaitlistIdByMember.get(memberId) === waitlistId;
 }
 
 function registrationRank(
@@ -1638,7 +1632,6 @@ function waitlistEntryById(
 function workingRosterFrom(rows: RosterRebuildSnapshot['currentRosters']): WorkingRoster {
   const roster: WorkingRoster = new Map();
   for (const row of rows) {
-    if (!isCountedRosterStatus(row.status)) continue;
     roster.set(rosterKey(row.leagueId, row.memberId), {
       leagueId: row.leagueId,
       memberId: row.memberId,
@@ -1677,7 +1670,6 @@ function occupiedLeagueCount(snapshot: RosterRebuildSnapshot, roster: WorkingRos
 function predecessorMembersByLeague(snapshot: RosterRebuildSnapshot): Map<number, Set<number>> {
   const map = new Map<number, Set<number>>();
   for (const row of snapshot.predecessorRosters) {
-    if (!isCountedRosterStatus(row.status)) continue;
     const set = map.get(row.leagueId) ?? new Set<number>();
     set.add(row.memberId);
     map.set(row.leagueId, set);
@@ -1766,7 +1758,6 @@ function leagueSabbaticalCount(
 function usedRelatedSabbaticalIds(snapshot: RosterRebuildSnapshot, roster: WorkingRoster): Set<number> {
   const used = new Set<number>();
   for (const row of snapshot.currentRosters) {
-    if (!isCountedRosterStatus(row.status)) continue;
     if (!rosterHas(roster, row.leagueId, row.memberId)) continue;
     if (row.relatedSabbaticalId != null) used.add(row.relatedSabbaticalId);
   }

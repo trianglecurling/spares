@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import MemberEventNotice from './MemberEventNotice';
 import { HiCalendarDays, HiCurrencyDollar, HiMapPin, HiOutlineEnvelope, HiUserGroup } from 'react-icons/hi2';
 import { waitlistEntryCountLabel } from './registration/registrationViewEditShared';
 import {
@@ -36,6 +37,10 @@ type PublicEventInfoPanelProps = {
    * button only while registration is open and a spot can be confirmed.
    */
   variant?: 'page' | 'featured';
+  /** When set, registration actions are replaced with this members-only notice. */
+  membershipNotice?: { message: string; loginHref: string | null } | null;
+  /** Register and waitlist target. Defaults to `/events/:slug/register`. */
+  registerHref?: string;
 };
 
 const MS_DAY = 24 * 60 * 60 * 1000;
@@ -213,6 +218,8 @@ export default function PublicEventInfoPanel({
   event,
   serverOffsetMs,
   variant = 'page',
+  membershipNotice = null,
+  registerHref,
 }: PublicEventInfoPanelProps) {
   const featured = variant === 'featured';
   const [tick, setTick] = useState(0);
@@ -252,14 +259,21 @@ export default function PublicEventInfoPanel({
       : null;
   const closedAtFormatted =
     cutoffIso && isPastCutoff && !hasNotOpenedYet ? formatRegistrationClosedAt(cutoffIso) : null;
-  const showRegister = isPublicRegistrationAvailable(event, serverNowMs);
-  const showWaitlist = !featured && isRegistrationOpen && isFull && event.enableWaitlist === 1;
-  const showPrefill = !featured && opensCopy?.kind === 'mmss' && hasNotOpenedYet && msUntilOpen > 0;
-  const showFooter = Boolean(opensCopy) || Boolean(closedAtFormatted) || showPrefill || showRegister || showWaitlist;
+  const registrationTarget = registerHref ?? `/events/${event.slug}/register`;
+  const showRegister = !membershipNotice && isPublicRegistrationAvailable(event, serverNowMs);
+  const showWaitlist = !membershipNotice && !featured && isRegistrationOpen && isFull && event.enableWaitlist === 1;
+  const showPrefill =
+    !membershipNotice && !featured && opensCopy?.kind === 'mmss' && hasNotOpenedYet && msUntilOpen > 0;
+  const showFooter =
+    !membershipNotice &&
+    (Boolean(opensCopy) || Boolean(closedAtFormatted) || showPrefill || showRegister || showWaitlist);
   const showPrice = !featured || isRegistrationOpen;
 
   return (
     <div className="bg-gray-50 rounded-lg p-6 space-y-4">
+      {membershipNotice ? (
+        <MemberEventNotice message={membershipNotice.message} loginHref={membershipNotice.loginHref} />
+      ) : null}
       {event.timespans.map((timespan) => {
         const display = formatTimespanDisplay(timespan.start_dt, timespan.end_dt);
         return (
@@ -338,12 +352,12 @@ export default function PublicEventInfoPanel({
         </DetailRow>
       ) : null}
 
-      {variant === 'page' || showFooter ? (
+      {!membershipNotice && (variant === 'page' || showFooter) ? (
         <div className="border-t border-gray-200 pt-4 mt-1 space-y-4">
-          {opensCopy && opensCopy.kind === 'datePhrase' ? (
+          {!membershipNotice && opensCopy && opensCopy.kind === 'datePhrase' ? (
             <p className="text-sm text-gray-700">{opensCopy.phrase}</p>
           ) : null}
-          {opensCopy && opensCopy.kind !== 'datePhrase' ? (
+          {!membershipNotice && opensCopy && opensCopy.kind !== 'datePhrase' ? (
             <p className="text-sm text-gray-700">
               Registration opens in{' '}
               <span
@@ -360,7 +374,7 @@ export default function PublicEventInfoPanel({
           {showPrefill ? (
             <div className="space-y-2">
               <Link
-                to={`/events/${event.slug}/register`}
+                to={registrationTarget}
                 className="block w-full text-center px-4 py-3 bg-white border-2 border-primary-teal text-primary-teal-link font-medium rounded-lg hover:bg-teal-50 transition-colors"
               >
                 Prefill registration form
@@ -373,7 +387,7 @@ export default function PublicEventInfoPanel({
             </div>
           ) : null}
 
-          {isPastCutoff && !hasNotOpenedYet && closedAtFormatted ? (
+          {!membershipNotice && isPastCutoff && !hasNotOpenedYet && closedAtFormatted ? (
             <p className="text-sm text-gray-700">
               Registration closed on {closedAtFormatted.date} at {closedAtFormatted.time}
             </p>
@@ -381,7 +395,7 @@ export default function PublicEventInfoPanel({
 
           {showRegister ? (
             <Link
-              to={`/events/${event.slug}/register`}
+              to={registrationTarget}
               className="block w-full text-center px-4 py-3 bg-primary-teal-solid text-white font-medium rounded-lg hover:bg-teal-700 transition-colors"
             >
               Register Now
@@ -390,7 +404,7 @@ export default function PublicEventInfoPanel({
 
           {showWaitlist ? (
             <Link
-              to={`/events/${event.slug}/register`}
+              to={registrationTarget}
               className="block w-full text-center px-4 py-3 bg-gray-600 text-white font-medium rounded-lg hover:bg-gray-700 transition-colors"
             >
               Join Waitlist

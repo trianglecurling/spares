@@ -3,7 +3,11 @@ import { z } from 'zod';
 import { config } from '../config.js';
 import { isEventsAdmin, isServerAdmin } from '../utils/auth.js';
 import { abuseRouteRateLimits } from '../plugins/abuseRateLimits.js';
-import { memberIsSocialMember, memberIsSpareOnly } from '../utils/memberMembershipHelpers.js';
+import {
+  eventVisibilityFilterForMember,
+  memberCanRegisterForEventVisibility,
+  memberEventRegistrationDeniedMessage,
+} from '../services/eventVisibilityAccess.js';
 import { createPaymentService, PaymentServiceError, buildCheckoutSuccessUrl, getDefaultPaymentProvider } from '../services/paymentService.js';
 import {
   getEventRegistrationPaidNetMinor,
@@ -752,7 +756,7 @@ async function getPublicPublishedTournamentDrawEventId(
     }
   }
 
-  if (!hasValidSpecialLink && (!event.published || event.visibility !== 'public')) {
+  if (!hasValidSpecialLink && !event.published) {
     return null;
   }
 
@@ -829,8 +833,9 @@ function openTournamentDrawLiveStream(
 
 // Public routes (no auth required)
 export async function publicEventRoutes(fastify: FastifyInstance): Promise<void> {
-  // List published public events
+  // List published events visible to this viewer (public, plus member events when eligible).
   fastify.get('/public/events', {
+    preHandler: optionalAuthMiddleware,
     schema: {
       tags: ['events'],
       querystring: {
@@ -854,16 +859,18 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
       return sendValidationError(reply, 'Invalid event filters', parsedQuery.error.flatten());
     }
     const query = parsedQuery.data;
+    const member = (request as { member?: Member }).member;
     const events = await listEvents({
       publishedOnly: true,
-      visibility: ['public'],
+      visibility: eventVisibilityFilterForMember(member),
       categorySlug: query.category,
       fromDate: query.from,
       toDate: query.to,
       calendarTypeId: query.type,
     });
     const capped = events.slice(0, 200);
-    reply.header('Cache-Control', 'public, max-age=30');
+    reply.header('Cache-Control', 'private, no-store');
+    reply.header('Vary', 'Authorization');
     const serverNow = new Date().toISOString();
     const statsByEventId = await getPublicEventRegistrationStats(
       capped.map((event) => ({ id: event.id, capacity: event.capacity })),
@@ -911,7 +918,7 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
         }
       }
 
-      if (!hasValidSpecialLink && (!event.published || event.visibility !== 'public')) {
+      if (!hasValidSpecialLink && !event.published) {
         return sendApiError(reply, 404, 'Event not found');
       }
 
@@ -933,12 +940,17 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
             })
           : null;
 
+      reply.header('Cache-Control', 'private, no-store');
+      reply.header('Vary', 'Authorization');
       return {
         ...formatEventResponse(event),
         confirmedCount,
         waitlistedCount,
         openSpots,
         yourFeeMinor,
+        viewerCanRegister:
+          hasValidSpecialLink || memberCanRegisterForEventVisibility(member, event.visibility),
+        viewerAuthenticated: member != null,
         serverNow: new Date().toISOString(),
       };
     }
@@ -962,7 +974,7 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
         }
       }
 
-      if (!hasValidSpecialLink && (!event.published || event.visibility !== 'public')) {
+      if (!hasValidSpecialLink && !event.published) {
         return sendApiError(reply, 404, 'Event not found');
       }
 
@@ -1061,16 +1073,23 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
         }
       }
 
-      if (!hasValidSpecialLink && (!event.published || event.visibility !== 'public')) {
+      if (!hasValidSpecialLink && !event.published) {
         return reply.code(404).send({ error: 'Event not found' });
+      }
+
+      const regMember = (request as { member?: Member }).member;
+      if (!hasValidSpecialLink && !memberCanRegisterForEventVisibility(regMember, event.visibility)) {
+        return sendApiError(
+          reply,
+          403,
+          memberEventRegistrationDeniedMessage(event.visibility) ?? 'Forbidden',
+        );
       }
 
       const parsed = registerSchema.safeParse(request.body);
       if (!parsed.success) {
         return sendValidationError(reply, 'Invalid registration data', parsed.error.flatten());
       }
-
-      const regMember = (request as { member?: Member }).member;
 
       try {
         const result = await registerForEvent({
@@ -1687,10 +1706,7 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
       return events.map(summarizeEvent);
     }
 
-    const visibilityFilter: Array<'public' | 'active_members' | 'ice_members'> = ['public', 'active_members'];
-    if (!memberIsSpareOnly(member) && !memberIsSocialMember(member)) {
-      visibilityFilter.push('ice_members');
-    }
+    const visibilityFilter = eventVisibilityFilterForMember(member);
 
     if (isEventsAdmin(member)) {
       const events = await listEvents({
@@ -2152,6 +2168,13 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
       const event = await getEventById(eventId);
       if (!event || !event.published) {
         return sendApiError(reply, 404, 'Event not found');
+      }
+      if (!memberCanRegisterForEventVisibility(member, event.visibility)) {
+        return sendApiError(
+          reply,
+          403,
+          memberEventRegistrationDeniedMessage(event.visibility) ?? 'Forbidden',
+        );
       }
 
       const parsed = registerSchema.safeParse(request.body);

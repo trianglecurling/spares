@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import PublicLayout from '../components/PublicLayout';
 import PublicStateCard from '../components/PublicStateCard';
 import PublicTournamentDrawPhases from '../components/PublicTournamentDrawPhases';
@@ -11,7 +11,10 @@ import { ArticleMarkdown } from '../components/ArticleMarkdown';
 import SeoMeta from '../components/SeoMeta';
 import PublicNotFoundPage from './PublicNotFoundPage';
 import { useDelayedTrueWhile } from '../hooks/useDelayedTrueWhile';
+import { useAuth } from '../contexts/AuthContext';
 import api from '../utils/api';
+import { buildLoginPath } from '../utils/loginRedirect';
+import { memberEventNotice } from '../utils/memberEventNotice';
 import { teamIdsAssignedOnDraw, type TournamentDrawState } from '../utils/tournamentDrawModel';
 import { getEarliestStartMs, isLiveScoresWindowOpen } from '../utils/fiscalSeason';
 import { drawHasRecordedScores } from '../utils/tournamentDrawResultsRows';
@@ -58,6 +61,8 @@ interface EventDetail {
   confirmedCount: number;
   waitlistedCount?: number;
   openSpots?: number | null;
+  viewerCanRegister?: boolean;
+  viewerAuthenticated?: boolean;
   serverNow?: string;
 }
 
@@ -71,7 +76,10 @@ const MS_DAY = 24 * 60 * 60 * 1000;
 
 export default function PublicEventDetailPage() {
   const { slug } = useParams<{ slug: string }>();
+  const location = useLocation();
+  const { sessionSettled, member } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
+  const specialLinkQuery = searchParams.get('slk');
   const [event, setEvent] = useState<EventDetail | null>(null);
   const [article, setArticle] = useState<ArticleData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -90,10 +98,14 @@ export default function PublicEventDetailPage() {
   const publicBracketAlignColumnRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!slug) return;
+    if (!slug || !sessionSettled) return;
     setLoading(true);
+    setError(null);
+    setArticle(null);
     api
-      .get(`/public/events/${slug}`)
+      .get(`/public/events/${slug}`, {
+        params: specialLinkQuery ? { slk: specialLinkQuery } : undefined,
+      })
       .then((res) => {
         setEvent(res.data);
         if (res.data?.serverNow) {
@@ -113,7 +125,7 @@ export default function PublicEventDetailPage() {
       })
       .catch(() => setError('Event not found'))
       .finally(() => setLoading(false));
-  }, [slug]);
+  }, [slug, sessionSettled, member?.id, specialLinkQuery]);
 
   useEffect(() => {
     if (!event || loading) return;
@@ -174,7 +186,6 @@ export default function PublicEventDetailPage() {
   }, [event, loading, serverOffsetMs, scoresClock]);
 
   const tabParam = searchParams.get('tab');
-  const specialLinkQuery = searchParams.get('slk');
   /** Load roster for Teams / Draw / Live scores team labels. */
   const shouldLoadTournamentTeams =
     !!slug &&
@@ -597,7 +608,19 @@ export default function PublicEventDetailPage() {
 
               {showEventInfoSidebar ? (
                 <aside className="order-1 lg:order-none lg:col-span-4 lg:sticky lg:top-6 mb-8 lg:mb-0 self-start">
-                  <PublicEventInfoPanel event={event} serverOffsetMs={serverOffsetMs} />
+                  <PublicEventInfoPanel
+                    event={event}
+                    serverOffsetMs={serverOffsetMs}
+                    membershipNotice={memberEventNotice(
+                      event,
+                      buildLoginPath(`${location.pathname}${location.search}`),
+                    )}
+                    registerHref={
+                      specialLinkQuery
+                        ? `/events/${event.slug}/register?${new URLSearchParams({ slk: specialLinkQuery }).toString()}`
+                        : `/events/${event.slug}/register`
+                    }
+                  />
                 </aside>
               ) : null}
             </div>

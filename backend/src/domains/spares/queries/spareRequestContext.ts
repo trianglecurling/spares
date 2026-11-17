@@ -361,7 +361,6 @@ export async function getSpareRequestContextForMember(
         .where(
           and(
             eq(schema.leagueRoster.member_id, memberId),
-            eq(schema.leagueRoster.status, 'active'),
             eq(schema.leagues.session_id, sessionId),
           ),
         )
@@ -550,7 +549,6 @@ export async function getRequesterTeamContext(
       and(
         eq(schema.leagueRoster.member_id, requesterId),
         eq(schema.leagueRoster.league_id, leagueId),
-        eq(schema.leagueRoster.status, 'active'),
       ),
     )
     .limit(1);

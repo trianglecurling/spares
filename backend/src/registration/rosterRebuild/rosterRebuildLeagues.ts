@@ -40,7 +40,7 @@ export function resolveLeagueCategoryFromName(input: {
     return 'junior_rec';
   }
   if (/junior\s+advanced/i.test(name)) return 'junior_adv';
-  if (isTuesdayEveningLeague({ name, isPlayInBased: input.isPlayInBased })) return 'tuesday_evening';
+  if (isTuesdayEveningLeague({ isPlayInBased: input.isPlayInBased })) return 'tuesday_evening';
   if (/saturday/i.test(name) && /instructional/i.test(name)) return 'instructional';
   if (input.format === 'instructional' && /saturday/i.test(name)) return 'instructional';
   if (/early\s+doubles/i.test(name) || /late\s+doubles/i.test(name)) return 'doubles';

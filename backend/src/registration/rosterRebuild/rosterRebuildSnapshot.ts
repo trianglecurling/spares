@@ -1,6 +1,7 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import { getDrizzleDb } from '../../db/drizzle-db.js';
 import { ROSTER_COMMIT_REGISTRATION_STATUS_LIST } from '../registrationRosterService.js';
+import { loadTopWaitlistIdByMember } from '../memberWaitlistOrder.js';
 import { loadWaitlistQueueMemberStats } from '../waitlistQueueMemberStats.js';
 import { loadRenderedWaitlistOrder } from '../waitlistQueueService.js';
 import { parseTeamRosterPlacements } from '../waitlistTeamRoster.js';
@@ -325,8 +326,9 @@ export async function loadRosterRebuildSnapshot(input: {
 
   const tuesdayEveningIds = leagues.filter((league) => league.category === 'tuesday_evening').map((league) => league.id);
   const tuesdayEveningRosterMemberIds = new Set(
-    currentRosters.filter((row) => tuesdayEveningIds.includes(row.leagueId) && row.status === 'active').map((row) => row.memberId),
+    currentRosters.filter((row) => tuesdayEveningIds.includes(row.leagueId)).map((row) => row.memberId),
   );
+  const topWaitlistIdByMember = await loadTopWaitlistIdByMember([...tuesdayEveningRosterMemberIds]);
   const unmanagedPlayInLeagueIds = leagues
     .filter((league) => league.category === 'tuesday_evening' || league.isPlayInBased)
     .map((league) => league.id);
@@ -373,11 +375,9 @@ export async function loadRosterRebuildSnapshot(input: {
           .where(and(inArray(schema.waitlistOffers.league_id, leagueIds), eq(schema.waitlistOffers.status, 'pending')));
 
   const guaranteedReturnPlacementCount = currentRosters.filter(
-    (row) => row.status === 'active' && row.placementType === 'guaranteed_return',
+    (row) => row.placementType === 'guaranteed_return',
   ).length;
-  const waitlistPlacementCount = currentRosters.filter(
-    (row) => row.status === 'active' && row.placementType === 'waitlist',
-  ).length;
+  const waitlistPlacementCount = currentRosters.filter((row) => row.placementType === 'waitlist').length;
 
   return {
     sessionId: input.sessionId,
@@ -389,6 +389,7 @@ export async function loadRosterRebuildSnapshot(input: {
     waitlistEntriesByWaitlistId,
     members,
     tuesdayEveningRosterMemberIds,
+    topWaitlistIdByMember,
     unmanagedOccupiedKeys,
     activeSabbaticals,
     pendingOffers,
@@ -446,7 +447,6 @@ export async function loadRosterRows(leagueIds: number[]): Promise<RosterRebuild
     .select({
       leagueId: schema.leagueRoster.league_id,
       memberId: schema.leagueRoster.member_id,
-      status: schema.leagueRoster.status,
       placementType: schema.leagueRoster.placement_type,
       isTemporarySabbaticalFill: schema.leagueRoster.is_temporary_sabbatical_fill,
       relatedSabbaticalId: schema.leagueRoster.related_sabbatical_id,
@@ -458,7 +458,6 @@ export async function loadRosterRows(leagueIds: number[]): Promise<RosterRebuild
   return rows.map((row) => ({
     leagueId: row.leagueId,
     memberId: row.memberId,
-    status: row.status,
     placementType: row.placementType ?? null,
     isTemporarySabbaticalFill: Number(row.isTemporarySabbaticalFill) === 1,
     relatedSabbaticalId: row.relatedSabbaticalId ?? null,
@@ -487,7 +486,6 @@ export async function loadRosterExportRows(leagueIds: number[]): Promise<
       firstName: schema.members.first_name,
       lastName: schema.members.last_name,
       memberEmail: schema.members.email,
-      status: schema.leagueRoster.status,
       placementType: schema.leagueRoster.placement_type,
       isTemporarySabbaticalFill: schema.leagueRoster.is_temporary_sabbatical_fill,
       relatedSabbaticalId: schema.leagueRoster.related_sabbatical_id,
@@ -506,7 +504,6 @@ export async function loadRosterExportRows(leagueIds: number[]): Promise<
       memberId: row.memberId,
       memberName: nameParts.length > 0 ? nameParts.join(' ') : row.memberName,
       memberEmail: row.memberEmail,
-      status: row.status,
       placementType: row.placementType ?? null,
       isTemporarySabbaticalFill: Number(row.isTemporarySabbaticalFill) === 1,
       relatedSabbaticalId: row.relatedSabbaticalId ?? null,

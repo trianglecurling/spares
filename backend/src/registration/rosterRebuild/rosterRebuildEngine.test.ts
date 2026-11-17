@@ -75,6 +75,7 @@ function snapshot(input: Partial<RosterRebuildSnapshot> & { leagues: RosterRebui
     waitlistEntriesByWaitlistId: new Map(),
     members,
     tuesdayEveningRosterMemberIds: new Set(),
+    topWaitlistIdByMember: new Map(),
     unmanagedOccupiedKeys: new Set(),
     activeSabbaticals: [],
     pendingOffers: [],
@@ -127,9 +128,9 @@ describe('stage returning', () => {
         leagues: [hump, sunday, mad],
         members: membersMap(xavier),
         predecessorRosters: [
-          { leagueId: 101, memberId: 10, status: 'active', placementType: 'staff_manual', isTemporarySabbaticalFill: false, sourceRegistrationId: null },
-          { leagueId: 102, memberId: 10, status: 'completed', placementType: 'staff_manual', isTemporarySabbaticalFill: false, sourceRegistrationId: null },
-          { leagueId: 103, memberId: 10, status: 'active', placementType: 'staff_manual', isTemporarySabbaticalFill: false, sourceRegistrationId: null },
+          { leagueId: 101, memberId: 10, placementType: 'staff_manual', isTemporarySabbaticalFill: false, sourceRegistrationId: null },
+          { leagueId: 102, memberId: 10, placementType: 'staff_manual', isTemporarySabbaticalFill: false, sourceRegistrationId: null },
+          { leagueId: 103, memberId: 10, placementType: 'staff_manual', isTemporarySabbaticalFill: false, sourceRegistrationId: null },
         ],
         registrations: [
           registration({
@@ -159,8 +160,8 @@ describe('stage returning', () => {
         leagues: [hump, sunday],
         members: membersMap(member({ memberId: 10, name: 'Xavier' })),
         predecessorRosters: [
-          { leagueId: 101, memberId: 10, status: 'active', placementType: null, isTemporarySabbaticalFill: false, sourceRegistrationId: null },
-          { leagueId: 102, memberId: 10, status: 'active', placementType: null, isTemporarySabbaticalFill: false, sourceRegistrationId: null },
+          { leagueId: 101, memberId: 10, placementType: null, isTemporarySabbaticalFill: false, sourceRegistrationId: null },
+          { leagueId: 102, memberId: 10, placementType: null, isTemporarySabbaticalFill: false, sourceRegistrationId: null },
         ],
         registrations: [
           registration({
@@ -187,8 +188,8 @@ describe('stage returning', () => {
         leagues: [early],
         members: membersMap(member({ memberId: 10, name: 'Ann' }), member({ memberId: 11, name: 'Bob' })),
         predecessorRosters: [
-          { leagueId: 108, memberId: 10, status: 'active', placementType: null, isTemporarySabbaticalFill: false, sourceRegistrationId: null },
-          { leagueId: 108, memberId: 11, status: 'active', placementType: null, isTemporarySabbaticalFill: false, sourceRegistrationId: null },
+          { leagueId: 108, memberId: 10, placementType: null, isTemporarySabbaticalFill: false, sourceRegistrationId: null },
+          { leagueId: 108, memberId: 11, placementType: null, isTemporarySabbaticalFill: false, sourceRegistrationId: null },
         ],
         registrations: [
           registration({
@@ -212,7 +213,7 @@ describe('stage returning', () => {
         leagues: [early],
         members: membersMap(member({ memberId: 10, name: 'Ann' })),
         predecessorRosters: [
-          { leagueId: 108, memberId: 10, status: 'active', placementType: null, isTemporarySabbaticalFill: false, sourceRegistrationId: null },
+          { leagueId: 108, memberId: 10, placementType: null, isTemporarySabbaticalFill: false, sourceRegistrationId: null },
         ],
         registrations: [
           registration({
@@ -266,10 +267,10 @@ describe('stage returning', () => {
         leagues: [hump],
         members: membersMap(member({ memberId: 10, name: 'Xavier' })),
         currentRosters: [
-          { leagueId: 1, memberId: 10, status: 'active', placementType: 'staff_manual', isTemporarySabbaticalFill: false, sourceRegistrationId: 1 },
+          { leagueId: 1, memberId: 10, placementType: 'staff_manual', isTemporarySabbaticalFill: false, sourceRegistrationId: 1 },
         ],
         predecessorRosters: [
-          { leagueId: 101, memberId: 10, status: 'active', placementType: null, isTemporarySabbaticalFill: false, sourceRegistrationId: null },
+          { leagueId: 101, memberId: 10, placementType: null, isTemporarySabbaticalFill: false, sourceRegistrationId: null },
         ],
         registrations: [
           registration({
@@ -292,7 +293,7 @@ describe('stage returning', () => {
         leagues: [hump],
         members: membersMap(member({ memberId: 10, name: 'Late' })),
         predecessorRosters: [
-          { leagueId: 101, memberId: 10, status: 'active', placementType: null, isTemporarySabbaticalFill: false, sourceRegistrationId: null },
+          { leagueId: 101, memberId: 10, placementType: null, isTemporarySabbaticalFill: false, sourceRegistrationId: null },
         ],
         registrations: [
           registration({
@@ -341,8 +342,8 @@ describe('stage returning', () => {
         leagues: [early],
         members: membersMap(member({ memberId: 10, name: 'Ann' }), member({ memberId: 11, name: 'Bob' })),
         predecessorRosters: [
-          { leagueId: 108, memberId: 10, status: 'active', placementType: null, isTemporarySabbaticalFill: false, sourceRegistrationId: null },
-          { leagueId: 108, memberId: 11, status: 'active', placementType: null, isTemporarySabbaticalFill: false, sourceRegistrationId: null },
+          { leagueId: 108, memberId: 10, placementType: null, isTemporarySabbaticalFill: false, sourceRegistrationId: null },
+          { leagueId: 108, memberId: 11, placementType: null, isTemporarySabbaticalFill: false, sourceRegistrationId: null },
         ],
         registrations: [
           registration({
@@ -382,7 +383,7 @@ describe('ice privileges', () => {
         leagues: [hump],
         members: membersMap(member({ memberId: 10, name: 'Basic' })),
         predecessorRosters: [
-          { leagueId: 101, memberId: 10, status: 'active', placementType: null, isTemporarySabbaticalFill: false, sourceRegistrationId: null },
+          { leagueId: 101, memberId: 10, placementType: null, isTemporarySabbaticalFill: false, sourceRegistrationId: null },
         ],
         registrations: [
           registration({
@@ -702,9 +703,10 @@ describe('waitlist processing details', () => {
         leagues: [hump],
         members: membersMap(lifetime, tuesday),
         tuesdayEveningRosterMemberIds: new Set([11]),
+        topWaitlistIdByMember: new Map([[11, 10]]),
         currentRosters: [
-          { leagueId: 9, memberId: 10, status: 'active', placementType: 'staff_manual', isTemporarySabbaticalFill: false, sourceRegistrationId: 1 },
-          { leagueId: 9, memberId: 11, status: 'active', placementType: 'play_in', isTemporarySabbaticalFill: false, sourceRegistrationId: 2 },
+          { leagueId: 9, memberId: 10, placementType: 'staff_manual', isTemporarySabbaticalFill: false, sourceRegistrationId: 1 },
+          { leagueId: 9, memberId: 11, placementType: 'play_in', isTemporarySabbaticalFill: false, sourceRegistrationId: 2 },
         ],
         registrations: [
           registration({
@@ -736,6 +738,50 @@ describe('waitlist processing details', () => {
     const tueDecline = result.waitlistMutations.find((row) => row.entryId === 2);
     expect(lifeDecline).toMatchObject({ kind: 'declined', immune: true, declineCountBefore: 4, declineCountAfter: 4 });
     expect(tueDecline).toMatchObject({ kind: 'declined', immune: true, declineCountBefore: 1, declineCountAfter: 1 });
+  });
+
+  test('increments declines for Tuesday roster members when the waitlist is not their #1', () => {
+    const hump = league({ id: 1, name: 'Hump Day', category: 'normal', capacityValue: 2, waitlistId: 10 });
+    const lifetime = member({ memberId: 10, name: 'Life', isLifetimeMember: true });
+    const tuesday = member({ memberId: 11, name: 'Tue' });
+    const result = runRosterRebuildStage(
+      snapshot({
+        leagues: [hump],
+        members: membersMap(lifetime, tuesday),
+        tuesdayEveningRosterMemberIds: new Set([11]),
+        topWaitlistIdByMember: new Map([[11, 20]]),
+        currentRosters: [
+          { leagueId: 9, memberId: 10, placementType: 'staff_manual', isTemporarySabbaticalFill: false, sourceRegistrationId: 1 },
+          { leagueId: 9, memberId: 11, placementType: 'play_in', isTemporarySabbaticalFill: false, sourceRegistrationId: 2 },
+        ],
+        registrations: [
+          registration({
+            id: 1,
+            memberId: 10,
+            desiredLeagueCount: 1,
+            priorities: [{ leagueId: 1, rank: 1, teammateMemberIds: [], teammateText: null }],
+          }),
+          registration({
+            id: 2,
+            memberId: 11,
+            desiredLeagueCount: 1,
+            priorities: [{ leagueId: 1, rank: 1, teammateMemberIds: [], teammateText: null }],
+          }),
+        ],
+        waitlistEntriesByWaitlistId: new Map([
+          [
+            10,
+            [
+              waitlistEntry({ id: 1, waitlistId: 10, memberId: 10, position: 1, declineCount: 4 }),
+              waitlistEntry({ id: 2, waitlistId: 10, memberId: 11, position: 2, declineCount: 1 }),
+            ],
+          ],
+        ]),
+      }),
+      'waitlists',
+    );
+    const tueDecline = result.waitlistMutations.find((row) => row.entryId === 2);
+    expect(tueDecline).toMatchObject({ kind: 'declined', immune: false, declineCountBefore: 1, declineCountAfter: 2 });
   });
 
   test('increments a waitlist entry decline at most once per run', () => {
@@ -778,7 +824,7 @@ describe('waitlist processing details', () => {
         leagues: [hump],
         members: membersMap(member({ memberId: 10, name: 'Returner' })),
         predecessorRosters: [
-          { leagueId: 101, memberId: 10, status: 'active', placementType: null, isTemporarySabbaticalFill: false, sourceRegistrationId: null },
+          { leagueId: 101, memberId: 10, placementType: null, isTemporarySabbaticalFill: false, sourceRegistrationId: null },
         ],
         registrations: [
           registration({
@@ -822,7 +868,6 @@ describe('waitlist processing details', () => {
           {
             leagueId: 30,
             memberId: 310,
-            status: 'removed',
             placementType: 'guaranteed_return',
             isTemporarySabbaticalFill: false,
             sourceRegistrationId: 207,
@@ -830,15 +875,14 @@ describe('waitlist processing details', () => {
           {
             leagueId: 33,
             memberId: 310,
-            status: 'active',
             placementType: 'guaranteed_return',
             isTemporarySabbaticalFill: false,
             sourceRegistrationId: 207,
           },
         ],
         predecessorRosters: [
-          { leagueId: 133, memberId: 310, status: 'active', placementType: null, isTemporarySabbaticalFill: false, sourceRegistrationId: null },
-          { leagueId: 136, memberId: 310, status: 'active', placementType: null, isTemporarySabbaticalFill: false, sourceRegistrationId: null },
+          { leagueId: 133, memberId: 310, placementType: null, isTemporarySabbaticalFill: false, sourceRegistrationId: null },
+          { leagueId: 136, memberId: 310, placementType: null, isTemporarySabbaticalFill: false, sourceRegistrationId: null },
         ],
         unmanagedOccupiedKeys: new Set(['30:310']),
         registrations: [
@@ -883,14 +927,13 @@ describe('waitlist processing details', () => {
           {
             leagueId: 33,
             memberId: 310,
-            status: 'active',
             placementType: 'guaranteed_return',
             isTemporarySabbaticalFill: false,
             sourceRegistrationId: 207,
           },
         ],
         predecessorRosters: [
-          { leagueId: 136, memberId: 310, status: 'active', placementType: null, isTemporarySabbaticalFill: false, sourceRegistrationId: null },
+          { leagueId: 136, memberId: 310, placementType: null, isTemporarySabbaticalFill: false, sourceRegistrationId: null },
         ],
         registrations: [
           registration({
@@ -927,7 +970,7 @@ describe('waitlist processing details', () => {
         leagues: [hump],
         members: membersMap(member({ memberId: 10, name: 'Late returner' })),
         predecessorRosters: [
-          { leagueId: 101, memberId: 10, status: 'active', placementType: null, isTemporarySabbaticalFill: false, sourceRegistrationId: null },
+          { leagueId: 101, memberId: 10, placementType: null, isTemporarySabbaticalFill: false, sourceRegistrationId: null },
         ],
         registrations: [
           registration({
@@ -963,7 +1006,7 @@ describe('temporary sabbatical vacancies', () => {
         leagues: [hump],
         members: membersMap(member({ memberId: 10, name: 'Away' })),
         predecessorRosters: [
-          { leagueId: 101, memberId: 10, status: 'active', placementType: null, isTemporarySabbaticalFill: false, sourceRegistrationId: null },
+          { leagueId: 101, memberId: 10, placementType: null, isTemporarySabbaticalFill: false, sourceRegistrationId: null },
         ],
         registrations: [
           registration({
@@ -1075,7 +1118,6 @@ describe('temporary sabbatical vacancies', () => {
           {
             leagueId: 102,
             memberId: 100,
-            status: 'active',
             placementType: null,
             isTemporarySabbaticalFill: false,
             sourceRegistrationId: null,
@@ -1236,12 +1278,12 @@ describe('temporary sabbatical vacancies', () => {
           member({ memberId: 2, name: 'Quinn', clubTenureYears: 8, totalExperienceYears: 8 }),
         ),
         currentRosters: [
-          { leagueId: 2, memberId: 1, status: 'active', placementType: 'guaranteed_return', isTemporarySabbaticalFill: false, sourceRegistrationId: 1 },
-          { leagueId: 3, memberId: 1, status: 'active', placementType: 'guaranteed_return', isTemporarySabbaticalFill: false, sourceRegistrationId: 1 },
-          { leagueId: 2, memberId: 2, status: 'active', placementType: 'guaranteed_return', isTemporarySabbaticalFill: false, sourceRegistrationId: 2 },
-          { leagueId: 3, memberId: 2, status: 'active', placementType: 'guaranteed_return', isTemporarySabbaticalFill: false, sourceRegistrationId: 2 },
-          { leagueId: 1, memberId: 9, status: 'active', placementType: 'waitlist', isTemporarySabbaticalFill: false, sourceRegistrationId: null },
-          { leagueId: 1, memberId: 8, status: 'active', placementType: 'waitlist', isTemporarySabbaticalFill: false, sourceRegistrationId: null },
+          { leagueId: 2, memberId: 1, placementType: 'guaranteed_return', isTemporarySabbaticalFill: false, sourceRegistrationId: 1 },
+          { leagueId: 3, memberId: 1, placementType: 'guaranteed_return', isTemporarySabbaticalFill: false, sourceRegistrationId: 1 },
+          { leagueId: 2, memberId: 2, placementType: 'guaranteed_return', isTemporarySabbaticalFill: false, sourceRegistrationId: 2 },
+          { leagueId: 3, memberId: 2, placementType: 'guaranteed_return', isTemporarySabbaticalFill: false, sourceRegistrationId: 2 },
+          { leagueId: 1, memberId: 9, placementType: 'waitlist', isTemporarySabbaticalFill: false, sourceRegistrationId: null },
+          { leagueId: 1, memberId: 8, placementType: 'waitlist', isTemporarySabbaticalFill: false, sourceRegistrationId: null },
         ],
         registrations: [
           registration({
@@ -1293,10 +1335,10 @@ describe('stage third-leagues', () => {
       }),
     ];
     const currentRosters = [
-      { leagueId: 2, memberId: 1, status: 'active' as const, placementType: 'guaranteed_return', isTemporarySabbaticalFill: false, sourceRegistrationId: 1 },
-      { leagueId: 3, memberId: 1, status: 'active' as const, placementType: 'guaranteed_return', isTemporarySabbaticalFill: false, sourceRegistrationId: 1 },
-      { leagueId: 2, memberId: 2, status: 'active' as const, placementType: 'guaranteed_return', isTemporarySabbaticalFill: false, sourceRegistrationId: 2 },
-      { leagueId: 3, memberId: 2, status: 'active' as const, placementType: 'guaranteed_return', isTemporarySabbaticalFill: false, sourceRegistrationId: 2 },
+      { leagueId: 2, memberId: 1, placementType: 'guaranteed_return', isTemporarySabbaticalFill: false, sourceRegistrationId: 1 },
+      { leagueId: 3, memberId: 1, placementType: 'guaranteed_return', isTemporarySabbaticalFill: false, sourceRegistrationId: 1 },
+      { leagueId: 2, memberId: 2, placementType: 'guaranteed_return', isTemporarySabbaticalFill: false, sourceRegistrationId: 2 },
+      { leagueId: 3, memberId: 2, placementType: 'guaranteed_return', isTemporarySabbaticalFill: false, sourceRegistrationId: 2 },
     ];
 
     const byTenure = runRosterRebuildStage(
@@ -1369,8 +1411,8 @@ describe('stage third-leagues', () => {
         leagues: [hump],
         members: membersMap(member({ memberId: 10, name: 'Waitlisted' }), member({ memberId: 11, name: 'Third' })),
         currentRosters: [
-          { leagueId: 2, memberId: 11, status: 'active', placementType: 'waitlist', isTemporarySabbaticalFill: false, sourceRegistrationId: 2 },
-          { leagueId: 3, memberId: 11, status: 'active', placementType: 'waitlist', isTemporarySabbaticalFill: false, sourceRegistrationId: 2 },
+          { leagueId: 2, memberId: 11, placementType: 'waitlist', isTemporarySabbaticalFill: false, sourceRegistrationId: 2 },
+          { leagueId: 3, memberId: 11, placementType: 'waitlist', isTemporarySabbaticalFill: false, sourceRegistrationId: 2 },
         ],
         registrations: [
           registration({
@@ -1405,8 +1447,8 @@ describe('stage third-leagues', () => {
         leagues: [hump],
         members: membersMap(member({ memberId: 10, name: 'Waitlisted' }), member({ memberId: 11, name: 'Third' })),
         currentRosters: [
-          { leagueId: 2, memberId: 11, status: 'active', placementType: 'waitlist', isTemporarySabbaticalFill: false, sourceRegistrationId: 2 },
-          { leagueId: 3, memberId: 11, status: 'active', placementType: 'waitlist', isTemporarySabbaticalFill: false, sourceRegistrationId: 2 },
+          { leagueId: 2, memberId: 11, placementType: 'waitlist', isTemporarySabbaticalFill: false, sourceRegistrationId: 2 },
+          { leagueId: 3, memberId: 11, placementType: 'waitlist', isTemporarySabbaticalFill: false, sourceRegistrationId: 2 },
         ],
         registrations: [
           registration({
@@ -1441,8 +1483,8 @@ describe('stage third-leagues', () => {
         leagues: [hump],
         members: membersMap(member({ memberId: 10, name: 'Off list' }), member({ memberId: 11, name: 'Third' })),
         currentRosters: [
-          { leagueId: 2, memberId: 11, status: 'active', placementType: 'waitlist', isTemporarySabbaticalFill: false, sourceRegistrationId: 2 },
-          { leagueId: 3, memberId: 11, status: 'active', placementType: 'waitlist', isTemporarySabbaticalFill: false, sourceRegistrationId: 2 },
+          { leagueId: 2, memberId: 11, placementType: 'waitlist', isTemporarySabbaticalFill: false, sourceRegistrationId: 2 },
+          { leagueId: 3, memberId: 11, placementType: 'waitlist', isTemporarySabbaticalFill: false, sourceRegistrationId: 2 },
         ],
         registrations: [
           registration({
@@ -1476,7 +1518,7 @@ describe('stage third-leagues', () => {
         leagues: [tueDay, wedDay],
         members: membersMap(member({ memberId: 10, name: 'Day' })),
         currentRosters: [
-          { leagueId: 1, memberId: 10, status: 'active', placementType: 'guaranteed_return', isTemporarySabbaticalFill: false, sourceRegistrationId: 1 },
+          { leagueId: 1, memberId: 10, placementType: 'guaranteed_return', isTemporarySabbaticalFill: false, sourceRegistrationId: 1 },
         ],
         registrations: [
           registration({
@@ -1581,8 +1623,8 @@ describe('stage third-leagues', () => {
           member({ memberId: 417, name: 'Steven Marquard', clubTenureYears: 1 }),
         ),
         currentRosters: [
-          { leagueId: 1, memberId: 10, status: 'active', placementType: 'guaranteed_return', isTemporarySabbaticalFill: false, sourceRegistrationId: 1 },
-          { leagueId: 2, memberId: 10, status: 'active', placementType: 'guaranteed_return', isTemporarySabbaticalFill: false, sourceRegistrationId: 1 },
+          { leagueId: 1, memberId: 10, placementType: 'guaranteed_return', isTemporarySabbaticalFill: false, sourceRegistrationId: 1 },
+          { leagueId: 2, memberId: 10, placementType: 'guaranteed_return', isTemporarySabbaticalFill: false, sourceRegistrationId: 1 },
         ],
         registrations: [
           registration({
@@ -1619,8 +1661,8 @@ describe('stage third-leagues', () => {
         leagues: [hump],
         members: membersMap(member({ memberId: 10, name: 'Late waitlisted' }), member({ memberId: 11, name: 'Third' })),
         currentRosters: [
-          { leagueId: 2, memberId: 11, status: 'active', placementType: 'waitlist', isTemporarySabbaticalFill: false, sourceRegistrationId: 2 },
-          { leagueId: 3, memberId: 11, status: 'active', placementType: 'waitlist', isTemporarySabbaticalFill: false, sourceRegistrationId: 2 },
+          { leagueId: 2, memberId: 11, placementType: 'waitlist', isTemporarySabbaticalFill: false, sourceRegistrationId: 2 },
+          { leagueId: 3, memberId: 11, placementType: 'waitlist', isTemporarySabbaticalFill: false, sourceRegistrationId: 2 },
         ],
         registrations: [
           registration({
@@ -1657,12 +1699,11 @@ describe('stage third-leagues', () => {
         leagues: [diva, saturday],
         members: membersMap(member({ memberId: 319, name: 'Mayre Brouse' })),
         currentRosters: [
-          { leagueId: 24, memberId: 319, status: 'active', placementType: 'guaranteed_return', isTemporarySabbaticalFill: false, sourceRegistrationId: 218 },
-          { leagueId: 30, memberId: 319, status: 'active', placementType: 'play_in', isTemporarySabbaticalFill: false, sourceRegistrationId: 218 },
+          { leagueId: 24, memberId: 319, placementType: 'guaranteed_return', isTemporarySabbaticalFill: false, sourceRegistrationId: 218 },
+          { leagueId: 30, memberId: 319, placementType: 'play_in', isTemporarySabbaticalFill: false, sourceRegistrationId: 218 },
           {
             leagueId: 34,
             memberId: 99,
-            status: 'active',
             placementType: 'guaranteed_return',
             isTemporarySabbaticalFill: false,
             sourceRegistrationId: 1,
@@ -1698,8 +1739,8 @@ describe('stage third-leagues', () => {
         leagues: [hump],
         members: membersMap(member({ memberId: 11, name: 'Late third' })),
         currentRosters: [
-          { leagueId: 2, memberId: 11, status: 'active', placementType: 'new_placement', isTemporarySabbaticalFill: false, sourceRegistrationId: 2 },
-          { leagueId: 3, memberId: 11, status: 'active', placementType: 'new_placement', isTemporarySabbaticalFill: false, sourceRegistrationId: 2 },
+          { leagueId: 2, memberId: 11, placementType: 'new_placement', isTemporarySabbaticalFill: false, sourceRegistrationId: 2 },
+          { leagueId: 3, memberId: 11, placementType: 'new_placement', isTemporarySabbaticalFill: false, sourceRegistrationId: 2 },
         ],
         registrations: [
           registration({
@@ -1793,8 +1834,8 @@ describe('stage open-registration', () => {
         leagues: [hump],
         members: membersMap(member({ memberId: 1, name: 'Late' })),
         currentRosters: [
-          { leagueId: 2, memberId: 1, status: 'active', placementType: 'new_placement', isTemporarySabbaticalFill: false, sourceRegistrationId: 1 },
-          { leagueId: 3, memberId: 1, status: 'active', placementType: 'new_placement', isTemporarySabbaticalFill: false, sourceRegistrationId: 1 },
+          { leagueId: 2, memberId: 1, placementType: 'new_placement', isTemporarySabbaticalFill: false, sourceRegistrationId: 1 },
+          { leagueId: 3, memberId: 1, placementType: 'new_placement', isTemporarySabbaticalFill: false, sourceRegistrationId: 1 },
         ],
         registrations: [
           registration({
@@ -1881,7 +1922,6 @@ describe('stage open-registration', () => {
           {
             leagueId: 36,
             memberId: 99,
-            status: 'active',
             placementType: 'guaranteed_return',
             isTemporarySabbaticalFill: false,
             sourceRegistrationId: 1,

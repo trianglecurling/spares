@@ -680,6 +680,20 @@
       "when": 1788499200000,
       "tag": "0097_move_ice_prep_to_draw_times",
       "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1788499800000,
+      "tag": "0098_drop_league_roster_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1788586200000,
+      "tag": "0099_remove_waitlist_entries_for_rostered_members",
+      "breakpoints": true
     }
   ]
 }

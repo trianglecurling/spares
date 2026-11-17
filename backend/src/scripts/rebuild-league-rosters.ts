@@ -21,7 +21,13 @@ import { fileURLToPath } from 'node:url';
 import { getDatabaseConfig } from '../db/config.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { initializeDatabase } from '../db/index.js';
-import { applyRosterRebuildPlacements, applySabbaticalMutations, applyWaitlistMutations, clearSessionRosters } from '../registration/rosterRebuild/rosterRebuildApply.js';
+import {
+  applyRosterRebuildPlacements,
+  applySabbaticalMutations,
+  applyWaitlistMutations,
+  clearSessionRosters,
+  removeWaitlistEntriesForPlacements,
+} from '../registration/rosterRebuild/rosterRebuildApply.js';
 import { diffRosters, runRosterRebuildStage } from '../registration/rosterRebuild/rosterRebuildEngine.js';
 import {
   parseLeagueCategoryMapJson,
@@ -231,7 +237,9 @@ async function main(): Promise<void> {
           `Target leagues: ${target.map((league) => league.name).join(', ')}`,
           `Rows that would be deleted: ${existing.length}`,
           latestExport ? `Latest export: ${latestExport}` : 'No prior export found (--force)',
-          apply ? 'Deleted those roster rows.' : 'Dry run; pass --apply to delete.',
+          apply
+            ? 'Deleted those roster rows and removed those members from teams in these leagues.'
+            : 'Dry run; pass --apply to delete roster rows and the matching team spots.',
         ],
       }),
     );
@@ -257,9 +265,7 @@ async function main(): Promise<void> {
       sessionName: session.name,
       overrides,
     });
-    const before = parseRosterExportCsv(fs.readFileSync(absCompare, 'utf8')).filter(
-      (row) => row.status === 'active' || row.status === 'completed' || row.status === '',
-    );
+    const before = parseRosterExportCsv(fs.readFileSync(absCompare, 'utf8'));
     for (const row of before) {
       if (snapshot.members.has(row.memberId)) continue;
       snapshot.members.set(row.memberId, {
@@ -271,9 +277,7 @@ async function main(): Promise<void> {
         totalExperienceYears: 0,
       });
     }
-    const after = snapshot.currentRosters
-      .filter((row) => row.status === 'active' || row.status === 'completed')
-      .map((row) => ({ leagueId: row.leagueId, memberId: row.memberId }));
+    const after = snapshot.currentRosters.map((row) => ({ leagueId: row.leagueId, memberId: row.memberId }));
     const reasons = collectPlacementReasons(runRoot);
     const diff = diffRosters({
       before: before.map((row) => ({ leagueId: row.leagueId, memberId: row.memberId })),
@@ -293,9 +297,7 @@ async function main(): Promise<void> {
         applied: false,
         leagues: snapshot.leagues,
         vacancies: snapshot.leagues.map((league) => {
-          const rows = snapshot.currentRosters.filter(
-            (row) => row.leagueId === league.id && (row.status === 'active' || row.status === 'completed'),
-          );
+          const rows = snapshot.currentRosters.filter((row) => row.leagueId === league.id);
           const rostered = rows.length;
           const temporary = rows.filter((row) => row.isTemporarySabbaticalFill).length;
           const permanent = rostered - temporary;
@@ -390,8 +392,9 @@ async function main(): Promise<void> {
     const sabbaticalResult = await applySabbaticalMutations(result.sabbaticalMutations, tx);
     const rosterResult = await applyRosterRebuildPlacements(result.placements, tx, sabbaticalResult.idMap);
     const waitlistResult = await applyWaitlistMutations(result.waitlistMutations, tx);
+    const exclusionResult = await removeWaitlistEntriesForPlacements(result.placements, tx);
     console.log(
-      `Applied stage ${stage}: inserted ${rosterResult.inserted} roster rows (skipped ${rosterResult.skipped}), fallback sabbaticals ${sabbaticalResult.inserted}, waitlist placed ${waitlistResult.placed}, temporary fills ${waitlistResult.temporaryFills}, declined ${waitlistResult.declined}.`,
+      `Applied stage ${stage}: inserted ${rosterResult.inserted} roster rows (skipped ${rosterResult.skipped}), fallback sabbaticals ${sabbaticalResult.inserted}, waitlist placed ${waitlistResult.placed}, temporary fills ${waitlistResult.temporaryFills}, declined ${waitlistResult.declined}, removed ${exclusionResult.removed} waitlist entries for leagues the member is now rostered in.`,
     );
   });
   console.log(`Report: ${outDir}`);

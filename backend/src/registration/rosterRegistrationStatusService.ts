@@ -13,8 +13,6 @@ import { parseTeamRosterPlacements } from './waitlistTeamRoster.js';
 
 export type { RosterRegistrationStatus };
 
-const ROSTERED_STATUSES = ['active', 'completed'] as const;
-
 type DrizzleBundle = ReturnType<typeof getDrizzleDb>;
 
 /**
@@ -119,12 +117,7 @@ export async function loadRosterRegistrationStatuses(
       leagueId: schema.leagueRoster.league_id,
     })
     .from(schema.leagueRoster)
-    .where(
-      and(
-        inArray(schema.leagueRoster.member_id, memberIdsToEvaluate),
-        inArray(schema.leagueRoster.status, [...ROSTERED_STATUSES]),
-      ),
-    );
+    .where(inArray(schema.leagueRoster.member_id, memberIdsToEvaluate));
   for (const row of participationRows) {
     const set = participatedByMemberId.get(row.memberId) ?? new Set<number>();
     set.add(row.leagueId);
@@ -165,12 +158,7 @@ export async function loadRosterRegistrationStatuses(
         predecessorLeagueId: schema.leagueRoster.league_id,
       })
       .from(schema.leagueRoster)
-      .where(
-        and(
-          inArray(schema.leagueRoster.league_id, predecessorIds),
-          inArray(schema.leagueRoster.status, [...ROSTERED_STATUSES]),
-        ),
-      );
+      .where(inArray(schema.leagueRoster.league_id, predecessorIds));
     const membersByPredecessorId = new Map<number, Set<number>>();
     for (const row of eligibleRows) {
       const set = membersByPredecessorId.get(row.predecessorLeagueId) ?? new Set<number>();

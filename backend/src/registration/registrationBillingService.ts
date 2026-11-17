@@ -205,7 +205,6 @@ async function loadSessionPlacementChargeLeagues(input: {
       .where(
         and(
           inArray(schema.leagueRoster.member_id, input.memberIds),
-          eq(schema.leagueRoster.status, 'active'),
           eq(schema.leagues.session_id, input.sessionId),
         ),
       ),
@@ -306,7 +305,6 @@ export async function loadPlacedRosterChargeSet(input: {
         and(
           eq(schema.leagueRoster.member_id, input.curlerMemberId),
           eq(schema.leagueRoster.source_registration_id, input.registrationId),
-          eq(schema.leagueRoster.status, 'active'),
         ),
       ),
     registration
@@ -569,7 +567,6 @@ export async function listStaffRegistrationBilling(input: {
           .where(
             and(
               inArray(schema.leagueRoster.source_registration_id, registrationIds),
-              eq(schema.leagueRoster.status, 'active'),
             ),
           ),
         db

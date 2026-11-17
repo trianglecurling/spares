@@ -353,7 +353,7 @@ export async function publicRoutes(fastify: FastifyInstance) {
     return listPublicArticles(featuredParam === 'true');
   });
 
-  // GET /public/articles/by-id/:id — event detail body (linked published public event only)
+  // GET /public/articles/by-id/:id — event detail body (linked published event, any visibility)
   fastify.get<{ Params: { id: string } }>('/public/articles/by-id/:id', async (request, reply) => {
     const id = Number.parseInt(request.params.id, 10);
     if (!Number.isFinite(id)) {

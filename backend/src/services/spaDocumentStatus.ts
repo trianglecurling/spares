@@ -22,9 +22,9 @@ function normalizePathname(pathname: string): string {
   return withoutTrailingSlash.length > 0 ? withoutTrailingSlash : '/';
 }
 
-async function isPublicPublishedEventSlug(slug: string): Promise<boolean> {
+async function isPublishedEventSlug(slug: string): Promise<boolean> {
   const event = await getEventBySlug(slug);
-  return Boolean(event && event.published === 1 && event.visibility === 'public');
+  return Boolean(event && event.published === 1);
 }
 
 async function isPublicArticlePath(slug: string): Promise<boolean> {
@@ -39,7 +39,7 @@ async function isPublicEventTeamPath(slug: string, teamIdRaw: string): Promise<b
   if (!Number.isFinite(teamId)) return false;
 
   const event = await getEventBySlug(slug);
-  if (!event || event.published !== 1 || event.visibility !== 'public') return false;
+  if (!event || event.published !== 1) return false;
   if (event.tournament_teams_published !== 1) return false;
   if (!isBonspielCalendarType(event.calendar_type_ids)) return false;
 
@@ -123,15 +123,15 @@ const SPA_ROUTE_RULES: SpaRouteRule[] = [
   },
   {
     pattern: /^\/events\/([^/]+)\/register\/success$/,
-    resolve: async ([, slug]) => ((await isPublicPublishedEventSlug(slug)) ? 200 : 404),
+    resolve: async ([, slug]) => ((await isPublishedEventSlug(slug)) ? 200 : 404),
   },
   {
     pattern: /^\/events\/([^/]+)\/register$/,
-    resolve: async ([, slug]) => ((await isPublicPublishedEventSlug(slug)) ? 200 : 404),
+    resolve: async ([, slug]) => ((await isPublishedEventSlug(slug)) ? 200 : 404),
   },
   {
     pattern: /^\/events\/([^/]+)$/,
-    resolve: async ([, slug]) => ((await isPublicPublishedEventSlug(slug)) ? 200 : 404),
+    resolve: async ([, slug]) => ((await isPublishedEventSlug(slug)) ? 200 : 404),
   },
   {
     pattern: /^\/go\/([^/]+)\/info$/,

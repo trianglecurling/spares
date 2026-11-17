@@ -68,6 +68,8 @@ import {
 } from './leagueRosterManagerInsights.js';
 import { loadRosterRegistrationStatuses } from '../registration/rosterRegistrationStatusService.js';
 import { deriveRosterPlacementSource } from '../registration/rosterPlacementSource.js';
+import { removeMembersFromLeagueRoster } from '../registration/leagueRosterRemoval.js';
+import { removeWaitlistEntriesForRosteredMembers } from '../registration/waitlistRosterExclusion.js';
 import { nextRosterSpotTypeFields } from '../registration/rosterSpotType.js';
 import type { LeagueRosterPlacementTypeSqlite } from '../db/drizzle-schema.js';
 import type { Member } from '../types.js';
@@ -1120,10 +1122,20 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
           .send({ error: 'Social members cannot be added to a league roster.' });
       }
 
-      const result = await db
-        .insert(schema.leagueRoster)
-        .values({ league_id: leagueId, member_id: body.memberId })
-        .returning();
+      const result = await db.transaction(async (tx) => {
+        const inserted = await tx
+          .insert(schema.leagueRoster)
+          .values({ league_id: leagueId, member_id: body.memberId })
+          .returning();
+        await removeWaitlistEntriesForRosteredMembers({
+          executor: tx,
+          leagueId,
+          memberIds: [body.memberId],
+          actorMemberId: member.id,
+          source: 'staff_action',
+        });
+        return inserted;
+      });
 
       return { id: result[0].id, leagueId, memberId: body.memberId };
     }
@@ -1228,10 +1240,19 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
 
       const toInsert = uniqueMatchedIds.filter((id) => !existingIds.has(id));
       if (toInsert.length > 0) {
-        await db
-          .insert(schema.leagueRoster)
-          .values(toInsert.map((memberId) => ({ league_id: leagueId, member_id: memberId })))
-          .onConflictDoNothing();
+        await db.transaction(async (tx) => {
+          await tx
+            .insert(schema.leagueRoster)
+            .values(toInsert.map((memberId) => ({ league_id: leagueId, member_id: memberId })))
+            .onConflictDoNothing();
+          await removeWaitlistEntriesForRosteredMembers({
+            executor: tx,
+            leagueId,
+            memberIds: toInsert,
+            actorMemberId: member.id,
+            source: 'staff_action',
+          });
+        });
       }
 
       for (const entry of unmatched) {
@@ -1291,33 +1312,12 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
         return reply.code(403).send({ error: 'Forbidden' });
       }
 
-      const { db, schema } = getDrizzleDb();
-      const assignments = await db
-        .select({ id: schema.teamMembers.id })
-        .from(schema.teamMembers)
-        .innerJoin(schema.leagueTeams, eq(schema.teamMembers.team_id, schema.leagueTeams.id))
-        .where(
-          and(
-            eq(schema.leagueTeams.league_id, leagueId),
-            eq(schema.teamMembers.member_id, memberIdNum)
-          )
-        )
-        .limit(1);
+      const { db } = getDrizzleDb();
+      const removed = await db.transaction((tx) =>
+        removeMembersFromLeagueRoster({ executor: tx, leagueId, memberIds: [memberIdNum] }),
+      );
 
-      if (assignments.length > 0) {
-        return reply.code(400).send({ error: 'Member is assigned to a team in this league.' });
-      }
-
-      const result = await db
-        .delete(schema.leagueRoster)
-        .where(
-          and(
-            eq(schema.leagueRoster.league_id, leagueId),
-            eq(schema.leagueRoster.member_id, memberIdNum)
-          )
-        );
-
-      if (getAffectedRows(result) === 0) {
+      if (removed === 0) {
         return reply.code(404).send({ error: 'Roster member not found.' });
       }
 
@@ -1403,15 +1403,24 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
         return { isTemporarySabbaticalFill: next.isTemporarySabbaticalFill };
       }
 
-      await db
-        .update(schema.leagueRoster)
-        .set({
-          is_temporary_sabbatical_fill: next.isTemporarySabbaticalFill ? 1 : 0,
-          placement_type: next.placementType,
-          related_sabbatical_id: next.relatedSabbaticalId,
-          updated_at: sql`CURRENT_TIMESTAMP`,
-        })
-        .where(eq(schema.leagueRoster.id, rosterRow.id));
+      await db.transaction(async (tx) => {
+        await tx
+          .update(schema.leagueRoster)
+          .set({
+            is_temporary_sabbatical_fill: next.isTemporarySabbaticalFill ? 1 : 0,
+            placement_type: next.placementType,
+            related_sabbatical_id: next.relatedSabbaticalId,
+            updated_at: sql`CURRENT_TIMESTAMP`,
+          })
+          .where(eq(schema.leagueRoster.id, rosterRow.id));
+        await removeWaitlistEntriesForRosteredMembers({
+          executor: tx,
+          leagueId,
+          memberIds: [memberIdNum],
+          actorMemberId: member.id,
+          source: 'staff_action',
+        });
+      });
 
       return { isTemporarySabbaticalFill: next.isTemporarySabbaticalFill };
     }

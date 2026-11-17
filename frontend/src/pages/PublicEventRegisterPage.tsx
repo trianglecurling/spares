@@ -4,9 +4,12 @@ import FormField from '../components/FormField';
 import PublicLayout from '../components/PublicLayout';
 import PublicStateCard from '../components/PublicStateCard';
 import SeoMeta from '../components/SeoMeta';
+import MemberEventNotice from '../components/MemberEventNotice';
 import { useAuth } from '../contexts/AuthContext';
 import PublicNotFoundPage from './PublicNotFoundPage';
 import api, { formatApiError } from '../utils/api';
+import { buildLoginPath } from '../utils/loginRedirect';
+import { memberEventNotice } from '../utils/memberEventNotice';
 import AdditionalRegistrantsSection, {
   emptyAdditionalRegistrant,
   type AdditionalRegistrant,
@@ -52,6 +55,9 @@ interface EventDetail {
   registrationStart: string | null;
   registrationCutoff: string | null;
   timespans?: Array<{ start_dt: string; end_dt?: string; sort_order?: number }>;
+  visibility?: string;
+  viewerCanRegister?: boolean;
+  viewerAuthenticated?: boolean;
   serverNow?: string;
 }
 
@@ -117,7 +123,7 @@ export default function PublicEventRegisterPage() {
   const { slug } = useParams<{ slug: string }>();
   const [searchParams] = useSearchParams();
   const specialLinkToken = searchParams.get('slk');
-  const { member } = useAuth();
+  const { member, sessionSettled } = useAuth();
 
   const [event, setEvent] = useState<EventDetail | null>(null);
   const [specialLink, setSpecialLink] = useState<SpecialLinkInfo | null>(null);
@@ -144,7 +150,7 @@ export default function PublicEventRegisterPage() {
   const contactEmailFieldId = useId();
 
   useEffect(() => {
-    if (!slug) return;
+    if (!slug || !sessionSettled) return;
     setLoading(true);
     setLoadError(null);
     setSubmitError(null);
@@ -169,7 +175,7 @@ export default function PublicEventRegisterPage() {
     Promise.all([fetchEvent, fetchLink])
       .catch(() => setLoadError('Event not found'))
       .finally(() => setLoading(false));
-  }, [slug, specialLinkToken]);
+  }, [slug, specialLinkToken, sessionSettled, member?.id]);
 
   useEffect(() => {
     if (!event || !member) return;
@@ -375,6 +381,30 @@ export default function PublicEventRegisterPage() {
                 : 'This registration link has been invalidated and can no longer be used.'}
             </p>
           </div>
+        </div>
+      </PublicLayout>
+    );
+  }
+
+  const membershipNotice = memberEventNotice(
+    {
+      visibility: event.visibility ?? 'public',
+      viewerCanRegister: specialLink?.valid ? true : event.viewerCanRegister,
+      viewerAuthenticated: event.viewerAuthenticated,
+    },
+    buildLoginPath(specialLinkToken ? `/events/${slug}?slk=${encodeURIComponent(specialLinkToken)}` : `/events/${slug}`),
+  );
+
+  if (membershipNotice) {
+    return (
+      <PublicLayout>
+        <SeoMeta title={event.title} />
+        <div className="max-w-2xl mx-auto px-4 py-10">
+          <Link to={`/events/${slug}`} className="text-sm text-primary-teal-link hover:underline mb-6 inline-block">
+            &larr; Back to event
+          </Link>
+          <h1 className="text-2xl font-bold text-gray-900 mb-4">{event.title}</h1>
+          <MemberEventNotice message={membershipNotice.message} loginHref={membershipNotice.loginHref} />
         </div>
       </PublicLayout>
     );

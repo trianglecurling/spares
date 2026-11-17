@@ -1,5 +1,8 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, gt, inArray } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
+import { dateColumnBindValue, resolveRelevantSessionIdForLeagues } from '../services/curlingSessionService.js';
+import { getCurrentDateStringAsync } from '../utils/time.js';
+import { loadTopWaitlistIdByMember } from './memberWaitlistOrder.js';
 import { evaluatePlayInLeagueFromDb } from './playInEntryService.js';
 
 export type TuesdayEveningBadge = 'backup' | 'playdown';
@@ -7,21 +10,12 @@ export type TuesdayEveningBadge = 'backup' | 'playdown';
 export type TuesdayEveningBadgeMemberSets = {
   rosteredMemberIds: Set<number>;
   playdownMemberIds: Set<number>;
+  topWaitlistIdByMember: Map<number, number>;
 };
 
-/** Tuesday Evening, or a Tuesday play-in league if the display name varies. */
-export function isTuesdayEveningLeague(league: {
-  name: string;
-  isPlayInBased?: boolean | number | null;
-}): boolean {
-  const name = league.name.trim().toLowerCase();
-  if (name.includes('tuesday evening')) return true;
-  const playInBased = league.isPlayInBased === true || league.isPlayInBased === 1;
-  return playInBased && name.includes('tuesday');
-}
-
-export function isTopRankedWaitlist(priorityRank: number | null | undefined): boolean {
-  return Number(priorityRank) === 1;
+/** Tuesday Evening is the session's play-in league; there is one per session. */
+export function isTuesdayEveningLeague(league: { isPlayInBased?: boolean | number | null }): boolean {
+  return league.isPlayInBased === true || league.isPlayInBased === 1;
 }
 
 /**
@@ -44,17 +38,21 @@ export function isTuesdayPlaydownTeam(team: {
 }
 
 /**
- * Backup (Tuesday roster) wins over playdown, but only on the member's
- * #1-ranked waitlist. Playdown can appear on any waitlist.
+ * Backup (Tuesday roster) wins over playdown, but only on a rostered member's
+ * #1 waitlist. Playdown can appear on any waitlist.
  */
 export function resolveTuesdayEveningBadge(input: {
+  waitlistId: number;
   memberIds: number[];
   rosteredMemberIds: ReadonlySet<number>;
   playdownMemberIds: ReadonlySet<number>;
-  isTopRankedWaitlist: boolean;
+  topWaitlistIdByMember: ReadonlyMap<number, number>;
 }): TuesdayEveningBadge | null {
-  if (input.memberIds.some((memberId) => input.rosteredMemberIds.has(memberId))) {
-    return input.isTopRankedWaitlist ? 'backup' : null;
+  const rosteredMemberIds = input.memberIds.filter((memberId) => input.rosteredMemberIds.has(memberId));
+  if (rosteredMemberIds.length > 0) {
+    return rosteredMemberIds.some((memberId) => input.topWaitlistIdByMember.get(memberId) === input.waitlistId)
+      ? 'backup'
+      : null;
   }
   if (input.memberIds.some((memberId) => input.playdownMemberIds.has(memberId))) {
     return 'playdown';
@@ -96,50 +94,60 @@ async function loadPlaydownMemberIds(leagueIds: number[], memberIds: number[]): 
   return playdownMemberIds;
 }
 
-export async function loadTuesdayEveningBadgeMemberSets(input: {
-  sessionIds: number[];
-  memberIds: number[];
-}): Promise<TuesdayEveningBadgeMemberSets> {
-  const rosteredMemberIds = new Set<number>();
-  const sessionIds = uniquePositiveIds(input.sessionIds);
-  const memberIds = uniquePositiveIds(input.memberIds);
-  if (sessionIds.length === 0 || memberIds.length === 0) {
-    return { rosteredMemberIds, playdownMemberIds: new Set() };
-  }
-
+async function loadTuesdayEveningLeagueIds(sessionIds: number[]): Promise<number[]> {
+  if (sessionIds.length === 0) return [];
   const { db, schema } = getDrizzleDb();
   const leagues = await db
     .select({
       id: schema.leagues.id,
-      name: schema.leagues.name,
       isPlayInBased: schema.leagues.is_play_in_based,
     })
     .from(schema.leagues)
     .where(inArray(schema.leagues.session_id, sessionIds));
+  return leagues.filter((league) => isTuesdayEveningLeague(league)).map((league) => league.id);
+}
 
-  const tuesdayLeagueIds = leagues
-    .filter((league) => isTuesdayEveningLeague(league))
-    .map((league) => league.id);
-  if (tuesdayLeagueIds.length === 0) {
-    return { rosteredMemberIds, playdownMemberIds: new Set() };
-  }
+async function loadUpcomingSessionIds(today: string): Promise<number[]> {
+  const { db, schema } = getDrizzleDb();
+  const rows = await db
+    .select({ id: schema.curlingSessions.id })
+    .from(schema.curlingSessions)
+    .where(gt(schema.curlingSessions.start_date, dateColumnBindValue(today) as never));
+  return rows.map((row) => row.id);
+}
 
-  const rosterRows = await db
+async function loadRosteredMemberIds(leagueIds: number[], memberIds: number[]): Promise<Set<number>> {
+  if (leagueIds.length === 0) return new Set();
+  const { db, schema } = getDrizzleDb();
+  const rows = await db
     .select({ memberId: schema.leagueRoster.member_id })
     .from(schema.leagueRoster)
-    .where(
-      and(
-        inArray(schema.leagueRoster.league_id, tuesdayLeagueIds),
-        inArray(schema.leagueRoster.member_id, memberIds),
-        eq(schema.leagueRoster.status, 'active'),
-      ),
-    );
-  for (const row of rosterRows) {
-    if (row.memberId != null) rosteredMemberIds.add(row.memberId);
+    .where(and(inArray(schema.leagueRoster.league_id, leagueIds), inArray(schema.leagueRoster.member_id, memberIds)));
+  return new Set(rows.map((row) => row.memberId));
+}
+
+/**
+ * Backup uses the Tuesday Evening roster of the current session. Playdown only
+ * applies to play-in teams for a session that has not started yet.
+ */
+export async function loadTuesdayEveningBadgeMemberSets(input: {
+  memberIds: number[];
+}): Promise<TuesdayEveningBadgeMemberSets> {
+  const memberIds = uniquePositiveIds(input.memberIds);
+  if (memberIds.length === 0) {
+    return { rosteredMemberIds: new Set(), playdownMemberIds: new Set(), topWaitlistIdByMember: new Map() };
   }
+
+  const today = await getCurrentDateStringAsync();
+  const currentSessionId = await resolveRelevantSessionIdForLeagues(today);
+  const currentTuesdayLeagueIds = currentSessionId != null ? await loadTuesdayEveningLeagueIds([currentSessionId]) : [];
+  const rosteredMemberIds = await loadRosteredMemberIds(currentTuesdayLeagueIds, memberIds);
+  const playInLeagueIds = await loadTuesdayEveningLeagueIds(await loadUpcomingSessionIds(today));
 
   return {
     rosteredMemberIds,
-    playdownMemberIds: await loadPlaydownMemberIds(tuesdayLeagueIds, memberIds),
+    playdownMemberIds: await loadPlaydownMemberIds(playInLeagueIds, memberIds),
+    topWaitlistIdByMember:
+      rosteredMemberIds.size > 0 ? await loadTopWaitlistIdByMember([...rosteredMemberIds]) : new Map(),
   };
 }

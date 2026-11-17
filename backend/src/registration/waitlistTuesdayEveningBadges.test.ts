@@ -1,25 +1,19 @@
 import { describe, expect, test } from 'bun:test';
 import {
-  isTopRankedWaitlist,
   isTuesdayEveningLeague,
   isTuesdayPlaydownTeam,
   resolveTuesdayEveningBadge,
 } from './waitlistTuesdayEveningBadges.js';
 
 describe('isTuesdayEveningLeague', () => {
-  test('matches the Tuesday Evening name regardless of play-in flag', () => {
-    expect(isTuesdayEveningLeague({ name: 'Tuesday Evening', isPlayInBased: 0 })).toBe(true);
-    expect(isTuesdayEveningLeague({ name: 'Fall Tuesday Evening League', isPlayInBased: false })).toBe(true);
+  test('matches the play-in league', () => {
+    expect(isTuesdayEveningLeague({ isPlayInBased: 1 })).toBe(true);
+    expect(isTuesdayEveningLeague({ isPlayInBased: true })).toBe(true);
   });
 
-  test('matches a Tuesday play-in league if the display name varies', () => {
-    expect(isTuesdayEveningLeague({ name: 'Tuesday Competitive', isPlayInBased: 1 })).toBe(true);
-    expect(isTuesdayEveningLeague({ name: 'Tuesday Competitive', isPlayInBased: 0 })).toBe(false);
-  });
-
-  test('does not match other weeknights', () => {
-    expect(isTuesdayEveningLeague({ name: 'Thursday Evening', isPlayInBased: 0 })).toBe(false);
-    expect(isTuesdayEveningLeague({ name: 'Monday Night', isPlayInBased: 1 })).toBe(false);
+  test('does not match other leagues', () => {
+    expect(isTuesdayEveningLeague({ isPlayInBased: 0 })).toBe(false);
+    expect(isTuesdayEveningLeague({ isPlayInBased: null })).toBe(false);
   });
 });
 
@@ -39,48 +33,59 @@ describe('isTuesdayPlaydownTeam', () => {
   });
 });
 
-describe('isTopRankedWaitlist', () => {
-  test('only rank 1 counts', () => {
-    expect(isTopRankedWaitlist(1)).toBe(true);
-    expect(isTopRankedWaitlist(2)).toBe(false);
-    expect(isTopRankedWaitlist(null)).toBe(false);
-    expect(isTopRankedWaitlist(undefined)).toBe(false);
-  });
-});
-
 describe('resolveTuesdayEveningBadge', () => {
   const rosteredMemberIds = new Set([10, 11]);
   const playdownMemberIds = new Set([11, 20]);
+  const topWaitlistIdByMember = new Map([
+    [10, 5],
+    [11, 7],
+    [20, 5],
+  ]);
 
-  test('returns backup when a listed member is rostered on a #1 waitlist', () => {
+  test('returns backup when this is a rostered member\'s #1 waitlist', () => {
     expect(
       resolveTuesdayEveningBadge({
+        waitlistId: 5,
         memberIds: [10],
         rosteredMemberIds,
         playdownMemberIds,
-        isTopRankedWaitlist: true,
+        topWaitlistIdByMember,
       }),
     ).toBe('backup');
   });
 
-  test('hides backup when the waitlist is not the member\'s #1 preference', () => {
+  test('hides backup when the waitlist is not the member\'s #1 waitlist', () => {
     expect(
       resolveTuesdayEveningBadge({
+        waitlistId: 6,
         memberIds: [10],
         rosteredMemberIds,
         playdownMemberIds,
-        isTopRankedWaitlist: false,
+        topWaitlistIdByMember,
       }),
     ).toBeNull();
+  });
+
+  test('returns backup on a team entry when it is any rostered member\'s #1 waitlist', () => {
+    expect(
+      resolveTuesdayEveningBadge({
+        waitlistId: 7,
+        memberIds: [10, 11],
+        rosteredMemberIds,
+        playdownMemberIds,
+        topWaitlistIdByMember,
+      }),
+    ).toBe('backup');
   });
 
   test('returns playdown when a listed member is only on a playdown team', () => {
     expect(
       resolveTuesdayEveningBadge({
+        waitlistId: 6,
         memberIds: [20],
         rosteredMemberIds,
         playdownMemberIds,
-        isTopRankedWaitlist: false,
+        topWaitlistIdByMember,
       }),
     ).toBe('playdown');
   });
@@ -88,10 +93,11 @@ describe('resolveTuesdayEveningBadge', () => {
   test('prefers backup over playdown on a #1 waitlist', () => {
     expect(
       resolveTuesdayEveningBadge({
+        waitlistId: 7,
         memberIds: [11],
         rosteredMemberIds,
         playdownMemberIds,
-        isTopRankedWaitlist: true,
+        topWaitlistIdByMember,
       }),
     ).toBe('backup');
   });
@@ -99,10 +105,11 @@ describe('resolveTuesdayEveningBadge', () => {
   test('hides both badges when a rostered member is not on their #1 waitlist', () => {
     expect(
       resolveTuesdayEveningBadge({
+        waitlistId: 5,
         memberIds: [11],
         rosteredMemberIds,
         playdownMemberIds,
-        isTopRankedWaitlist: false,
+        topWaitlistIdByMember,
       }),
     ).toBeNull();
   });
@@ -110,10 +117,11 @@ describe('resolveTuesdayEveningBadge', () => {
   test('returns null when no listed member is involved', () => {
     expect(
       resolveTuesdayEveningBadge({
+        waitlistId: 5,
         memberIds: [99],
         rosteredMemberIds,
         playdownMemberIds,
-        isTopRankedWaitlist: true,
+        topWaitlistIdByMember,
       }),
     ).toBeNull();
   });

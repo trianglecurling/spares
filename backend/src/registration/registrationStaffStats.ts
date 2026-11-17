@@ -385,7 +385,7 @@ export async function getStaffRegistrationStats(input: { actor: Member; sessionI
             total: sql<number>`count(*)`,
           })
           .from(schema.leagueRoster)
-          .where(and(inArray(schema.leagueRoster.league_id, leagueIds), eq(schema.leagueRoster.status, 'active')))
+          .where(inArray(schema.leagueRoster.league_id, leagueIds))
           .groupBy(schema.leagueRoster.league_id)
       : Promise.resolve([]),
     leagueIds.length

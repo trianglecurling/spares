@@ -11,7 +11,8 @@ import { config } from '../config.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import type { Member } from '../types.js';
 import { isCalendarAdmin } from '../utils/auth.js';
-import { memberIsSocialMember, memberIsSpareOnly } from '../utils/memberMembershipHelpers.js';
+import { memberIsSocialMember } from '../utils/memberMembershipHelpers.js';
+import { eventVisibilityFilterForMember } from './eventVisibilityAccess.js';
 import {
   addCalendarDays,
   formatDateInTimeZone,
@@ -129,8 +130,8 @@ async function loadIceOccupancy(
 ): Promise<{ blocking: Occupancy[]; events: IceDayEvent[] }> {
   const startIso = rangeStart.toISOString();
   const endIso = rangeEnd.toISOString();
-  // Spare-only members cannot read ice-members-only events, but those events still hold the ice.
-  const restrictedVisibility = memberIsSpareOnly(member);
+  // Events the member cannot register for still occupy the ice; their titles are hidden.
+  const visibilityFilter = eventVisibilityFilterForMember(member);
 
   const [direct, league, iceBookings, allEventItems, visibleEventItems] = await Promise.all([
     fetchDirectCalendarEventsForRange(rangeStart, rangeEnd),
@@ -141,12 +142,10 @@ async function loadIceOccupancy(
       isCalendarAdmin(member) ? 'admin' : 'member'
     ),
     getEventTimespansForCalendar(startIso, endIso),
-    restrictedVisibility
-      ? getEventTimespansForCalendar(startIso, endIso, ['public', 'active_members'])
-      : Promise.resolve(null),
+    getEventTimespansForCalendar(startIso, endIso, visibilityFilter),
   ]);
 
-  const visibleEventIds = visibleEventItems ? new Set(visibleEventItems.map((ev) => ev.id)) : null;
+  const visibleEventIds = new Set(visibleEventItems.map((ev) => ev.id));
   const blocking: Occupancy[] = [];
   const events: IceDayEvent[] = [];
 
@@ -167,7 +166,7 @@ async function loadIceOccupancy(
   for (const ev of direct) collect(ev, true);
   for (const ev of league) collect(ev, true);
   for (const ev of iceBookings) collect(ev, true);
-  for (const ev of allEventItems) collect(ev, visibleEventIds ? visibleEventIds.has(ev.id) : true);
+  for (const ev of allEventItems) collect(ev, visibleEventIds.has(ev.id));
 
   return { blocking, events };
 }

@@ -7,12 +7,11 @@ import { isBonspielCalendarType, parseCalendarTypeIds } from '../../../services/
 import { fetchIceBookingsAsCalendarEvents } from '../../../services/iceBookingsCalendar.js';
 import type { Member } from '../../../types.js';
 import { isCalendarAdmin } from '../../../utils/auth.js';
-import { memberIsSocialMember, memberIsSpareOnly } from '../../../utils/memberMembershipHelpers.js';
+import { eventVisibilityFilterForCalendar } from '../../../services/eventVisibilityAccess.js';
 import { notArchivedCondition } from '../../../utils/softDelete.js';
 
 const UPCOMING_BONSPIEL_LIMIT = 10;
 
-type CalendarVisibility = 'public' | 'active_members' | 'ice_members';
 type IceViewer = 'public' | 'member' | 'admin';
 
 export type PublicUpcomingBonspiel = {
@@ -42,17 +41,8 @@ function parseRange(start: string, end: string) {
   return { rangeStart, rangeEnd };
 }
 
-function getVisibilityFilter(member?: Member): CalendarVisibility[] {
-  const visibilityFilter: CalendarVisibility[] = ['public'];
-  if (!member) {
-    return visibilityFilter;
-  }
-
-  visibilityFilter.push('active_members');
-  if (!memberIsSpareOnly(member) && !memberIsSocialMember(member)) {
-    visibilityFilter.push('ice_members');
-  }
-  return visibilityFilter;
+function getVisibilityFilter(member?: Member) {
+  return eventVisibilityFilterForCalendar(member);
 }
 
 function getIceViewer(member?: Member): IceViewer {

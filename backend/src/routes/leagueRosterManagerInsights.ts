@@ -5,8 +5,6 @@ import { resolveAdjacentSessionsForLeagues } from '../services/curlingSessionSer
 import type { ClubTenure } from '../services/memberMembershipCardService.js';
 import { sortLeaguesByDayOfWeekThenFirstDrawTime } from '../utils/leagueOrdering.js';
 
-const ROSTERED_STATUSES = ['active', 'completed'] as const;
-
 export type LeagueRosterManagerInsight = {
   totalExperienceYears: number | null;
   clubTenure: ClubTenure | null;
@@ -67,7 +65,6 @@ export async function loadLeagueRosterManagerInsights(
           and(
             inArray(schema.leagueRoster.league_id, previousLeagueIds),
             inArray(schema.leagueRoster.member_id, uniqueIds),
-            inArray(schema.leagueRoster.status, [...ROSTERED_STATUSES]),
           ),
         );
 

@@ -592,7 +592,6 @@ async function loadSessionLeagues(memberId: number, sessionId: number): Promise<
       .where(
         and(
           eq(schema.leagueRoster.member_id, memberId),
-          eq(schema.leagueRoster.status, 'active'),
           eq(schema.leagues.session_id, sessionId),
         ),
       )

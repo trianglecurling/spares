@@ -26,6 +26,7 @@ import {
   publicEventTypeBadgeClass,
   publicEventTypeLabel,
 } from '../utils/publicEventCardUtils';
+import { useAuth } from '../contexts/AuthContext';
 import api from '../utils/api';
 
 const EVENT_TYPE_FILTER_IDS = new Set<string>(EVENT_CALENDAR_TYPE_IDS);
@@ -116,6 +117,7 @@ function normalizeCategoryRows(data: unknown): EventCategoryRow[] {
 }
 
 export default function PublicEventsPage() {
+  const { sessionSettled, member } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const [events, setEvents] = useState<EventSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -180,6 +182,7 @@ export default function PublicEventsPage() {
   }, []);
 
   useEffect(() => {
+    if (!sessionSettled) return;
     let cancelled = false;
     setLoading(true);
     const eventsPath = typeFilter
@@ -199,7 +202,7 @@ export default function PublicEventsPage() {
     return () => {
       cancelled = true;
     };
-  }, [typeFilter]);
+  }, [typeFilter, sessionSettled, member?.id]);
 
   const pastEventOptions: ChoiceOption<PastSeasonValue>[] = useMemo(
     () =>

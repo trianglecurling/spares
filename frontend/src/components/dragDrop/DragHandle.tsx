@@ -32,7 +32,7 @@ export default function DragHandle({
       {...attributes}
       {...listeners}
       className={joinClasses(
-        'inline-flex h-8 w-8 items-center justify-center rounded-md text-gray-400 transition-colors touch-none',
+        'inline-flex h-8 w-8 shrink-0 items-center justify-center self-center rounded-md p-0 text-gray-400 transition-colors touch-none',
         disabled
           ? 'cursor-not-allowed opacity-40'
           : 'cursor-grab hover:bg-gray-100 hover:text-gray-600 active:cursor-grabbing dark:hover:bg-gray-700 dark:hover:text-gray-200',

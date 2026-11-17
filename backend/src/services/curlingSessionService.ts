@@ -2,7 +2,7 @@ import { and, asc, desc, eq, gt, gte, lte, sql, lt } from 'drizzle-orm';
 import { getDatabaseConfig } from '../db/config.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 
-function dateColumnBindValue(dateString: string): Date | string {
+export function dateColumnBindValue(dateString: string): Date | string {
   if (getDatabaseConfig()?.type === 'postgres') {
     return new Date(`${dateString}T00:00:00`);
   }
