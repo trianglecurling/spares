@@ -1,76 +1,87 @@
 /**
- * Which ice-booking start times cannot be used, and the continuous stretches of
- * those starts to paint on the day grid.
+ * Which ice-booking start times can take a booking of the chosen length, and the
+ * continuous stretches of blocked starts to paint on the day grid.
  *
- * A start is blocked when the server says so, or when the booking would overlap
- * something on every sheet. Overlap is half-open: a booking that ends at the
- * same instant an event starts does not conflict.
+ * Overlap is half-open: a booking that ends at the same instant an event starts
+ * does not conflict.
  */
 
-export type SheetSpan = {
-  start: Date;
-  end: Date;
+export type TimeSpan = { start: Date; end: Date };
+
+export type SheetSpan = TimeSpan & {
   sheetIds: number[];
   title?: string;
 };
 
-export type StartSlotOccupancy = {
-  start: Date;
-  end: Date;
+export type BookingSlotUnavailableReason = 'past' | 'member_conflict' | 'sheets_busy';
+
+export type StartSlotOccupancy = TimeSpan & {
   availableSheetIds: number[];
-  unavailableReason?: string;
+  unavailableReason?: BookingSlotUnavailableReason;
 };
 
-function overlaps(event: SheetSpan, bookingStartMs: number, bookingEndMs: number): boolean {
-  return event.start.getTime() < bookingEndMs && event.end.getTime() > bookingStartMs;
+export type ShorterDurationSuggestion = {
+  start: Date;
+  durationMinutes: number;
+  beforeTitle?: string;
+};
+
+const MS_MINUTE = 60_000;
+
+function overlaps(span: TimeSpan, startMs: number, endMs: number): boolean {
+  return span.start.getTime() < endMs && span.end.getTime() > startMs;
 }
 
-/** True when every sheet is occupied for the whole booking. */
-export function startLeavesNoSheet(
-  sheetIds: number[],
-  bookingStart: Date,
-  bookingEnd: Date,
-  events: SheetSpan[]
-): boolean {
-  if (sheetIds.length === 0) return false;
-  const bookingStartMs = bookingStart.getTime();
-  const bookingEndMs = bookingEnd.getTime();
-  return sheetIds.every((sheetId) =>
-    events.some((event) => event.sheetIds.includes(sheetId) && overlaps(event, bookingStartMs, bookingEndMs))
-  );
+function byStart(a: TimeSpan, b: TimeSpan): number {
+  return a.start.getTime() - b.start.getTime();
 }
 
-export function startSlotIsBlocked(
-  slot: StartSlotOccupancy,
-  sheetIds: number[],
-  events: SheetSpan[]
-): boolean {
-  if (slot.unavailableReason || slot.availableSheetIds.length === 0) return true;
-  return startLeavesNoSheet(sheetIds, slot.start, slot.end, events);
+export function slotIsOpen(slot: StartSlotOccupancy): boolean {
+  return !slot.unavailableReason && slot.availableSheetIds.length > 0;
 }
 
-export function sheetsFreeForInterval(
+/** Where a booking of `minutes` from `start` could go. Past starts are the caller's concern. */
+function fitBooking(
+  start: Date,
+  minutes: number,
   sheetIds: number[],
-  bookingStart: Date,
-  bookingEnd: Date,
-  events: SheetSpan[]
-): number[] {
-  const bookingStartMs = bookingStart.getTime();
-  const bookingEndMs = bookingEnd.getTime();
-  return sheetIds.filter(
+  events: SheetSpan[],
+  memberBookings: TimeSpan[]
+): StartSlotOccupancy {
+  const startMs = start.getTime();
+  const end = new Date(startMs + minutes * MS_MINUTE);
+  const endMs = end.getTime();
+  if (memberBookings.some((booking) => overlaps(booking, startMs, endMs))) {
+    return { start, end, availableSheetIds: [], unavailableReason: 'member_conflict' };
+  }
+  const availableSheetIds = sheetIds.filter(
     (sheetId) =>
-      !events.some((event) => event.sheetIds.includes(sheetId) && overlaps(event, bookingStartMs, bookingEndMs))
+      !events.some((event) => event.sheetIds.includes(sheetId) && overlaps(event, startMs, endMs))
   );
+  if (availableSheetIds.length === 0) {
+    return { start, end, availableSheetIds, unavailableReason: 'sheets_busy' };
+  }
+  return { start, end, availableSheetIds };
 }
 
-function intervalOverlapsMember(
-  bookingStartMs: number,
-  bookingEndMs: number,
-  memberBookings: Array<{ start: Date; end: Date }>
-): boolean {
-  return memberBookings.some(
-    (booking) => booking.start.getTime() < bookingEndMs && booking.end.getTime() > bookingStartMs
-  );
+/**
+ * Starts on `day` (floating midnight) from `earliestHour` whose booking of
+ * `durationMinutes` ends by midnight. Fetched starts can be for a shorter duration
+ * than the slider now shows.
+ */
+export function startsWithinDay<T extends TimeSpan>(
+  slots: T[],
+  day: Date,
+  earliestHour: number,
+  durationMinutes: number
+): T[] {
+  const earliestMs = new Date(day.getFullYear(), day.getMonth(), day.getDate(), earliestHour).getTime();
+  const latestMs =
+    new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1).getTime() - durationMinutes * MS_MINUTE;
+  return slots.filter((slot) => {
+    const startMs = slot.start.getTime();
+    return startMs >= earliestMs && startMs <= latestMs;
+  });
 }
 
 /**
@@ -84,39 +95,25 @@ export function refitSlotsToDuration(
   durationMinutes: number,
   sheetIds: number[],
   events: SheetSpan[],
-  memberBookings: Array<{ start: Date; end: Date }> = []
+  memberBookings: TimeSpan[] = []
 ): StartSlotOccupancy[] {
   if (sheetIds.length === 0) return slots;
-  const durationMs = durationMinutes * 60_000;
-  return slots.map((slot) => {
-    const end = new Date(slot.start.getTime() + durationMs);
-    if (slot.unavailableReason === 'past') {
-      return { ...slot, end, availableSheetIds: [], unavailableReason: 'past' };
-    }
-    if (intervalOverlapsMember(slot.start.getTime(), end.getTime(), memberBookings)) {
-      return { ...slot, end, availableSheetIds: [], unavailableReason: 'member_conflict' };
-    }
-    const availableSheetIds = sheetsFreeForInterval(sheetIds, slot.start, end, events);
-    if (availableSheetIds.length === 0) {
-      return { ...slot, end, availableSheetIds: [], unavailableReason: 'sheets_busy' };
-    }
-    return { start: slot.start, end, availableSheetIds };
-  });
+  return slots.map((slot) =>
+    slot.unavailableReason === 'past'
+      ? {
+          ...slot,
+          end: new Date(slot.start.getTime() + durationMinutes * MS_MINUTE),
+          availableSheetIds: [],
+        }
+      : fitBooking(slot.start, durationMinutes, sheetIds, events, memberBookings)
+  );
 }
 
-export type ShorterDurationSuggestion = {
-  start: Date;
-  durationMinutes: number;
-  beforeTitle?: string;
-};
-
-function earliestLaterEventTitle(fittedEnd: Date, events: SheetSpan[]): string | undefined {
-  const endMs = fittedEnd.getTime();
+function firstEventTitleFrom(time: Date, events: SheetSpan[]): string | undefined {
   const next = events
-    .filter((event) => event.sheetIds.length > 0 && event.start.getTime() >= endMs)
-    .sort((a, b) => a.start.getTime() - b.start.getTime())[0];
-  const title = next?.title?.trim();
-  return title || undefined;
+    .filter((event) => event.sheetIds.length > 0 && event.start.getTime() >= time.getTime())
+    .sort(byStart)[0];
+  return next?.title?.trim() || undefined;
 }
 
 /**
@@ -130,85 +127,44 @@ export function suggestShorterDuration(params: {
   events: SheetSpan[];
   minMinutes: number;
   stepMinutes: number;
-  memberBookings?: Array<{ start: Date; end: Date }>;
+  memberBookings?: TimeSpan[];
 }): ShorterDurationSuggestion | null {
   const { slots, durationMinutes, sheetIds, events, minMinutes, stepMinutes } = params;
   const memberBookings = params.memberBookings ?? [];
   if (sheetIds.length === 0 || stepMinutes <= 0 || durationMinutes <= minMinutes) return null;
 
-  const ordered = [...slots].sort((a, b) => a.start.getTime() - b.start.getTime());
-  const ahead = ordered.filter((slot) => slot.unavailableReason !== 'past');
-  const fits = (start: Date, minutes: number) => {
-    const end = new Date(start.getTime() + minutes * 60_000);
-    if (intervalOverlapsMember(start.getTime(), end.getTime(), memberBookings)) return false;
-    return sheetsFreeForInterval(sheetIds, start, end, events).length > 0;
-  };
-
+  const fits = (start: Date, minutes: number) =>
+    slotIsOpen(fitBooking(start, minutes, sheetIds, events, memberBookings));
+  const ahead = slots.filter((slot) => slot.unavailableReason !== 'past').sort(byStart);
   if (ahead.some((slot) => fits(slot.start, durationMinutes))) return null;
 
   for (const slot of ahead) {
-    let best: number | null = null;
-    for (let minutes = minMinutes; minutes <= durationMinutes - stepMinutes; minutes += stepMinutes) {
-      if (fits(slot.start, minutes)) best = minutes;
+    for (let minutes = durationMinutes - stepMinutes; minutes >= minMinutes; minutes -= stepMinutes) {
+      if (!fits(slot.start, minutes)) continue;
+      const end = new Date(slot.start.getTime() + minutes * MS_MINUTE);
+      return { start: slot.start, durationMinutes: minutes, beforeTitle: firstEventTitleFrom(end, events) };
     }
-    if (best == null) continue;
-    const fittedEnd = new Date(slot.start.getTime() + best * 60_000);
-    return {
-      start: slot.start,
-      durationMinutes: best,
-      beforeTitle: earliestLaterEventTitle(fittedEnd, events),
-    };
   }
   return null;
 }
 
 /**
- * Contiguous blocked starts. Each range runs from the first start through the
- * end of the last start's step, so a lead-in meets the blocking event.
+ * Contiguous runs of starts that are not open. Each range runs from the first
+ * start through the end of the last start's step, so a lead-in meets the
+ * blocking event.
  */
-export function blockedStartRanges(
-  slots: StartSlotOccupancy[],
-  stepMinutes: number,
-  sheetIds: number[],
-  events: SheetSpan[]
-): Array<{ start: Date; end: Date }> {
-  const stepMs = stepMinutes * 60_000;
-  const ordered = [...slots].sort((a, b) => a.start.getTime() - b.start.getTime());
-  const ranges: Array<{ start: Date; end: Date }> = [];
-  for (const slot of ordered) {
-    if (!startSlotIsBlocked(slot, sheetIds, events)) continue;
+export function blockedStartRanges(slots: StartSlotOccupancy[], stepMinutes: number): TimeSpan[] {
+  const stepMs = stepMinutes * MS_MINUTE;
+  const ranges: TimeSpan[] = [];
+  for (const slot of [...slots].sort(byStart)) {
+    if (slotIsOpen(slot)) continue;
     const end = new Date(slot.start.getTime() + stepMs);
     const last = ranges[ranges.length - 1];
-    // 1ms slack: a step computed from slot timestamps can land a millisecond short.
-    if (last && slot.start.getTime() <= last.end.getTime() + 1) {
-      if (end.getTime() > last.end.getTime()) last.end = end;
+    if (last && slot.start.getTime() <= last.end.getTime()) {
+      if (end > last.end) last.end = end;
     } else {
-      ranges.push({ start: new Date(slot.start.getTime()), end });
+      ranges.push({ start: slot.start, end });
     }
   }
   return ranges;
-}
-
-/** Abutting blocked ranges become one rectangle so the hatch is a single paint. */
-export function hatchBands(
-  ranges: Array<{ start: Date; end: Date }>,
-  topFor: (value: Date) => number
-): Array<{ top: number; height: number }> {
-  const bands: Array<{ top: number; height: number }> = [];
-  const ordered = ranges
-    .map((range) => {
-      const top = topFor(range.start);
-      return { top, height: topFor(range.end) - top };
-    })
-    .filter((band) => band.height > 0)
-    .sort((a, b) => a.top - b.top);
-  for (const band of ordered) {
-    const last = bands[bands.length - 1];
-    if (last && band.top <= last.top + last.height + 1) {
-      last.height = Math.max(last.top + last.height, band.top + band.height) - last.top;
-    } else {
-      bands.push({ top: band.top, height: band.height });
-    }
-  }
-  return bands;
 }

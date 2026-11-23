@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import {
   blockedStartRanges,
-  hatchBands,
   refitSlotsToDuration,
-  startSlotIsBlocked,
+  slotIsOpen,
+  startsWithinDay,
   suggestShorterDuration,
   type StartSlotOccupancy,
 } from './bookingStartOccupancy';
@@ -23,55 +23,49 @@ function openSlot(startMinutes: number, durationMinutes = 120): StartSlotOccupan
   };
 }
 
-describe('startSlotIsBlocked', () => {
+describe('refitSlotsToDuration against an all-sheet event', () => {
   const event = { start: at(10 * 60 + 15), end: at(12 * 60 + 15), sheetIds: SHEETS };
+  const isOpen = (startMinutes: number, sheetIds = SHEETS) =>
+    slotIsOpen(refitSlotsToDuration([openSlot(startMinutes)], 120, SHEETS, [{ ...event, sheetIds }])[0]!);
 
   test('a 2-hour booking that ends as the event starts is free', () => {
-    expect(startSlotIsBlocked(openSlot(8 * 60 + 15), SHEETS, [event])).toBe(false);
+    expect(isOpen(8 * 60 + 15)).toBe(true);
   });
 
   test('the next 15-minute start runs into the event', () => {
-    expect(startSlotIsBlocked(openSlot(8 * 60 + 30), SHEETS, [event])).toBe(true);
-    expect(startSlotIsBlocked(openSlot(9 * 60 + 45), SHEETS, [event])).toBe(true);
-    expect(startSlotIsBlocked(openSlot(10 * 60), SHEETS, [event])).toBe(true);
+    expect(isOpen(8 * 60 + 30)).toBe(false);
+    expect(isOpen(9 * 60 + 45)).toBe(false);
+    expect(isOpen(10 * 60)).toBe(false);
   });
 
   test('a block on fewer than all sheets still leaves a place to start', () => {
-    const partial = { ...event, sheetIds: [1, 2, 3] };
-    expect(startSlotIsBlocked(openSlot(8 * 60 + 30), SHEETS, [partial])).toBe(false);
+    expect(isOpen(8 * 60 + 30, [1, 2, 3])).toBe(true);
   });
 });
 
 describe('blockedStartRanges', () => {
   test('a 2-hour lead-in before a 10:15 all-sheet event reaches 10:15', () => {
     const event = { start: at(10 * 60 + 15), end: at(12 * 60 + 15), sheetIds: SHEETS };
-    const slots: StartSlotOccupancy[] = [];
-    for (let minutes = 8 * 60; minutes <= 12 * 60; minutes += 15) {
-      const blockedByServer = minutes >= 8 * 60 + 30 && minutes <= 9 * 60 + 30;
-      slots.push({
-        start: at(minutes),
-        end: at(minutes + 120),
-        availableSheetIds: blockedByServer ? [] : SHEETS,
-        ...(blockedByServer ? { unavailableReason: 'sheets_busy' } : {}),
-      });
-    }
+    const fetched: StartSlotOccupancy[] = [];
+    for (let minutes = 8 * 60; minutes <= 12 * 60; minutes += 15) fetched.push(openSlot(minutes));
 
-    const ranges = blockedStartRanges(slots, 15, SHEETS, [event]);
+    const ranges = blockedStartRanges(refitSlotsToDuration(fetched, 120, SHEETS, [event]), 15);
     expect(ranges).toHaveLength(1);
     expect(ranges[0]!.start).toEqual(at(8 * 60 + 30));
     expect(ranges[0]!.end.getTime()).toBeGreaterThanOrEqual(at(10 * 60 + 15).getTime());
   });
 
-  test('adjacent starts stay one range when the step is a millisecond short', () => {
-    const slots = [0, 15, 30].map((minutes) => ({
-      start: at(minutes),
-      end: at(minutes + 120),
-      availableSheetIds: [] as number[],
-      unavailableReason: 'past',
-    }));
-    const ranges = blockedStartRanges(slots, 15 - 1 / 60_000, [], []);
-    expect(ranges).toHaveLength(1);
-    expect(ranges[0]!.end.getTime() - ranges[0]!.start.getTime()).toBeGreaterThanOrEqual(45 * 60_000 - 2);
+  test('open starts split blocked runs', () => {
+    const slots: StartSlotOccupancy[] = [
+      { start: at(0), end: at(60), availableSheetIds: [], unavailableReason: 'past' },
+      { start: at(15), end: at(75), availableSheetIds: [], unavailableReason: 'past' },
+      openSlot(30, 60),
+      { start: at(45), end: at(105), availableSheetIds: [], unavailableReason: 'sheets_busy' },
+    ];
+    expect(blockedStartRanges(slots, 15)).toEqual([
+      { start: at(0), end: at(30) },
+      { start: at(45), end: at(60) },
+    ]);
   });
 });
 
@@ -103,7 +97,7 @@ describe('refitSlotsToDuration', () => {
       events
     );
     expect(slots[0]!.unavailableReason).toBe('sheets_busy');
-    expect(startSlotIsBlocked(slots[0]!, sheets, events)).toBe(true);
+    expect(slotIsOpen(slots[0]!)).toBe(false);
   });
 
   test('90 minutes ends as preparation starts and stays free', () => {
@@ -114,6 +108,44 @@ describe('refitSlotsToDuration', () => {
       events
     );
     expect(slots[0]!.unavailableReason).toBeUndefined();
+  });
+
+  test('a start that overlaps one of the member’s bookings is a member conflict', () => {
+    const slots = refitSlotsToDuration([openSlot(9 * 60, 60)], 60, sheets, [], [
+      { start: at(9 * 60 + 30), end: at(10 * 60 + 30) },
+    ]);
+    expect(slots[0]!.unavailableReason).toBe('member_conflict');
+  });
+
+  test('past starts stay past', () => {
+    const slots = refitSlotsToDuration(
+      [{ start: at(9 * 60), end: at(10 * 60), availableSheetIds: [], unavailableReason: 'past' }],
+      30,
+      sheets,
+      []
+    );
+    expect(slots[0]).toEqual({
+      start: at(9 * 60),
+      end: at(9 * 60 + 30),
+      availableSheetIds: [],
+      unavailableReason: 'past',
+    });
+  });
+});
+
+describe('startsWithinDay', () => {
+  const day = at(0);
+  const quarterHours = Array.from({ length: 96 }, (_, i) => openSlot(i * 15, 15));
+  const startMinutes = (slots: StartSlotOccupancy[]) =>
+    slots.map((slot) => slot.start.getHours() * 60 + slot.start.getMinutes());
+
+  test('drops starts before the earliest hour', () => {
+    expect(startMinutes(startsWithinDay(quarterHours, day, 6, 15))[0]).toBe(6 * 60);
+  });
+
+  test('drops starts whose booking would run past midnight', () => {
+    expect(startMinutes(startsWithinDay(quarterHours, day, 6, 180)).pop()).toBe(21 * 60);
+    expect(startMinutes(startsWithinDay(quarterHours, day, 6, 15)).pop()).toBe(23 * 60 + 45);
   });
 });
 
@@ -163,15 +195,5 @@ describe('suggestShorterDuration', () => {
         stepMinutes: 15,
       })
     ).toBeNull();
-  });
-});
-
-describe('hatchBands', () => {
-  test('the lead-in before 10:15 is one band that reaches 10:15', () => {
-    const pxPerMinute = 2;
-    const gridStart = 6 * 60;
-    const topFor = (value: Date) => (value.getHours() * 60 + value.getMinutes() - gridStart) * pxPerMinute;
-    const bands = hatchBands([{ start: at(8 * 60 + 30), end: at(10 * 60 + 15) }], topFor);
-    expect(bands).toEqual([{ top: (8 * 60 + 30 - gridStart) * pxPerMinute, height: 105 * pxPerMinute }]);
   });
 });
