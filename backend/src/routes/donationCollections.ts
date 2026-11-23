@@ -32,6 +32,7 @@ const collectionBodySchema = z.object({
   startDate: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/),
   endDate: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}$/),
   minimumAmountMinor: z.number().int().min(100).max(5_000_000),
+  suggestedAmountsMinor: z.array(z.number().int().min(100).max(5_000_000)).max(12),
   managerIds: z.array(z.number().int().positive()).max(50),
 });
 

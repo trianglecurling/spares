@@ -2521,6 +2521,8 @@ export const donationCollectionsSqlite = sqliteTable('donation_collections', {
   start_date: text('start_date').notNull(),
   end_date: text('end_date').notNull(),
   minimum_amount_minor: integer('minimum_amount_minor').default(100).notNull(),
+  /** JSON array of clickable donation amounts, in minor units. */
+  suggested_amounts_minor: text('suggested_amounts_minor').default('[2500,5000,10000,25000,50000]').notNull(),
   /** Square/QuickBooks line item name; falls back to a generated label when unset. */
   payment_item_name: text('payment_item_name'),
   created_by_member_id: integer('created_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
@@ -5058,6 +5060,8 @@ export const donationCollectionsPg = pgTable('donation_collections', {
   start_date: date('start_date').notNull(),
   end_date: date('end_date').notNull(),
   minimum_amount_minor: integerPg('minimum_amount_minor').default(100).notNull(),
+  /** JSON array of clickable donation amounts, in minor units. */
+  suggested_amounts_minor: textPg('suggested_amounts_minor').default('[2500,5000,10000,25000,50000]').notNull(),
   /** Square/QuickBooks line item name; falls back to a generated label when unset. */
   payment_item_name: textPg('payment_item_name'),
   created_by_member_id: integerPg('created_by_member_id').references(() => membersPg.id, { onDelete: 'set null' }),

@@ -16,6 +16,7 @@ type PublicDonationCollection = {
   startDate: string;
   endDate: string;
   minimumAmountMinor: number;
+  suggestedAmountsMinor: number[];
   status: 'upcoming' | 'open' | 'ended';
 };
 
@@ -103,8 +104,8 @@ export default function PublicDonationCollectionPage() {
       !submitting
   );
 
-  const suggestedAmounts = [25, 50, 100, 250, 500].filter(
-    (value) => collection != null && value * 100 >= collection.minimumAmountMinor
+  const suggestedAmounts = (collection?.suggestedAmountsMinor ?? []).filter(
+    (amount) => collection != null && amount >= collection.minimumAmountMinor
   );
 
   const closedMessage =
@@ -199,15 +200,15 @@ export default function PublicDonationCollectionPage() {
                   />
                 </FormField>
                 {open && suggestedAmounts.length > 0 ? (
-                  <div className="flex flex-wrap gap-2">
-                    {suggestedAmounts.map((value) => (
+                  <div role="group" aria-label="Suggested donation amounts" className="flex flex-wrap gap-2">
+                    {suggestedAmounts.map((amountMinor) => (
                       <button
-                        key={value}
+                        key={amountMinor}
                         type="button"
                         className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-800 hover:bg-emerald-100"
-                        onClick={() => setAmount(value.toFixed(2))}
+                        onClick={() => setAmount((amountMinor / 100).toFixed(2))}
                       >
-                        ${value}
+                        {formatMoney(amountMinor)}
                       </button>
                     ))}
                   </div>

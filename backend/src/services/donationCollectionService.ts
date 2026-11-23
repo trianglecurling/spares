@@ -7,6 +7,8 @@ import {
   defaultDonationCollectionItemName,
   donationCollectionWindowStatus,
   formatDonationMoney,
+  normalizeSuggestedAmountsMinor,
+  parseStoredSuggestedAmounts,
   type DonationCollectionWindowStatus,
 } from '../utils/donationCollections.js';
 import { slugify } from '../utils/slugify.js';
@@ -38,6 +40,7 @@ export type DonationCollectionSummary = {
   startDate: string;
   endDate: string;
   minimumAmountMinor: number;
+  suggestedAmountsMinor: number[];
   paymentItemName: string | null;
   defaultItemName: string;
   status: DonationCollectionWindowStatus;
@@ -57,6 +60,7 @@ export type DonationCollectionInput = {
   startDate: string;
   endDate: string;
   minimumAmountMinor: number;
+  suggestedAmountsMinor: number[];
   managerIds: number[];
 };
 
@@ -79,6 +83,7 @@ type CollectionRow = {
   start_date: unknown;
   end_date: unknown;
   minimum_amount_minor: number;
+  suggested_amounts_minor: string;
   payment_item_name: string | null;
   created_at: unknown;
   updated_at: unknown;
@@ -261,6 +266,7 @@ function toSummary(
     startDate,
     endDate,
     minimumAmountMinor: row.minimum_amount_minor,
+    suggestedAmountsMinor: parseStoredSuggestedAmounts(row.suggested_amounts_minor),
     paymentItemName: row.payment_item_name,
     defaultItemName: defaultDonationCollectionItemName(row.cause_name),
     status: donationCollectionWindowStatus(today, startDate, endDate),
@@ -326,6 +332,7 @@ function normalizeInput(input: DonationCollectionInput): {
   startDate: string;
   endDate: string;
   minimumAmountMinor: number;
+  suggestedAmountsMinor: number[];
   managerIds: number[];
 } {
   const name = input.name.trim();
@@ -353,6 +360,10 @@ function normalizeInput(input: DonationCollectionInput): {
   ) {
     throw new DonationCollectionServiceError('Minimum donation must be at least $1.00.');
   }
+  const suggested = normalizeSuggestedAmountsMinor(input.suggestedAmountsMinor, input.minimumAmountMinor);
+  if (!suggested.ok) {
+    throw new DonationCollectionServiceError(suggested.error);
+  }
   const description = input.description?.trim() ? input.description.trim() : null;
   return {
     name,
@@ -362,6 +373,7 @@ function normalizeInput(input: DonationCollectionInput): {
     startDate,
     endDate,
     minimumAmountMinor: input.minimumAmountMinor,
+    suggestedAmountsMinor: suggested.amounts,
     managerIds: input.managerIds,
   };
 }
@@ -442,6 +454,7 @@ export async function createDonationCollection(
       start_date: normalized.startDate,
       end_date: normalized.endDate,
       minimum_amount_minor: normalized.minimumAmountMinor,
+      suggested_amounts_minor: JSON.stringify(normalized.suggestedAmountsMinor),
       created_by_member_id: member.id,
       updated_at: sql`CURRENT_TIMESTAMP`,
     })
@@ -479,6 +492,7 @@ export async function updateDonationCollection(
       start_date: normalized.startDate,
       end_date: normalized.endDate,
       minimum_amount_minor: normalized.minimumAmountMinor,
+      suggested_amounts_minor: JSON.stringify(normalized.suggestedAmountsMinor),
       updated_at: sql`CURRENT_TIMESTAMP`,
     })
     .where(eq(schema.donationCollections.id, collectionId));
@@ -505,6 +519,9 @@ export async function getPublicDonationCollection(slug: string) {
     startDate,
     endDate,
     minimumAmountMinor: row.minimum_amount_minor,
+    suggestedAmountsMinor: parseStoredSuggestedAmounts(row.suggested_amounts_minor).filter(
+      (amount) => amount >= row.minimum_amount_minor
+    ),
     status: donationCollectionWindowStatus(today, startDate, endDate),
   };
 }

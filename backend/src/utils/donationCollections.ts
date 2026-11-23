@@ -1,6 +1,8 @@
 export const DONATION_COLLECTION_SOURCE = 'donation_collection';
 export const MIN_DONATION_AMOUNT_MINOR = 100;
 export const MAX_DONATION_AMOUNT_MINOR = 5_000_000;
+export const MAX_SUGGESTED_DONATION_AMOUNTS = 12;
+export const DEFAULT_SUGGESTED_AMOUNTS_MINOR = [2500, 5000, 10000, 25000, 50000];
 
 export type DonationCollectionWindowStatus = 'upcoming' | 'open' | 'ended';
 
@@ -49,6 +51,45 @@ export function donationCollectionWindowStatus(
   if (today < startDate) return 'upcoming';
   if (today > endDate) return 'ended';
   return 'open';
+}
+
+export function parseStoredSuggestedAmounts(value: string | null | undefined): number[] {
+  if (value == null || value.trim() === '') return [...DEFAULT_SUGGESTED_AMOUNTS_MINOR];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (amount): amount is number =>
+        Number.isInteger(amount) && amount >= MIN_DONATION_AMOUNT_MINOR && amount <= MAX_DONATION_AMOUNT_MINOR
+    );
+  } catch {
+    return [];
+  }
+}
+
+export function normalizeSuggestedAmountsMinor(
+  amounts: number[],
+  minimumAmountMinor: number
+): { ok: true; amounts: number[] } | { ok: false; error: string } {
+  if (amounts.length > MAX_SUGGESTED_DONATION_AMOUNTS) {
+    return { ok: false, error: `Add at most ${MAX_SUGGESTED_DONATION_AMOUNTS} suggested amounts.` };
+  }
+  const seen = new Set<number>();
+  const normalized: number[] = [];
+  for (const amount of amounts) {
+    if (!Number.isInteger(amount) || amount < MIN_DONATION_AMOUNT_MINOR || amount > MAX_DONATION_AMOUNT_MINOR) {
+      return { ok: false, error: 'Enter each suggested amount in dollars, such as 25.00.' };
+    }
+    if (amount < minimumAmountMinor) {
+      return { ok: false, error: 'Each suggested amount must be at least the minimum donation.' };
+    }
+    if (seen.has(amount)) {
+      return { ok: false, error: 'Suggested amounts must be unique.' };
+    }
+    seen.add(amount);
+    normalized.push(amount);
+  }
+  return { ok: true, amounts: normalized };
 }
 
 export function normalizeDonorPhone(value: string): string | null {

@@ -6,6 +6,8 @@ import {
   donationCollectionFeeNote,
   donationCollectionWindowStatus,
   normalizeDonorPhone,
+  normalizeSuggestedAmountsMinor,
+  parseStoredSuggestedAmounts,
 } from './donationCollections.js';
 
 describe('donation collection checkout names', () => {
@@ -65,6 +67,25 @@ describe('donation collection confirmation', () => {
     expect(content.html).toContain('View your receipt');
     expect(content.text).not.toMatch(/tax-deductible|501\(c\)|EIN|tax-exempt/i);
     expect(content.html).not.toMatch(/tax-deductible|501\(c\)|EIN|tax-exempt/i);
+  });
+});
+
+describe('suggested donation amounts', () => {
+  test('keeps unique amounts at or above the minimum, in order', () => {
+    expect(normalizeSuggestedAmountsMinor([2500, 10000, 5000], 1000)).toEqual({
+      ok: true,
+      amounts: [2500, 10000, 5000],
+    });
+  });
+
+  test('rejects an amount below the minimum and duplicates', () => {
+    expect(normalizeSuggestedAmountsMinor([500], 2500).ok).toBe(false);
+    expect(normalizeSuggestedAmountsMinor([2500, 2500], 100).ok).toBe(false);
+  });
+
+  test('reads the stored list and falls back when it is missing', () => {
+    expect(parseStoredSuggestedAmounts('[2500,5000]')).toEqual([2500, 5000]);
+    expect(parseStoredSuggestedAmounts(null)).toEqual([2500, 5000, 10000, 25000, 50000]);
   });
 });
 

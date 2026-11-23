@@ -708,6 +708,13 @@
       "when": 1788759000000,
       "tag": "0101_add_donation_collections",
       "breakpoints": true
+    },
+    {
+      "idx": 102,
+      "version": "7",
+      "when": 1788845400000,
+      "tag": "0102_donation_collection_suggested_amounts",
+      "breakpoints": true
     }
   ]
 }

@@ -28,6 +28,7 @@ type DonationCollection = {
   startDate: string;
   endDate: string;
   minimumAmountMinor: number;
+  suggestedAmountsMinor: number[];
   status: 'upcoming' | 'open' | 'ended';
   totalRaisedMinor: number;
   donorCount: number;
@@ -51,6 +52,8 @@ function formatMoney(amountMinor: number, currency = 'usd'): string {
     currency: currency.toUpperCase(),
   }).format(amountMinor / 100);
 }
+
+const DEFAULT_SUGGESTED_AMOUNTS = ['25.00', '50.00', '100.00', '250.00', '500.00'];
 
 function dollarsToMinor(value: string): number | null {
   const normalized = value.trim();
@@ -80,6 +83,7 @@ export default function AdminDonationCollectionEditor() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [minimumAmount, setMinimumAmount] = useState('1.00');
+  const [suggestedAmounts, setSuggestedAmounts] = useState<string[]>(DEFAULT_SUGGESTED_AMOUNTS);
   const [description, setDescription] = useState('');
   const [managerIds, setManagerIds] = useState<number[]>([]);
   const [collection, setCollection] = useState<DonationCollection | null>(null);
@@ -109,6 +113,9 @@ export default function AdminDonationCollectionEditor() {
         setStartDate(next.startDate);
         setEndDate(next.endDate);
         setMinimumAmount((next.minimumAmountMinor / 100).toFixed(2));
+        setSuggestedAmounts(
+          (next.suggestedAmountsMinor ?? []).map((amount) => (amount / 100).toFixed(2))
+        );
         setDescription(next.description ?? '');
         setManagerIds(next.managers.map((manager) => manager.id));
       })
@@ -182,6 +189,16 @@ export default function AdminDonationCollectionEditor() {
       showAlert('Enter a minimum donation of at least $1.00.', 'error');
       return;
     }
+    const suggestedAmountsMinor: number[] = [];
+    for (const value of suggestedAmounts) {
+      if (!value.trim()) continue;
+      const amountMinor = dollarsToMinor(value);
+      if (amountMinor == null || amountMinor < 100) {
+        showAlert('Enter each suggested amount in dollars, such as 25.00.', 'error');
+        return;
+      }
+      suggestedAmountsMinor.push(amountMinor);
+    }
     const markdown = descriptionEditorRef.current?.getMarkdown?.() ?? description;
     setSaving(true);
     const payload = {
@@ -192,6 +209,7 @@ export default function AdminDonationCollectionEditor() {
       startDate,
       endDate,
       minimumAmountMinor,
+      suggestedAmountsMinor,
       managerIds,
     };
     try {
@@ -209,6 +227,7 @@ export default function AdminDonationCollectionEditor() {
       setCollection(next);
       setSlug(next.slug);
       setDescription(next.description ?? '');
+      setSuggestedAmounts(next.suggestedAmountsMinor.map((amount) => (amount / 100).toFixed(2)));
       showAlert('Donation collection saved.', 'success');
     } catch (error) {
       showAlert(formatApiError(error, 'Failed to save donation collection'), 'error');
@@ -341,6 +360,56 @@ export default function AdminDonationCollectionEditor() {
               required
             />
           </FormField>
+          <div role="group" aria-labelledby={`${baseId}-suggested-label`} className="space-y-3">
+            <div>
+              <div id={`${baseId}-suggested-label`} className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Suggested amounts
+              </div>
+              <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                These appear as buttons on the donation page. Each amount must be at least the minimum. You can add up to 12. Leave this empty to show no buttons.
+              </p>
+            </div>
+            {suggestedAmounts.map((value, index) => (
+              <div key={`${baseId}-suggested-row-${index}`} className="flex items-end gap-3">
+                <FormField
+                  className="min-w-0 flex-1"
+                  label={`Suggested amount ${index + 1}`}
+                  htmlFor={`${baseId}-suggested-${index}`}
+                >
+                  <input
+                    id={`${baseId}-suggested-${index}`}
+                    className="app-input"
+                    inputMode="decimal"
+                    value={value}
+                    onChange={(event) =>
+                      setSuggestedAmounts((current) =>
+                        current.map((amount, amountIndex) =>
+                          amountIndex === index ? event.target.value : amount
+                        )
+                      )
+                    }
+                  />
+                </FormField>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() =>
+                    setSuggestedAmounts((current) => current.filter((_, amountIndex) => amountIndex !== index))
+                  }
+                >
+                  Remove amount {index + 1}
+                </Button>
+              </div>
+            ))}
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={suggestedAmounts.length >= 12}
+              onClick={() => setSuggestedAmounts((current) => [...current, ''])}
+            >
+              Add amount
+            </Button>
+          </div>
           <FormField label="Managers" htmlFor={`${baseId}-managers`} helperText="Managers can edit this collection and export its donors.">
             <MemberMultiSelect
               inputId={`${baseId}-managers`}
