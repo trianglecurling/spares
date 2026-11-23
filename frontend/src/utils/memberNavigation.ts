@@ -2,6 +2,7 @@ import type { AuthenticatedMember } from '../../../backend/src/types.ts';
 import { memberCanAccessMembersArea, memberCanManageMembersAdmin } from './credentialAccess';
 import { memberCanAccessEventsAdmin } from './eventManagementAccess';
 import { memberHasScope } from './permissions';
+import { memberCanAccessDonationCollectionsAdmin } from './donationCollectionAccess';
 import { memberCanAccessVolunteeringAdmin } from './volunteerManagementAccess';
 
 export type MemberNavLink = { to: string; label: string };
@@ -17,6 +18,7 @@ export function getAdminLinks(member: AuthenticatedMember | null): MemberNavLink
   const canManageSponsorship = memberHasScope(member, 'sponsorship.manage');
   const canAccessEventsAdmin = memberCanAccessEventsAdmin(member);
   const canAccessVolunteeringAdmin = memberCanAccessVolunteeringAdmin(member);
+  const canAccessDonationCollections = memberCanAccessDonationCollectionsAdmin(member);
   const canManageRegistration = memberHasScope(member, 'admin.manage');
   const canManageRegistrations =
     memberHasScope(member, 'registrations.manage') || memberHasScope(member, 'admin.manage');
@@ -42,6 +44,9 @@ export function getAdminLinks(member: AuthenticatedMember | null): MemberNavLink
     ...(canManageContent ? [{ to: '/admin/content', label: 'Manage content' }] : []),
     ...(canManageGovernance ? [{ to: '/admin/governance', label: 'Manage governance' }] : []),
     ...(canAccessEventsAdmin ? [{ to: '/admin/events', label: 'Manage events' }] : []),
+    ...(canAccessDonationCollections
+      ? [{ to: '/admin/donations', label: 'Manage donation collections' }]
+      : []),
     ...(canAccessVolunteeringAdmin ? [{ to: '/admin/volunteering', label: 'Manage sign-ups' }] : []),
     ...(canManageRegistrations || canManageRegistration
       ? [{ to: '/admin/registrations', label: 'Manage registration' }]

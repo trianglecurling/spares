@@ -499,6 +499,12 @@
                                 "type": "number"
                               }
                             },
+                            "managedDonationCollectionIds": {
+                              "type": "array",
+                              "items": {
+                                "type": "number"
+                              }
+                            },
                             "isLeagueAdministrator": {
                               "type": "boolean"
                             },
@@ -584,6 +590,7 @@
                             "ownedEventIds",
                             "managedCredentialIds",
                             "managedVolunteerProgramIds",
+                            "managedDonationCollectionIds",
                             "isLeagueAdministrator",
                             "isLeagueAdministratorGlobal",
                             "roleCodes",
@@ -784,6 +791,12 @@
                                 "type": "number"
                               }
                             },
+                            "managedDonationCollectionIds": {
+                              "type": "array",
+                              "items": {
+                                "type": "number"
+                              }
+                            },
                             "isLeagueAdministrator": {
                               "type": "boolean"
                             },
@@ -869,6 +882,7 @@
                             "ownedEventIds",
                             "managedCredentialIds",
                             "managedVolunteerProgramIds",
+                            "managedDonationCollectionIds",
                             "isLeagueAdministrator",
                             "isLeagueAdministratorGlobal",
                             "roleCodes",
@@ -1047,6 +1061,12 @@
                                 "type": "number"
                               }
                             },
+                            "managedDonationCollectionIds": {
+                              "type": "array",
+                              "items": {
+                                "type": "number"
+                              }
+                            },
                             "isLeagueAdministrator": {
                               "type": "boolean"
                             },
@@ -1132,6 +1152,7 @@
                             "ownedEventIds",
                             "managedCredentialIds",
                             "managedVolunteerProgramIds",
+                            "managedDonationCollectionIds",
                             "isLeagueAdministrator",
                             "isLeagueAdministratorGlobal",
                             "roleCodes",
@@ -1267,6 +1288,12 @@
                             "type": "number"
                           }
                         },
+                        "managedDonationCollectionIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          }
+                        },
                         "isLeagueAdministrator": {
                           "type": "boolean"
                         },
@@ -1352,6 +1379,7 @@
                         "ownedEventIds",
                         "managedCredentialIds",
                         "managedVolunteerProgramIds",
+                        "managedDonationCollectionIds",
                         "isLeagueAdministrator",
                         "isLeagueAdministratorGlobal",
                         "roleCodes",
@@ -1534,6 +1562,12 @@
                             "type": "number"
                           }
                         },
+                        "managedDonationCollectionIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          }
+                        },
                         "isLeagueAdministrator": {
                           "type": "boolean"
                         },
@@ -1619,6 +1653,7 @@
                         "ownedEventIds",
                         "managedCredentialIds",
                         "managedVolunteerProgramIds",
+                        "managedDonationCollectionIds",
                         "isLeagueAdministrator",
                         "isLeagueAdministratorGlobal",
                         "roleCodes",
@@ -2584,6 +2619,50 @@
             },
             "in": "path",
             "name": "orderToken",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/public/donation-collections/{slug}": {
+      "get": {
+        "tags": [
+          "donations"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/public/donation-collections/{slug}/checkout": {
+      "post": {
+        "tags": [
+          "donations"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "slug",
             "required": true
           }
         ],
@@ -6560,6 +6639,12 @@
                             "type": "number"
                           }
                         },
+                        "managedDonationCollectionIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          }
+                        },
                         "isLeagueAdministrator": {
                           "type": "boolean"
                         },
@@ -6645,6 +6730,7 @@
                         "ownedEventIds",
                         "managedCredentialIds",
                         "managedVolunteerProgramIds",
+                        "managedDonationCollectionIds",
                         "isLeagueAdministrator",
                         "isLeagueAdministratorGlobal",
                         "roleCodes",
@@ -6802,6 +6888,12 @@
                             "type": "number"
                           }
                         },
+                        "managedDonationCollectionIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          }
+                        },
                         "isLeagueAdministrator": {
                           "type": "boolean"
                         },
@@ -6887,6 +6979,7 @@
                         "ownedEventIds",
                         "managedCredentialIds",
                         "managedVolunteerProgramIds",
+                        "managedDonationCollectionIds",
                         "isLeagueAdministrator",
                         "isLeagueAdministratorGlobal",
                         "roleCodes",
@@ -7046,6 +7139,12 @@
                             "type": "number"
                           }
                         },
+                        "managedDonationCollectionIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          }
+                        },
                         "isLeagueAdministrator": {
                           "type": "boolean"
                         },
@@ -7131,6 +7230,7 @@
                         "ownedEventIds",
                         "managedCredentialIds",
                         "managedVolunteerProgramIds",
+                        "managedDonationCollectionIds",
                         "isLeagueAdministrator",
                         "isLeagueAdministratorGlobal",
                         "roleCodes",
@@ -7271,6 +7371,12 @@
                             "type": "number"
                           }
                         },
+                        "managedDonationCollectionIds": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          }
+                        },
                         "isLeagueAdministrator": {
                           "type": "boolean"
                         },
@@ -7356,6 +7462,7 @@
                         "ownedEventIds",
                         "managedCredentialIds",
                         "managedVolunteerProgramIds",
+                        "managedDonationCollectionIds",
                         "isLeagueAdministrator",
                         "isLeagueAdministratorGlobal",
                         "roleCodes",
@@ -26878,6 +26985,63 @@
         }
       }
     },
+    "/payments/donation-collection-item-names": {
+      "get": {
+        "tags": [
+          "payments"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/payments/donation-collection-item-names/{collectionId}": {
+      "patch": {
+        "tags": [
+          "payments"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "paymentItemName"
+                ],
+                "properties": {
+                  "paymentItemName": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 512
+                  }
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "number"
+            },
+            "in": "path",
+            "name": "collectionId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/payments/registration-item-names": {
       "get": {
         "tags": [
@@ -26940,6 +27104,136 @@
             },
             "in": "path",
             "name": "lineType",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/donation-collections": {
+      "get": {
+        "tags": [
+          "donations"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "donations"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/donation-collections/{id}/management-access": {
+      "get": {
+        "tags": [
+          "donations"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/donation-collections/{id}": {
+      "get": {
+        "tags": [
+          "donations"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "donations"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/donation-collections/{id}/donors": {
+      "get": {
+        "tags": [
+          "donations"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/donation-collections/{id}/donors/export": {
+      "get": {
+        "tags": [
+          "donations"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
             "required": true
           }
         ],

@@ -127,6 +127,8 @@ type PgSchema = {
   eventSpecialLinks: typeof pgSchema.eventSpecialLinksPg;
   volunteerPrograms: typeof pgSchema.volunteerProgramsPg;
   volunteerProgramManagers: typeof pgSchema.volunteerProgramManagersPg;
+  donationCollections: typeof pgSchema.donationCollectionsPg;
+  donationCollectionManagers: typeof pgSchema.donationCollectionManagersPg;
   volunteerCredentials: typeof pgSchema.volunteerCredentialsPg;
   volunteerCredentialManagers: typeof pgSchema.volunteerCredentialManagersPg;
   volunteerRoles: typeof pgSchema.volunteerRolesPg;
@@ -293,6 +295,8 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       eventSpecialLinks: sqliteSchema.eventSpecialLinksSqlite,
       volunteerPrograms: sqliteSchema.volunteerProgramsSqlite,
       volunteerProgramManagers: sqliteSchema.volunteerProgramManagersSqlite,
+      donationCollections: sqliteSchema.donationCollectionsSqlite,
+      donationCollectionManagers: sqliteSchema.donationCollectionManagersSqlite,
       volunteerCredentials: sqliteSchema.volunteerCredentialsSqlite,
       volunteerCredentialManagers: sqliteSchema.volunteerCredentialManagersSqlite,
       volunteerRoles: sqliteSchema.volunteerRolesSqlite,
@@ -448,6 +452,8 @@ export function getDrizzleDb(): { db: DrizzleDb; schema: DrizzleSchema } {
       eventSpecialLinks: pgSchema.eventSpecialLinksPg,
       volunteerPrograms: pgSchema.volunteerProgramsPg,
       volunteerProgramManagers: pgSchema.volunteerProgramManagersPg,
+      donationCollections: pgSchema.donationCollectionsPg,
+      donationCollectionManagers: pgSchema.donationCollectionManagersPg,
       volunteerCredentials: pgSchema.volunteerCredentialsPg,
       volunteerCredentialManagers: pgSchema.volunteerCredentialManagersPg,
       volunteerRoles: pgSchema.volunteerRolesPg,

@@ -17,6 +17,17 @@ type EventPaymentItemNameRow = {
   defaultItemName: string;
 };
 
+type DonationCollectionPaymentItemNameRow = {
+  id: number;
+  name: string;
+  slug: string;
+  causeName: string;
+  startDate: string;
+  endDate: string;
+  paymentItemName: string | null;
+  defaultItemName: string;
+};
+
 type RegistrationPaymentItemNameRow = {
   lineType: string;
   label: string;
@@ -31,6 +42,20 @@ type EventPaymentItemNamesResponse = {
 type RegistrationPaymentItemNamesResponse = {
   items: RegistrationPaymentItemNameRow[];
 };
+
+type DonationCollectionPaymentItemNamesResponse = {
+  collections: DonationCollectionPaymentItemNameRow[];
+};
+
+function formatYmd(value: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return value || 'No date';
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+}
 
 function formatDateRange(timespans: EventPaymentItemNameRow['timespans']): string {
   if (timespans.length === 0) return 'No dates';
@@ -88,12 +113,16 @@ export default function AdminPaymentItemNames() {
   const canManagePayments = memberHasScope(member, 'payments.manage');
   const [events, setEvents] = useState<EventPaymentItemNameRow[]>([]);
   const [registrationItems, setRegistrationItems] = useState<RegistrationPaymentItemNameRow[]>([]);
+  const [collections, setCollections] = useState<DonationCollectionPaymentItemNameRow[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(true);
   const [loadingRegistrationItems, setLoadingRegistrationItems] = useState(true);
+  const [loadingCollections, setLoadingCollections] = useState(true);
   const [eventDraftNames, setEventDraftNames] = useState<Record<number, string>>({});
   const [registrationDraftNames, setRegistrationDraftNames] = useState<Record<string, string>>({});
+  const [collectionDraftNames, setCollectionDraftNames] = useState<Record<number, string>>({});
   const [savingEventId, setSavingEventId] = useState<number | null>(null);
   const [savingRegistrationLineType, setSavingRegistrationLineType] = useState<string | null>(null);
+  const [savingCollectionId, setSavingCollectionId] = useState<number | null>(null);
 
   const loadEvents = async () => {
     setLoadingEvents(true);
@@ -110,6 +139,26 @@ export default function AdminPaymentItemNames() {
       showAlert(formatApiError(error, 'Failed to load event item names'), 'error');
     } finally {
       setLoadingEvents(false);
+    }
+  };
+
+  const loadCollections = async () => {
+    setLoadingCollections(true);
+    try {
+      const { data } = await api.get<DonationCollectionPaymentItemNamesResponse>(
+        '/payments/donation-collection-item-names'
+      );
+      const rows = data.collections ?? [];
+      setCollections(rows);
+      setCollectionDraftNames(
+        Object.fromEntries(rows.map((collection) => [collection.id, collection.paymentItemName ?? '']))
+      );
+    } catch (error) {
+      setCollections([]);
+      setCollectionDraftNames({});
+      showAlert(formatApiError(error, 'Failed to load donation collection item names'), 'error');
+    } finally {
+      setLoadingCollections(false);
     }
   };
 
@@ -136,6 +185,7 @@ export default function AdminPaymentItemNames() {
   useEffect(() => {
     void loadEvents();
     void loadRegistrationItems();
+    void loadCollections();
   }, []);
 
   const saveEventItemName = async (event: EventPaymentItemNameRow) => {
@@ -159,6 +209,30 @@ export default function AdminPaymentItemNames() {
       showAlert(formatApiError(error, `Failed to save item name for "${event.title}"`), 'error');
     } finally {
       setSavingEventId(null);
+    }
+  };
+
+  const saveCollectionItemName = async (collection: DonationCollectionPaymentItemNameRow) => {
+    const nextValue = (collectionDraftNames[collection.id] ?? '').trim();
+    const normalized = nextValue.length > 0 ? nextValue : null;
+    if (normalized === collection.paymentItemName) return;
+
+    setSavingCollectionId(collection.id);
+    try {
+      await api.patch(`/payments/donation-collection-item-names/${collection.id}`, {
+        paymentItemName: normalized,
+      });
+      setCollections((current) =>
+        current.map((row) =>
+          row.id === collection.id ? { ...row, paymentItemName: normalized } : row
+        )
+      );
+      setCollectionDraftNames((current) => ({ ...current, [collection.id]: normalized ?? '' }));
+      showAlert(`Saved item name for "${collection.name}".`, 'success');
+    } catch (error) {
+      showAlert(formatApiError(error, `Failed to save item name for "${collection.name}"`), 'error');
+    } finally {
+      setSavingCollectionId(null);
     }
   };
 
@@ -216,6 +290,43 @@ export default function AdminPaymentItemNames() {
       },
     ],
     [canManagePayments, registrationDraftNames, savingRegistrationLineType]
+  );
+
+  const collectionColumns: Array<DataTableColumn<DonationCollectionPaymentItemNameRow>> = useMemo(
+    () => [
+      {
+        id: 'collection',
+        header: 'Donation collection',
+        renderCell: (collection) => (
+          <div>
+            <div className="font-medium text-gray-900 dark:text-gray-100">{collection.name}</div>
+            <div className="text-xs text-gray-500 dark:text-gray-400">
+              {formatYmd(collection.startDate)} – {formatYmd(collection.endDate)}
+            </div>
+          </div>
+        ),
+      },
+      {
+        id: 'itemName',
+        header: 'Square item name',
+        renderCell: (collection) => (
+          <ItemNameEditor
+            draft={collectionDraftNames[collection.id] ?? ''}
+            savedValue={collection.paymentItemName}
+            defaultItemName={collection.defaultItemName}
+            canManage={canManagePayments}
+            saving={savingCollectionId === collection.id}
+            onDraftChange={(value) =>
+              setCollectionDraftNames((current) => ({ ...current, [collection.id]: value }))
+            }
+            onSave={() => {
+              void saveCollectionItemName(collection);
+            }}
+          />
+        ),
+      },
+    ],
+    [canManagePayments, collectionDraftNames, savingCollectionId]
   );
 
   const eventColumns: Array<DataTableColumn<EventPaymentItemNameRow>> = useMemo(
@@ -278,6 +389,29 @@ export default function AdminPaymentItemNames() {
               compact
               title="No registration items"
               description="Registration payment item types will appear here."
+            />
+          }
+        />
+      </div>
+
+      <div className="app-card">
+        <h2 className="app-section-title">Donation collection item names</h2>
+        <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+          Set the line item name sent to Square when someone donates to a current collection. Leave
+          blank to use the default label. Names should match QuickBooks items for your Square
+          connector.
+        </p>
+        <DataTable
+          className="mt-4"
+          rows={collections}
+          rowKey={(collection) => collection.id}
+          columns={collectionColumns}
+          loading={loadingCollections}
+          emptyState={
+            <AppStateCard
+              compact
+              title="No current donation collections"
+              description="Collections with an end date on or after today will appear here."
             />
           }
         />

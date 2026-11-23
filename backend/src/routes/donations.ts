@@ -149,6 +149,10 @@ export async function donationRoutes(fastify: FastifyInstance): Promise<void> {
             completedAt: order.completedAt,
             donorName: metadataString(order.metadata, 'donorName', 'donor_name'),
             donorEmail: metadataString(order.metadata, 'donorEmail', 'donor_email'),
+            donorPhone: metadataString(order.metadata, 'donorPhone', 'donor_phone'),
+            causeName: metadataString(order.metadata, 'causeName', 'cause_name'),
+            collectionName: metadataString(order.metadata, 'donationCollectionName', 'donation_collection_name'),
+            collectionSlug: metadataString(order.metadata, 'donationCollectionSlug', 'donation_collection_slug'),
           },
         };
       } catch (error) {
@@ -213,6 +217,10 @@ export async function donationRoutes(fastify: FastifyInstance): Promise<void> {
             completedAt: order.completedAt,
             donorName: metadataString(order.metadata, 'donorName', 'donor_name'),
             donorEmail: metadataString(order.metadata, 'donorEmail', 'donor_email'),
+            donorPhone: metadataString(order.metadata, 'donorPhone', 'donor_phone'),
+            causeName: metadataString(order.metadata, 'causeName', 'cause_name'),
+            collectionName: metadataString(order.metadata, 'donationCollectionName', 'donation_collection_name'),
+            collectionSlug: metadataString(order.metadata, 'donationCollectionSlug', 'donation_collection_slug'),
           },
         };
       } catch (error) {

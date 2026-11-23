@@ -301,6 +301,8 @@ export interface AuthenticatedMember {
   managedCredentialIds: number[];
   /** Volunteer program ids this member is listed as a manager for (separate from volunteering.manage). */
   managedVolunteerProgramIds: number[];
+  /** Donation collection ids this member is listed as a manager for (separate from donations.manage). */
+  managedDonationCollectionIds: number[];
   isLeagueAdministrator: boolean;
   isLeagueAdministratorGlobal: boolean;
   roleCodes: string[];

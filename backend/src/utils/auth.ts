@@ -85,6 +85,14 @@ export function isSponsorAdmin(member: Member): boolean {
   return isServerAdmin(member);
 }
 
+export function isDonationsManager(member: Member): boolean {
+  if (member.impersonationSession) {
+    return hasScope(member.authz, 'donations.manage') || isServerAdmin(member);
+  }
+  if (member.authz) return hasScope(member.authz, 'donations.manage') || isServerAdmin(member);
+  return isServerAdmin(member);
+}
+
 export function isEventsAdmin(member: Member): boolean {
   if (member.impersonationSession) {
     return hasScope(member.authz, 'events.manage') || isServerAdmin(member);

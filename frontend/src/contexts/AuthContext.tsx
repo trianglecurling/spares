@@ -111,6 +111,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     ownedEventIds: value.ownedEventIds ?? [],
     managedCredentialIds: value.managedCredentialIds ?? [],
     managedVolunteerProgramIds: value.managedVolunteerProgramIds ?? [],
+    managedDonationCollectionIds: value.managedDonationCollectionIds ?? [],
   });
 
   const applySessionPayload = useCallback((data: SessionPayload) => {

@@ -4,7 +4,15 @@ import Stripe from 'stripe';
 import { config } from '../config.js';
 import { getDatabaseConfig } from '../db/config.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
-import { sendDonationReceiptEmail, sendEventRegistrationPaymentConfirmationEmail } from './email.js';
+import {
+  sendDonationCollectionConfirmationEmail,
+  sendDonationReceiptEmail,
+  sendEventRegistrationPaymentConfirmationEmail,
+} from './email.js';
+import {
+  donationCheckoutItemDescription,
+  isDonationCollectionMetadata,
+} from '../utils/donationCollections.js';
 import { formatEventTimespansForDisplay } from '../utils/formatEventTimespans.js';
 import { paymentDetailsUrl } from '../utils/paymentDetailsUrl.js';
 import { logEvent } from './observability.js';
@@ -314,7 +322,7 @@ export function eventRegistrationCheckoutItemDescription(metadata: Record<string
 }
 
 function defaultCheckoutDescription(subjectType: PaymentSubjectType, metadata: Record<string, unknown>): string {
-  if (subjectType === 'donation') return 'Donation to Triangle Curling Club';
+  if (subjectType === 'donation') return donationCheckoutItemDescription(metadata);
   if (subjectType === 'curling_registration') {
     if (asString(metadata.paymentKind) === 'registration_balance') {
       return 'Registration balance payment';
@@ -1083,6 +1091,16 @@ export class PaymentService {
           description: eventRegistrationCheckoutItemDescription(input.metadata),
           amountMinor: input.amountMinor,
           quantity: eventRegistrationCheckoutQuantity(input.metadata),
+        },
+      ];
+    }
+
+    if (input.subjectType === 'donation' && isDonationCollectionMetadata(input.metadata)) {
+      return [
+        {
+          description: donationCheckoutItemDescription(input.metadata),
+          amountMinor: input.amountMinor,
+          quantity: 1,
         },
       ];
     }
@@ -2631,7 +2649,11 @@ export class PaymentService {
       }
 
       const metadata = safeJsonParseObject(order.metadata);
-      if (asString(metadata.donationReceiptSentAt ?? metadata.donation_receipt_sent_at)) {
+      const collectionDonation = isDonationCollectionMetadata(metadata);
+      const sentFlag = collectionDonation
+        ? asString(metadata.donationCollectionConfirmationSentAt ?? metadata.donation_collection_confirmation_sent_at)
+        : asString(metadata.donationReceiptSentAt ?? metadata.donation_receipt_sent_at);
+      if (sentFlag) {
         return;
       }
 
@@ -2649,19 +2671,39 @@ export class PaymentService {
 
       const donorName = asString(metadata.donorName ?? metadata.donor_name) ?? 'Donor';
       const receivedAt = parseDateValue(order.completed_at) ?? parseDateValue(order.updated_at) ?? new Date();
-      const treasurerName = (await this.getCurrentTreasurerName()) ?? 'Treasurer';
+      const receiptUrl = paymentDetailsUrl(order.order_token);
 
-      await sendDonationReceiptEmail({
-        to: donorEmail,
-        donorName,
-        amountMinor: order.amount_minor,
-        currency: order.currency,
-        receivedAt,
-        treasurerName,
-        paymentDetailsUrl: paymentDetailsUrl(order.order_token),
-      });
-
-      metadata.donationReceiptSentAt = new Date().toISOString();
+      if (collectionDonation) {
+        const causeName =
+          asString(metadata.causeName ?? metadata.cause_name) ??
+          asString(metadata.donationCollectionName ?? metadata.donation_collection_name) ??
+          'the fundraising cause';
+        const collectionName =
+          asString(metadata.donationCollectionName ?? metadata.donation_collection_name) ?? causeName;
+        await sendDonationCollectionConfirmationEmail({
+          to: donorEmail,
+          donorName,
+          causeName,
+          collectionName,
+          amountMinor: order.amount_minor,
+          currency: order.currency,
+          receivedAt,
+          receiptUrl,
+        });
+        metadata.donationCollectionConfirmationSentAt = new Date().toISOString();
+      } else {
+        const treasurerName = (await this.getCurrentTreasurerName()) ?? 'Treasurer';
+        await sendDonationReceiptEmail({
+          to: donorEmail,
+          donorName,
+          amountMinor: order.amount_minor,
+          currency: order.currency,
+          receivedAt,
+          treasurerName,
+          paymentDetailsUrl: receiptUrl,
+        });
+        metadata.donationReceiptSentAt = new Date().toISOString();
+      }
       await this.db
         .update(this.schema.paymentOrders)
         .set({
@@ -2676,7 +2718,7 @@ export class PaymentService {
         meta: {
           donorEmail,
           donorName,
-          treasurerName,
+          collectionDonation,
         },
       });
     } catch (error) {

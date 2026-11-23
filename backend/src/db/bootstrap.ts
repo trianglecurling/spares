@@ -72,6 +72,7 @@ async function seedRbacRolesAndScopes(isPostgres: boolean): Promise<void> {
           ('general_admin', 'feedback.manage', 'allow'),
           ('general_admin', 'payments.read', 'allow'),
           ('general_admin', 'payments.manage', 'allow'),
+          ('general_admin', 'donations.manage', 'allow'),
           ('general_admin', 'waitlists.view', 'allow'),
           ('general_admin', 'waitlists.manage', 'allow'),
           ('general_admin', 'registrations.manage', 'allow'),
@@ -159,6 +160,8 @@ async function seedRbacRolesAndScopes(isPostgres: boolean): Promise<void> {
     SELECT r.id, 'payments.read', 'allow' FROM roles r WHERE r.code = 'general_admin';
     INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
     SELECT r.id, 'payments.manage', 'allow' FROM roles r WHERE r.code = 'general_admin';
+    INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
+    SELECT r.id, 'donations.manage', 'allow' FROM roles r WHERE r.code = 'general_admin';
     INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)
     SELECT r.id, 'waitlists.view', 'allow' FROM roles r WHERE r.code = 'general_admin';
     INSERT OR IGNORE INTO role_scope_rules (role_id, scope, effect)

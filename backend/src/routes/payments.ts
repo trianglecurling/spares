@@ -9,6 +9,11 @@ import {
   EventServiceError,
 } from '../services/eventService.js';
 import {
+  DonationCollectionServiceError,
+  listCurrentDonationCollectionsForPaymentItemNames,
+  updateDonationCollectionPaymentItemName,
+} from '../services/donationCollectionService.js';
+import {
   listRegistrationPaymentItemNames,
   updateRegistrationPaymentItemName,
   RegistrationPaymentItemNamesServiceError,
@@ -587,6 +592,60 @@ export async function paymentRoutes(fastify: FastifyInstance): Promise<void> {
         await updateEventPaymentItemName(params.eventId, body.paymentItemName);
       } catch (error) {
         if (error instanceof EventServiceError) {
+          reply.code(error.statusCode).send({ error: error.message });
+          return;
+        }
+        throw error;
+      }
+      return { ok: true };
+    }
+  );
+
+  fastify.get(
+    '/payments/donation-collection-item-names',
+    {
+      schema: {
+        tags: ['payments'],
+      },
+    },
+    async (request, reply) => {
+      if (!requirePaymentsRead(request, reply)) return;
+      const collections = await listCurrentDonationCollectionsForPaymentItemNames();
+      return { collections };
+    }
+  );
+
+  fastify.patch<{ Params: { collectionId: string }; Body: { paymentItemName: string | null } }>(
+    '/payments/donation-collection-item-names/:collectionId',
+    {
+      schema: {
+        tags: ['payments'],
+        params: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['collectionId'],
+          properties: {
+            collectionId: { type: 'number' },
+          },
+        },
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['paymentItemName'],
+          properties: {
+            paymentItemName: { type: ['string', 'null'], maxLength: 512 },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      if (!requirePaymentsManage(request, reply)) return;
+      const params = z.object({ collectionId: z.coerce.number().int().positive() }).parse(request.params);
+      const body = updateEventItemNameBodySchema.parse(request.body ?? {});
+      try {
+        await updateDonationCollectionPaymentItemName(params.collectionId, body.paymentItemName);
+      } catch (error) {
+        if (error instanceof DonationCollectionServiceError) {
           reply.code(error.statusCode).send({ error: error.message });
           return;
         }

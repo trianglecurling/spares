@@ -57,6 +57,7 @@ import { memberIsSocialMember, memberIsSpareOnly } from '../utils/memberMembersh
 import { listOwnedEventIds } from '../services/eventService.js';
 import { listAssignedManagedCredentialIds } from '../services/credentialService.js';
 import { listManagedVolunteerProgramIds } from '../services/volunteeringService.js';
+import { listManagedDonationCollectionIds } from '../services/donationCollectionService.js';
 import { personAccountsOnly } from '../utils/accountKind.js';
 import { findMemberByPersonalAccessToken } from '../services/personalAccessTokenService.js';
 import {
@@ -172,6 +173,7 @@ const authMemberResponseSchema = {
     ownedEventIds: { type: 'array', items: { type: 'number' } },
     managedCredentialIds: { type: 'array', items: { type: 'number' } },
     managedVolunteerProgramIds: { type: 'array', items: { type: 'number' } },
+    managedDonationCollectionIds: { type: 'array', items: { type: 'number' } },
     isLeagueAdministrator: { type: 'boolean' },
     isLeagueAdministratorGlobal: { type: 'boolean' },
     roleCodes: { type: 'array', items: { type: 'string' } },
@@ -212,6 +214,7 @@ const authMemberResponseSchema = {
     'ownedEventIds',
     'managedCredentialIds',
     'managedVolunteerProgramIds',
+    'managedDonationCollectionIds',
     'isLeagueAdministrator',
     'isLeagueAdministratorGlobal',
     'roleCodes',
@@ -250,6 +253,7 @@ async function buildAuthenticatedMember(member: Member): Promise<AuthenticatedMe
   const ownedEventIds = await listOwnedEventIds(member.id);
   const managedCredentialIds = await listAssignedManagedCredentialIds(member.id);
   const managedVolunteerProgramIds = await listManagedVolunteerProgramIds(member.id);
+  const managedDonationCollectionIds = await listManagedDonationCollectionIds(member.id);
 
   return {
     id: member.id,
@@ -267,6 +271,7 @@ async function buildAuthenticatedMember(member: Member): Promise<AuthenticatedMe
     ownedEventIds,
     managedCredentialIds,
     managedVolunteerProgramIds,
+    managedDonationCollectionIds,
     isLeagueAdministrator: isLeagueAdministratorGlobal,
     isLeagueAdministratorGlobal,
     roleCodes: authz.roleCodes,

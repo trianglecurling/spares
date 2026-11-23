@@ -2512,6 +2512,40 @@ export const volunteerProgramManagersSqlite = sqliteTable('volunteer_program_man
   uniqueManager: uniqueIndex('volunteer_program_managers_program_member_unique').on(table.program_id, table.member_id),
 }));
 
+export const donationCollectionsSqlite = sqliteTable('donation_collections', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  name: text('name').notNull(),
+  slug: text('slug').notNull(),
+  cause_name: text('cause_name').notNull(),
+  description: text('description'),
+  start_date: text('start_date').notNull(),
+  end_date: text('end_date').notNull(),
+  minimum_amount_minor: integer('minimum_amount_minor').default(100).notNull(),
+  /** Square/QuickBooks line item name; falls back to a generated label when unset. */
+  payment_item_name: text('payment_item_name'),
+  created_by_member_id: integer('created_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  slugUnique: uniqueIndex('donation_collections_slug_unique').on(table.slug),
+  endDateIdx: index('idx_donation_collections_end_date').on(table.end_date),
+  createdByIdx: index('idx_donation_collections_created_by').on(table.created_by_member_id),
+}));
+
+export const donationCollectionManagersSqlite = sqliteTable('donation_collection_managers', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  collection_id: integer('collection_id').notNull().references(() => donationCollectionsSqlite.id, { onDelete: 'cascade' }),
+  member_id: integer('member_id').notNull().references(() => membersSqlite.id, { onDelete: 'cascade' }),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  collectionIdx: index('idx_donation_collection_managers_collection_id').on(table.collection_id),
+  memberIdx: index('idx_donation_collection_managers_member_id').on(table.member_id),
+  uniqueManager: uniqueIndex('donation_collection_managers_collection_member_unique').on(
+    table.collection_id,
+    table.member_id
+  ),
+}));
+
 export const volunteerCredentialsSqlite = sqliteTable('volunteer_credentials', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   name: text('name').notNull(),
@@ -5015,6 +5049,40 @@ export const volunteerProgramManagersPg = pgTable('volunteer_program_managers', 
   ),
 }));
 
+export const donationCollectionsPg = pgTable('donation_collections', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  name: textPg('name').notNull(),
+  slug: textPg('slug').notNull(),
+  cause_name: textPg('cause_name').notNull(),
+  description: textPg('description'),
+  start_date: date('start_date').notNull(),
+  end_date: date('end_date').notNull(),
+  minimum_amount_minor: integerPg('minimum_amount_minor').default(100).notNull(),
+  /** Square/QuickBooks line item name; falls back to a generated label when unset. */
+  payment_item_name: textPg('payment_item_name'),
+  created_by_member_id: integerPg('created_by_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  slugUnique: uniqueIndexPg('donation_collections_slug_unique').on(table.slug),
+  endDateIdx: indexPg('idx_donation_collections_end_date').on(table.end_date),
+  createdByIdx: indexPg('idx_donation_collections_created_by').on(table.created_by_member_id),
+}));
+
+export const donationCollectionManagersPg = pgTable('donation_collection_managers', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  collection_id: integerPg('collection_id').notNull().references(() => donationCollectionsPg.id, { onDelete: 'cascade' }),
+  member_id: integerPg('member_id').notNull().references(() => membersPg.id, { onDelete: 'cascade' }),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  collectionIdx: indexPg('idx_donation_collection_managers_collection_id').on(table.collection_id),
+  memberIdx: indexPg('idx_donation_collection_managers_member_id').on(table.member_id),
+  uniqueManager: uniqueIndexPg('donation_collection_managers_collection_member_unique_pg').on(
+    table.collection_id,
+    table.member_id
+  ),
+}));
+
 export const volunteerCredentialsPg = pgTable('volunteer_credentials', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
   name: textPg('name').notNull(),
@@ -5436,6 +5504,8 @@ export const sqliteSchema = {
   eventSpecialLinks: eventSpecialLinksSqlite,
   volunteerPrograms: volunteerProgramsSqlite,
   volunteerProgramManagers: volunteerProgramManagersSqlite,
+  donationCollections: donationCollectionsSqlite,
+  donationCollectionManagers: donationCollectionManagersSqlite,
   volunteerCredentials: volunteerCredentialsSqlite,
   volunteerCredentialManagers: volunteerCredentialManagersSqlite,
   volunteerRoles: volunteerRolesSqlite,
@@ -5573,6 +5643,8 @@ export const pgSchema = {
   eventSpecialLinks: eventSpecialLinksPg,
   volunteerPrograms: volunteerProgramsPg,
   volunteerProgramManagers: volunteerProgramManagersPg,
+  donationCollections: donationCollectionsPg,
+  donationCollectionManagers: donationCollectionManagersPg,
   volunteerCredentials: volunteerCredentialsPg,
   volunteerCredentialManagers: volunteerCredentialManagersPg,
   volunteerRoles: volunteerRolesPg,

@@ -72,6 +72,13 @@ export const SCOPE_REGISTRY: ScopeRegistryEntry[] = [
     description: 'Read the catalog of current league and bonspiel teams, including player names and positions.',
   },
 
+  {
+    scope: 'donations.manage',
+    category: 'Donations',
+    description:
+      'Create donation collections and edit every collection, including donor reports. Collection managers can edit a collection without this scope.',
+  },
+
   { scope: 'events.read', category: 'Events', description: 'View events and event registration data.' },
   { scope: 'events.manage', category: 'Events', description: 'Create, edit, delete events and manage registrations.' },
 

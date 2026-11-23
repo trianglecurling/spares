@@ -23,6 +23,7 @@ function member(overrides: Partial<AuthenticatedMember> = {}): AuthenticatedMemb
     ownedEventIds: [],
     managedCredentialIds: [],
     managedVolunteerProgramIds: [],
+    managedDonationCollectionIds: [],
     isLeagueAdministrator: false,
     isLeagueAdministratorGlobal: false,
     roleCodes: [],

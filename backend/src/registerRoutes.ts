@@ -22,6 +22,10 @@ import { publicRoutes } from './routes/public.js';
 import { contactRoutes } from './routes/contact.js';
 import { mailingListRoutes } from './routes/mailingList.js';
 import { donationRoutes } from './routes/donations.js';
+import {
+  protectedDonationCollectionRoutes,
+  publicDonationCollectionRoutes,
+} from './routes/donationCollections.js';
 import { publicPaymentRoutes } from './routes/publicPayments.js';
 import { paymentWebhookRoutes } from './routes/paymentWebhooks.js';
 import { paymentRoutes } from './routes/payments.js';
@@ -65,6 +69,7 @@ export async function registerPublicApiRoutes(fastify: FastifyInstance): Promise
   await fastify.register(contactRoutes, { prefix: '/api' });
   await fastify.register(mailingListRoutes, { prefix: '/api' });
   await fastify.register(donationRoutes, { prefix: '/api' });
+  await fastify.register(publicDonationCollectionRoutes, { prefix: '/api' });
   await fastify.register(publicPaymentRoutes, { prefix: '/api' });
   await fastify.register(publicEventRoutes, { prefix: '/api' });
   await fastify.register(publicVolunteeringRoutes, { prefix: '/api' });
@@ -103,6 +108,7 @@ export async function registerProtectedApiRoutes(fastify: FastifyInstance): Prom
   await fastify.register(sponsorshipRoutes, { prefix: '/api' });
   await fastify.register(governanceRoutes, { prefix: '/api' });
   await fastify.register(paymentRoutes, { prefix: '/api' });
+  await fastify.register(protectedDonationCollectionRoutes, { prefix: '/api' });
   await fastify.register(rbacRoutes, { prefix: '/api' });
   await fastify.register(protectedEventRoutes, { prefix: '/api' });
   await fastify.register(protectedFeedbackRoutes, { prefix: '/api' });

@@ -19,6 +19,7 @@ import {
 } from './expenseReportConstants.js';
 import { parseVolunteerSignupKind, type VolunteerSignupKind } from '../utils/volunteerStats.js';
 import { PARENT_ORG_URLS } from '../utils/parentOrganizations.js';
+import { donationCollectionConfirmationContent } from '../utils/donationCollections.js';
 
 let emailClient: EmailClient | null = null;
 let smtpTransporter: Transporter | null = null;
@@ -1214,6 +1215,42 @@ function formatDonationReceiptDate(date: Date): string {
     day: 'numeric',
     year: 'numeric',
     timeZone: config.timeZone,
+  });
+}
+
+export async function sendDonationCollectionConfirmationEmail(options: {
+  to: string;
+  donorName: string;
+  causeName: string;
+  collectionName: string;
+  amountMinor: number;
+  currency: string;
+  receivedAt: Date;
+  receiptUrl: string;
+}): Promise<void> {
+  const receivedAtLabel = options.receivedAt.toLocaleString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    timeZone: config.timeZone,
+  });
+  const content = donationCollectionConfirmationContent({
+    donorName: options.donorName,
+    causeName: options.causeName,
+    collectionName: options.collectionName,
+    amountMinor: options.amountMinor,
+    currency: options.currency,
+    receivedAtLabel,
+    receiptUrl: options.receiptUrl,
+  });
+  await sendEmail({
+    to: options.to,
+    subject: content.subject,
+    htmlContent: content.html,
+    textContent: content.text,
+    recipientName: options.donorName,
   });
 }
 

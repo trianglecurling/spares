@@ -13,6 +13,7 @@ import AuthenticatedAppShell from './components/AuthenticatedAppShell';
 import AppStateCard from './components/AppStateCard';
 import Layout from './components/Layout';
 import EventManageRoute from './pages/admin/EventManageRoute';
+import DonationCollectionManageRoute from './pages/admin/DonationCollectionManageRoute';
 import Login from './pages/Login';
 import PublicHomePage from './pages/PublicHomePage';
 import { lazyRoute } from './utils/staleChunkReload';
@@ -84,6 +85,13 @@ const MemberArticlePage = lazyRoute(() => import('./pages/MemberArticlePage'));
 const PublicContactPage = lazyRoute(() => import('./pages/PublicContactPage'));
 const PublicContactConfirmPage = lazyRoute(() => import('./pages/PublicContactConfirmPage'));
 const PublicDonatePage = lazyRoute(() => import('./pages/PublicDonatePage'));
+const PublicDonationCollectionPage = lazyRoute(() => import('./pages/PublicDonationCollectionPage'));
+const PublicDonationCollectionSuccessPage = lazyRoute(
+  () => import('./pages/PublicDonationCollectionSuccessPage')
+);
+const PublicDonationCollectionCancelPage = lazyRoute(
+  () => import('./pages/PublicDonationCollectionCancelPage')
+);
 const PublicDuesPage = lazyRoute(() => import('./pages/PublicDuesPage'));
 const PublicDonateSuccessPage = lazyRoute(() => import('./pages/PublicDonateSuccessPage'));
 const PublicDonateCancelPage = lazyRoute(() => import('./pages/PublicDonateCancelPage'));
@@ -95,6 +103,10 @@ const AdminServiceAccounts = lazyRoute(() => import('./pages/admin/AdminServiceA
 const AdminPaymentsRoute = lazyRoute(() => import('./pages/admin/AdminPaymentsRoute'));
 const AdminWebhooks = lazyRoute(() => import('./pages/admin/AdminWebhooks'));
 const AdminEvents = lazyRoute(() => import('./pages/admin/AdminEvents'));
+const AdminDonationCollections = lazyRoute(() => import('./pages/admin/AdminDonationCollections'));
+const AdminDonationCollectionEditor = lazyRoute(
+  () => import('./pages/admin/AdminDonationCollectionEditor')
+);
 const AdminEventEditor = lazyRoute(() => import('./pages/admin/AdminEventEditor'));
 const AdminVolunteering = lazyRoute(() => import('./pages/admin/AdminVolunteering'));
 const AdminVolunteeringPrograms = lazyRoute(() =>
@@ -281,6 +293,9 @@ function App() {
                       <Route path="/dues" element={<PublicDuesPage />} />
                       <Route path="/donate/success" element={<PublicDonateSuccessPage />} />
                       <Route path="/donate/cancel" element={<PublicDonateCancelPage />} />
+                      <Route path="/donations/:slug" element={<PublicDonationCollectionPage />} />
+                      <Route path="/donations/:slug/success" element={<PublicDonationCollectionSuccessPage />} />
+                      <Route path="/donations/:slug/cancel" element={<PublicDonationCollectionCancelPage />} />
                       <Route path="/mailing-list/:listSlug" element={<PublicMailingListPage />} />
                       <Route path="/articles" element={<Navigate to="/" replace />} />
                       <Route path="/articles/:slug" element={<PublicArticle />} />
@@ -781,6 +796,22 @@ function App() {
                           <EventManageRoute access="event">
                             <AdminEventEditor />
                           </EventManageRoute>
+                        }
+                      />
+                      <Route
+                        path="/admin/donations"
+                        element={
+                          <DonationCollectionManageRoute access="list">
+                            <AdminDonationCollections />
+                          </DonationCollectionManageRoute>
+                        }
+                      />
+                      <Route
+                        path="/admin/donations/:id"
+                        element={
+                          <DonationCollectionManageRoute access="collection">
+                            <AdminDonationCollectionEditor />
+                          </DonationCollectionManageRoute>
                         }
                       />
                       <Route
