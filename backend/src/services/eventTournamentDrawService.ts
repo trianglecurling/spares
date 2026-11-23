@@ -8,6 +8,8 @@ import {
   type TournamentDrawState,
 } from './eventTournamentDrawSchema.js';
 import type { z } from 'zod';
+import type { TournamentGameStandingPayload } from './eventTournamentDrawSchema.js';
+import { poolSettings } from '../utils/tournamentPoolStandings.js';
 
 export type TournamentGameResultPayload = z.infer<typeof tournamentGameResultSchema>;
 
@@ -138,8 +140,10 @@ export function validateTournamentDrawSemantics(
   const gameIds = new Set(Object.keys(draw.games));
   const confirmedIds = options?.confirmedRegistrationIds;
 
+  const poolPhaseIds = new Set(draw.phases.filter((p) => p.kind === 'pool').map((p) => p.id));
   for (const g of Object.values(draw.games)) {
-    if (!draw.setup.events.some((e) => e.id === g.eventId)) {
+    const inPoolPhase = poolPhaseIds.has(g.phaseId);
+    if (inPoolPhase ? g.eventId !== g.phaseId : !draw.setup.events.some((e) => e.id === g.eventId)) {
       throw new EventServiceError(`Game ${g.label} references unknown event`, 400);
     }
     const k = g.slots.length;
@@ -267,6 +271,151 @@ export function validateTournamentDrawSemantics(
     }
     textIds.add(tn.id);
   }
+
+  validateTournamentPhases(draw, confirmedIds);
+}
+
+type SlotSource = TournamentDrawState['games'][string]['slots'][number];
+
+/** Phase, pool, and pool-play source checks (part of `validateTournamentDrawSemantics`). */
+function validateTournamentPhases(draw: TournamentDrawState, confirmedIds?: Set<number>): void {
+  const phaseById = new Map<string, TournamentDrawState['phases'][number]>();
+  for (const p of draw.phases) {
+    if (phaseById.has(p.id)) throw new EventServiceError(`Duplicate phase id ${p.id}`, 400);
+    phaseById.set(p.id, p);
+  }
+  const phaseOrder = (id: string) => phaseById.get(id)?.order ?? Number.POSITIVE_INFINITY;
+
+  for (const ev of draw.setup.events) {
+    if (phaseById.get(ev.phaseId)?.kind !== 'bracket') {
+      throw new EventServiceError(`Bracket event ${ev.name} must belong to a bracket phase`, 400);
+    }
+  }
+
+  const poolById = new Map<string, TournamentDrawState['pools'][number]>();
+  const entryPhase = new Map<string, string>();
+  for (const pool of draw.pools) {
+    if (poolById.has(pool.id)) throw new EventServiceError(`Duplicate pool id ${pool.id}`, 400);
+    poolById.set(pool.id, pool);
+    if (phaseById.get(pool.phaseId)?.kind !== 'pool') {
+      throw new EventServiceError(`${pool.name} must belong to a pool play phase`, 400);
+    }
+    for (const entry of pool.entries) {
+      if (entryPhase.has(entry.id)) throw new EventServiceError(`Duplicate pool entry id ${entry.id}`, 400);
+      entryPhase.set(entry.id, pool.phaseId);
+    }
+  }
+
+  const poolCodes = new Set<string>();
+  const teamPhase = new Set<string>();
+  for (const pool of draw.pools) {
+    const codeKey = `${pool.phaseId}:${pool.code.toUpperCase()}`;
+    if (poolCodes.has(codeKey)) throw new EventServiceError(`Pool code ${pool.code} is used twice in one phase`, 400);
+    poolCodes.add(codeKey);
+    for (const entry of pool.entries) {
+      const s = entry.source;
+      const where = `${pool.name} entry`;
+      if (s.sourceType === 'pool_entry') {
+        throw new EventServiceError(`${where} cannot reference another pool entry`, 400);
+      }
+      if (s.sourceType === 'registration' && s.registrationId != null) {
+        const key = `${pool.phaseId}:${s.registrationId}`;
+        if (teamPhase.has(key)) {
+          throw new EventServiceError(`A team is placed in more than one pool in the same phase`, 400);
+        }
+        teamPhase.add(key);
+      }
+      validatePhaseSource(s, pool.phaseId, where, { allowSamePhaseStanding: false });
+    }
+  }
+
+  for (const phase of draw.phases) {
+    for (const step of phase.advancing ?? []) {
+      if (step.kind === 'pool_place' && poolById.get(step.poolId)?.phaseId !== phase.id) {
+        throw new EventServiceError(`${phase.name}: advancing step references a pool outside this phase`, 400);
+      }
+    }
+  }
+
+  for (const g of Object.values(draw.games)) {
+    const phase = phaseById.get(g.phaseId);
+    if (!phase) throw new EventServiceError(`Game ${g.label} references unknown phase`, 400);
+    if (phase.kind === 'bracket') {
+      const ev = draw.setup.events.find((e) => e.id === g.eventId);
+      if (ev && ev.phaseId !== g.phaseId) {
+        throw new EventServiceError(`Game ${g.label} is in a different phase than its bracket event`, 400);
+      }
+      if (g.standing) throw new EventServiceError(`Game ${g.label}: standings points are only for pool games`, 400);
+    } else {
+      if (g.slots.length !== 2) throw new EventServiceError(`Pool game ${g.label} must have two teams`, 400);
+      if (g.poolId != null && poolById.get(g.poolId)?.phaseId !== g.phaseId) {
+        throw new EventServiceError(`Pool game ${g.label} references a pool outside its phase`, 400);
+      }
+      const max = poolSettings(phase).pointsPossiblePerGame;
+      for (const p of g.standing?.points ?? []) {
+        if (p != null && (p < 0 || p > max)) {
+          throw new EventServiceError(`Game ${g.label}: points must be between 0 and ${max}`, 400);
+        }
+      }
+    }
+    for (const slot of g.slots) {
+      if (slot.sourceType === 'pool_entry') {
+        if (phase.kind !== 'pool' || !slot.entryId || entryPhase.get(slot.entryId) !== g.phaseId) {
+          throw new EventServiceError(`Game ${g.label} references a pool entry outside its phase`, 400);
+        }
+      }
+      if (slot.sourceType === 'game_place' && slot.gameId) {
+        const feeder = draw.games[slot.gameId];
+        if (feeder && phaseOrder(feeder.phaseId) > phase.order) {
+          throw new EventServiceError(`Game ${g.label} references a game in a later phase`, 400);
+        }
+      }
+      validatePhaseSource(slot, g.phaseId, `Game ${g.label}`, { allowSamePhaseStanding: phase.kind === 'pool' });
+    }
+  }
+
+  for (const c of draw.connections) {
+    if (c.terminalType !== 'game') continue;
+    const from = draw.games[c.fromGameId];
+    const to = c.toGameId ? draw.games[c.toGameId] : undefined;
+    if (phaseById.get(from?.phaseId ?? '')?.kind === 'pool' || phaseById.get(to?.phaseId ?? '')?.kind === 'pool') {
+      throw new EventServiceError('Pool games cannot be connected with bracket routes', 400);
+    }
+  }
+
+  function validatePhaseSource(
+    s: SlotSource,
+    contextPhaseId: string,
+    where: string,
+    opts: { allowSamePhaseStanding: boolean },
+  ): void {
+    if (s.sourceType === 'registration' && s.registrationId != null && confirmedIds && !confirmedIds.has(s.registrationId)) {
+      throw new EventServiceError(`${where} references a team that is not confirmed for this event`, 400);
+    }
+    if (s.sourceType !== 'standing' && s.sourceType !== 'qualifier') return;
+    const source = phaseById.get(s.phaseId);
+    if (!source || source.kind !== 'pool') {
+      throw new EventServiceError(`${where} references standings from a phase that is not pool play`, 400);
+    }
+    const contextOrder = phaseOrder(contextPhaseId);
+    const samePhase = s.phaseId === contextPhaseId;
+    if (source.order > contextOrder) {
+      throw new EventServiceError(`${where} references a later phase`, 400);
+    }
+    if (samePhase) {
+      if (s.sourceType === 'qualifier' || !opts.allowSamePhaseStanding || !s.afterDrawBlockId) {
+        throw new EventServiceError(`${where} can only use its own phase's standings after a specific draw`, 400);
+      }
+    }
+    if (s.sourceType === 'standing') {
+      if (s.poolId != null && poolById.get(s.poolId)?.phaseId !== s.phaseId) {
+        throw new EventServiceError(`${where} references a pool outside the standings phase`, 400);
+      }
+      if (s.afterDrawBlockId && !draw.drawBlocks.some((b) => b.id === s.afterDrawBlockId)) {
+        throw new EventServiceError(`${where} references an unknown draw`, 400);
+      }
+    }
+  }
 }
 
 export async function saveTournamentDrawForEvent(eventId: number, draw: TournamentDrawState): Promise<void> {
@@ -291,6 +440,7 @@ export async function patchTournamentDrawGameResult(
   patch: {
     result?: TournamentGameResultPayload | null;
     rockColor1Slot?: 0 | 1 | null;
+    standing?: TournamentGameStandingPayload | null;
   },
 ): Promise<TournamentDrawState> {
   const { db, schema } = getDrizzleDb();
@@ -343,6 +493,16 @@ export async function patchTournamentDrawGameResult(
       }
     }
 
+    if (patch.standing !== undefined) {
+      if (patch.standing == null) {
+        const { standing: _drop, ...rest } = nextGame;
+        void _drop;
+        nextGame = rest;
+      } else {
+        nextGame = { ...nextGame, standing: patch.standing };
+      }
+    }
+
     let nextDraw: TournamentDrawState = {
       ...draw,
       games: { ...draw.games, [gameId]: nextGame },
@@ -375,9 +535,10 @@ export async function patchTournamentDrawGameResult(
 export function sanitizeTournamentDrawForDuplicate(draw: TournamentDrawState): TournamentDrawState {
   const games: TournamentDrawState['games'] = {};
   for (const [key, game] of Object.entries(draw.games)) {
-    const { result: _result, rockColor1Slot: _rock, schedule, slots, ...rest } = game;
+    const { result: _result, rockColor1Slot: _rock, standing: _standing, schedule, slots, ...rest } = game;
     void _result;
     void _rock;
+    void _standing;
     const nextSlots = slots.map((slot) =>
       slot.sourceType === 'registration' ? { sourceType: 'tbd' as const } : slot,
     );
@@ -398,6 +559,12 @@ export function sanitizeTournamentDrawForDuplicate(draw: TournamentDrawState): T
   return {
     ...draw,
     games,
+    pools: draw.pools.map((pool) => ({
+      ...pool,
+      entries: pool.entries.map((entry) =>
+        entry.source.sourceType === 'registration' ? { ...entry, source: { sourceType: 'tbd' as const } } : entry,
+      ),
+    })),
     drawBlocks: draw.drawBlocks.map((block) => ({
       ...block,
       startTime: null,

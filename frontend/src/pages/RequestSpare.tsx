@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, FormEvent, useId } from 'react';
+import { useState, useEffect, FormEvent, useId } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useAlert } from '../contexts/AlertContext';
@@ -37,6 +37,13 @@ type SpareRequestGame = {
   opponentName: string | null;
 };
 
+type SpareRequestTeam = {
+  id: number;
+  name: string | null;
+  players: SpareRequestPlayer[];
+  games: SpareRequestGame[];
+};
+
 type SpareRequestLeague = {
   id: number;
   name: string;
@@ -46,7 +53,46 @@ type SpareRequestLeague = {
   teamName: string | null;
   players: SpareRequestPlayer[];
   games: SpareRequestGame[];
+  isManager: boolean;
+  managedTeams: SpareRequestTeam[];
 };
+
+/** A player who can be covered, with the team context their request is tied to. */
+type PlayerChoice = SpareRequestPlayer & {
+  teamName: string | null;
+  teammates: SpareRequestPlayer[];
+  games: SpareRequestGame[];
+};
+
+function playerChoicesForLeague(league: SpareRequestLeague | null): PlayerChoice[] {
+  if (!league) return [];
+  if (league.isManager) {
+    const seen = new Set<number>();
+    const choices: PlayerChoice[] = [];
+    for (const team of league.managedTeams) {
+      for (const player of team.players) {
+        if (seen.has(player.memberId)) continue;
+        seen.add(player.memberId);
+        choices.push({ ...player, teamName: team.name, teammates: team.players, games: team.games });
+      }
+    }
+    return choices;
+  }
+  if (league.teamId == null) return [];
+  return league.players.map((player) => ({
+    ...player,
+    teamName: league.teamName,
+    teammates: league.players,
+    games: league.games,
+  }));
+}
+
+function defaultPlayerId(league: SpareRequestLeague | null): number | null {
+  const choices = playerChoicesForLeague(league);
+  const self = choices.find((player) => player.isSelf);
+  if (self) return self.memberId;
+  return league?.isManager ? null : (choices[0]?.memberId ?? null);
+}
 
 type AvailableMember = {
   id: number;
@@ -92,19 +138,18 @@ export default function RequestSpare() {
   const navigate = useNavigate();
   const isSpareOnly = Boolean(member?.spareOnly);
   const isSocialMember = Boolean(member?.socialMember);
-  const cannotCreateSpareRequest = isSpareOnly || isSocialMember;
+  const cannotRequestForSelf = isSpareOnly || isSocialMember;
 
   const leagueFieldId = useId();
   const gameSlotFieldId = useId();
   const playerFieldId = useId();
-  const messageRef = useRef<HTMLTextAreaElement>(null);
+  const messageFieldId = useId();
 
   const [leagues, setLeagues] = useState<SpareRequestLeague[]>([]);
   const [selectedLeagueId, setSelectedLeagueId] = useState<string>('');
   const [selectedGameSlot, setSelectedGameSlot] = useState('');
   const [selectedPlayerId, setSelectedPlayerId] = useState<number | null>(null);
   const [message, setMessage] = useState('');
-  const [showMessage, setShowMessage] = useState(false);
   const [requestType, setRequestType] = useState<'public' | 'private'>('public');
   const [selectedInvitees, setSelectedInvitees] = useState<number[]>([]);
   const [availableMembers, setAvailableMembers] = useState<AvailableMember[]>([]);
@@ -115,16 +160,20 @@ export default function RequestSpare() {
   const [loadError, setLoadError] = useState(false);
 
   const selectedLeague = leagues.find((league) => league.id.toString() === selectedLeagueId) ?? null;
-  const hasTeamAssignment = selectedLeague?.teamId != null;
-  const upcomingGames = hasTeamAssignment ? (selectedLeague?.games ?? []) : [];
-  const hasUpcomingGames = upcomingGames.length > 0;
-  const canContinueRequest = hasTeamAssignment && hasUpcomingGames;
+  const isManagerLeague = Boolean(selectedLeague?.isManager);
+  const managesAnyLeague = leagues.some((league) => league.isManager);
+  const cannotCreateSpareRequest = cannotRequestForSelf && !loading && !managesAnyLeague;
+  const playerChoices = playerChoicesForLeague(selectedLeague);
+  const hasTeamAssignment = isManagerLeague || selectedLeague?.teamId != null;
   const selectedPlayer =
-    selectedLeague?.players.find((player) => player.memberId === selectedPlayerId) ?? null;
+    playerChoices.find((player) => player.memberId === selectedPlayerId) ?? null;
+  const upcomingGames = selectedPlayer?.games ?? [];
+  const hasUpcomingGames = upcomingGames.length > 0;
+  const ownTeamHasGames = (selectedLeague?.games.length ?? 0) > 0;
   const selectedGame =
     upcomingGames.find((game) => `${game.date}|${game.time}` === selectedGameSlot) ?? null;
-  const showPlayerStep = canContinueRequest;
-  const showGameStep = showPlayerStep && selectedPlayerId != null;
+  const showPlayerStep = playerChoices.length > 0 && (isManagerLeague || ownTeamHasGames);
+  const showGameStep = showPlayerStep && selectedPlayer != null && hasUpcomingGames;
   const showPreferencesStep = showGameStep && selectedGame != null;
   const canSubmit =
     !submitting &&
@@ -132,11 +181,6 @@ export default function RequestSpare() {
     (requestType !== 'private' || selectedInvitees.length > 0);
 
   useEffect(() => {
-    if (cannotCreateSpareRequest) {
-      setLoading(false);
-      return;
-    }
-
     let canceled = false;
     setLoading(true);
     setLoadError(false);
@@ -149,8 +193,7 @@ export default function RequestSpare() {
         if (nextLeagues.length === 1) {
           const only = nextLeagues[0];
           setSelectedLeagueId(String(only.id));
-          const self = only.players.find((player) => player.isSelf) ?? only.players[0] ?? null;
-          setSelectedPlayerId(self?.memberId ?? null);
+          setSelectedPlayerId(defaultPlayerId(only));
         }
       })
       .catch((error) => {
@@ -167,7 +210,7 @@ export default function RequestSpare() {
     return () => {
       canceled = true;
     };
-  }, [cannotCreateSpareRequest, member?.id]);
+  }, [member?.id]);
 
   useEffect(() => {
     setSelectedGameSlot('');
@@ -190,7 +233,7 @@ export default function RequestSpare() {
     )
       .then((response) => {
         if (canceled) return;
-        const teammateIds = new Set(selectedLeague?.players.map((player) => player.memberId) ?? []);
+        const teammateIds = new Set(selectedPlayer?.teammates.map((player) => player.memberId) ?? []);
         setAvailableMembers(
           response.filter(
             (candidate) => candidate.id !== member?.id && !teammateIds.has(candidate.id),
@@ -212,7 +255,7 @@ export default function RequestSpare() {
     showPreferencesStep,
     requestType,
     selectedPlayer?.sparePosition,
-    selectedLeague?.players,
+    selectedPlayer?.teammates,
     member?.id,
     selectedLeagueId,
   ]);
@@ -231,12 +274,13 @@ export default function RequestSpare() {
     };
   });
 
-  const playerOptions: ChoiceOption<string>[] = (selectedLeague?.players ?? []).map((player) => {
+  const playerOptions: ChoiceOption<string>[] = playerChoices.map((player) => {
     const role = rosterRoleLabel(player.role);
     const suffix = role ? ` (${role})` : '';
+    const team = isManagerLeague && player.teamName ? ` · ${player.teamName}` : '';
     return {
       value: String(player.memberId),
-      label: `${player.name}${suffix}`,
+      label: `${player.name}${suffix}${team}`,
     };
   });
 
@@ -246,19 +290,19 @@ export default function RequestSpare() {
     setSelectedInvitees([]);
     setSelectedGameSlot('');
     const league = leagues.find((row) => String(row.id) === value) ?? null;
-    const self = league?.players.find((player) => player.isSelf) ?? league?.players[0] ?? null;
-    setSelectedPlayerId(self?.memberId ?? null);
+    setSelectedPlayerId(defaultPlayerId(league));
   };
 
   const handlePlayerChange = (next: string | string[] | null) => {
     const value = typeof next === 'string' ? Number(next) : NaN;
     setSelectedPlayerId(Number.isFinite(value) ? value : null);
     setSelectedGameSlot('');
+    setSelectedInvitees([]);
   };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (cannotCreateSpareRequest) {
+    if (cannotCreateSpareRequest || (cannotRequestForSelf && !isManagerLeague)) {
       showAlert(
         isSocialMember
           ? 'Social memberships do not include spare requests.'
@@ -268,12 +312,17 @@ export default function RequestSpare() {
       return;
     }
 
-    if (!selectedLeague?.teamId || !selectedPlayerId || !selectedPlayer) {
+    if (!selectedLeague || !selectedPlayer) {
       showAlert('Please choose a league and player.', 'warning');
       return;
     }
     if (!selectedGame) {
-      showAlert('Please select a game your team is scheduled to play.', 'warning');
+      showAlert(
+        isManagerLeague
+          ? "Please select a game that player's team is scheduled to play."
+          : 'Please select a game your team is scheduled to play.',
+        'warning',
+      );
       return;
     }
     if (requestType === 'private' && selectedInvitees.length === 0) {
@@ -335,26 +384,24 @@ export default function RequestSpare() {
     <AppPage narrow>
       <AppPageHeader
         title="Request a spare"
-        description="Choose your league, game, and who needs covering. Your teammates are notified automatically."
+        description="Choose your league, who needs covering, and the game. Your teammates are notified automatically."
       />
 
-      {isSpareOnly && (
+      {cannotCreateSpareRequest && isSpareOnly && (
         <div className="app-alert border-yellow-200 bg-yellow-50 text-yellow-800 dark:border-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-300">
           Your account is marked as <span className="font-semibold">spare-only</span>, so you
           can&apos;t create spare requests. If this is a mistake, please ask an admin to update your
           account.
         </div>
       )}
-      {isSocialMember && !isSpareOnly && (
+      {cannotCreateSpareRequest && isSocialMember && !isSpareOnly && (
         <div className="app-alert border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
           Your account is a <span className="font-semibold">social membership</span>, which does not
           include spare requests. If this is a mistake, ask an administrator to update your account.
         </div>
       )}
 
-      {!cannotCreateSpareRequest && loading ? (
-        <AppStateCard title="Loading your leagues…" />
-      ) : null}
+      {loading ? <AppStateCard title="Loading your leagues…" /> : null}
 
       {!cannotCreateSpareRequest && !loading && loadError ? (
         <AppStateCard
@@ -387,7 +434,11 @@ export default function RequestSpare() {
         <form onSubmit={handleSubmit} className="app-card space-y-8 p-6">
           <FormSection
             title="Game details"
-            description="Only leagues you are on a team for this session are listed. Instructional and drop-in leagues are not eligible."
+            description={
+              managesAnyLeague
+                ? 'Leagues you are on a team for this session are listed, plus leagues you manage. League managers can request a spare for any player in leagues they manage. Instructional and drop-in leagues are not eligible.'
+                : 'Only leagues you are on a team for this session are listed. Instructional and drop-in leagues are not eligible.'
+            }
           >
             {leagues.length === 1 && selectedLeague ? (
               <FormField label="League">
@@ -395,7 +446,11 @@ export default function RequestSpare() {
                   <div className="font-medium">{selectedLeague.name}</div>
                   <div className="text-xs text-gray-600 dark:text-gray-300">
                     {dayNames[selectedLeague.dayOfWeek]}
-                    {selectedLeague.teamName ? ` · ${selectedLeague.teamName}` : ''}
+                    {selectedLeague.isManager
+                      ? ' · You manage this league'
+                      : selectedLeague.teamName
+                        ? ` · ${selectedLeague.teamName}`
+                        : ''}
                   </div>
                 </div>
               </FormField>
@@ -428,7 +483,16 @@ export default function RequestSpare() {
               </div>
             ) : null}
 
-            {selectedLeagueId && hasTeamAssignment && !hasUpcomingGames ? (
+            {selectedLeagueId && isManagerLeague && playerChoices.length === 0 ? (
+              <div
+                className="app-alert border-sky-200 bg-sky-50 text-sky-950 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-100"
+                role="status"
+              >
+                No players have been placed on teams in this league yet.
+              </div>
+            ) : null}
+
+            {selectedLeagueId && !isManagerLeague && hasTeamAssignment && !ownTeamHasGames ? (
               <div
                 className="app-alert border-sky-200 bg-sky-50 text-sky-950 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-100"
                 role="status"
@@ -457,6 +521,16 @@ export default function RequestSpare() {
               </FormField>
             ) : null}
 
+            {isManagerLeague && selectedPlayer && !hasUpcomingGames ? (
+              <div
+                className="app-alert border-sky-200 bg-sky-50 text-sky-950 dark:border-sky-800 dark:bg-sky-900/20 dark:text-sky-100"
+                role="status"
+              >
+                {selectedPlayer.teamName ?? 'That player’s team'} does not have any upcoming
+                scheduled games in this league.
+              </div>
+            ) : null}
+
             {showGameStep ? (
               <FormField label="Which game" htmlFor={gameSlotFieldId} required>
                 {({ describedBy, invalid }) => (
@@ -478,33 +552,17 @@ export default function RequestSpare() {
 
           {showPreferencesStep ? (
             <>
-              <FormSection title="Request preferences">
-                {showMessage ? (
-                  <FormField label="Personal message" htmlFor="message" optional>
-                    <textarea
-                      ref={messageRef}
-                      id="message"
-                      value={message}
-                      onChange={(e) => setMessage(e.target.value)}
-                      className="app-input"
-                      rows={3}
-                      placeholder="Any additional details for potential spares."
-                    />
-                  </FormField>
-                ) : (
-                  <div>
-                    <button
-                      type="button"
-                      className="text-sm text-blue-600 hover:underline dark:text-blue-400"
-                      onClick={() => {
-                        setShowMessage(true);
-                        setTimeout(() => messageRef.current?.focus(), 0);
-                      }}
-                    >
-                      Write a personal message
-                    </button>
-                  </div>
-                )}
+              <FormSection>
+                <FormField label="Personal message" htmlFor={messageFieldId} optional>
+                  <textarea
+                    id={messageFieldId}
+                    value={message}
+                    onChange={(e) => setMessage(e.target.value)}
+                    className="app-input"
+                    rows={3}
+                    placeholder="Any additional details for potential spares."
+                  />
+                </FormField>
 
                 <FormField label="Request type" required>
                   <div className="space-y-2">
@@ -565,7 +623,7 @@ export default function RequestSpare() {
                               filterOption={(option) => {
                                 if (option.id === member?.id) return false;
                                 return !(
-                                  selectedLeague?.players.some(
+                                  selectedPlayer?.teammates.some(
                                     (player) => player.memberId === option.id,
                                   ) ?? false
                                 );

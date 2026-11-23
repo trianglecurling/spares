@@ -18,6 +18,7 @@ import {
   CHARITABLE_MILEAGE_RATE_CENTS_PER_MILE,
   DURABLE_GOOD_THRESHOLD_MINOR,
   EXPENSE_TRIP_PURPOSE_OPTIONS,
+  FINANCE_CONTACT_EMAIL,
   MAX_EXPENSE_DOCUMENTS,
   MAX_EXPENSE_ITEMS,
   asExpenseDocumentType,
@@ -201,6 +202,8 @@ export default function ExpenseReportForm({
   const totalId = useId();
   const justificationId = useId();
   const cardLabelId = useId();
+  const nonHolderCardLabelId = useId();
+  const nonHolderCardMessageId = useId();
   const commentsId = useId();
   const activityDateId = useId();
   const fromLabelId = useId();
@@ -258,6 +261,7 @@ export default function ExpenseReportForm({
     if (initialReport?.usedClubCreditCard === false) return 'no';
     return '';
   });
+  const [nonHolderPaidWithClubCard, setNonHolderPaidWithClubCard] = useState<'yes' | 'no'>('no');
   const [cardOwnerMemberId, setCardOwnerMemberId] = useState<number | ''>(
     initialReport?.clubCreditCardOwnerMemberId ?? ''
   );
@@ -268,7 +272,9 @@ export default function ExpenseReportForm({
   const [submitterQuery, setSubmitterQuery] = useState(identity.name);
   const [submitterName, setSubmitterName] = useState(identity.name);
   const [submitterEmail, setSubmitterEmail] = useState(identity.email);
-  const [submitterPhone, setSubmitterPhone] = useState(identity.phone);
+  const [submitterPhone, setSubmitterPhone] = useState(
+    initialReport?.submitterPhone ?? identity.phone
+  );
   const [mailingAddress, setMailingAddress] = useState<StructuredPostalAddress>(
     initialReport?.mailingAddress ?? identity.mailingAddress ?? emptyStructuredPostalAddress()
   );
@@ -288,10 +294,14 @@ export default function ExpenseReportForm({
   const clubName = formOptions.clubName || 'the club';
   const askClubCard =
     kind === 'expense' && (clubCardMode === 'staff' || formOptions.isClubCreditCardHolder);
+  const askNonHolderClubCard =
+    kind === 'expense' && clubCardMode !== 'staff' && !readOnly && !formOptions.isClubCreditCardHolder;
+  const nonHolderClubCardBlocked = askNonHolderClubCard && nonHolderPaidWithClubCard === 'yes';
   const chargedToClubCard = usedClubCreditCard === 'yes';
   const showReimbursementRequest =
     kind === 'expense' && !chargedToClubCard && (!askClubCard || usedClubCreditCard === 'no');
-  const showMailingAddress = showReimbursementRequest;
+  const showMailingAddress = kind === 'mileage' || showReimbursementRequest;
+  const showSubmitterPhone = showMailingAddress && !identityEditable;
 
   const expenseSumMinor = useMemo(
     () => expenses.reduce((sum, expense) => sum + dollarsToMinor(expense.amount), 0),
@@ -440,7 +450,7 @@ export default function ExpenseReportForm({
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
-    if (readOnly || submitting || !kind) return;
+    if (readOnly || submitting || !kind || nonHolderClubCardBlocked) return;
     const files: Array<{ expenseIndex: number; documentIndex: number; file: File }> = [];
     expenses.forEach((expense, expenseIndex) => {
       expense.documents.forEach((document, documentIndex) => {
@@ -451,9 +461,8 @@ export default function ExpenseReportForm({
       kind,
       submitterName: identityEditable ? submitterName : identity.name,
       submitterEmail: identityEditable ? submitterEmail : identity.email,
-      submitterPhone: identityEditable
-        ? submitterPhone.trim() || null
-        : identity.phone || null,
+      submitterPhone:
+        identityEditable || showSubmitterPhone ? submitterPhone.trim() || null : identity.phone || null,
       mailingAddress: showMailingAddress ? mailingAddress : identity.mailingAddress,
       comments: comments.trim() || null,
       requestedAmountMinor: chargedToClubCard ? 0 : dollarsToMinor(requestedAmount),
@@ -517,8 +526,8 @@ export default function ExpenseReportForm({
   };
 
   const kindOptions: ChoiceOption<string>[] = [
-    { value: 'expense', label: 'Expense reimbursement' },
-    { value: 'mileage', label: 'Mileage reimbursement' },
+    { value: 'expense', label: 'Expense' },
+    { value: 'mileage', label: 'Mileage' },
   ];
 
   const visibleErrorKeys = new Set<string>([
@@ -541,8 +550,10 @@ export default function ExpenseReportForm({
   if (identityEditable) {
     visibleErrorKeys.add('submitterName');
     visibleErrorKeys.add('submitterEmail');
-    visibleErrorKeys.add('submitterPhone');
     visibleErrorKeys.add('submitterMemberId');
+  }
+  if (identityEditable || showSubmitterPhone) {
+    visibleErrorKeys.add('submitterPhone');
   }
   if (askClubCard) visibleErrorKeys.add('usedClubCreditCard');
   if (askClubCard && clubCardMode === 'staff' && usedClubCreditCard === 'yes') {
@@ -552,6 +563,40 @@ export default function ExpenseReportForm({
     if (error.field.startsWith('expenses.')) return false;
     return !visibleErrorKeys.has(error.field);
   });
+
+  const reimbursementContactFields = (
+    <>
+      {showSubmitterPhone ? (
+        <FormField label="Phone" htmlFor={submitterPhoneId} tone={tone} error={errors.submitterPhone}>
+          <input
+            id={submitterPhoneId}
+            type="tel"
+            className={inputClass}
+            value={submitterPhone}
+            readOnly={readOnly}
+            onChange={(event) => setSubmitterPhone(event.target.value)}
+            autoComplete="tel"
+          />
+        </FormField>
+      ) : null}
+      {readOnly ? (
+        <FormField label="Mailing address for the reimbursement check" tone={tone}>
+          <p className="text-sm text-gray-800 dark:text-gray-200">
+            {formatStructuredPostalOneLine(mailingAddress) || 'Not provided'}
+          </p>
+        </FormField>
+      ) : (
+        <PhysicalAddressCollect
+          tone={tone}
+          required
+          value={mailingAddress}
+          onChange={setMailingAddress}
+          sectionTitle="Mailing address for the reimbursement check"
+        />
+      )}
+      {errors.mailingAddress ? <p className="text-sm text-red-600">{errors.mailingAddress}</p> : null}
+    </>
+  );
 
   return (
     <form
@@ -710,7 +755,42 @@ export default function ExpenseReportForm({
         </FormField>
       </FormSection>
 
-      {kind === 'expense' ? (
+      {askNonHolderClubCard ? (
+        <div className="space-y-4">
+          <FormField
+            label="Was this expense paid with a club credit card?"
+            labelId={nonHolderCardLabelId}
+            tone={tone}
+          >
+            <ChoiceInput
+              layout="inline"
+              ariaLabelledBy={nonHolderCardLabelId}
+              ariaDescribedBy={nonHolderClubCardBlocked ? nonHolderCardMessageId : undefined}
+              value={nonHolderPaidWithClubCard}
+              onChange={(value) => {
+                const next = Array.isArray(value) ? value[0] : value;
+                setNonHolderPaidWithClubCard(next === 'yes' ? 'yes' : 'no');
+              }}
+              options={[
+                { value: 'no', label: 'No' },
+                { value: 'yes', label: 'Yes' },
+              ]}
+            />
+          </FormField>
+          {nonHolderClubCardBlocked ? (
+            <p id={nonHolderCardMessageId} className="app-alert-warning" role="status">
+              Expense reports for purchases made with a club credit card must be submitted by the cardholder. If you
+              are a club credit card holder, please email{' '}
+              <a href={`mailto:${FINANCE_CONTACT_EMAIL}`} className="font-medium underline">
+                {FINANCE_CONTACT_EMAIL}
+              </a>{' '}
+              and ask to flag your account as a club credit card holder.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {kind === 'expense' && !nonHolderClubCardBlocked ? (
         <>
           <FormSection tone={tone} title="Expense details">
             <FormField label="Committee" htmlFor={committeeId} required tone={tone} error={errors.committee}>
@@ -1343,26 +1423,7 @@ export default function ExpenseReportForm({
                 />
               </FormField>
             ) : null}
-            {showMailingAddress ? (
-              readOnly ? (
-                <FormField label="Mailing address for the reimbursement check" tone={tone}>
-                  <p className="text-sm text-gray-800 dark:text-gray-200">
-                    {formatStructuredPostalOneLine(mailingAddress) || 'Not provided'}
-                  </p>
-                </FormField>
-              ) : (
-                <PhysicalAddressCollect
-                  tone={tone}
-                  required
-                  value={mailingAddress}
-                  onChange={setMailingAddress}
-                  sectionTitle="Mailing address for the reimbursement check"
-                />
-              )
-            ) : null}
-            {errors.mailingAddress ? (
-              <p className="text-sm text-red-600">{errors.mailingAddress}</p>
-            ) : null}
+            {showMailingAddress ? reimbursementContactFields : null}
               </>
             ) : null}
           </FormSection>
@@ -1510,10 +1571,11 @@ export default function ExpenseReportForm({
               }}
             />
           </FormField>
+          {reimbursementContactFields}
         </FormSection>
       ) : null}
 
-      {kind ? (
+      {kind && !nonHolderClubCardBlocked ? (
         <FormSection tone={tone} title="Additional comments">
           <FormField label="Any additional comments about this expense report?" htmlFor={commentsId} optional tone={tone}>
             <textarea
@@ -1528,7 +1590,7 @@ export default function ExpenseReportForm({
         </FormSection>
       ) : null}
 
-      {!readOnly && showSubmitButton ? (
+      {!readOnly && showSubmitButton && !nonHolderClubCardBlocked ? (
         <div className="flex justify-end">
           <Button type="submit" disabled={submitting || !kind}>
             {submitting ? 'Submitting…' : submitLabel}

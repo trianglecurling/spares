@@ -38,10 +38,15 @@ const AdminWaivers = lazyRoute(() => import('./pages/admin/AdminWaivers'));
 const AdminFacilityInfo = lazyRoute(() => import('./pages/admin/AdminFacilityInfo'));
 const AdminSheets = lazyRoute(() => import('./pages/admin/AdminSheets'));
 const AdminBuildingAccess = lazyRoute(() => import('./pages/admin/AdminBuildingAccess'));
+const AdminStones = lazyRoute(() => import('./pages/admin/AdminStones'));
+const AdminStoneDetail = lazyRoute(() => import('./pages/admin/AdminStoneDetail'));
+const PublicStonesPage = lazyRoute(() => import('./pages/PublicStonesPage'));
+const PublicStoneDetailPage = lazyRoute(() => import('./pages/PublicStoneDetailPage'));
 const BuildingAccessPage = lazyRoute(() => import('./pages/BuildingAccessPage'));
 const MemberCommunicationsPage = lazyRoute(() => import('./pages/MemberCommunicationsPage'));
 const BoardMeetingMinutesPage = lazyRoute(() => import('./pages/BoardMeetingMinutesPage'));
 const AdminConfig = lazyRoute(() => import('./pages/admin/AdminConfig'));
+const AdminSparing = lazyRoute(() => import('./pages/admin/AdminSparing'));
 const AdminDatabaseConfig = lazyRoute(() => import('./pages/admin/AdminDatabaseConfig'));
 const Help = lazyRoute(() => import('./pages/Help'));
 const QuickStart = lazyRoute(() => import('./pages/help/QuickStart'));
@@ -53,6 +58,7 @@ const Authentication = lazyRoute(() => import('./pages/help/Authentication'));
 const EmailSMS = lazyRoute(() => import('./pages/help/EmailSMS'));
 const Availability = lazyRoute(() => import('./pages/help/Availability'));
 const ManagingRequests = lazyRoute(() => import('./pages/help/ManagingRequests'));
+const HowSpareRequestsWork = lazyRoute(() => import('./pages/help/HowSpareRequestsWork'));
 const Install = lazyRoute(() => import('./pages/Install'));
 const Feedback = lazyRoute(() => import('./pages/Feedback'));
 const AdminFeedback = lazyRoute(() => import('./pages/admin/AdminFeedback'));
@@ -261,6 +267,10 @@ function App() {
                       <Route path="/help/email-sms" element={<EmailSMS />} />
                       <Route path="/help/availability" element={<Availability />} />
                       <Route path="/help/managing-requests" element={<ManagingRequests />} />
+                      <Route
+                        path="/help/how-spare-requests-work"
+                        element={<HowSpareRequestsWork />}
+                      />
                       <Route path="/feedback" element={<Feedback />} />
 
                       <Route path="/" element={<PublicHomePage />} />
@@ -280,6 +290,8 @@ function App() {
                       <Route path="/search" element={<PublicSearchPage />} />
                       <Route path="/public/leagues" element={<LegacyPublicLeaguesRedirect />} />
                       <Route path="/leagues/public" element={<PublicLeaguesPage />} />
+                      <Route path="/stones" element={<PublicStonesPage />} />
+                      <Route path="/stones/:stoneId" element={<PublicStoneDetailPage />} />
                       <Route path="/events/:slug/teams/:teamId" element={<PublicEventTeamPage />} />
                       <Route path="/events/:slug" element={<PublicEventDetailPage />} />
                       <Route path="/events/:slug/register" element={<PublicEventRegisterPage />} />
@@ -640,6 +652,14 @@ function App() {
                       />
                       <Route path="/admin/sheets" element={<Navigate to="/admin/facility" replace />} />
                       <Route
+                        path="/admin/facility/stones/:stoneId"
+                        element={
+                          <ProtectedRoute leagueManagerOnly>
+                            <AdminStoneDetail />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
                         path="/admin/facility"
                         element={
                           <ProtectedRoute leagueManagerOnly>
@@ -648,8 +668,17 @@ function App() {
                         }
                       >
                         <Route index element={<AdminSheets />} />
+                        <Route path="stones" element={<AdminStones />} />
                         <Route path="building-access" element={<AdminBuildingAccess />} />
                       </Route>
+                      <Route
+                        path="/admin/sparing"
+                        element={
+                          <ProtectedRoute leagueManagerOnly>
+                            <AdminSparing />
+                          </ProtectedRoute>
+                        }
+                      />
                       <Route
                         path="/admin/config"
                         element={

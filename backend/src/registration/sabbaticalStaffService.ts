@@ -153,14 +153,13 @@ export async function addLeagueSabbatical(input: {
     .where(
       and(
         eq(schema.leagueRoster.league_id, input.leagueId),
-        eq(schema.leagueRoster.member_id, input.memberId),
-        eq(schema.leagueRoster.status, 'active')
+        eq(schema.leagueRoster.member_id, input.memberId)
       )
     )
     .limit(1);
   if (activeRoster) {
     throw new SabbaticalStaffValidationError({
-      member: 'This member has an active roster placement in this league.',
+      member: 'This member is on the roster for this league.',
     });
   }
 
@@ -235,8 +234,7 @@ export async function removeLeagueSabbatical(input: {
       and(
         eq(schema.leagueRoster.league_id, input.leagueId),
         eq(schema.leagueRoster.related_sabbatical_id, sabbatical.id),
-        eq(schema.leagueRoster.is_temporary_sabbatical_fill, 1),
-        eq(schema.leagueRoster.status, 'active')
+        eq(schema.leagueRoster.is_temporary_sabbatical_fill, 1)
       )
     )
     .limit(1);

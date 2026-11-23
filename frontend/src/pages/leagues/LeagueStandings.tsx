@@ -22,9 +22,7 @@ interface StandingRow {
   wins: number;
   losses: number;
   ties: number;
-  h2hResult: 'win' | 'loss' | null;
-  h2hOpponentName: string | null;
-  h2hPairIndex: number | null;
+  h2hResults: Array<{ result: 'win' | 'loss'; opponentName: string; pairIndex: number }>;
 }
 
 interface DivisionStandings {
@@ -265,13 +263,14 @@ export default function LeagueStandings({ leagueId, canManage }: LeagueStandings
                       <td className="app-table-td font-medium">
                         <div className="flex flex-wrap items-center gap-2">
                           <span>{row.teamName ?? `Team ${row.teamId}`}</span>
-                          {row.h2hResult && row.h2hOpponentName ? (
+                          {row.h2hResults.map((h2h) => (
                             <H2hBadge
-                              result={row.h2hResult}
-                              opponentName={row.h2hOpponentName}
-                              pairIndex={row.h2hPairIndex ?? 0}
+                              key={h2h.opponentName}
+                              result={h2h.result}
+                              opponentName={h2h.opponentName}
+                              pairIndex={h2h.pairIndex}
                             />
-                          ) : null}
+                          ))}
                         </div>
                       </td>
                       <td className="app-table-td text-right">

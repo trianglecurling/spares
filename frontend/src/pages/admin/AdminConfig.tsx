@@ -48,7 +48,6 @@ interface UpdateConfigPayload {
   captureFrontendLogs?: boolean;
   captureBackendLogs?: boolean;
   testCurrentTime?: string;
-  notificationDelaySeconds?: number;
   sessionTokenTtlMinutes?: number;
   refreshTokenTtlDays?: number;
 }
@@ -78,7 +77,6 @@ export default function AdminConfig() {
     captureFrontendLogs: true,
     captureBackendLogs: true,
     testCurrentTime: '',
-    notificationDelaySeconds: 180,
     sessionTokenTtlMinutes: 30,
     refreshTokenTtlDays: 60,
   });
@@ -107,7 +105,6 @@ export default function AdminConfig() {
         captureFrontendLogs: response.captureFrontendLogs ?? true,
         captureBackendLogs: response.captureBackendLogs ?? true,
         testCurrentTime: response.testCurrentTime || '',
-        notificationDelaySeconds: response.notificationDelaySeconds || 180,
         sessionTokenTtlMinutes: response.sessionTokenTtlMinutes || 30,
         refreshTokenTtlDays: response.refreshTokenTtlDays || 60,
       });
@@ -172,9 +169,6 @@ export default function AdminConfig() {
       }
       if (formData.testCurrentTime !== (config?.testCurrentTime || '')) {
         payload.testCurrentTime = formData.testCurrentTime || undefined;
-      }
-      if (formData.notificationDelaySeconds !== (config?.notificationDelaySeconds || 180)) {
-        payload.notificationDelaySeconds = formData.notificationDelaySeconds;
       }
       if (formData.sessionTokenTtlMinutes !== (config?.sessionTokenTtlMinutes || 30)) {
         payload.sessionTokenTtlMinutes = formData.sessionTokenTtlMinutes;
@@ -571,38 +565,18 @@ export default function AdminConfig() {
               </div>
             </div>
 
-            {/* Notification Delay Configuration */}
             <div className="border-b dark:border-gray-700 pb-6">
-              <h2 className="app-section-title mb-4">
-                Notification Delay
-              </h2>
-              <div className="space-y-4">
-                <div>
-                  <label
-                    htmlFor="notificationDelaySeconds"
-                    className="app-label"
-                  >
-                    Delay between notifications (seconds)
-                  </label>
-                  <input
-                    type="number"
-                    id="notificationDelaySeconds"
-                    min="1"
-                    value={formData.notificationDelaySeconds}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        notificationDelaySeconds: parseInt(e.target.value) || 180,
-                      })
-                    }
-                    className="app-input"
-                  />
-                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                    The number of seconds to wait between sending notifications for public spare
-                    requests. Default is 180 seconds (3 minutes). Minimum is 1 second.
-                  </p>
-                </div>
-              </div>
+              <h2 className="app-section-title mb-4">Spare notifications</h2>
+              <p className="text-sm text-gray-600 dark:text-gray-400">
+                The delay between notifications and other spare request timing rules are on{' '}
+                <Link
+                  to="/admin/sparing"
+                  className="font-medium text-primary-teal-link hover:underline"
+                >
+                  Manage sparing
+                </Link>
+                .
+              </p>
             </div>
 
             {/* Twilio Configuration */}

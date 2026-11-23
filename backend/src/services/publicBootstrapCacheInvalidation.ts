@@ -32,6 +32,20 @@ export function pathMatchesPublicBootstrapMutation(path: string, method: string)
     return true;
   }
 
+  // Public registration changes whether a featured event can still be registered for.
+  if (/^\/api\/public\/events\/[^/]+\/register$/.test(normalized)) {
+    return true;
+  }
+  if (normalized.startsWith('/api/public/events/registrations/')) {
+    return true;
+  }
+  if (normalized.startsWith('/api/public/events/waitlist-offers/')) {
+    return true;
+  }
+  if (normalized.startsWith('/api/payments/webhooks/')) {
+    return true;
+  }
+
   if (normalized === '/api/config' || normalized.startsWith('/api/config/')) {
     return true;
   }

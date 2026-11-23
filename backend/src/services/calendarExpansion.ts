@@ -18,6 +18,8 @@ export type ExpandedDirectCalendarEvent = {
   description?: string;
   locations?: Array<{ type: string; sheetId?: number; sheetName?: string }>;
   source: string;
+  /** Set for member ice bookings when the caller asked for the booker's name. */
+  memberName?: string;
   isRecurring?: boolean;
   recurrenceDate?: string;
   recurrenceRrule?: string;
@@ -34,8 +36,196 @@ export type ExpandedLeagueCalendarEvent = {
   end: string;
   allDay: boolean;
   source: string;
+  description?: string;
   locations?: Array<{ type: 'sheet'; sheetId: number; sheetName?: string }>;
 };
+
+/** Calendar title for derived ice preparation blocks. */
+export const ICE_PREPARATION_TITLE = 'Ice preparation';
+
+/** Feed id prefix for ice preparation. Distinct from `league:` so it is not treated as a draw. */
+export const LEAGUE_ICE_PREP_EVENT_ID_PREFIX = 'league-ice-prep:';
+
+export function leagueIcePrepEventId(leagueId: number, date: string, time: string): string {
+  return `${LEAGUE_ICE_PREP_EVENT_ID_PREFIX}${leagueId}:${date}:${time}`;
+}
+
+const ICE_PREP_MAX_MINUTES = 24 * 60;
+/** Extra draw dates to consider so ice preparation that starts before the requested range is still included. */
+const ICE_PREP_LOOKAHEAD_MS = 2 * 24 * 60 * 60 * 1000;
+
+export type LeagueCalendarDrawTime = {
+  time: string | Date;
+  icePrepMinutes: number | null;
+};
+
+export type LeagueCalendarExpansionLeague = {
+  id: number;
+  name: string;
+  dayOfWeek: number;
+  format: 'teams' | 'doubles' | 'instructional';
+  startDate: string;
+  endDate: string;
+  drawDurationMinutes: number | null;
+  drawTimes: LeagueCalendarDrawTime[];
+  exceptionDates: Iterable<string>;
+  extraDraws: Array<{ date: string; time: string }>;
+};
+
+export type LeagueCalendarExpansionInput = {
+  leagues: LeagueCalendarExpansionLeague[];
+  sheets: Array<{ id: number; name: string }>;
+  /** `${leagueId}:${YYYY-MM-DD}:${HH:MM}` → sheet id → available. Missing sheet means available. */
+  sheetAvailabilityByDraw: Map<string, Map<number, boolean>>;
+  rangeStart: Date;
+  rangeEnd: Date;
+  timeZone: string;
+};
+
+export function normalizeIcePrepMinutes(value: number | null | undefined): number {
+  if (value == null || !Number.isFinite(value)) return 0;
+  const minutes = Math.trunc(value);
+  if (minutes <= 0) return 0;
+  return Math.min(minutes, ICE_PREP_MAX_MINUTES);
+}
+
+function addUtcCalendarDays(ymd: string, days: number): string {
+  const [year, month, day] = ymd.split('-').map((part) => Number.parseInt(part, 10));
+  const date = new Date(Date.UTC(year, (month ?? 1) - 1, (day ?? 1) + days));
+  return date.toISOString().slice(0, 10);
+}
+
+/**
+ * League draw events, plus ice preparation before each regular draw.
+ * Ice preparation is derived from the schedule: exception dates omit it, and one-off draws never get it.
+ * It occupies every active sheet and ends when the draw starts.
+ */
+export function expandLeagueCalendarEvents(input: LeagueCalendarExpansionInput): ExpandedLeagueCalendarEvent[] {
+  const { leagues, sheets, sheetAvailabilityByDraw, rangeStart, rangeEnd, timeZone } = input;
+  const allSheetLocations = sheets.map((sheet) => ({
+    type: 'sheet' as const,
+    sheetId: sheet.id,
+    sheetName: sheet.name,
+  }));
+  const result: ExpandedLeagueCalendarEvent[] = [];
+
+  const overlapsRange = (start: Date, end: Date) => !(end <= rangeStart || start >= rangeEnd);
+
+  const pushLeagueDrawEvent = (
+    league: LeagueCalendarExpansionLeague,
+    dateStr: string,
+    timeStr: string,
+    durationMinutes: number
+  ) => {
+    const startDate = localDateTimeToUtcDate(dateStr, timeStr, timeZone);
+    if (Number.isNaN(startDate.getTime())) return;
+    const endDate = new Date(startDate.getTime() + durationMinutes * 60 * 1000);
+    if (!overlapsRange(startDate, endDate)) return;
+
+    const drawKey = `${league.id}:${dateStr}:${timeStr}`;
+    const sheetAvailability = sheetAvailabilityByDraw.get(drawKey) ?? new Map<number, boolean>();
+    const locations = sheets
+      .filter((sheet) => sheetAvailability.get(sheet.id) ?? true)
+      .map((sheet) => ({
+        type: 'sheet' as const,
+        sheetId: sheet.id,
+        sheetName: sheet.name,
+      }));
+
+    result.push({
+      id: `league:${league.id}:${dateStr}:${timeStr}`,
+      typeId: 'leagues',
+      title: league.name,
+      start: startDate.toISOString(),
+      end: endDate.toISOString(),
+      allDay: false,
+      source: 'leagues',
+      locations: locations.length > 0 ? locations : undefined,
+    });
+  };
+
+  const pushIcePrepEvent = (
+    league: LeagueCalendarExpansionLeague,
+    dateStr: string,
+    timeStr: string,
+    icePrepMinutes: number
+  ) => {
+    if (icePrepMinutes <= 0) return;
+    const drawStart = localDateTimeToUtcDate(dateStr, timeStr, timeZone);
+    if (Number.isNaN(drawStart.getTime())) return;
+    const prepStart = new Date(drawStart.getTime() - icePrepMinutes * 60 * 1000);
+    if (!overlapsRange(prepStart, drawStart)) return;
+
+    result.push({
+      id: leagueIcePrepEventId(league.id, dateStr, timeStr),
+      typeId: 'maintenance',
+      title: ICE_PREPARATION_TITLE,
+      description: `Before ${league.name}`,
+      start: prepStart.toISOString(),
+      end: drawStart.toISOString(),
+      allDay: false,
+      source: 'leagues',
+      locations: allSheetLocations.length > 0 ? allSheetLocations : undefined,
+    });
+  };
+
+  for (const league of leagues) {
+    const exceptions = new Set(league.exceptionDates);
+    const durationMinutes = league.drawDurationMinutes ?? defaultDrawDurationMinutes(league.format);
+    const drawTimes = league.drawTimes.map((drawTime) => ({
+      time: toTimeOnlyString(drawTime.time),
+      icePrepMinutes: normalizeIcePrepMinutes(drawTime.icePrepMinutes),
+    }));
+    const hasIcePrep = drawTimes.some((drawTime) => drawTime.icePrepMinutes > 0);
+    const drawDates = computeLeagueDrawDatesInRange(
+      league.startDate,
+      league.endDate,
+      league.dayOfWeek,
+      exceptions,
+      rangeStart,
+      rangeEnd
+    );
+    const icePrepDates = hasIcePrep
+      ? computeLeagueDrawDatesInRange(
+          league.startDate,
+          league.endDate,
+          league.dayOfWeek,
+          exceptions,
+          rangeStart,
+          new Date(rangeEnd.getTime() + ICE_PREP_LOOKAHEAD_MS)
+        )
+      : [];
+
+    const emittedKeys = new Set<string>();
+
+    for (const dateStr of drawDates) {
+      for (const drawTime of drawTimes) {
+        emittedKeys.add(`${dateStr}|${drawTime.time}`);
+        pushLeagueDrawEvent(league, dateStr, drawTime.time, durationMinutes);
+        pushIcePrepEvent(league, dateStr, drawTime.time, drawTime.icePrepMinutes);
+      }
+    }
+
+    const drawDateSet = new Set(drawDates);
+    for (const dateStr of icePrepDates) {
+      if (drawDateSet.has(dateStr)) continue;
+      for (const drawTime of drawTimes) {
+        pushIcePrepEvent(league, dateStr, drawTime.time, drawTime.icePrepMinutes);
+      }
+    }
+
+    for (const extra of league.extraDraws) {
+      const dateStr = toDateOnlyString(extra.date);
+      const timeStr = toTimeOnlyString(extra.time);
+      const key = `${dateStr}|${timeStr}`;
+      if (emittedKeys.has(key)) continue;
+      emittedKeys.add(key);
+      pushLeagueDrawEvent(league, dateStr, timeStr, durationMinutes);
+    }
+  }
+
+  return result;
+}
 
 function toEventId(event: { id: number; parent_event_id: number | null; recurrence_date: string | null }): string {
   if (event.recurrence_date && event.parent_event_id) {
@@ -357,6 +547,8 @@ export async function fetchLeagueCalendarEventsForRange(
 
   const rangeStartStr = rangeStart.toISOString().slice(0, 10);
   const rangeEndStr = rangeEnd.toISOString().slice(0, 10);
+  // Include leagues that start just after the window so ice preparation spilling backward is still loaded.
+  const leagueQueryEndStr = addUtcCalendarDays(rangeEndStr, 2);
 
   const [sheetRows, seasonLeagues, extraDrawLeagueIdRows] = await Promise.all([
     db
@@ -375,7 +567,7 @@ export async function fetchLeagueCalendarEventsForRange(
         draw_duration_minutes: schema.leagues.draw_duration_minutes,
       })
       .from(schema.leagues)
-      .where(and(lte(schema.leagues.start_date, rangeEndStr), gte(schema.leagues.end_date, rangeStartStr)))
+      .where(and(lte(schema.leagues.start_date, leagueQueryEndStr), gte(schema.leagues.end_date, rangeStartStr)))
       .orderBy(schema.leagues.day_of_week, schema.leagues.name),
     db
       .select({ league_id: schema.leagueExtraDraws.league_id })
@@ -423,6 +615,7 @@ export async function fetchLeagueCalendarEventsForRange(
       .select({
         league_id: schema.leagueDrawTimes.league_id,
         draw_time: schema.leagueDrawTimes.draw_time,
+        ice_prep_minutes: schema.leagueDrawTimes.ice_prep_minutes,
       })
       .from(schema.leagueDrawTimes)
       .where(inArray(schema.leagueDrawTimes.league_id, leagueIds))
@@ -468,10 +661,10 @@ export async function fetchLeagueCalendarEventsForRange(
       ),
   ]);
 
-  const drawTimesByLeagueId = new Map<number, Array<string | Date>>();
+  const drawTimesByLeagueId = new Map<number, LeagueCalendarDrawTime[]>();
   for (const row of drawTimeRows) {
     const list = drawTimesByLeagueId.get(row.league_id) ?? [];
-    list.push(row.draw_time);
+    list.push({ time: row.draw_time, icePrepMinutes: row.ice_prep_minutes ?? 0 });
     drawTimesByLeagueId.set(row.league_id, list);
   }
 
@@ -500,80 +693,23 @@ export async function fetchLeagueCalendarEventsForRange(
     availabilityByDraw.set(key, sheetMap);
   }
 
-  const result: ExpandedLeagueCalendarEvent[] = [];
-
-  const pushLeagueDrawEvent = (
-    league: (typeof leagues)[number],
-    dateStr: string,
-    timeStr: string,
-    durationMinutes: number
-  ) => {
-    // Draw times are club wall-clock values (config.timeZone), not UTC.
-    const startDate = localDateTimeToUtcDate(dateStr, timeStr, config.timeZone);
-    if (Number.isNaN(startDate.getTime())) return;
-    const endDate = new Date(startDate.getTime() + durationMinutes * 60 * 1000);
-
-    if (endDate <= rangeStart || startDate >= rangeEnd) return;
-
-    const drawKey = `${league.id}:${dateStr}:${timeStr}`;
-    const sheetAvailability = availabilityByDraw.get(drawKey) ?? new Map<number, boolean>();
-    // Configured sheets for the draw slot: active sheets that are available
-    // (default all active sheets when no availability override exists).
-    const locations: Array<{ type: 'sheet'; sheetId: number; sheetName?: string }> = sheetRows
-      .filter((sheet) => sheetAvailability.get(sheet.id) ?? true)
-      .map((sheet) => ({
-        type: 'sheet' as const,
-        sheetId: sheet.id,
-        sheetName: sheet.name,
-      }));
-
-    result.push({
-      id: `league:${league.id}:${dateStr}:${timeStr}`,
-      typeId: 'leagues',
-      title: league.name,
-      start: startDate.toISOString(),
-      end: endDate.toISOString(),
-      allDay: false,
-      source: 'leagues',
-      locations: locations.length > 0 ? locations : undefined,
-    });
-  };
-
-  for (const league of leagues) {
-    const drawTimes = drawTimesByLeagueId.get(league.id) ?? [];
-    const exceptions = exceptionsByLeagueId.get(league.id) ?? new Set<string>();
-    const startDateStr = toDateOnlyString(league.start_date);
-    const endDateStr = toDateOnlyString(league.end_date);
-    const durationMinutes =
-      league.draw_duration_minutes ?? defaultDrawDurationMinutes(league.format);
-
-    const drawDates = computeLeagueDrawDatesInRange(
-      startDateStr,
-      endDateStr,
-      league.day_of_week,
-      exceptions,
-      rangeStart,
-      rangeEnd
-    );
-
-    const emittedKeys = new Set<string>();
-
-    for (const dateStr of drawDates) {
-      for (const rawTime of drawTimes) {
-        const timeStr = toTimeOnlyString(rawTime);
-        const key = `${dateStr}|${timeStr}`;
-        emittedKeys.add(key);
-        pushLeagueDrawEvent(league, dateStr, timeStr, durationMinutes);
-      }
-    }
-
-    for (const extra of extraDrawsByLeagueId.get(league.id) ?? []) {
-      const key = `${extra.date}|${extra.time}`;
-      if (emittedKeys.has(key)) continue;
-      emittedKeys.add(key);
-      pushLeagueDrawEvent(league, extra.date, extra.time, durationMinutes);
-    }
-  }
-
-  return result;
+  return expandLeagueCalendarEvents({
+    leagues: leagues.map((league) => ({
+      id: league.id,
+      name: league.name,
+      dayOfWeek: league.day_of_week,
+      format: league.format,
+      startDate: toDateOnlyString(league.start_date),
+      endDate: toDateOnlyString(league.end_date),
+      drawDurationMinutes: league.draw_duration_minutes,
+      drawTimes: drawTimesByLeagueId.get(league.id) ?? [],
+      exceptionDates: exceptionsByLeagueId.get(league.id) ?? [],
+      extraDraws: extraDrawsByLeagueId.get(league.id) ?? [],
+    })),
+    sheets: sheetRows,
+    sheetAvailabilityByDraw: availabilityByDraw,
+    rangeStart,
+    rangeEnd,
+    timeZone: config.timeZone,
+  });
 }

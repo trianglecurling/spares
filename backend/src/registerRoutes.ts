@@ -48,11 +48,13 @@ import { webhookRoutes } from './routes/webhooks.js';
 import { volunteeringRoutes } from './routes/volunteering.js';
 import { protectedExpenseRoutes } from './routes/expenses.js';
 import { buildingAccessRoutes } from './routes/buildingAccess.js';
+import { protectedCurlingStoneRoutes, publicCurlingStoneRoutes } from './routes/curlingStones.js';
 import { memberCommunicationsRoutes } from './routes/memberCommunications.js';
 import { boardMeetingMinutesRoutes } from './routes/boardMeetingMinutes.js';
 import { serviceAccountRoutes } from './routes/serviceAccounts.js';
 import { teamCatalogRoutes } from './routes/teams.js';
 import { observabilityEmailRoutes } from './routes/observabilityEmails.js';
+import { protectedSpareSettingsRoutes, publicSpareSettingsRoutes } from './routes/spareSettings.js';
 
 export async function registerPublicApiRoutes(fastify: FastifyInstance): Promise<void> {
   await fastify.register(installRoutes, { prefix: '/api' });
@@ -67,6 +69,8 @@ export async function registerPublicApiRoutes(fastify: FastifyInstance): Promise
   await fastify.register(publicEventRoutes, { prefix: '/api' });
   await fastify.register(publicVolunteeringRoutes, { prefix: '/api' });
   await fastify.register(publicExpenseRoutes, { prefix: '/api' });
+  await fastify.register(publicCurlingStoneRoutes, { prefix: '/api' });
+  await fastify.register(publicSpareSettingsRoutes, { prefix: '/api' });
   await fastify.register(publicSearchRoutes);
   await fastify.register(publicRegistrationShellRoutes, { prefix: '/api' });
   await fastify.register(publicRegistrationWaitlistOfferRoutes, { prefix: '/api' });
@@ -87,6 +91,7 @@ export async function registerProtectedApiRoutes(fastify: FastifyInstance): Prom
   await fastify.register(schedulingRoutes, { prefix: '/api' });
   await fastify.register(availabilityRoutes, { prefix: '/api' });
   await fastify.register(spareRoutes, { prefix: '/api' });
+  await fastify.register(protectedSpareSettingsRoutes, { prefix: '/api' });
   await fastify.register(publicConfigRoutes, { prefix: '/api' });
   await fastify.register(configRoutes, { prefix: '/api' });
   await fastify.register(calendarRoutes, { prefix: '/api' });
@@ -113,6 +118,7 @@ export async function registerProtectedApiRoutes(fastify: FastifyInstance): Prom
   await fastify.register(volunteeringRoutes, { prefix: '/api' });
   await fastify.register(protectedExpenseRoutes, { prefix: '/api' });
   await fastify.register(buildingAccessRoutes, { prefix: '/api' });
+  await fastify.register(protectedCurlingStoneRoutes, { prefix: '/api' });
   await fastify.register(memberCommunicationsRoutes, { prefix: '/api' });
   await fastify.register(boardMeetingMinutesRoutes, { prefix: '/api' });
   await fastify.register(serviceAccountRoutes, { prefix: '/api' });

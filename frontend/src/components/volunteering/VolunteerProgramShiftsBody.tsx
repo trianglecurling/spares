@@ -19,10 +19,13 @@ import {
   formatVolunteerRange,
   formatVolunteerTimeRange,
   parseVolunteerSignupKind,
+  volunteerClubTodayKey,
+  volunteerProgramDefaultDayKey,
   volunteerProgramHasIneligibleCredentialRoles,
   volunteerProgramMissingCredentialNames,
   volunteerProgramUiTerms,
   volunteerShiftDayKey,
+  volunteerShiftHasStarted,
   volunteerSpotsStatusLabel,
   volunteerSpotsTotals,
   type VolunteerCredentialSummary,
@@ -174,6 +177,8 @@ export default function VolunteerProgramShiftsBody({
   const terms = volunteerProgramUiTerms(parseVolunteerSignupKind(program.signupKind));
   const [busyShiftRoleId, setBusyShiftRoleId] = useState<number | null>(null);
   const [signupTarget, setSignupTarget] = useState<VolunteerSignupTarget | null>(null);
+  const [searchParams] = useSearchParams();
+  const shareToken = searchParams.get('token')?.trim() || undefined;
 
   const openSignUp: SignUpHandler = (role, shift, manageForOthers = false) => {
     const remaining = Math.max(0, role.volunteersNeeded - role.volunteersRegistered);
@@ -189,6 +194,7 @@ export default function VolunteerProgramShiftsBody({
       signedUpMemberIds: role.signups
         .map((signup) => signup.memberId)
         .filter((id): id is number => id != null),
+      shareToken,
     });
   };
 
@@ -357,9 +363,17 @@ function ProgramByShiftView({
 
   if (dayGroups.length === 0) return null;
 
+  const nowIso = new Date().toISOString();
+  const todayKey = volunteerClubTodayKey();
   const dayParam = searchParams.get('day');
-  const defaultDay =
-    dayGroups.find((group) => volunteerSpotsTotals(group.roles).remaining > 0) ?? dayGroups[0];
+  const defaultDayKey = volunteerProgramDefaultDayKey(
+    dayGroups.map((group) => ({
+      dayKey: group.dayKey,
+      remainingSpots: volunteerSpotsTotals(group.roles).remaining,
+    })),
+    todayKey
+  );
+  const defaultDay = dayGroups.find((group) => group.dayKey === defaultDayKey) ?? dayGroups[0];
   const selectedDay = dayGroups.find((group) => group.dayKey === dayParam) ?? defaultDay;
   const selectedIndex = dayGroups.indexOf(selectedDay);
   const multiDay = dayGroups.length > 1;
@@ -391,10 +405,19 @@ function ProgramByShiftView({
               layout={dayPickerInline ? 'inline' : 'popover'}
               options={dayGroups.map((group) => {
                 const { remaining, needed } = volunteerSpotsTotals(group.roles);
+                const closed = group.shifts.every((shift) =>
+                  volunteerShiftHasStarted(shift.startDt, nowIso)
+                );
+                const registered = group.roles.reduce(
+                  (sum, role) => sum + role.volunteersRegistered,
+                  0
+                );
                 return {
                   value: group.dayKey,
                   label: formatShortDayLabel(group.dayKey),
-                  description: volunteerSpotsStatusLabel(remaining, needed),
+                  description: closed
+                    ? `${registered}/${needed} signed up`
+                    : volunteerSpotsStatusLabel(remaining, needed),
                 };
               })}
               value={selectedDay.dayKey}
@@ -446,6 +469,7 @@ function ProgramByShiftView({
               terms={terms}
               canManage={canManage}
               showRoleNames={showRoleNames}
+              shiftStarted={volunteerShiftHasStarted(shift.startDt, nowIso)}
               busyShiftRoleId={busyShiftRoleId}
               onSignUp={onSignUp}
               onCancel={onCancel}
@@ -505,6 +529,8 @@ function ProgramByRoleView({
     return <p className="text-sm text-gray-500 dark:text-gray-400">No {terms.rolePlural} available.</p>;
   }
 
+  const nowIso = new Date().toISOString();
+
   return (
     <div className="space-y-8">
       {roleGroups.map((group) => {
@@ -529,6 +555,7 @@ function ProgramByRoleView({
                     terms={terms}
                     showRoleName={false}
                     canManage={canManage}
+                    shiftStarted={volunteerShiftHasStarted(shift.startDt, nowIso)}
                     busy={busyShiftRoleId === role.id}
                     onSignUp={(manageForOthers) => onSignUp(role, shift, manageForOthers)}
                     onCancel={() => onCancel(role.id, role.roleName)}
@@ -565,6 +592,7 @@ function ShiftAgendaRow({
   terms,
   canManage,
   showRoleNames,
+  shiftStarted,
   busyShiftRoleId,
   onSignUp,
   onCancel,
@@ -573,6 +601,7 @@ function ShiftAgendaRow({
   terms: VolunteerProgramUiTerms;
   canManage: boolean;
   showRoleNames: boolean;
+  shiftStarted: boolean;
   busyShiftRoleId: number | null;
   onSignUp: SignUpHandler;
   onCancel: CancelHandler;
@@ -584,6 +613,7 @@ function ShiftAgendaRow({
       terms={terms}
       showRoleName={showRoleNames}
       canManage={canManage}
+      shiftStarted={shiftStarted}
       busy={busyShiftRoleId === role.id}
       onSignUp={(manageForOthers) => onSignUp(role, shift, manageForOthers)}
       onCancel={() => onCancel(role.id, role.roleName)}
@@ -626,6 +656,7 @@ function RoleSignupEntry({
   terms,
   showRoleName,
   canManage,
+  shiftStarted,
   busy,
   onSignUp,
   onCancel,
@@ -634,19 +665,20 @@ function RoleSignupEntry({
   terms: VolunteerProgramUiTerms;
   showRoleName: boolean;
   canManage: boolean;
+  shiftStarted: boolean;
   busy: boolean;
   onSignUp: (manageForOthers?: boolean) => void;
   onCancel: () => void;
 }) {
   const canSignSelf = role.callerHasCredentials && !role.callerIsSignedUp;
   let action: ReactNode = null;
-  if (!canManage && !role.callerHasCredentials && !role.callerIsSignedUp) {
+  if (!shiftStarted && !canManage && !role.callerHasCredentials && !role.callerIsSignedUp) {
     action = (
       <span className="text-sm text-amber-700 dark:text-amber-300">Missing required credentials</span>
     );
-  } else if (role.isFull && !role.callerIsSignedUp) {
+  } else if (!shiftStarted && role.isFull && !role.callerIsSignedUp) {
     action = <span className="text-sm text-gray-500 dark:text-gray-400">Full</span>;
-  } else {
+  } else if (!shiftStarted) {
     action = (
       <div className="flex flex-wrap gap-2">
         {role.callerIsSignedUp ? (

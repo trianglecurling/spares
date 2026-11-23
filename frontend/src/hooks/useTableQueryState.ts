@@ -139,6 +139,11 @@ export default function useTableQueryState<
         else nextParams.set(config.queryKey, serialized);
       });
 
+      // Keep these current before notifying the router. A second commit in the same
+      // turn (for example setFilter then setPage) must see the filters just written.
+      latestStateRef.current = { page: nextPage, sort: nextSort, filters: nextFilters };
+      latestSearchParamsRef.current = nextParams.toString();
+
       setSearchParams(nextParams, { replace });
     },
     [defaultPage, defaultSort.direction, defaultSort.key, filterConfig, orderParam, pageParam, setSearchParams, sortParam]

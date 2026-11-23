@@ -30,8 +30,6 @@ export const RETURNING_PLAYER_QA_STATUSES = [
 
 export type ReturningPlayerQaStatus = (typeof RETURNING_PLAYER_QA_STATUSES)[number];
 
-const ROSTERED_STATUSES = ['active', 'completed'] as const;
-
 type DrizzleBundle = ReturnType<typeof getDrizzleDb>;
 
 type RegistrationPickRow = {
@@ -551,12 +549,7 @@ export async function getStaffReturningPlayersQa(input: {
     })
     .from(schema.leagueRoster)
     .innerJoin(schema.members, eq(schema.leagueRoster.member_id, schema.members.id))
-    .where(
-      and(
-        eq(schema.leagueRoster.league_id, predecessor.id),
-        inArray(schema.leagueRoster.status, [...ROSTERED_STATUSES]),
-      ),
-    );
+    .where(eq(schema.leagueRoster.league_id, predecessor.id));
 
   const memberIds = [...new Set(rosterRows.map((row) => row.memberId))];
   if (memberIds.length === 0) {
@@ -616,9 +609,7 @@ export async function getStaffReturningPlayersQa(input: {
       leagueId: schema.leagueRoster.league_id,
     })
     .from(schema.leagueRoster)
-    .where(
-      and(inArray(schema.leagueRoster.member_id, memberIds), inArray(schema.leagueRoster.status, [...ROSTERED_STATUSES])),
-    );
+    .where(inArray(schema.leagueRoster.member_id, memberIds));
   for (const row of participationRows) {
     const set = participatedByMemberId.get(row.memberId) ?? new Set<number>();
     set.add(row.leagueId);
@@ -659,12 +650,7 @@ export async function getStaffReturningPlayersQa(input: {
         predecessorLeagueId: schema.leagueRoster.league_id,
       })
       .from(schema.leagueRoster)
-      .where(
-        and(
-          inArray(schema.leagueRoster.league_id, predecessorIds),
-          inArray(schema.leagueRoster.status, [...ROSTERED_STATUSES]),
-        ),
-      );
+      .where(inArray(schema.leagueRoster.league_id, predecessorIds));
     const membersByPredecessorId = new Map<number, Set<number>>();
     for (const row of eligibleRows) {
       const set = membersByPredecessorId.get(row.predecessorLeagueId) ?? new Set<number>();
@@ -845,12 +831,9 @@ export async function getStaffReturningMembersQa(input: { actor: Member; session
     .from(schema.leagueRoster)
     .innerJoin(schema.members, eq(schema.leagueRoster.member_id, schema.members.id))
     .where(
-      and(
-        inArray(
-          schema.leagueRoster.league_id,
-          previousLeagues.map((league) => league.id),
-        ),
-        inArray(schema.leagueRoster.status, [...ROSTERED_STATUSES]),
+      inArray(
+        schema.leagueRoster.league_id,
+        previousLeagues.map((league) => league.id),
       ),
     );
 
@@ -1151,7 +1134,6 @@ export async function getStaffRequestedLeaguesQa(input: { actor: Member; session
             sessionLeagues.map((league) => league.id),
           ),
           inArray(schema.leagueRoster.member_id, memberIds),
-          eq(schema.leagueRoster.status, 'active'),
         ),
       );
     for (const row of rosterRows) {

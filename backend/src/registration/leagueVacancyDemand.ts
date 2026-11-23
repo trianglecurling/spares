@@ -114,7 +114,7 @@ export async function loadEarmarkedRegistrationDemandByLeagueId(
         memberId: schema.leagueRoster.member_id,
       })
       .from(schema.leagueRoster)
-      .where(and(inArray(schema.leagueRoster.league_id, leagueIds), eq(schema.leagueRoster.status, 'active'))),
+      .where(inArray(schema.leagueRoster.league_id, leagueIds)),
     db
       .select({
         leagueId: schema.leagues.id,

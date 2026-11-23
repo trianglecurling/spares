@@ -179,7 +179,7 @@ function squareCheckoutInvoiceLines(
     owedDiscountLines: Array<RosterConfirmationFeeLine>;
   },
   configuredNames: Map<RegistrationPaymentItemLineType, string | null>,
-): Array<{ description: string; amountMinor: number }> {
+): Array<{ description: string; amountMinor: number; lineType?: string }> {
   return [...input.owedLines, ...input.owedDiscountLines]
     .filter((line) => line.amountMinor !== 0)
     .map((line) => ({
@@ -189,6 +189,7 @@ function squareCheckoutInvoiceLines(
         configuredNames,
       }),
       amountMinor: line.amountMinor,
+      lineType: line.lineType,
     }));
 }
 
@@ -426,7 +427,6 @@ async function loadRosterConfirmationRecipients(input: {
       .where(
         and(
           eq(schema.leagues.session_id, input.sessionId),
-          eq(schema.leagueRoster.status, 'active'),
           input.memberId != null ? eq(schema.leagueRoster.member_id, input.memberId) : undefined,
         ),
       ),
@@ -519,7 +519,8 @@ async function loadRosterConfirmationRecipients(input: {
     existing.leagues.set(row.leagueId, {
       leagueId: row.leagueId,
       leagueName: row.leagueName,
-      isTemporarySabbaticalFill: prior?.isTemporarySabbaticalFill === true || row.isTemporarySabbaticalFill === 1,
+      isTemporarySabbaticalFill:
+        prior?.isTemporarySabbaticalFill === true || Number(row.isTemporarySabbaticalFill) === 1,
     });
     drafts.set(row.memberId, existing);
   }

@@ -1,7 +1,8 @@
 import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { SUBMITTED_CURLER_REGISTRATION_STATUSES } from './registrationDraftProgress.js';
-import { listActiveWaitlistEntriesForMember, sortMemberWaitlistPriorityEntries } from './memberWaitlistPriority.js';
+import { listActiveWaitlistEntriesForMember } from './memberWaitlistPriority.js';
+import { loadByotWaitlistIds, orderMemberWaitlistPreference } from './memberWaitlistOrder.js';
 import { waitlistMemberDisplayName } from './waitlistAudit.js';
 import { WaitlistStaffValidationError } from './waitlistErrors.js';
 import { waitlistEntryRosterMemberIds } from './waitlistTeamRoster.js';
@@ -43,8 +44,9 @@ export function waitlistsInDisplayOrder(
     joinedAt: Date | string | number;
     id: number;
   }>,
+  byotWaitlistIds: ReadonlySet<number> = new Set(),
 ): WaitlistStaffPriorityWaitlist[] {
-  return sortMemberWaitlistPriorityEntries(entries).map((entry, index) => ({
+  return orderMemberWaitlistPreference(entries, byotWaitlistIds).map((entry, index) => ({
     waitlistId: entry.waitlistId,
     waitlistName: entry.waitlistName,
     priorityRank: index + 1,
@@ -109,6 +111,7 @@ export async function getWaitlistEntryPriorityDetails(entryId: number): Promise<
           .where(inArray(schema.leagueWaitlists.id, waitlistIds))
       : [];
   const waitlistNameById = new Map(waitlistRows.map((row) => [row.id, row.name]));
+  const byotWaitlistIds = await loadByotWaitlistIds(waitlistIds);
 
   const registrationRows = await db
     .select({
@@ -189,6 +192,7 @@ export async function getWaitlistEntryPriorityDetails(entryId: number): Promise<
           priorityRank: row.priorityRank,
           joinedAt: row.joinedAt,
         })),
+        byotWaitlistIds,
       ),
       registration: registration
         ? {

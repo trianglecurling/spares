@@ -259,6 +259,24 @@ export const rosterAddResponseSchema = {
   required: ['id', 'leagueId', 'memberId'],
 } as const;
 
+export const rosterSpotTypeBodySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    isTemporarySabbaticalFill: { type: 'boolean' },
+  },
+  required: ['isTemporarySabbaticalFill'],
+} as const;
+
+export const rosterSpotTypeResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    isTemporarySabbaticalFill: { type: 'boolean' },
+  },
+  required: ['isTemporarySabbaticalFill'],
+} as const;
+
 export const rosterBulkBodySchema = {
   type: 'object',
   additionalProperties: false,

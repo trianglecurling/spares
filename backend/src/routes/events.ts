@@ -3,7 +3,11 @@ import { z } from 'zod';
 import { config } from '../config.js';
 import { isEventsAdmin, isServerAdmin } from '../utils/auth.js';
 import { abuseRouteRateLimits } from '../plugins/abuseRateLimits.js';
-import { memberIsSocialMember, memberIsSpareOnly } from '../utils/memberMembershipHelpers.js';
+import {
+  eventVisibilityFilterForMember,
+  memberCanRegisterForEventVisibility,
+  memberEventRegistrationDeniedMessage,
+} from '../services/eventVisibilityAccess.js';
 import { createPaymentService, PaymentServiceError, buildCheckoutSuccessUrl, getDefaultPaymentProvider } from '../services/paymentService.js';
 import {
   getEventRegistrationPaidNetMinor,
@@ -108,7 +112,11 @@ import {
   listConfirmedRegistrationIdsForEvent,
   type TournamentTeamRow,
 } from '../services/eventTournamentTeamsService.js';
-import { tournamentDrawStateSchema, tournamentGameResultSchema } from '../services/eventTournamentDrawSchema.js';
+import {
+  tournamentDrawStateSchema,
+  tournamentGameResultSchema,
+  tournamentGameStandingSchema,
+} from '../services/eventTournamentDrawSchema.js';
 import {
   getTournamentDrawForEvent,
   saveTournamentDrawForEvent,
@@ -127,9 +135,12 @@ const patchTournamentGameResultBodySchema = z.object({
   result: tournamentGameResultSchema.nullable().optional(),
   /** Set which slot gets sheet stoneColor1; null clears the assignment. */
   rockColor1Slot: z.union([z.literal(0), z.literal(1), z.null()]).optional(),
-}).refine((body) => body.result !== undefined || body.rockColor1Slot !== undefined, {
-  message: 'Provide result and/or rockColor1Slot',
-});
+  /** Pool games: standings points and tiebreak values per side; null clears. */
+  standing: tournamentGameStandingSchema.nullable().optional(),
+}).refine(
+  (body) => body.result !== undefined || body.rockColor1Slot !== undefined || body.standing !== undefined,
+  { message: 'Provide result, rockColor1Slot, and/or standing' },
+);
 import { isArchivedAt } from '../utils/softDelete.js';
 import { optionalAuthMiddleware } from '../middleware/auth.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
@@ -745,7 +756,7 @@ async function getPublicPublishedTournamentDrawEventId(
     }
   }
 
-  if (!hasValidSpecialLink && (!event.published || event.visibility !== 'public')) {
+  if (!hasValidSpecialLink && !event.published) {
     return null;
   }
 
@@ -822,8 +833,9 @@ function openTournamentDrawLiveStream(
 
 // Public routes (no auth required)
 export async function publicEventRoutes(fastify: FastifyInstance): Promise<void> {
-  // List published public events
+  // List published events visible to this viewer (public, plus member events when eligible).
   fastify.get('/public/events', {
+    preHandler: optionalAuthMiddleware,
     schema: {
       tags: ['events'],
       querystring: {
@@ -847,16 +859,18 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
       return sendValidationError(reply, 'Invalid event filters', parsedQuery.error.flatten());
     }
     const query = parsedQuery.data;
+    const member = (request as { member?: Member }).member;
     const events = await listEvents({
       publishedOnly: true,
-      visibility: ['public'],
+      visibility: eventVisibilityFilterForMember(member),
       categorySlug: query.category,
       fromDate: query.from,
       toDate: query.to,
       calendarTypeId: query.type,
     });
     const capped = events.slice(0, 200);
-    reply.header('Cache-Control', 'public, max-age=30');
+    reply.header('Cache-Control', 'private, no-store');
+    reply.header('Vary', 'Authorization');
     const serverNow = new Date().toISOString();
     const statsByEventId = await getPublicEventRegistrationStats(
       capped.map((event) => ({ id: event.id, capacity: event.capacity })),
@@ -904,7 +918,7 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
         }
       }
 
-      if (!hasValidSpecialLink && (!event.published || event.visibility !== 'public')) {
+      if (!hasValidSpecialLink && !event.published) {
         return sendApiError(reply, 404, 'Event not found');
       }
 
@@ -926,12 +940,17 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
             })
           : null;
 
+      reply.header('Cache-Control', 'private, no-store');
+      reply.header('Vary', 'Authorization');
       return {
         ...formatEventResponse(event),
         confirmedCount,
         waitlistedCount,
         openSpots,
         yourFeeMinor,
+        viewerCanRegister:
+          hasValidSpecialLink || memberCanRegisterForEventVisibility(member, event.visibility),
+        viewerAuthenticated: member != null,
         serverNow: new Date().toISOString(),
       };
     }
@@ -955,7 +974,7 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
         }
       }
 
-      if (!hasValidSpecialLink && (!event.published || event.visibility !== 'public')) {
+      if (!hasValidSpecialLink && !event.published) {
         return sendApiError(reply, 404, 'Event not found');
       }
 
@@ -1054,16 +1073,23 @@ export async function publicEventRoutes(fastify: FastifyInstance): Promise<void>
         }
       }
 
-      if (!hasValidSpecialLink && (!event.published || event.visibility !== 'public')) {
+      if (!hasValidSpecialLink && !event.published) {
         return reply.code(404).send({ error: 'Event not found' });
+      }
+
+      const regMember = (request as { member?: Member }).member;
+      if (!hasValidSpecialLink && !memberCanRegisterForEventVisibility(regMember, event.visibility)) {
+        return sendApiError(
+          reply,
+          403,
+          memberEventRegistrationDeniedMessage(event.visibility) ?? 'Forbidden',
+        );
       }
 
       const parsed = registerSchema.safeParse(request.body);
       if (!parsed.success) {
         return sendValidationError(reply, 'Invalid registration data', parsed.error.flatten());
       }
-
-      const regMember = (request as { member?: Member }).member;
 
       try {
         const result = await registerForEvent({
@@ -1680,10 +1706,7 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
       return events.map(summarizeEvent);
     }
 
-    const visibilityFilter: Array<'public' | 'active_members' | 'ice_members'> = ['public', 'active_members'];
-    if (!memberIsSpareOnly(member) && !memberIsSocialMember(member)) {
-      visibilityFilter.push('ice_members');
-    }
+    const visibilityFilter = eventVisibilityFilterForMember(member);
 
     if (isEventsAdmin(member)) {
       const events = await listEvents({
@@ -1875,6 +1898,7 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
         const draw = await patchTournamentDrawGameResult(eventId, gameId, {
           result: parsedBody.data.result,
           rockColor1Slot: parsedBody.data.rockColor1Slot,
+          standing: parsedBody.data.standing,
         });
         broadcastTournamentDrawUpdated(eventId);
         return { draw };
@@ -2144,6 +2168,13 @@ export async function protectedEventRoutes(fastify: FastifyInstance): Promise<vo
       const event = await getEventById(eventId);
       if (!event || !event.published) {
         return sendApiError(reply, 404, 'Event not found');
+      }
+      if (!memberCanRegisterForEventVisibility(member, event.visibility)) {
+        return sendApiError(
+          reply,
+          403,
+          memberEventRegistrationDeniedMessage(event.visibility) ?? 'Forbidden',
+        );
       }
 
       const parsed = registerSchema.safeParse(request.body);

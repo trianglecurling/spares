@@ -610,6 +610,97 @@
       "when": 1788493200000,
       "tag": "0087_add_contact_settings_nudge_dismissed",
       "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1788493800000,
+      "tag": "0088_add_curling_stones",
+      "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1788494400000,
+      "tag": "0089_add_curling_stone_sandpaper_condition",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1788495000000,
+      "tag": "0090_add_spare_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1788495600000,
+      "tag": "0091_add_spare_notification_processor_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1788496200000,
+      "tag": "0092_add_expense_reimbursement_checks",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1788496800000,
+      "tag": "0093_expense_report_approved_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1788497400000,
+      "tag": "0094_expense_reimbursement_check_number",
+      "breakpoints": true
+    },
+    {
+      "idx": 95,
+      "version": "7",
+      "when": 1788498000000,
+      "tag": "0095_add_events_featured",
+      "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1788498600000,
+      "tag": "0096_add_leagues_ice_prep_minutes",
+      "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1788499200000,
+      "tag": "0097_move_ice_prep_to_draw_times",
+      "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1788499800000,
+      "tag": "0098_drop_league_roster_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1788586200000,
+      "tag": "0099_remove_waitlist_entries_for_rostered_members",
+      "breakpoints": true
+    },
+    {
+      "idx": 100,
+      "version": "7",
+      "when": 1788672600000,
+      "tag": "0100_volunteer_program_unlisted",
+      "breakpoints": true
     }
   ]
 }

@@ -10,7 +10,6 @@ describe('roster rebuild CSV helpers', () => {
         memberId: 10,
         memberName: 'Smith, "Pat"',
         memberEmail: 'pat@example.com',
-        status: 'active',
         placementType: 'guaranteed_return',
         isTemporarySabbaticalFill: false,
         sourceRegistrationId: 44,
@@ -25,7 +24,6 @@ describe('roster rebuild CSV helpers', () => {
         leagueName: 'Hump Day',
         memberName: 'Smith, "Pat"',
         memberEmail: 'pat@example.com',
-        status: 'active',
       },
     ]);
   });

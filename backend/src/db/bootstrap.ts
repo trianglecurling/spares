@@ -384,6 +384,10 @@ export async function runDatabaseBootstrap(config: DatabaseConfig): Promise<void
     '../services/volunteerProgramSlugs.js'
   );
   await ensureVolunteerProgramSlugsFromTitlesIfNeeded();
+  const { ensureVolunteerProgramShareTokens } = await import(
+    '../services/volunteerProgramShareTokens.js'
+  );
+  await ensureVolunteerProgramShareTokens();
 
   if (config.type === 'sqlite') {
     const { SQLiteAdapter } = await import('./sqlite-adapter.js');

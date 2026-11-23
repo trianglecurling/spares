@@ -5,6 +5,8 @@ import type { LeagueConfig, LeaguePriorityInput, PlayInEntryContext, Registratio
 import type { LeaguePriorityEvaluation } from './leaguePriorityEvaluation.js';
 import { waitlistRosterEntries } from './waitlistTeamRoster.js';
 import { releaseOverflowLeaguePlacements } from './leaguePlacementRelease.js';
+import { removeMembersFromLeagueRoster } from './leagueRosterRemoval.js';
+import { removeWaitlistEntriesForRosteredMembers } from './waitlistRosterExclusion.js';
 import {
   aggregateMemberPoints,
   entryTeamToEvaluationInput,
@@ -1396,31 +1398,19 @@ async function reverseGrantedEntryPlacements(input: {
     .filter((memberId): memberId is number => memberId != null);
   if (memberIds.length === 0) return;
 
-  await db
-    .update(schema.leagueRoster)
-    .set({ status: 'removed', updated_at: sql`CURRENT_TIMESTAMP` })
-    .where(
-      and(
-        eq(schema.leagueRoster.league_id, input.leagueId),
-        inArray(schema.leagueRoster.member_id, memberIds),
-        eq(schema.leagueRoster.placement_type, 'play_in'),
-        eq(schema.leagueRoster.status, 'active'),
-      ),
-    );
-
   const leagueTeams = await db
     .select({ id: schema.leagueTeams.id })
     .from(schema.leagueTeams)
     .where(eq(schema.leagueTeams.league_id, input.leagueId));
-  if (leagueTeams.length === 0) return;
-
-  const teamMemberRows = await db
-    .select({
-      teamId: schema.teamMembers.team_id,
-      memberId: schema.teamMembers.member_id,
-    })
-    .from(schema.teamMembers)
-    .where(inArray(schema.teamMembers.team_id, leagueTeams.map((row) => row.id)));
+  const teamMemberRows = leagueTeams.length
+    ? await db
+        .select({
+          teamId: schema.teamMembers.team_id,
+          memberId: schema.teamMembers.member_id,
+        })
+        .from(schema.teamMembers)
+        .where(inArray(schema.teamMembers.team_id, leagueTeams.map((row) => row.id)))
+    : [];
 
   const membersByTeam = new Map<number, Set<number>>();
   for (const row of teamMemberRows) {
@@ -1434,6 +1424,21 @@ async function reverseGrantedEntryPlacements(input: {
     if (!sameEntryTeamMemberIdSet(teamMembers, entryMemberSet)) continue;
     await db.delete(schema.leagueTeams).where(eq(schema.leagueTeams.id, teamId));
   }
+
+  const playInRows = await db
+    .select({ memberId: schema.leagueRoster.member_id })
+    .from(schema.leagueRoster)
+    .where(
+      and(
+        eq(schema.leagueRoster.league_id, input.leagueId),
+        inArray(schema.leagueRoster.member_id, memberIds),
+        eq(schema.leagueRoster.placement_type, 'play_in'),
+      ),
+    );
+  await removeMembersFromLeagueRoster({
+    leagueId: input.leagueId,
+    memberIds: playInRows.map((row) => row.memberId),
+  });
 }
 
 /**
@@ -1724,7 +1729,6 @@ export async function recordLeagueEntryTeamOutcome(input: {
         .limit(1);
       const rosterValues = {
         source_registration_id: member.source_registration_id,
-        status: 'active' as const,
         placement_type: 'play_in' as const,
         is_temporary_sabbatical_fill: 0,
         related_sabbatical_id: null,
@@ -1751,6 +1755,14 @@ export async function recordLeagueEntryTeamOutcome(input: {
         });
       }
     }
+
+    await removeWaitlistEntriesForRosteredMembers({
+      executor: tx,
+      leagueId: team.league_id,
+      memberIds: rosteredMemberIds,
+      actorMemberId: input.actorMemberId,
+      source: 'placement_process',
+    });
 
     leagueTeamId = await createLeagueTeamForGrantedEntry({
       tx,

@@ -25,7 +25,7 @@ const apiErrorResponseSchema = {
   required: ['error'],
 } as const;
 
-const mailingAddressJsonSchema = {
+export const mailingAddressJsonSchema = {
   type: ['object', 'null'],
   additionalProperties: false,
   properties: {
@@ -276,6 +276,18 @@ export const expenseReportViewSchema = {
     statusChangedByName: { type: ['string', 'null'] },
     statusChangedAt: { type: ['string', 'null'] },
     lastUpdatedByName: { type: ['string', 'null'] },
+    reimbursementCheck: {
+      type: ['object', 'null'],
+      additionalProperties: false,
+      properties: {
+        id: { type: 'number' },
+        checkNumber: { type: 'string' },
+        amountMinor: { type: 'number' },
+        currency: { type: 'string' },
+        issuedAt: { type: 'string' },
+      },
+      required: ['id', 'checkNumber', 'amountMinor', 'currency', 'issuedAt'],
+    },
     notes: {
       type: 'array',
       items: {
@@ -331,6 +343,7 @@ export const expenseListItemSchema = {
     kind: { type: 'string' },
     status: { type: 'string' },
     statusLabel: { type: 'string' },
+    memberId: { type: ['number', 'null'] },
     submitterName: { type: 'string' },
     submitterEmail: { type: 'string' },
     totalAmountMinor: { type: 'number' },
@@ -344,6 +357,7 @@ export const expenseListItemSchema = {
     'kind',
     'status',
     'statusLabel',
+    'memberId',
     'submitterName',
     'submitterEmail',
     'totalAmountMinor',

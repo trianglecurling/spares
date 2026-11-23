@@ -2,10 +2,12 @@ import { Link, useLocation } from 'react-router-dom';
 import Footer from '../../components/Footer';
 import HelpHeader from '../../components/HelpHeader';
 import { helpSections } from '../Help';
+import { formatHours, useSpareSettings } from '../../hooks/useSpareSettings';
 
 export default function RequestingSpare() {
   const location = useLocation();
   const currentPath = location.pathname;
+  const { settings } = useSpareSettings();
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
@@ -58,15 +60,12 @@ export default function RequestingSpare() {
                         <strong>Select a league</strong> from the dropdown menu
                       </li>
                       <li>
+                        <strong>Choose who needs the spare</strong>: yourself or a teammate. League
+                        managers can choose any player in a league they manage. The position comes
+                        from that player&apos;s spot on the roster.
+                      </li>
+                      <li>
                         <strong>Choose a game date and time</strong> from the upcoming games list
-                      </li>
-                      <li>
-                        <strong>Enter the name</strong> of the person who needs the spare (usually
-                        yourself)
-                      </li>
-                      <li>
-                        <strong>Optionally specify a position</strong> (lead, second, vice, or skip)
-                        if needed
                       </li>
                       <li>
                         <strong>Add a personal message</strong> (optional) with any additional
@@ -97,9 +96,10 @@ export default function RequestingSpare() {
                     <p className="mb-3">After submitting your request:</p>
                     <ul className="list-disc list-inside space-y-2">
                       <li>
-                        <strong>Public requests:</strong> All members can see it immediately on
-                        their dashboard. Notifications are sent to matching members gradually (or
-                        immediately if less than 24 hours before game time)
+                        <strong>Public requests:</strong> Players on bye are notified first. Other
+                        members are then notified gradually and can see it on their dashboard (or
+                        everyone at once if the game is less than{' '}
+                        {formatHours(settings.urgentThresholdHours)} away).
                       </li>
                       <li>
                         <strong>Private requests:</strong> Only visible to selected members, who
@@ -124,8 +124,8 @@ export default function RequestingSpare() {
                         spare
                       </li>
                       <li>
-                        <strong>Re-issue:</strong> Send notifications again if needed (after 72
-                        hours or if someone canceled)
+                        <strong>Re-issue:</strong> Send notifications again if needed (after{' '}
+                        {formatHours(settings.reissueCooldownHours)} or if someone canceled)
                       </li>
                       <li>
                         <strong>Pause notifications:</strong> Temporarily stop sending notifications

@@ -1,5 +1,5 @@
 import { sql, eq } from 'drizzle-orm';
-import { sqliteTable, text, integer, index, uniqueIndex, real } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, index, uniqueIndex, real, primaryKey } from 'drizzle-orm/sqlite-core';
 import {
   pgTable,
   text as textPg,
@@ -11,6 +11,7 @@ import {
   uniqueIndex as uniqueIndexPg,
   doublePrecision,
   jsonb,
+  primaryKey as primaryKeyPg,
 } from 'drizzle-orm/pg-core';
 
 // We'll create schemas for both SQLite and PostgreSQL
@@ -263,7 +264,6 @@ export type SeasonMembershipTypeSqlite = 'regular' | 'social' | 'junior_recreati
 export type SeasonMembershipStatusSqlite = 'pending' | 'active' | 'cancelled' | 'refunded' | 'expired';
 export type IcePrivilegeSourceSqlite = 'league' | 'spare_only' | 'program' | 'staff_adjustment';
 
-export type LeagueRosterPlacementStatusSqlite = 'pending' | 'active' | 'cancelled' | 'removed' | 'completed';
 export type LeagueRosterPlacementTypeSqlite =
   | 'guaranteed_return'
   | 'guaranteed_fallback'
@@ -1108,6 +1108,8 @@ export const leagueDrawTimesSqlite = sqliteTable('league_draw_times', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   league_id: integer('league_id').notNull().references(() => leaguesSqlite.id, { onDelete: 'cascade' }),
   draw_time: text('draw_time').notNull(),
+  /** Minutes before this regular draw that ice preparation begins. 0 means none. */
+  ice_prep_minutes: integer('ice_prep_minutes').notNull().default(0),
 }, (table) => ({
   leagueIdIdx: index('idx_league_draw_times_league_id').on(table.league_id),
 }));
@@ -1321,7 +1323,6 @@ export const leagueRosterSqlite = sqliteTable('league_roster', {
   source_registration_id: integer('source_registration_id').references(() => curlingRegistrationsSqlite.id, {
     onDelete: 'set null',
   }),
-  status: text('status').default('active').notNull().$type<LeagueRosterPlacementStatusSqlite>(),
   placement_type: text('placement_type').$type<LeagueRosterPlacementTypeSqlite>(),
   is_temporary_sabbatical_fill: integer('is_temporary_sabbatical_fill').default(0).notNull(),
   related_sabbatical_id: integer('related_sabbatical_id').references(() => curlingLeagueSabbaticalsSqlite.id, {
@@ -1431,6 +1432,8 @@ export const spareRequestsSqlite = sqliteTable('spare_requests', {
   all_invites_declined_notified: integer('all_invites_declined_notified').default(0).notNull(),
   /** When public requests become visible on member dashboards (after bye priority window when applicable). */
   public_listing_at: text('public_listing_at'),
+  /** Notification processor that owns the queued sends. Null means the default (deployed) processor. */
+  notification_processor_id: text('notification_processor_id'),
 }, (table) => ({
   requesterIdIdx: index('idx_spare_requests_requester_id').on(table.requester_id),
   requestedForMemberIdIdx: index('idx_spare_requests_requested_for_member_id').on(table.requested_for_member_id),
@@ -1501,6 +1504,9 @@ export const serverConfigSqlite = sqliteTable('server_config', {
   capture_backend_logs: integer('capture_backend_logs').default(1).notNull(),
   test_current_time: text('test_current_time'),
   notification_delay_seconds: integer('notification_delay_seconds').default(180).notNull(),
+  spare_bye_priority_window_minutes: integer('spare_bye_priority_window_minutes').default(60).notNull(),
+  spare_urgent_threshold_hours: integer('spare_urgent_threshold_hours').default(24).notNull(),
+  spare_reissue_cooldown_hours: integer('spare_reissue_cooldown_hours').default(72).notNull(),
   session_token_ttl_minutes: integer('session_token_ttl_minutes').default(30).notNull(),
   refresh_token_ttl_days: integer('refresh_token_ttl_days').default(60).notNull(),
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
@@ -1862,6 +1868,59 @@ export const buildingAccessConfigSqlite = sqliteTable('building_access_config', 
   updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
 });
 
+// Club curling stones: identity, position history, and running-surface maintenance (public data)
+export const curlingStonesSqlite = sqliteTable('curling_stones', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  wcf_registration_number: text('wcf_registration_number').notNull(),
+  al_serial_number: text('al_serial_number').notNull(),
+  notes: text('notes'),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  uniqueWcf: uniqueIndex('curling_stones_wcf_registration_number_unique').on(table.wcf_registration_number),
+  uniqueAl: uniqueIndex('curling_stones_al_serial_number_unique').on(table.al_serial_number),
+}));
+
+/** Append-only; a stone's current placement is its latest row by (effective_date, id). */
+export const curlingStonePlacementsSqlite = sqliteTable('curling_stone_placements', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  stone_id: integer('stone_id').notNull().references(() => curlingStonesSqlite.id, { onDelete: 'cascade' }),
+  sheet: text('sheet'), // 'A' | 'B' | 'C' | 'D'; null for spares and unassigned stones
+  color: text('color'), // 'red' | 'yellow'; null for unassigned stones
+  rock_number: integer('rock_number'), // 1-8; null for spares and unassigned stones
+  side: text('side').notNull(), // 'A' | 'B' running surface in play
+  effective_date: text('effective_date').notNull(), // YYYY-MM-DD
+  change_type: text('change_type').notNull(), // 'added' | 'moved' | 'swapped' | 'rotated' | 'flipped'
+  related_stone_id: integer('related_stone_id').references(() => curlingStonesSqlite.id, { onDelete: 'set null' }),
+  notes: text('notes'),
+  created_by_member_id: integer('created_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  stoneIdx: index('idx_curling_stone_placements_stone_id').on(table.stone_id, table.effective_date),
+}));
+
+export const curlingStoneMaintenanceSqlite = sqliteTable('curling_stone_maintenance', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  stone_id: integer('stone_id').notNull().references(() => curlingStonesSqlite.id, { onDelete: 'cascade' }),
+  activity_type: text('activity_type').notNull(), // 'texturing' | 'band_narrowing' | 'imprinting'
+  side: text('side').notNull(), // 'A' | 'B'
+  performed_on: text('performed_on').notNull(), // YYYY-MM-DD
+  passes: integer('passes'),
+  rotations: integer('rotations'),
+  sandpaper_grit: integer('sandpaper_grit'), // 60 | 80 | 100
+  sandpaper_condition: text('sandpaper_condition'), // 'new' | 'used_once' | 'used_twice'
+  band_width_1_mm: real('band_width_1_mm'),
+  band_width_2_mm: real('band_width_2_mm'),
+  band_width_3_mm: real('band_width_3_mm'),
+  band_width_4_mm: real('band_width_4_mm'),
+  comments: text('comments'),
+  created_by_member_id: integer('created_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+  updated_at: text('updated_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  stoneIdx: index('idx_curling_stone_maintenance_stone_id').on(table.stone_id, table.performed_on),
+}));
+
 // Public contact form recipient categories (contact page + article links)
 export const publicContactRecipientsSqlite = sqliteTable('public_contact_recipients', {
   id: integer('id').primaryKey({ autoIncrement: true }),
@@ -2201,6 +2260,9 @@ export const eventsSqlite = sqliteTable('events', {
   image_file_id: integer('image_file_id').references(() => filesSqlite.id, { onDelete: 'set null' }),
   visibility: text('visibility').default('public').notNull().$type<EventVisibility>(),
   published: integer('published').default(0).notNull(),
+  /** When 1, the event is featured on the public homepage. */
+  featured: integer('featured').default(0).notNull(),
+  featured_sort_order: integer('featured_sort_order').default(0).notNull(),
   capacity: integer('capacity'),
   fee_minor: integer('fee_minor').default(0).notNull(),
   /** When set, logged-in members pay this per-person amount instead of fee_minor. */
@@ -2241,6 +2303,7 @@ export const eventsSqlite = sqliteTable('events', {
 }, (table) => ({
   slugIdx: uniqueIndex('events_slug_unique').on(table.slug),
   publishedIdx: index('idx_events_published').on(table.published),
+  featuredIdx: index('idx_events_featured').on(table.featured),
   visibilityIdx: index('idx_events_visibility').on(table.visibility),
   archivedAtIdx: index('idx_events_archived_at').on(table.archived_at),
   transferGroupIdx: index('idx_events_transfer_group_id').on(table.transfer_group_id),
@@ -2387,7 +2450,7 @@ export const eventSpecialLinksSqlite = sqliteTable('event_special_links', {
 export type VolunteerSignupStatus = 'confirmed' | 'cancelled';
 
 export type ExpenseReportKind = 'expense' | 'mileage';
-export type ExpenseReportStatus = 'pending_review' | 'processing' | 'check_mailed' | 'complete';
+export type ExpenseReportStatus = 'pending_review' | 'processing' | 'approved' | 'complete';
 export type ExpenseFromKind = 'home' | 'other';
 export type ExpenseToKind = 'club' | 'other';
 export type ExpenseTripPurpose =
@@ -2412,6 +2475,10 @@ export const volunteerProgramsSqlite = sqliteTable('volunteer_programs', {
   start_date: text('start_date'), // YYYY-MM-DD, optional — used to auto-fill shift dates
   created_by_member_id: integer('created_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
   published: integer('published').default(0).notNull(),
+  /** Hidden from sign-up lists. Direct access requires `share_token` on the URL. */
+  unlisted: integer('unlisted').default(0).notNull(),
+  /** Unguessable token required on the URL while the program is unlisted. */
+  share_token: text('share_token'),
   feature_on_dashboard: integer('feature_on_dashboard').default(1).notNull(),
   public_signups: integer('public_signups').default(0).notNull(),
   /** volunteering = club volunteer work; general = other sign-ups that reuse this system. */
@@ -2426,6 +2493,7 @@ export const volunteerProgramsSqlite = sqliteTable('volunteer_programs', {
   createdByIdx: index('idx_volunteer_programs_created_by').on(table.created_by_member_id),
   slugUnique: uniqueIndex('volunteer_programs_slug_unique').on(table.slug),
   publishedIdx: index('idx_volunteer_programs_published').on(table.published),
+  shareTokenUnique: uniqueIndex('volunteer_programs_share_token_unique').on(table.share_token),
   featureOnDashboardIdx: index('idx_volunteer_programs_feature_on_dashboard').on(table.feature_on_dashboard),
   publicSignupsIdx: index('idx_volunteer_programs_public_signups').on(table.public_signups),
   signupKindIdx: index('idx_volunteer_programs_signup_kind').on(table.signup_kind),
@@ -2710,6 +2778,32 @@ export const expenseReportChangesSqlite = sqliteTable('expense_report_changes', 
   created_at: text('created_at').default(sql`datetime('now')`).notNull(),
 }, (table) => ({
   reportIdx: index('idx_expense_report_changes_report_id').on(table.report_id),
+}));
+
+export const expenseReimbursementChecksSqlite = sqliteTable('expense_reimbursement_checks', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  payee_member_id: integer('payee_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
+  payee_name: text('payee_name').notNull(),
+  payee_email: text('payee_email').notNull(),
+  check_number: text('check_number').notNull(),
+  amount_minor: integer('amount_minor').notNull(),
+  currency: text('currency').default('usd').notNull(),
+  issued_by_member_id: integer('issued_by_member_id').references(() => membersSqlite.id, { onDelete: 'set null' }),
+  issued_by_name: text('issued_by_name').notNull(),
+  issued_at: text('issued_at').default(sql`datetime('now')`).notNull(),
+  created_at: text('created_at').default(sql`datetime('now')`).notNull(),
+}, (table) => ({
+  payeeMemberIdx: index('idx_expense_reimbursement_checks_payee_member_id').on(table.payee_member_id),
+  issuedAtIdx: index('idx_expense_reimbursement_checks_issued_at').on(table.issued_at),
+}));
+
+export const expenseReimbursementCheckReportsSqlite = sqliteTable('expense_reimbursement_check_reports', {
+  check_id: integer('check_id').notNull().references(() => expenseReimbursementChecksSqlite.id, { onDelete: 'cascade' }),
+  report_id: integer('report_id').notNull().references(() => expenseReportsSqlite.id, { onDelete: 'cascade' }),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.check_id, table.report_id] }),
+  reportUnique: uniqueIndex('expense_reimbursement_check_reports_report_unique').on(table.report_id),
+  checkIdx: index('idx_expense_reimbursement_check_reports_check_id').on(table.check_id),
 }));
 
 // ========== PostgreSQL Schema ==========
@@ -3566,6 +3660,8 @@ export const leagueDrawTimesPg = pgTable('league_draw_times', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
   league_id: integerPg('league_id').notNull().references(() => leaguesPg.id, { onDelete: 'cascade' }),
   draw_time: time('draw_time').notNull(),
+  /** Minutes before this regular draw that ice preparation begins. 0 means none. */
+  ice_prep_minutes: integerPg('ice_prep_minutes').notNull().default(0),
 }, (table) => ({
   leagueIdIdx: indexPg('idx_league_draw_times_league_id').on(table.league_id),
 }));
@@ -3779,7 +3875,6 @@ export const leagueRosterPg = pgTable('league_roster', {
   source_registration_id: integerPg('source_registration_id').references(() => curlingRegistrationsPg.id, {
     onDelete: 'set null',
   }),
-  status: textPg('status').default('active').notNull().$type<LeagueRosterPlacementStatusSqlite>(),
   placement_type: textPg('placement_type').$type<LeagueRosterPlacementTypeSqlite>(),
   is_temporary_sabbatical_fill: integerPg('is_temporary_sabbatical_fill').default(0).notNull(),
   related_sabbatical_id: integerPg('related_sabbatical_id').references(() => curlingLeagueSabbaticalsPg.id, {
@@ -3889,6 +3984,8 @@ export const spareRequestsPg = pgTable('spare_requests', {
   all_invites_declined_notified: integerPg('all_invites_declined_notified').default(0).notNull(),
   /** When public requests become visible on member dashboards (after bye priority window when applicable). */
   public_listing_at: timestamp('public_listing_at', { withTimezone: false }),
+  /** Notification processor that owns the queued sends. Null means the default (deployed) processor. */
+  notification_processor_id: textPg('notification_processor_id'),
 }, (table) => ({
   requesterIdIdx: indexPg('idx_spare_requests_requester_id').on(table.requester_id),
   requestedForMemberIdIdx: indexPg('idx_spare_requests_requested_for_member_id').on(table.requested_for_member_id),
@@ -3959,6 +4056,9 @@ export const serverConfigPg = pgTable('server_config', {
   capture_backend_logs: integerPg('capture_backend_logs').default(1).notNull(),
   test_current_time: timestamp('test_current_time', { withTimezone: false }),
   notification_delay_seconds: integerPg('notification_delay_seconds').default(180).notNull(),
+  spare_bye_priority_window_minutes: integerPg('spare_bye_priority_window_minutes').default(60).notNull(),
+  spare_urgent_threshold_hours: integerPg('spare_urgent_threshold_hours').default(24).notNull(),
+  spare_reissue_cooldown_hours: integerPg('spare_reissue_cooldown_hours').default(72).notNull(),
   session_token_ttl_minutes: integerPg('session_token_ttl_minutes').default(30).notNull(),
   refresh_token_ttl_days: integerPg('refresh_token_ttl_days').default(60).notNull(),
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
@@ -4318,6 +4418,59 @@ export const buildingAccessConfigPg = pgTable('building_access_config', {
   updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
 });
 
+// Club curling stones: identity, position history, and running-surface maintenance (public data)
+export const curlingStonesPg = pgTable('curling_stones', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  wcf_registration_number: textPg('wcf_registration_number').notNull(),
+  al_serial_number: textPg('al_serial_number').notNull(),
+  notes: textPg('notes'),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  uniqueWcf: uniqueIndexPg('curling_stones_wcf_registration_number_unique').on(table.wcf_registration_number),
+  uniqueAl: uniqueIndexPg('curling_stones_al_serial_number_unique').on(table.al_serial_number),
+}));
+
+/** Append-only; a stone's current placement is its latest row by (effective_date, id). */
+export const curlingStonePlacementsPg = pgTable('curling_stone_placements', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  stone_id: integerPg('stone_id').notNull().references(() => curlingStonesPg.id, { onDelete: 'cascade' }),
+  sheet: textPg('sheet'), // 'A' | 'B' | 'C' | 'D'; null for spares and unassigned stones
+  color: textPg('color'), // 'red' | 'yellow'; null for unassigned stones
+  rock_number: integerPg('rock_number'), // 1-8; null for spares and unassigned stones
+  side: textPg('side').notNull(), // 'A' | 'B' running surface in play
+  effective_date: date('effective_date').notNull(),
+  change_type: textPg('change_type').notNull(), // 'added' | 'moved' | 'swapped' | 'rotated' | 'flipped'
+  related_stone_id: integerPg('related_stone_id').references(() => curlingStonesPg.id, { onDelete: 'set null' }),
+  notes: textPg('notes'),
+  created_by_member_id: integerPg('created_by_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  stoneIdx: indexPg('idx_curling_stone_placements_stone_id').on(table.stone_id, table.effective_date),
+}));
+
+export const curlingStoneMaintenancePg = pgTable('curling_stone_maintenance', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  stone_id: integerPg('stone_id').notNull().references(() => curlingStonesPg.id, { onDelete: 'cascade' }),
+  activity_type: textPg('activity_type').notNull(), // 'texturing' | 'band_narrowing' | 'imprinting'
+  side: textPg('side').notNull(), // 'A' | 'B'
+  performed_on: date('performed_on').notNull(),
+  passes: integerPg('passes'),
+  rotations: integerPg('rotations'),
+  sandpaper_grit: integerPg('sandpaper_grit'), // 60 | 80 | 100
+  sandpaper_condition: textPg('sandpaper_condition'), // 'new' | 'used_once' | 'used_twice'
+  band_width_1_mm: doublePrecision('band_width_1_mm'),
+  band_width_2_mm: doublePrecision('band_width_2_mm'),
+  band_width_3_mm: doublePrecision('band_width_3_mm'),
+  band_width_4_mm: doublePrecision('band_width_4_mm'),
+  comments: textPg('comments'),
+  created_by_member_id: integerPg('created_by_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updated_at: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  stoneIdx: indexPg('idx_curling_stone_maintenance_stone_id').on(table.stone_id, table.performed_on),
+}));
+
 // Showcase images for homepage (URLs only)
 export const publicContactRecipientsPg = pgTable('public_contact_recipients', {
   id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
@@ -4631,6 +4784,9 @@ export const eventsPg = pgTable('events', {
   image_file_id: integerPg('image_file_id').references(() => filesPg.id, { onDelete: 'set null' }),
   visibility: textPg('visibility').default('public').notNull().$type<EventVisibility>(),
   published: integerPg('published').default(0).notNull(),
+  /** When 1, the event is featured on the public homepage. */
+  featured: integerPg('featured').default(0).notNull(),
+  featured_sort_order: integerPg('featured_sort_order').default(0).notNull(),
   capacity: integerPg('capacity'),
   fee_minor: integerPg('fee_minor').default(0).notNull(),
   member_fee_minor: integerPg('member_fee_minor'),
@@ -4665,6 +4821,7 @@ export const eventsPg = pgTable('events', {
 }, (table) => ({
   slugIdx: uniqueIndexPg('events_slug_unique_pg').on(table.slug),
   publishedIdx: indexPg('idx_events_published').on(table.published),
+  featuredIdx: indexPg('idx_events_featured').on(table.featured),
   visibilityIdx: indexPg('idx_events_visibility').on(table.visibility),
   archivedAtIdx: indexPg('idx_events_archived_at').on(table.archived_at),
   transferGroupIdx: indexPg('idx_events_transfer_group_id').on(table.transfer_group_id),
@@ -4818,6 +4975,10 @@ export const volunteerProgramsPg = pgTable('volunteer_programs', {
   start_date: date('start_date'), // YYYY-MM-DD, optional — used to auto-fill shift dates
   created_by_member_id: integerPg('created_by_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
   published: integerPg('published').default(0).notNull(),
+  /** Hidden from sign-up lists. Direct access requires `share_token` on the URL. */
+  unlisted: integerPg('unlisted').default(0).notNull(),
+  /** Unguessable token required on the URL while the program is unlisted. */
+  share_token: textPg('share_token'),
   feature_on_dashboard: integerPg('feature_on_dashboard').default(1).notNull(),
   public_signups: integerPg('public_signups').default(0).notNull(),
   /** volunteering = club volunteer work; general = other sign-ups that reuse this system. */
@@ -4832,6 +4993,7 @@ export const volunteerProgramsPg = pgTable('volunteer_programs', {
   createdByIdx: indexPg('idx_volunteer_programs_created_by').on(table.created_by_member_id),
   slugUnique: uniqueIndexPg('volunteer_programs_slug_unique').on(table.slug),
   publishedIdx: indexPg('idx_volunteer_programs_published').on(table.published),
+  shareTokenUnique: uniqueIndexPg('volunteer_programs_share_token_unique').on(table.share_token),
   featureOnDashboardIdx: indexPg('idx_volunteer_programs_feature_on_dashboard').on(table.feature_on_dashboard),
   publicSignupsIdx: indexPg('idx_volunteer_programs_public_signups').on(table.public_signups),
   signupKindIdx: indexPg('idx_volunteer_programs_signup_kind').on(table.signup_kind),
@@ -5129,6 +5291,32 @@ export const expenseReportChangesPg = pgTable('expense_report_changes', {
   reportIdx: indexPg('idx_expense_report_changes_report_id').on(table.report_id),
 }));
 
+export const expenseReimbursementChecksPg = pgTable('expense_reimbursement_checks', {
+  id: integerPg('id').primaryKey().generatedAlwaysAsIdentity(),
+  payee_member_id: integerPg('payee_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
+  payee_name: textPg('payee_name').notNull(),
+  payee_email: textPg('payee_email').notNull(),
+  check_number: textPg('check_number').notNull(),
+  amount_minor: integerPg('amount_minor').notNull(),
+  currency: textPg('currency').default('usd').notNull(),
+  issued_by_member_id: integerPg('issued_by_member_id').references(() => membersPg.id, { onDelete: 'set null' }),
+  issued_by_name: textPg('issued_by_name').notNull(),
+  issued_at: timestamp('issued_at', { withTimezone: false }).defaultNow().notNull(),
+  created_at: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+}, (table) => ({
+  payeeMemberIdx: indexPg('idx_expense_reimbursement_checks_payee_member_id').on(table.payee_member_id),
+  issuedAtIdx: indexPg('idx_expense_reimbursement_checks_issued_at').on(table.issued_at),
+}));
+
+export const expenseReimbursementCheckReportsPg = pgTable('expense_reimbursement_check_reports', {
+  check_id: integerPg('check_id').notNull().references(() => expenseReimbursementChecksPg.id, { onDelete: 'cascade' }),
+  report_id: integerPg('report_id').notNull().references(() => expenseReportsPg.id, { onDelete: 'cascade' }),
+}, (table) => ({
+  pk: primaryKeyPg({ columns: [table.check_id, table.report_id] }),
+  reportUnique: uniqueIndexPg('expense_reimbursement_check_reports_report_unique').on(table.report_id),
+  checkIdx: indexPg('idx_expense_reimbursement_check_reports_check_id').on(table.check_id),
+}));
+
 // Export schema objects for use in database initialization
 export const sqliteSchema = {
   members: membersSqlite,
@@ -5213,6 +5401,9 @@ export const sqliteSchema = {
   permalinkHits: permalinkHitsSqlite,
   siteConfig: siteConfigSqlite,
   buildingAccessConfig: buildingAccessConfigSqlite,
+  curlingStones: curlingStonesSqlite,
+  curlingStonePlacements: curlingStonePlacementsSqlite,
+  curlingStoneMaintenance: curlingStoneMaintenanceSqlite,
   publicContactRecipients: publicContactRecipientsSqlite,
   dashboardSections: dashboardSectionsSqlite,
   mailingLists: mailingListsSqlite,
@@ -5260,6 +5451,8 @@ export const sqliteSchema = {
   expenseDocuments: expenseDocumentsSqlite,
   expenseReportNotes: expenseReportNotesSqlite,
   expenseReportChanges: expenseReportChangesSqlite,
+  expenseReimbursementChecks: expenseReimbursementChecksSqlite,
+  expenseReimbursementCheckReports: expenseReimbursementCheckReportsSqlite,
 };
 
 export const pgSchema = {
@@ -5345,6 +5538,9 @@ export const pgSchema = {
   permalinkHits: permalinkHitsPg,
   siteConfig: siteConfigPg,
   buildingAccessConfig: buildingAccessConfigPg,
+  curlingStones: curlingStonesPg,
+  curlingStonePlacements: curlingStonePlacementsPg,
+  curlingStoneMaintenance: curlingStoneMaintenancePg,
   publicContactRecipients: publicContactRecipientsPg,
   dashboardSections: dashboardSectionsPg,
   mailingLists: mailingListsPg,
@@ -5392,4 +5588,6 @@ export const pgSchema = {
   expenseDocuments: expenseDocumentsPg,
   expenseReportNotes: expenseReportNotesPg,
   expenseReportChanges: expenseReportChangesPg,
+  expenseReimbursementChecks: expenseReimbursementChecksPg,
+  expenseReimbursementCheckReports: expenseReimbursementCheckReportsPg,
 };

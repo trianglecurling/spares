@@ -11,7 +11,8 @@ import { config } from '../config.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import type { Member } from '../types.js';
 import { isCalendarAdmin } from '../utils/auth.js';
-import { memberIsSocialMember, memberIsSpareOnly } from '../utils/memberMembershipHelpers.js';
+import { memberIsSocialMember } from '../utils/memberMembershipHelpers.js';
+import { eventVisibilityFilterForMember } from './eventVisibilityAccess.js';
 import {
   addCalendarDays,
   formatDateInTimeZone,
@@ -28,13 +29,10 @@ const MS_MINUTE = 60 * 1000;
 const MS_DAY = 24 * 60 * MS_MINUTE;
 
 /** Granularity of offered start times, in minutes. */
-export const ICE_SLOT_MINUTES = 30;
+export const ICE_SLOT_MINUTES = 15;
 
 /** Members may book through the end of this many calendar days ahead. */
 export const ICE_MAX_ADVANCE_DAYS = 7;
-
-export const ICE_DURATION_HOURS = [1, 2] as const;
-export type IceDurationHours = (typeof ICE_DURATION_HOURS)[number];
 
 /** Slots that already started are treated as past once they are this far behind. */
 const PAST_GRACE_MS = 60_000;
@@ -64,7 +62,7 @@ export type IceDaySlot = {
 
 export type IceDayAvailability = {
   date: string;
-  durationHours: IceDurationHours;
+  durationMinutes: number;
   slotMinutes: number;
   dayStart: string;
   dayEnd: string;
@@ -132,8 +130,8 @@ async function loadIceOccupancy(
 ): Promise<{ blocking: Occupancy[]; events: IceDayEvent[] }> {
   const startIso = rangeStart.toISOString();
   const endIso = rangeEnd.toISOString();
-  // Spare-only members cannot read ice-members-only events, but those events still hold the ice.
-  const restrictedVisibility = memberIsSpareOnly(member);
+  // Events the member cannot register for still occupy the ice; their titles are hidden.
+  const visibilityFilter = eventVisibilityFilterForMember(member);
 
   const [direct, league, iceBookings, allEventItems, visibleEventItems] = await Promise.all([
     fetchDirectCalendarEventsForRange(rangeStart, rangeEnd),
@@ -144,12 +142,10 @@ async function loadIceOccupancy(
       isCalendarAdmin(member) ? 'admin' : 'member'
     ),
     getEventTimespansForCalendar(startIso, endIso),
-    restrictedVisibility
-      ? getEventTimespansForCalendar(startIso, endIso, ['public', 'active_members'])
-      : Promise.resolve(null),
+    getEventTimespansForCalendar(startIso, endIso, visibilityFilter),
   ]);
 
-  const visibleEventIds = visibleEventItems ? new Set(visibleEventItems.map((ev) => ev.id)) : null;
+  const visibleEventIds = new Set(visibleEventItems.map((ev) => ev.id));
   const blocking: Occupancy[] = [];
   const events: IceDayEvent[] = [];
 
@@ -170,7 +166,7 @@ async function loadIceOccupancy(
   for (const ev of direct) collect(ev, true);
   for (const ev of league) collect(ev, true);
   for (const ev of iceBookings) collect(ev, true);
-  for (const ev of allEventItems) collect(ev, visibleEventIds ? visibleEventIds.has(ev.id) : true);
+  for (const ev of allEventItems) collect(ev, visibleEventIds.has(ev.id));
 
   return { blocking, events };
 }
@@ -244,11 +240,11 @@ export async function hasIceSheetConflict(
 /** Offered start times for one club-local day, plus what is already on the ice. */
 export async function getIceDayAvailability(params: {
   date: string;
-  durationHours: IceDurationHours;
+  durationMinutes: number;
   member: Member;
   now?: Date;
 }): Promise<IceDayAvailability> {
-  const { date, durationHours, member } = params;
+  const { date, durationMinutes, member } = params;
   const now = params.now ?? new Date();
 
   const dayStart = localDateTimeToUtcDate(date, '00:00', config.timeZone);
@@ -262,7 +258,7 @@ export async function getIceDayAvailability(params: {
 
   const dayStartMs = dayStart.getTime();
   const dayEndMs = dayEnd.getTime();
-  const durationMs = durationHours * 60 * MS_MINUTE;
+  const durationMs = durationMinutes * MS_MINUTE;
   const stepMs = ICE_SLOT_MINUTES * MS_MINUTE;
   const earliestStartMs = now.getTime() - PAST_GRACE_MS;
 
@@ -301,7 +297,7 @@ export async function getIceDayAvailability(params: {
 
   return {
     date,
-    durationHours,
+    durationMinutes,
     slotMinutes: ICE_SLOT_MINUTES,
     dayStart: dayStart.toISOString(),
     dayEnd: dayEnd.toISOString(),

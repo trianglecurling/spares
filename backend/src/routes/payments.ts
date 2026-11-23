@@ -13,6 +13,16 @@ import {
   updateRegistrationPaymentItemName,
   RegistrationPaymentItemNamesServiceError,
 } from '../services/registrationPaymentItemNamesService.js';
+import { sendApiError, sendValidationError } from '../api/errors.js';
+import {
+  listAdminRefunds,
+  PaymentRefundListError,
+  REFUND_DATE_RANGES,
+  REFUND_PROVIDERS,
+  REFUND_SORT_KEYS,
+  REFUND_STATUSES,
+  REFUND_SUBJECT_TYPES,
+} from '../domains/payments/queries/listAdminRefunds.js';
 import { hasScope } from '../utils/rbac.js';
 
 const listOrdersQuerySchema = z.object({
@@ -22,6 +32,31 @@ const listOrdersQuerySchema = z.object({
   provider: z.enum(['stripe', 'paypal', 'square']).optional(),
   subjectType: z.enum(['donation', 'membership', 'event_registration', 'curling_registration']).optional(),
   status: z.enum(['created', 'pending', 'succeeded', 'failed', 'pending_refund', 'refunded', 'partially_refunded']).optional(),
+});
+
+const optionalEnum = <T extends readonly [string, ...string[]]>(values: T) =>
+  z.preprocess(
+    (value) => (value == null || (typeof value === 'string' && value.trim() === '') ? undefined : value),
+    z.enum(values).optional()
+  );
+
+const optionalYmd = z.preprocess(
+  (value) => (value == null || value === '' ? undefined : value),
+  z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
+);
+
+const listRefundsQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(200).optional(),
+  offset: z.coerce.number().int().min(0).optional(),
+  search: z.string().trim().max(80).optional(),
+  provider: optionalEnum(REFUND_PROVIDERS),
+  subjectType: optionalEnum(REFUND_SUBJECT_TYPES),
+  status: optionalEnum(REFUND_STATUSES),
+  range: optionalEnum(REFUND_DATE_RANGES),
+  from: optionalYmd,
+  to: optionalYmd,
+  sort: optionalEnum(REFUND_SORT_KEYS),
+  order: optionalEnum(['asc', 'desc'] as const),
 });
 
 const listEventsQuerySchema = z.object({
@@ -395,6 +430,48 @@ export async function paymentRoutes(fastify: FastifyInstance): Promise<void> {
         const message = error instanceof Error ? error.message : 'Failed to resync payment order';
         request.log.error({ err: error }, 'Failed to resync payment order');
         return reply.code(500).send({ error: message });
+      }
+    }
+  );
+
+  fastify.get<{ Querystring: Record<string, string | undefined> }>(
+    '/payments/refunds',
+    {
+      schema: {
+        tags: ['payments'],
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            limit: { type: 'number' },
+            offset: { type: 'number' },
+            search: { type: 'string' },
+            provider: { type: 'string', enum: [...REFUND_PROVIDERS] },
+            subjectType: { type: 'string', enum: [...REFUND_SUBJECT_TYPES] },
+            status: { type: 'string', enum: [...REFUND_STATUSES] },
+            range: { type: 'string', enum: [...REFUND_DATE_RANGES] },
+            from: { type: 'string' },
+            to: { type: 'string' },
+            sort: { type: 'string', enum: [...REFUND_SORT_KEYS] },
+            order: { type: 'string', enum: ['asc', 'desc'] },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      if (!requirePaymentsRead(request, reply)) return;
+      const parsed = listRefundsQuerySchema.safeParse(request.query ?? {});
+      if (!parsed.success) {
+        return sendValidationError(reply, 'Check the refund filters and try again.', parsed.error.flatten());
+      }
+      try {
+        return await listAdminRefunds(parsed.data);
+      } catch (error) {
+        if (error instanceof PaymentRefundListError) {
+          return sendApiError(reply, error.statusCode, error.message, error.details);
+        }
+        request.log.error({ err: error }, 'Failed to list payment refunds');
+        return reply.code(500).send({ error: 'Failed to load refunds' });
       }
     }
   );

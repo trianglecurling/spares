@@ -2647,24 +2647,65 @@ export async function sendExpenseReportConfirmationEmail(input: {
 export async function sendExpenseReportCheckMailedEmail(input: {
   to: string;
   recipientName: string;
-  manageUrl?: string;
+  checkNumber: string;
+  amountMinor: number;
+  currency: string;
+  reports: Array<{
+    id: number;
+    kind: string;
+    amountMinor: number;
+    currency: string;
+    manageUrl?: string;
+  }>;
 }): Promise<void> {
-  const links = expenseManageLinkSections(input.manageUrl);
+  const total = formatExpenseMoney(input.amountMinor, input.currency);
+  const hasManageLink = input.reports.some((report) => report.manageUrl);
+  const itemHtml = input.reports
+    .map((report) => {
+      const label = report.kind === 'mileage' ? 'Mileage report' : 'Expense report';
+      const amount = formatExpenseMoney(report.amountMinor, report.currency);
+      const link = report.manageUrl
+        ? ` — <a href="${escapeHtmlEmail(report.manageUrl)}">View ${escapeHtmlEmail(label.toLowerCase())} ${report.id}</a>`
+        : '';
+      return `<li>${escapeHtmlEmail(label)} ${report.id} — ${escapeHtmlEmail(amount)}${link}</li>`;
+    })
+    .join('');
+  const itemText = input.reports
+    .map((report) => {
+      const label = report.kind === 'mileage' ? 'Mileage report' : 'Expense report';
+      const amount = formatExpenseMoney(report.amountMinor, report.currency);
+      const link = report.manageUrl ? `\n  ${report.manageUrl}` : '';
+      return `- ${label} ${report.id} — ${amount}${link}`;
+    })
+    .join('\n');
+  const privacyHtml = hasManageLink
+    ? `<p><strong>Important:</strong> Do not forward this email. Anyone with a manage link above can view or change the linked expense report.</p>`
+    : '';
+  const privacyText = hasManageLink
+    ? 'Important: Do not forward this email. Anyone with a manage link above can view or change the linked expense report.'
+    : null;
+
   const htmlContent = `
     <h2>Reimbursement check mailed</h2>
     <p>Hi ${escapeHtmlEmail(input.recipientName)},</p>
-    <p>Your reimbursement check has been mailed. Please allow 7–10 business days for delivery.</p>
+    <p>Your reimbursement check ${escapeHtmlEmail(input.checkNumber)} for ${escapeHtmlEmail(total)} has been mailed. Please allow 7–10 business days for delivery.</p>
+    <p>This check covers:</p>
+    <ul>${itemHtml}</ul>
     <p>If you do not receive the check, contact <a href="mailto:${FINANCE_CONTACT_EMAIL}">${FINANCE_CONTACT_EMAIL}</a>.</p>
-    ${links.html}
+    ${privacyHtml}
   `;
   const textBody = [
     'Reimbursement check mailed',
     '',
     `Hi ${input.recipientName},`,
     '',
-    'Your reimbursement check has been mailed. Please allow 7–10 business days for delivery.',
+    `Your reimbursement check ${input.checkNumber} for ${total} has been mailed. Please allow 7–10 business days for delivery.`,
+    '',
+    'This check covers:',
+    itemText,
+    '',
     `If you do not receive the check, contact ${FINANCE_CONTACT_EMAIL}.`,
-    links.text || null,
+    privacyText,
   ].filter(Boolean).join('\n');
 
   await sendEmail({

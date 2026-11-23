@@ -1,30 +1,69 @@
-import { useEffect, useId, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { HiCreditCard } from 'react-icons/hi2';
 import { Link } from 'react-router-dom';
-import { get } from '../../api/client';
+import { get, post } from '../../api/client';
 import { AppPage, AppPageHeader } from '../../components/AppPage';
 import AppPageControlsRow from '../../components/AppPageControlsRow';
 import AppStateCard from '../../components/AppStateCard';
+import Button from '../../components/Button';
 import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
 import DataTable from '../../components/table/DataTable';
 import FormField from '../../components/FormField';
+import {
+  IssueReimbursementCheckDialog,
+  useIssueReimbursementCheck,
+} from '../../components/IssueReimbursementCheckDialog';
 import type { DataTableColumn } from '../../components/table/tableTypes';
+import { useAlert } from '../../contexts/AlertContext';
+import { useAuth } from '../../contexts/AuthContext';
+import { useConfirm } from '../../contexts/ConfirmContext';
 import useTableQueryState from '../../hooks/useTableQueryState';
-import { formatApiError } from '../../utils/api';
+import api, { formatApiError } from '../../utils/api';
+import { downloadBlob, filenameFromDisposition, messageFromBlobError } from '../../utils/fileDownload';
 import {
   expenseKindLabel,
   formatExpenseMoney,
   formatSubmittedAt,
   EXPENSE_STATUS_OPTIONS,
+  reimbursementCheckSelectionError,
   type ExpenseAdminSummary,
   type ExpenseReportListItem,
+  type ExpenseReportStatus,
 } from '../../utils/expenseReports';
+import { memberHasScope } from '../../utils/permissions';
 
 const SORT_KEYS = ['submittedAt'] as const;
+
+const DATE_RANGES = ['this_month', 'last_month', 'this_fiscal_year', 'custom'] as const;
+type ExpenseDateRange = (typeof DATE_RANGES)[number];
+
+const DATE_RANGE_OPTIONS: ChoiceOption<string>[] = [
+  { value: 'all', label: 'All dates' },
+  { value: 'this_month', label: 'This month' },
+  { value: 'last_month', label: 'Last month' },
+  { value: 'this_fiscal_year', label: 'This fiscal year' },
+  { value: 'custom', label: 'Custom range' },
+];
+
+function asDateRange(value: string): ExpenseDateRange | undefined {
+  return (DATE_RANGES as readonly string[]).includes(value) ? (value as ExpenseDateRange) : undefined;
+}
+
+function reportCountLabel(count: number): string {
+  return count === 1 ? '1 expense report' : `${count} expense reports`;
+}
 
 export default function AdminExpenses() {
   const statusId = useId();
   const searchId = useId();
+  const rangeId = useId();
+  const fromId = useId();
+  const toId = useId();
+  const bulkStatusId = useId();
+  const { showAlert } = useAlert();
+  const { confirm } = useConfirm();
+  const { member } = useAuth();
+  const canManage = memberHasScope(member, 'expenses.manage');
   const {
     page,
     filters,
@@ -32,12 +71,18 @@ export default function AdminExpenses() {
     setPage,
     setFilter,
     setDraftFilter,
-  } = useTableQueryState<(typeof SORT_KEYS)[number], { status: string; search: string }>({
+  } = useTableQueryState<
+    (typeof SORT_KEYS)[number],
+    { status: string; search: string; range: string; from: string; to: string }
+  >({
     defaultSort: { key: 'submittedAt', direction: 'desc' },
     sortKeys: SORT_KEYS,
     filterConfig: {
       status: { queryKey: 'status', defaultValue: 'all' },
       search: { queryKey: 'q', defaultValue: '', debounceMs: 300 },
+      range: { queryKey: 'range', defaultValue: 'all' },
+      from: { queryKey: 'from', defaultValue: '', debounceMs: 400 },
+      to: { queryKey: 'to', defaultValue: '', debounceMs: 400 },
     },
   });
   const [items, setItems] = useState<ExpenseReportListItem[]>([]);
@@ -45,29 +90,206 @@ export default function AdminExpenses() {
   const [summary, setSummary] = useState<ExpenseAdminSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [downloadingDocuments, setDownloadingDocuments] = useState(false);
+  const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [selectedById, setSelectedById] = useState<Map<number, ExpenseReportListItem>>(new Map());
+  const [refreshToken, setRefreshToken] = useState(0);
+  const issueCheck = useIssueReimbursementCheck(() => {
+    setSelectedById(new Map());
+    setRefreshToken((current) => current + 1);
+  });
+  const checkBusy = issueCheck.preparing || issueCheck.issuing;
+  const selectedIds = useMemo(() => [...selectedById.keys()], [selectedById]);
   const pageSize = 25;
 
+  const range = asDateRange(filters.range);
+  const isCustomRange = range === 'custom';
+  const dateRangeError =
+    isCustomRange && filters.from && filters.to && filters.from > filters.to
+      ? 'End date must be on or after the start date.'
+      : null;
+
+  const filterParams = useMemo(
+    () => ({
+      status: filters.status && filters.status !== 'all' ? filters.status : undefined,
+      search: filters.search || undefined,
+      range,
+      from: range === 'custom' ? filters.from || undefined : undefined,
+      to: range === 'custom' ? filters.to || undefined : undefined,
+    }),
+    [filters.from, filters.search, filters.status, filters.to, range]
+  );
+
   useEffect(() => {
+    if (dateRangeError) return;
+    let cancelled = false;
     const load = async () => {
       setLoading(true);
       setError(null);
       try {
-        const response = await get('/admin/expenses', {
-          page,
-          pageSize,
-          status: filters.status && filters.status !== 'all' ? filters.status : undefined,
-          search: filters.search || undefined,
-        });
+        const response = await get('/admin/expenses', { page, pageSize, ...filterParams });
+        if (cancelled) return;
         setItems(response.items ?? []);
         setTotal(response.total ?? 0);
       } catch (err) {
-        setError(formatApiError(err, 'Failed to load expense reports'));
+        if (!cancelled) setError(formatApiError(err, 'Failed to load expense reports'));
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
     void load();
-  }, [filters.search, filters.status, page]);
+    return () => {
+      cancelled = true;
+    };
+  }, [dateRangeError, filterParams, page, refreshToken]);
+
+  const filterKey = JSON.stringify(filterParams);
+  const [selectionFilterKey, setSelectionFilterKey] = useState(filterKey);
+  if (selectionFilterKey !== filterKey) {
+    setSelectionFilterKey(filterKey);
+    setSelectedById(new Map());
+  }
+
+  useEffect(() => {
+    setSelectedById((current) => {
+      if (current.size === 0) return current;
+      let changed = false;
+      const next = new Map(current);
+      for (const row of items) {
+        if (!next.has(row.id)) continue;
+        next.set(row.id, row);
+        changed = true;
+      }
+      return changed ? next : current;
+    });
+  }, [items]);
+
+  const downloadParams = selectedIds.length > 0 ? { ids: selectedIds.join(',') } : filterParams;
+
+  const handleExport = async () => {
+    if (exporting || downloadingDocuments) return;
+    setExporting(true);
+    try {
+      const response = await api.get('/admin/expenses/export', {
+        params: downloadParams,
+        responseType: 'blob',
+      });
+      downloadBlob(
+        new Blob([response.data], { type: 'text/csv;charset=utf-8' }),
+        filenameFromDisposition(response.headers['content-disposition'], 'expense-reports.csv')
+      );
+      showAlert('Expense report export downloaded.', 'success');
+    } catch (err) {
+      showAlert(await messageFromBlobError(err, 'Unable to export expense reports.'), 'error');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleDownloadDocuments = async () => {
+    if (exporting || downloadingDocuments) return;
+    setDownloadingDocuments(true);
+    try {
+      const response = await api.get('/admin/expenses/documents', {
+        params: downloadParams,
+        responseType: 'blob',
+      });
+      downloadBlob(
+        new Blob([response.data], { type: 'application/zip' }),
+        filenameFromDisposition(response.headers['content-disposition'], 'expense-documents.zip')
+      );
+      showAlert('Expense documents downloaded.', 'success');
+    } catch (err) {
+      showAlert(await messageFromBlobError(err, 'Unable to download expense documents.'), 'error');
+    } finally {
+      setDownloadingDocuments(false);
+    }
+  };
+
+  const handleBulkStatus = async (nextStatus: string) => {
+    const option = EXPENSE_STATUS_OPTIONS.find((item) => item.value === nextStatus);
+    if (!option || selectedIds.length === 0 || updatingStatus || checkBusy) return;
+    const confirmed = await confirm({
+      title: 'Update status',
+      message: `Update ${reportCountLabel(selectedIds.length)} to ${option.label}?`,
+      confirmText: 'Update status',
+      variant: 'info',
+    });
+    if (!confirmed) return;
+    setUpdatingStatus(true);
+    try {
+      const result = await post('/admin/expenses/status', {
+        ids: selectedIds,
+        status: option.value as ExpenseReportStatus,
+      });
+      if (result.updatedCount === 0) {
+        showAlert('Those reports already had that status.', 'success');
+      } else if (result.unchangedCount > 0) {
+        showAlert(
+          `Updated ${reportCountLabel(result.updatedCount)}. ${result.unchangedCount} already had that status.`,
+          'success'
+        );
+      } else {
+        showAlert(`Updated ${reportCountLabel(result.updatedCount)}.`, 'success');
+      }
+      setRefreshToken((current) => current + 1);
+    } catch (err) {
+      showAlert(formatApiError(err, 'Unable to update expense report statuses.'), 'error');
+    } finally {
+      setUpdatingStatus(false);
+    }
+  };
+
+  const exportUnavailableReason = dateRangeError
+    ? 'Fix the date range to export'
+    : loading
+      ? undefined
+      : error
+        ? 'Reports could not be loaded'
+        : selectedIds.length === 0 && total === 0
+          ? 'No reports match these filters'
+          : undefined;
+  const actionTitle =
+    exportUnavailableReason ??
+    (selectedIds.length > 0 ? `${reportCountLabel(selectedIds.length)} selected` : undefined);
+
+  const selectedReports = useMemo(() => [...selectedById.values()], [selectedById]);
+  const issueCheckReason =
+    selectedIds.length === 0
+      ? 'Select at least one expense report.'
+      : reimbursementCheckSelectionError(selectedReports);
+
+  const handleToggleRow = useCallback((row: ExpenseReportListItem, checked: boolean) => {
+    setSelectedById((current) => {
+      const next = new Map(current);
+      if (checked) next.set(row.id, row);
+      else next.delete(row.id);
+      return next;
+    });
+  }, []);
+
+  const handleTogglePage = useCallback((rows: ExpenseReportListItem[], checked: boolean) => {
+    setSelectedById((current) => {
+      const next = new Map(current);
+      for (const row of rows) {
+        if (checked) next.set(row.id, row);
+        else next.delete(row.id);
+      }
+      return next;
+    });
+  }, []);
+
+  const selectionConfig = useMemo(
+    () => ({
+      selectedIds,
+      getRowLabel: (row: ExpenseReportListItem) =>
+        `expense report ${row.id} from ${row.submitterName}`,
+      onToggleRow: handleToggleRow,
+      onTogglePage: handleTogglePage,
+    }),
+    [handleTogglePage, handleToggleRow, selectedIds]
+  );
 
   useEffect(() => {
     const loadSummary = async () => {
@@ -78,7 +300,7 @@ export default function AdminExpenses() {
       }
     };
     void loadSummary();
-  }, []);
+  }, [refreshToken]);
 
   const columns: Array<DataTableColumn<ExpenseReportListItem>> = useMemo(
     () => [
@@ -182,33 +404,170 @@ export default function AdminExpenses() {
       ) : null}
       <AppPageControlsRow
         left={
-          <>
-            <FormField label="Search" htmlFor={searchId}>
-              <input
-                id={searchId}
-                className="app-input"
-                value={draftFilters.search}
-                onChange={(event) => setDraftFilter('search', event.target.value)}
-                placeholder="Name or email"
-              />
-            </FormField>
-            <FormField label="Status" htmlFor={statusId}>
-              <ChoiceInput
-                inputId={statusId}
-                layout="popover"
-                value={filters.status}
-                onChange={(value) => {
-                  const next = Array.isArray(value) ? value[0] : value;
-                  setFilter('status', typeof next === 'string' ? next : '');
-                  setPage(1);
-                }}
-                options={statusOptions}
-              />
-            </FormField>
-          </>
+          <div className="flex w-full flex-col gap-4">
+            <div className="flex flex-wrap items-end gap-3">
+              <FormField label="Search" htmlFor={searchId} className="w-full sm:w-64">
+                <input
+                  id={searchId}
+                  className="app-input"
+                  value={draftFilters.search}
+                  onChange={(event) => setDraftFilter('search', event.target.value)}
+                  placeholder="Name or email"
+                />
+              </FormField>
+              <FormField label="Status" htmlFor={statusId} className="w-full sm:w-44">
+                <ChoiceInput
+                  inputId={statusId}
+                  layout="popover"
+                  value={filters.status}
+                  onChange={(value) => {
+                    const next = Array.isArray(value) ? value[0] : value;
+                    setFilter('status', typeof next === 'string' ? next : '');
+                  }}
+                  options={statusOptions}
+                  inputClassName="app-input max-w-none"
+                />
+              </FormField>
+              <FormField label="Submitted" htmlFor={rangeId} className="w-full sm:w-48">
+                <ChoiceInput
+                  inputId={rangeId}
+                  layout="popover"
+                  value={filters.range}
+                  onChange={(value) => {
+                    const next = Array.isArray(value) ? value[0] : value;
+                    setFilter('range', typeof next === 'string' ? next : 'all');
+                  }}
+                  options={DATE_RANGE_OPTIONS}
+                  inputClassName="app-input max-w-none"
+                />
+              </FormField>
+              {isCustomRange ? (
+                <>
+                  <FormField label="From" htmlFor={fromId} className="w-full sm:w-40">
+                    <input
+                      id={fromId}
+                      type="date"
+                      className="app-input"
+                      value={draftFilters.from}
+                      max={draftFilters.to || undefined}
+                      onChange={(event) => setDraftFilter('from', event.target.value)}
+                    />
+                  </FormField>
+                  <FormField label="To" htmlFor={toId} className="w-full sm:w-40">
+                    <input
+                      id={toId}
+                      type="date"
+                      className="app-input"
+                      value={draftFilters.to}
+                      min={draftFilters.from || undefined}
+                      aria-invalid={dateRangeError ? true : undefined}
+                      onChange={(event) => setDraftFilter('to', event.target.value)}
+                    />
+                  </FormField>
+                </>
+              ) : null}
+            </div>
+            <div className="flex flex-wrap items-end justify-start gap-3 sm:justify-end">
+              {canManage ? (
+                <span
+                  title={issueCheckReason ?? undefined}
+                  tabIndex={issueCheckReason ? 0 : undefined}
+                  aria-label={issueCheckReason ? `Issue check unavailable. ${issueCheckReason}` : undefined}
+                  className={
+                    issueCheckReason
+                      ? 'inline-flex cursor-not-allowed rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal/40'
+                      : 'inline-flex'
+                  }
+                >
+                  <Button
+                    type="button"
+                    onClick={() => void issueCheck.start(selectedIds)}
+                    disabled={
+                      Boolean(issueCheckReason) ||
+                      checkBusy ||
+                      updatingStatus ||
+                      exporting ||
+                      downloadingDocuments ||
+                      loading
+                    }
+                    className={`min-w-44 whitespace-nowrap ${issueCheckReason ? 'pointer-events-none' : ''}`}
+                  >
+                    {issueCheck.preparing ? 'Preparing check…' : 'Issue check'}
+                  </Button>
+                </span>
+              ) : null}
+              {canManage ? (
+                <span
+                  title={selectedIds.length === 0 ? 'Select at least one expense report.' : undefined}
+                  className={`inline-flex w-full shrink-0 sm:w-60 ${selectedIds.length === 0 ? 'cursor-not-allowed' : ''}`}
+                >
+                  <FormField
+                    label="Update status"
+                    htmlFor={bulkStatusId}
+                    className={`w-full ${selectedIds.length === 0 ? 'pointer-events-none' : ''}`}
+                    labelAccessory={
+                      <span className="whitespace-nowrap text-xs font-medium text-gray-500 dark:text-gray-400">
+                        {selectedIds.length} selected
+                      </span>
+                    }
+                  >
+                    <ChoiceInput
+                      inputId={bulkStatusId}
+                      layout="popover"
+                      value={null}
+                      placeholder={updatingStatus ? 'Updating…' : 'Choose a status'}
+                      disabled={
+                        selectedIds.length === 0 ||
+                        updatingStatus ||
+                        checkBusy ||
+                        exporting ||
+                        downloadingDocuments ||
+                        loading
+                      }
+                      onChange={(value) => {
+                        const next = Array.isArray(value) ? value[0] : value;
+                        if (typeof next === 'string' && next) void handleBulkStatus(next);
+                      }}
+                      options={EXPENSE_STATUS_OPTIONS.map((option) => ({
+                        value: option.value,
+                        label: option.label,
+                      }))}
+                      inputClassName="app-input max-w-none"
+                    />
+                  </FormField>
+                </span>
+              ) : null}
+              <span title={actionTitle} className="inline-flex">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => void handleDownloadDocuments()}
+                  disabled={
+                    downloadingDocuments || exporting || loading || Boolean(exportUnavailableReason)
+                  }
+                  className="whitespace-nowrap"
+                >
+                  {downloadingDocuments ? 'Downloading…' : 'Download receipts'}
+                </Button>
+              </span>
+              <span title={actionTitle} className="inline-flex">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => void handleExport()}
+                  disabled={exporting || downloadingDocuments || loading || Boolean(exportUnavailableReason)}
+                  className="whitespace-nowrap"
+                >
+                  {exporting ? 'Exporting…' : 'Export CSV'}
+                </Button>
+              </span>
+            </div>
+          </div>
         }
       />
-      {loading ? (
+      {dateRangeError ? (
+        <AppStateCard title="Check the date range" description={dateRangeError} />
+      ) : loading ? (
         <AppStateCard title="Loading" description="Loading expense reports." />
       ) : error ? (
         <AppStateCard title="Could not load reports" description={error} />
@@ -217,6 +576,7 @@ export default function AdminExpenses() {
           rows={items}
           rowKey={(row) => row.id}
           columns={columns}
+          selection={selectionConfig}
           pagination={{
             page,
             pageSize,
@@ -238,6 +598,15 @@ export default function AdminExpenses() {
           }}
         />
       )}
+      <IssueReimbursementCheckDialog
+        preview={issueCheck.preview}
+        checkNumber={issueCheck.checkNumber}
+        checkNumberError={issueCheck.checkNumberError}
+        issuing={issueCheck.issuing}
+        onCheckNumberChange={issueCheck.setCheckNumber}
+        onConfirm={() => void issueCheck.confirm()}
+        onCancel={issueCheck.cancel}
+      />
     </AppPage>
   );
 }

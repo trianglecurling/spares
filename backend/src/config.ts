@@ -1,3 +1,4 @@
+import os from 'node:os';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -24,9 +25,30 @@ function parseBooleanEnv(value: string | undefined, fallback: boolean): boolean 
   return fallback;
 }
 
+export const DEFAULT_NOTIFICATION_PROCESSOR_ID = 'default';
+
+/**
+ * Deployed (production-mode) servers share the default queue. Anything else defaults to a
+ * per-machine ID so a dev server pointed at a shared database never takes deployed jobs.
+ */
+function resolveNotificationProcessorId(nodeEnv: string): string {
+  const explicit = (process.env.NOTIFICATION_PROCESSOR_ID || '').trim();
+  if (explicit) return explicit;
+  if (nodeEnv === 'production') return DEFAULT_NOTIFICATION_PROCESSOR_ID;
+  return `dev:${os.hostname()}`;
+}
+
+const nodeEnv = process.env.NODE_ENV || 'development';
+
 export const config = {
   port: parseInt(process.env.PORT || '3001', 10),
-  nodeEnv: process.env.NODE_ENV || 'development',
+  nodeEnv,
+  /**
+   * Which spare notification jobs this server sends. Requests are tagged with the ID of the
+   * server that started their notifications, and each processor only sends its own.
+   * Override with NOTIFICATION_PROCESSOR_ID.
+   */
+  notificationProcessorId: resolveNotificationProcessorId(nodeEnv),
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
   /** Extra checkout redirect origins (comma-separated). Subdomains of FRONTEND_URL are also allowed. */
   frontendUrlAliases: parseCsvEnv(process.env.FRONTEND_URL_ALIASES),

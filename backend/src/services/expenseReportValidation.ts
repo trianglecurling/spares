@@ -97,11 +97,147 @@ export function isSubmitterEditableStatus(status: ExpenseReportStatus): boolean 
   return status === 'pending_review';
 }
 
-export function shouldSendCheckMailedEmail(
-  previousStatus: ExpenseReportStatus,
-  nextStatus: ExpenseReportStatus
-): boolean {
-  return previousStatus !== 'check_mailed' && nextStatus === 'check_mailed';
+export function expenseReportRequiresReimbursement(report: {
+  usedClubCreditCard: boolean;
+  requestedAmountMinor: number;
+}): boolean {
+  return !report.usedClubCreditCard && report.requestedAmountMinor > 0;
+}
+
+/** Staff may set these statuses directly. Issuing a check is what completes a reimbursement. */
+export function manualExpenseReportStatusError(input: {
+  nextStatus: string;
+  requiresReimbursement: boolean;
+}): string | null {
+  if (input.nextStatus === 'approved' && !input.requiresReimbursement) {
+    return 'Approved is only for reports that request a reimbursement. Mark a report with no reimbursement Complete.';
+  }
+  if (input.nextStatus === 'complete' && input.requiresReimbursement) {
+    return 'Issue a reimbursement check to complete a report that requests a reimbursement.';
+  }
+  return null;
+}
+
+export type ReimbursementCheckReportInput = {
+  id: number;
+  status: ExpenseReportStatus | string;
+  memberId: number | null;
+  submitterName: string;
+  submitterEmail: string;
+  requestedAmountMinor: number;
+  requestedCurrency: string;
+  usedClubCreditCard: boolean;
+  submittedAt: string;
+};
+
+export type ReimbursementCheckPlan = {
+  memberId: number | null;
+  payeeName: string;
+  payeeEmail: string;
+  amountMinor: number;
+  currency: string;
+  reportIds: number[];
+};
+
+function reimbursementReportPhrase(count: number, singular: string, plural: string): string {
+  return count === 1 ? singular : plural;
+}
+
+function reimbursementPersonKey(report: ReimbursementCheckReportInput): string {
+  if (report.memberId != null) return `member:${report.memberId}`;
+  return `email:${report.submitterEmail.trim().toLowerCase()}`;
+}
+
+/** Plans one reimbursement check. Returns an error message when the reports cannot share a check. */
+export function planReimbursementCheck(
+  reports: ReimbursementCheckReportInput[]
+): { ok: true; plan: ReimbursementCheckPlan } | { ok: false; message: string } {
+  if (reports.length === 0) {
+    return { ok: false, message: 'Select at least one expense report.' };
+  }
+
+  for (const report of reports) {
+    if (report.usedClubCreditCard || report.requestedAmountMinor <= 0) {
+      return {
+        ok: false,
+        message: reimbursementReportPhrase(
+          reports.length,
+          'This report does not request a reimbursement.',
+          'One of these reports does not request a reimbursement.'
+        ),
+      };
+    }
+    if (report.status === 'pending_review' || report.status === 'processing') {
+      return {
+        ok: false,
+        message: reimbursementReportPhrase(
+          reports.length,
+          'Approve this report before issuing a check. Set the status to Approved first.',
+          'Approve each report before issuing a check. Set the status to Approved first.'
+        ),
+      };
+    }
+    if (report.status === 'complete' || report.status === 'check_mailed') {
+      return {
+        ok: false,
+        message: reimbursementReportPhrase(
+          reports.length,
+          'This report is already complete.',
+          'One of these reports is already complete.'
+        ),
+      };
+    }
+    if (report.status !== 'approved') {
+      return {
+        ok: false,
+        message: reimbursementReportPhrase(
+          reports.length,
+          'This report cannot be included on a reimbursement check.',
+          'One of these reports cannot be included on a reimbursement check.'
+        ),
+      };
+    }
+  }
+
+  const personKeys = new Set(reports.map(reimbursementPersonKey));
+  if (personKeys.size !== 1) {
+    return { ok: false, message: 'A reimbursement check can cover only one person.' };
+  }
+
+  const currencies = new Set(reports.map((report) => report.requestedCurrency.trim().toLowerCase()));
+  if (currencies.size !== 1 || currencies.has('')) {
+    return { ok: false, message: 'These reports request different currencies.' };
+  }
+
+  const ordered = [...reports].sort((left, right) => {
+    const byDate = right.submittedAt.localeCompare(left.submittedAt);
+    if (byDate !== 0) return byDate;
+    return right.id - left.id;
+  });
+  const payee = ordered[0];
+  const payeeEmail = payee.submitterEmail.trim();
+  const payeeName = payee.submitterName.trim();
+  if (!payeeEmail || !payeeName) {
+    return { ok: false, message: 'The submitter name and email are required to issue a check.' };
+  }
+
+  const listed = [...reports].sort((left, right) => {
+    const byDate = left.submittedAt.localeCompare(right.submittedAt);
+    if (byDate !== 0) return byDate;
+    return left.id - right.id;
+  });
+
+  return {
+    ok: true,
+    plan: {
+      memberId: payee.memberId,
+      payeeName,
+      payeeEmail,
+      amountMinor: reports.reduce((sum, report) => sum + report.requestedAmountMinor, 0),
+      currency: payee.requestedCurrency.trim().toLowerCase(),
+      reportIds: listed.map((report) => report.id),
+    },
+  };
 }
 
 function isIsoDate(value: string): boolean {
@@ -151,7 +287,7 @@ export function validateExpenseReportPayload(input: ExpenseReportPayloadInput): 
       errors
     );
   }
-  if (input.kind === 'expense' && !usedClubCard && !mailingAddressComplete(input.mailingAddress ?? null)) {
+  if ((input.kind === 'mileage' || (input.kind === 'expense' && !usedClubCard)) && !mailingAddressComplete(input.mailingAddress ?? null)) {
     errors.push({ field: 'mailingAddress', message: 'Confirm the address to mail the reimbursement check.' });
   }
 

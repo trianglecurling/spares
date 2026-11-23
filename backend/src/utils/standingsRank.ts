@@ -20,6 +20,12 @@ export type StandingTeamInput = {
 
 export type H2hResult = 'win' | 'loss';
 
+export type H2hBadge = {
+  result: H2hResult;
+  opponentName: string;
+  pairIndex: number;
+};
+
 export type RankedStandingRow = {
   rank: number;
   teamId: number;
@@ -29,9 +35,7 @@ export type RankedStandingRow = {
   wins: number;
   losses: number;
   ties: number;
-  h2hResult: H2hResult | null;
-  h2hOpponentName: string | null;
-  h2hPairIndex: number | null;
+  h2hResults: H2hBadge[];
 };
 
 /**
@@ -153,39 +157,42 @@ export function h2hTwoTeams(teamA: number, teamB: number, gameResults: GameWithR
   return -cmp;
 }
 
-export function countH2hWins(
+/**
+ * Among tied teams, counts how many teams rank ahead of each team via head-to-head.
+ * A team is ahead when it beat the other team directly or through a chain of H2H wins
+ * (A beat B, B beat C puts A ahead of C). Teams in an H2H cycle, or with no connecting
+ * results, do not rank ahead of each other.
+ */
+export function countH2hTeamsAhead(
   teamIds: number[],
   gameResults: GameWithResultValues[]
 ): Map<number, number> {
-  const wins = new Map<number, number>();
-  for (const id of teamIds) wins.set(id, 0);
-  for (let i = 0; i < teamIds.length; i++) {
-    for (let j = i + 1; j < teamIds.length; j++) {
-      const a = teamIds[i]!;
-      const b = teamIds[j]!;
-      const h = h2hTwoTeams(a, b, gameResults);
-      if (h > 0) wins.set(a, (wins.get(a) ?? 0) + 1);
-      else if (h < 0) wins.set(b, (wins.get(b) ?? 0) + 1);
+  const n = teamIds.length;
+  const reach: boolean[][] = teamIds.map(() => teamIds.map(() => false));
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      const h = h2hTwoTeams(teamIds[i]!, teamIds[j]!, gameResults);
+      if (h > 0) reach[i]![j] = true;
+      else if (h < 0) reach[j]![i] = true;
     }
   }
-  return wins;
-}
-
-/**
- * Among tied teams, apply head-to-head. Returns ordering: first element is highest rank.
- */
-export function orderByHeadToHead(teamIds: number[], gameResults: GameWithResultValues[]): number[] {
-  if (teamIds.length <= 1) return teamIds;
-
-  const wins = countH2hWins(teamIds, gameResults);
-  const sorted = [...teamIds].sort((a, b) => (wins.get(b) ?? 0) - (wins.get(a) ?? 0));
-  const maxWins = wins.get(sorted[0]!) ?? 0;
-  if (maxWins === 0) return teamIds;
-
-  const first = sorted.filter((id) => (wins.get(id) ?? 0) === maxWins);
-  const rest = teamIds.filter((id) => !first.includes(id));
-  if (rest.length === 0) return first;
-  return [...first, ...orderByHeadToHead(rest, gameResults)];
+  for (let k = 0; k < n; k++) {
+    for (let i = 0; i < n; i++) {
+      if (!reach[i]![k]) continue;
+      for (let j = 0; j < n; j++) {
+        if (reach[k]![j]) reach[i]![j] = true;
+      }
+    }
+  }
+  const ahead = new Map<number, number>();
+  for (let j = 0; j < n; j++) {
+    let count = 0;
+    for (let i = 0; i < n; i++) {
+      if (i !== j && reach[i]![j] && !reach[j]![i]) count++;
+    }
+    ahead.set(teamIds[j]!, count);
+  }
+  return ahead;
 }
 
 function teamDisplayName(row: RankedStandingRow): string {
@@ -202,27 +209,23 @@ function pairKey(teamA: number, teamB: number): string {
 
 function collectH2hAssignments(
   group: RankedStandingRow[],
-  allRows: RankedStandingRow[],
   gameResults: GameWithResultValues[]
 ): Array<{ row: RankedStandingRow; opponent: RankedStandingRow; result: H2hResult }> {
-  if (group.length < 2) return [];
   const assignments: Array<{ row: RankedStandingRow; opponent: RankedStandingRow; result: H2hResult }> = [];
-  for (const row of group) {
-    const opponents = group.filter(
-      (other) => other.teamId !== row.teamId && h2hTwoTeams(row.teamId, other.teamId, gameResults) !== 0
-    );
-    if (opponents.length === 0) continue;
-    const rowIndex = allRows.indexOf(row);
-    const opponent = opponents
-      .slice()
-      .sort((a, b) => Math.abs(allRows.indexOf(a) - rowIndex) - Math.abs(allRows.indexOf(b) - rowIndex))[0]!;
-    const h = h2hTwoTeams(row.teamId, opponent.teamId, gameResults);
-    assignments.push({ row, opponent, result: h > 0 ? 'win' : 'loss' });
+  for (let i = 0; i < group.length; i++) {
+    for (let j = i + 1; j < group.length; j++) {
+      const a = group[i]!;
+      const b = group[j]!;
+      const h = h2hTwoTeams(a.teamId, b.teamId, gameResults);
+      if (h === 0) continue;
+      assignments.push({ row: a, opponent: b, result: h > 0 ? 'win' : 'loss' });
+      assignments.push({ row: b, opponent: a, result: h > 0 ? 'loss' : 'win' });
+    }
   }
   return assignments;
 }
 
-function attachTwoTeamH2hLabels(
+function attachH2hLabels(
   rows: RankedStandingRow[],
   gameResults: GameWithResultValues[],
   options: RankingOptions
@@ -238,9 +241,7 @@ function attachTwoTeamH2hLabels(
     byTieKey.set(key, group);
   }
 
-  const assignments = [...byTieKey.values()].flatMap((group) =>
-    collectH2hAssignments(group, rows, gameResults)
-  );
+  const assignments = [...byTieKey.values()].flatMap((group) => collectH2hAssignments(group, gameResults));
   const pairOrder: string[] = [];
   for (const assignment of assignments) {
     const key = pairKey(assignment.row.teamId, assignment.opponent.teamId);
@@ -249,9 +250,11 @@ function attachTwoTeamH2hLabels(
 
   for (const assignment of assignments) {
     const key = pairKey(assignment.row.teamId, assignment.opponent.teamId);
-    assignment.row.h2hResult = assignment.result;
-    assignment.row.h2hOpponentName = teamDisplayName(assignment.opponent);
-    assignment.row.h2hPairIndex = pairOrder.indexOf(key) % 4;
+    assignment.row.h2hResults.push({
+      result: assignment.result,
+      opponentName: teamDisplayName(assignment.opponent),
+      pairIndex: pairOrder.indexOf(key) % 4,
+    });
   }
 }
 
@@ -266,20 +269,16 @@ export function rankDivisionTeams(
     sums: { values: team.values, gamesPlayed: team.gamesPlayed },
   }));
 
-  const compareTotalPoints = (a: Row, b: Row): number =>
-    (b.sums.values[0] ?? 0) - (a.sums.values[0] ?? 0);
-
-  withSums.sort((a, b) => {
-    const cmp = compareRankingKeys(a.sums, b.sums, options);
-    if (cmp !== 0) return cmp;
-    if (options.headToHeadFirst) {
-      const ordered = orderByHeadToHead([a.team.teamId, b.team.teamId], gameResults);
-      const h2hCmp = ordered.indexOf(a.team.teamId) - ordered.indexOf(b.team.teamId);
-      if (h2hCmp !== 0) return h2hCmp;
+  // Orders teams that share a rank; never changes the rank number itself.
+  const compareWithinRank = (a: Row, b: Row): number => {
+    if (usesPercentageRanking(options)) {
+      const points = (b.sums.values[0] ?? 0) - (a.sums.values[0] ?? 0);
+      if (points !== 0) return points;
     }
-    if (usesPercentageRanking(options)) return compareTotalPoints(a, b);
-    return 0;
-  });
+    return a.team.losses - b.team.losses;
+  };
+
+  withSums.sort((a, b) => compareRankingKeys(a.sums, b.sums, options) || compareWithinRank(a, b));
 
   const groups: Row[][] = [];
   let prevKey: string | null = null;
@@ -302,29 +301,22 @@ export function rankDivisionTeams(
   for (const g of groups) {
     const startRank = nextIndex + 1;
     if (options.headToHeadFirst && g.length > 1) {
-      const ids = g.map((x) => x.team.teamId);
-      const wins = countH2hWins(ids, gameResults);
-      const h2hOrdered = orderByHeadToHead(ids, gameResults);
-      const byId = new Map(g.map((x) => [x.team.teamId, x]));
-      const groupRows = h2hOrdered
-        .map((id) => {
-          const row = byId.get(id);
-          if (!row) return null;
-          const moreWins = ids.filter((other) => (wins.get(other) ?? 0) > (wins.get(id) ?? 0)).length;
-          return { row, rank: startRank + moreWins };
-        })
-        .filter((item): item is { row: Row; rank: number } => item != null);
-      if (usesPercentageRanking(options)) {
-        groupRows.sort((a, b) => a.rank - b.rank || compareTotalPoints(a.row, b.row));
-      }
-      for (const item of groupRows) {
+      const ahead = countH2hTeamsAhead(
+        g.map((x) => x.team.teamId),
+        gameResults
+      );
+      const groupRows = g
+        .map((row) => ({ row, level: ahead.get(row.team.teamId) ?? 0 }))
+        .sort((a, b) => a.level - b.level);
+      let levelRank = startRank;
+      groupRows.forEach((item, i) => {
+        if (i > 0 && item.level !== groupRows[i - 1]!.level) levelRank = startRank + i;
         ordered.push(item.row);
-        ranks.push(item.rank);
-      }
+        ranks.push(levelRank);
+      });
     } else {
-      const groupRows = usesPercentageRanking(options) ? [...g].sort(compareTotalPoints) : g;
-      ordered.push(...groupRows);
-      for (let i = 0; i < groupRows.length; i++) ranks.push(startRank);
+      ordered.push(...g);
+      for (let i = 0; i < g.length; i++) ranks.push(startRank);
     }
     nextIndex += g.length;
   }
@@ -338,11 +330,9 @@ export function rankDivisionTeams(
     wins: x.team.wins,
     losses: x.team.losses,
     ties: x.team.ties,
-    h2hResult: null,
-    h2hOpponentName: null,
-    h2hPairIndex: null,
+    h2hResults: [],
   }));
 
-  attachTwoTeamH2hLabels(rows, gameResults, options);
+  attachH2hLabels(rows, gameResults, options);
   return rows;
 }

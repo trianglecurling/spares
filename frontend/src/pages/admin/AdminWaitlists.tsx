@@ -22,7 +22,6 @@ import { useConfirm } from '../../contexts/ConfirmContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useMemberOptions } from '../../contexts/MemberOptionsContext';
 import { memberHasScope } from '../../utils/permissions';
-import HelpCallout from '../../components/HelpCallout';
 import WaitlistEntryPriorityDialog from '../../components/waitlists/WaitlistEntryPriorityDialog';
 import {
   nextFrozenCountAfterMove,
@@ -35,9 +34,6 @@ import {
   toPlacementPayload,
   type WaitlistTeamMemberPlacement,
 } from '../../components/waitlists/waitlistTeamRosterShared';
-
-const TEMPORARY_FILL_VACANCIES_HELP =
-  'Open temporary spots where a member is on sabbatical and someone else can fill that spot for the session. Staff offer these after permanent vacancies.';
 
 type WaitlistSummary = {
   id: number;
@@ -57,6 +53,11 @@ type WaitlistSummary = {
   }>;
 };
 
+type WaitlistOfferSession = {
+  id: number;
+  name: string;
+};
+
 type WaitlistOffer = {
   id: number;
   offer_type: 'permanent' | 'temporary_sabbatical_fill';
@@ -64,7 +65,6 @@ type WaitlistOffer = {
   expires_at: string;
 };
 
-type WaitlistOfferResponsePreference = 'auto_accept' | 'auto_decline';
 type TuesdayEveningBadge = 'backup' | 'playdown';
 
 type WaitlistEntry = {
@@ -81,10 +81,6 @@ type WaitlistEntry = {
   tuesdayEveningBadge?: TuesdayEveningBadge | null;
   clubTenureYears?: number;
   declineCount: number;
-  offerResponsePreference?: WaitlistOfferResponsePreference;
-  offerResponsePreferenceLabel?: string;
-  desiredLeagueCount?: number | null;
-  priorityRank?: number | null;
   status: string;
   pendingOffer: WaitlistOffer | null;
   acceptedOffer: WaitlistOffer | null;
@@ -93,6 +89,12 @@ type WaitlistEntry = {
 type WaitlistDetail = {
   waitlist: { id: number; name: string; status: string; frozenEntryCount?: number };
   placementLeagueId: number;
+  offerLeague: {
+    id: number;
+    name: string;
+    sessionName: string;
+    permanentVacancies: number;
+  } | null;
   frozenEntryCount?: number;
   attachedLeagues: Array<{
     id: number;
@@ -119,7 +121,6 @@ type WaitlistDetail = {
     memberId: number;
     memberName: string;
     memberEmail: string;
-    status: string;
     temporary: boolean;
   }>;
   auditEvents: Array<{
@@ -257,23 +258,11 @@ function waitlistEntryTeamRosterText(entry: WaitlistEntry): string | null {
   return text?.trim() ? text.trim() : null;
 }
 
-function waitlistOfferPreferenceLabel(entry: WaitlistEntry): string {
-  if (entry.offerResponsePreferenceLabel) return entry.offerResponsePreferenceLabel;
-  switch (entry.offerResponsePreference) {
-    case 'auto_accept':
-      return 'Accept automatically';
-    case 'auto_decline':
-      return 'Decline automatically';
-    default:
-      return 'Decline automatically';
-  }
-}
-
 function tuesdayEveningBadgeCopy(badge: TuesdayEveningBadge): { label: string; title: string; className: string } {
   if (badge === 'backup') {
     return {
       label: 'Tuesday back-up',
-      title: 'Rostered in Tuesday Evening as a backup',
+      title: 'On the current Tuesday Evening roster, and this is their #1 waitlist',
       className: 'bg-teal-100 text-teal-900 dark:bg-teal-900/40 dark:text-teal-100',
     };
   }
@@ -364,26 +353,14 @@ export function WaitlistOverviewPanel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [dialog, setDialog] = useState<ReasonDialogState>(null);
-
-  const sessionOptions = useMemo(() => {
-    const sessions = new Map<number, string>();
-    for (const waitlist of waitlists) {
-      for (const league of waitlist.attachedLeagues) {
-        if (league.sessionId != null) {
-          sessions.set(league.sessionId, league.sessionName ?? `Session #${league.sessionId}`);
-        }
-      }
-    }
-    return [...sessions.entries()]
-      .map(([value, label]) => ({ value, label }))
-      .sort((a, b) => a.label.localeCompare(b.label));
-  }, [waitlists]);
+  const [offerSession, setOfferSession] = useState<WaitlistOfferSession | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.get<{ waitlists: WaitlistSummary[] }>('/waitlists');
+      const res = await api.get<{ offerSession: WaitlistOfferSession | null; waitlists: WaitlistSummary[] }>('/waitlists');
+      setOfferSession(res.data.offerSession);
       setWaitlists(res.data.waitlists);
     } catch (err) {
       setError(getApiErrorMessage(err, 'Unable to load waitlists.'));
@@ -438,21 +415,16 @@ export function WaitlistOverviewPanel() {
               >
                 Freeze all waitlists
               </Button>
-              {sessionOptions.length > 0 ? (
+              {offerSession ? (
                 <Button
                   onClick={() =>
                     setDialog({
                       title: 'Process session vacancies',
-                      description:
-                        sessionOptions.length === 1
-                          ? `Send permanent offers across all leagues with vacancies in ${sessionOptions[0].label}. Members are offered leagues in their priority order, up to the number of leagues they asked to play.`
-                          : 'Send permanent offers across all leagues with vacancies in the selected session. Members are offered leagues in their priority order, up to the number of leagues they asked to play.',
+                      description: `Send permanent offers across all leagues with vacancies in ${offerSession.name}. Members are offered leagues in their priority order, up to the number of leagues they asked to play.`,
                       confirmText: 'Process vacancies',
                       requireExpiresAt: true,
                       onSubmit: runAction(async (reason, options) => {
-                        const sessionId = sessionOptions.length === 1 ? sessionOptions[0].value : sessionOptions[0]?.value;
-                        if (!sessionId) return;
-                        await api.post(`/waitlists/sessions/${sessionId}/process-vacancies`, {
+                        await api.post(`/waitlists/sessions/${offerSession.id}/process-vacancies`, {
                           offerType: 'permanent',
                           reason,
                           expiresAt: options?.expiresAt,
@@ -827,6 +799,7 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
     const previousIds = orderedEntries.map((entry) => entry.id);
     const nextIds = nextEntries.map((entry) => entry.id);
     if (previousIds.join(',') === nextIds.join(',')) return;
+    const movedEntryId = orderedEntries[meta.activeIndex]?.id;
     const nextFrozen = nextFrozenCountAfterMove({
       frozenCount,
       activeIndex: meta.activeIndex,
@@ -842,6 +815,7 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
         await api.post(`/waitlists/${waitlistId}/entries/reorder`, {
           entryIds: nextIds,
           frozenEntryCount: nextFrozen,
+          ...(movedEntryId != null ? { movedEntryId } : {}),
           reason,
         });
         setOrderedEntries(
@@ -905,6 +879,8 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
     );
   }
 
+  const offerLeague = data.offerLeague;
+
   return (
     <>
       <AppPage>
@@ -930,24 +906,6 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
             </>
           }
         />
-
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="app-card">
-            <p className="text-sm text-gray-500 dark:text-gray-400">Active entries</p>
-            <p className="mt-2 text-3xl font-semibold text-gray-900 dark:text-white">{orderedEntries.length}</p>
-          </div>
-          <div className="app-card">
-            <div className="flex items-center gap-1.5">
-              <p className="text-sm text-gray-500 dark:text-gray-400">Temporary fill vacancies</p>
-              <HelpCallout
-                text={TEMPORARY_FILL_VACANCIES_HELP}
-                label="About temporary fill vacancies"
-                align="end"
-              />
-            </div>
-            <p className="mt-2 text-3xl font-semibold text-gray-900 dark:text-white">{data.league.temporarySabbaticalFillVacancies}</p>
-          </div>
-        </div>
 
         {canManage ? (
           <AppPageControlsRow
@@ -975,30 +933,31 @@ function WaitlistDetailPage({ waitlistId }: { waitlistId: number }) {
                   Freeze waitlist
                 </Button>
                 <Button onClick={() => setAddModalOpen(true)}>Add member</Button>
-                <Button
-                  onClick={() =>
-                    setDialog({
-                      title: 'Send permanent offer',
-                      description:
-                        'Send one permanent spot offer to the top eligible active waitlist entry. Choose when the offer should expire if the curler does not respond.',
-                      confirmText: 'Send offer',
-                      requireExpiresAt: true,
-                      onSubmit: runAction(
-                        (reason, options) =>
-                          api.post(`/waitlists/${waitlistId}/offers`, {
-                            placementLeagueId: data.placementLeagueId,
-                            offerType: 'permanent',
-                            count: 1,
-                            reason,
-                            expiresAt: options?.expiresAt,
-                          }),
-                        'Permanent offer sent.'
-                      ),
-                    })
-                  }
-                >
-                  Send permanent offer
-                </Button>
+                {offerLeague && offerLeague.permanentVacancies > 0 ? (
+                  <Button
+                    onClick={() =>
+                      setDialog({
+                        title: 'Send permanent offer',
+                        description: `Send one permanent spot offer in ${offerLeague.name} (${offerLeague.sessionName}) to the top eligible active waitlist entry. Choose when the offer should expire if the curler does not respond.`,
+                        confirmText: 'Send offer',
+                        requireExpiresAt: true,
+                        onSubmit: runAction(
+                          (reason, options) =>
+                            api.post(`/waitlists/${waitlistId}/offers`, {
+                              placementLeagueId: offerLeague.id,
+                              offerType: 'permanent',
+                              count: 1,
+                              reason,
+                              expiresAt: options?.expiresAt,
+                            }),
+                          'Permanent offer sent.'
+                        ),
+                      })
+                    }
+                  >
+                    Send permanent offer
+                  </Button>
+                ) : null}
               </>
             }
           />
@@ -1399,50 +1358,39 @@ function WaitlistEntryRow({
     : null;
 
   return (
-    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div className="flex min-w-0 flex-1 gap-3">
+    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
           {dragHandle}
           <div className="min-w-0">
-          <p className="flex flex-wrap items-center gap-y-1 font-medium text-gray-900 dark:text-white">
-            <span className="mr-1">{index + 1}.</span>
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 font-medium text-gray-900 dark:text-white">
+            <span>{index + 1}.</span>
             <button
               type="button"
-              className="rounded-sm text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal"
+              className="inline-flex items-center rounded-sm text-left hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-teal"
               onClick={onViewPriorities}
               aria-label={`View waitlist and league priorities for ${headline}`}
             >
               {headline}
             </button>
             {frozen ? (
-              <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-normal text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+              <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-normal leading-none text-slate-700 dark:bg-slate-800 dark:text-slate-200">
                 Frozen
               </span>
             ) : null}
             {entry.isLifetimeMember ? (
-              <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-normal text-amber-900 dark:bg-amber-900/40 dark:text-amber-100">
+              <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-normal leading-none text-amber-900 dark:bg-amber-900/40 dark:text-amber-100">
                 Lifetime
               </span>
             ) : null}
             {tuesdayEveningBadge ? (
               <span
-                className={`ml-2 rounded-full px-2 py-0.5 text-xs font-normal ${tuesdayEveningBadge.className}`}
+                className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-normal leading-none ${tuesdayEveningBadge.className}`}
                 title={tuesdayEveningBadge.title}
               >
                 {tuesdayEveningBadge.label}
               </span>
             ) : null}
           </p>
-          <p className="mt-1 text-xs text-gray-500">
-            If a spot opens: {waitlistOfferPreferenceLabel(entry)}
-          </p>
-          {entry.priorityRank != null ? (
-            <p className="mt-1 text-xs text-gray-500">
-              Waitlist preference {entry.priorityRank}
-              {entry.desiredLeagueCount != null
-                ? ` · wants up to ${entry.desiredLeagueCount} ${entry.desiredLeagueCount === 1 ? 'league' : 'leagues'}`
-                : ''}
-            </p>
-          ) : null}
           {entry.pendingOffer ? (
             <p className="mt-1 text-xs text-gray-500">
               Pending {formatStatus(entry.pendingOffer.offer_type)} offer

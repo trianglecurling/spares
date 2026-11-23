@@ -1,5 +1,6 @@
 import { desc, eq, inArray } from 'drizzle-orm';
 import type { Member } from '../types.js';
+import { toCsv } from '../utils/csv.js';
 import { isDraftRegistrationStatus } from './registrationDraftProgress.js';
 import { registrationAmountDueMinor } from './registrationMemberService.js';
 import { parseTeamRosterPlacements, waitlistRosterEntries } from './waitlistTeamRoster.js';
@@ -168,15 +169,7 @@ export function registrationExportColumnCatalog(): RegistrationExportColumn[] {
   return REGISTRATION_EXPORT_COLUMNS.map((column) => ({ ...column }));
 }
 
-export function csvCell(value: string): string {
-  if (/[",\r\n]/.test(value)) return `"${value.replaceAll('"', '""')}"`;
-  return value;
-}
-
-export function toCsv(headers: string[], rows: string[][]): string {
-  const lines = [headers, ...rows].map((line) => line.map(csvCell).join(','));
-  return `\uFEFF${lines.join('\r\n')}\r\n`;
-}
+export { csvCell, toCsv } from '../utils/csv.js';
 
 export function leaguePriorityHeader(rank: number): string {
   return `League priority ${rank}`;

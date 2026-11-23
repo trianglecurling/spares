@@ -1,10 +1,23 @@
 /** Client types for bonspiel draw graph (must stay aligned with backend eventTournamentDrawSchema). */
+import type {
+  TournamentGameResult,
+  TournamentGameStanding,
+  TournamentPhase,
+  TournamentPool,
+  TournamentSlotSource,
+} from '../../../backend/src/utils/tournamentPoolStandings';
 
-export type TournamentSlotSource =
-  | { sourceType: 'tbd' }
-  | { sourceType: 'bye' }
-  | { sourceType: 'registration'; registrationId?: number | null }
-  | { sourceType: 'game_place'; gameId?: string | null; place: number };
+export type {
+  AdvancingStep,
+  PoolStandingsSettings,
+  TournamentGameResult,
+  TournamentGameStanding,
+  TournamentPhase,
+  TournamentPhaseKind,
+  TournamentPool,
+  TournamentPoolEntry,
+  TournamentSlotSource,
+} from '../../../backend/src/utils/tournamentPoolStandings';
 
 export type TournamentBracketEvent = {
   id: string;
@@ -12,34 +25,18 @@ export type TournamentBracketEvent = {
   code: string;
   order: number;
   color: string;
+  phaseId: string;
 };
-
-/** Stored outcome for a game (aligned with backend tournamentGameResultSchema). */
-export type TournamentGameResult =
-  | { entryKind: 'pick_winner'; winnerSlot: 0 | 1 }
-  | { entryKind: 'final_score'; finalScores: [number, number] }
-  | {
-      entryKind: 'ends';
-      ends: { side0: number[]; side1: number[] };
-      /** When false, end scores are in progress. Omitted or true = game finished. */
-      complete?: boolean;
-      /** Side (0 or 1) with last stone (hammer) in the first end. */
-      firstEndHammerSlot?: 0 | 1;
-      /**
-       * Doubles only: 1-based end number where each side used their power play.
-       * Null / omitted = not used.
-       */
-      powerPlayEndBySlot?: {
-        side0?: number | null;
-        side1?: number | null;
-      };
-    }
-  /** 3+ competitors: total score per slot; highest score is 1st place (tie-break: lower slot index). */
-  | { entryKind: 'multi_score'; scores: number[] };
 
 export type TournamentGameNode = {
   id: string;
+  /** Bracket lane for bracket-phase games; equals `phaseId` for pool games. */
   eventId: string;
+  phaseId: string;
+  /** Pool the game is listed under (null = cross-pool). Pool games only. */
+  poolId?: string | null;
+  /** Pool games: standings points and tiebreak values per side. */
+  standing?: TournamentGameStanding;
   label: string;
   depth: number;
   verticalOrder: number;
@@ -98,6 +95,9 @@ export type TournamentDrawState = {
     eventCount: number;
     events: TournamentBracketEvent[];
   };
+  /** Ordered tournament phases (bracket or pool play). Always at least one. */
+  phases: TournamentPhase[];
+  pools: TournamentPool[];
   canvas: {
     zoom: number;
     panX: number;
@@ -144,6 +144,8 @@ export type TournamentTextNode = {
   showConnector: boolean;
   connectorLineStyle: 'solid' | 'dashed';
   connectorColor?: string;
+  /** Bracket phase whose canvas shows this note. Omitted = first bracket phase. */
+  phaseId?: string;
 };
 
 export function encodeSlotSource(s: TournamentSlotSource): string {
@@ -159,6 +161,18 @@ export function encodeSlotSource(s: TournamentSlotSource): string {
       const p = s.place;
       return `gp:${gid}:${p}`;
     }
+    case 'pool_entry':
+      return `pe:${s.entryId ?? ''}`;
+    case 'qualifier':
+      return `q:${s.phaseId}:${s.seed}`;
+    case 'standing':
+      return `st:${JSON.stringify({
+        phaseId: s.phaseId,
+        poolId: s.poolId ?? null,
+        poolRank: s.poolRank ?? null,
+        rank: s.rank,
+        afterDrawBlockId: s.afterDrawBlockId ?? null,
+      })}`;
     default:
       return 'tbd';
   }
@@ -167,6 +181,31 @@ export function encodeSlotSource(s: TournamentSlotSource): string {
 export function decodeSlotSource(v: string): TournamentSlotSource {
   if (v === 'tbd') return { sourceType: 'tbd' };
   if (v === 'bye') return { sourceType: 'bye' };
+  if (v.startsWith('pe:')) {
+    const entryId = v.slice(3);
+    return { sourceType: 'pool_entry', entryId: entryId || null };
+  }
+  if (v.startsWith('q:')) {
+    const rest = v.slice(2);
+    const colon = rest.lastIndexOf(':');
+    const seed = Number.parseInt(rest.slice(colon + 1), 10);
+    return { sourceType: 'qualifier', phaseId: rest.slice(0, colon), seed: Number.isFinite(seed) && seed >= 1 ? seed : 1 };
+  }
+  if (v.startsWith('st:')) {
+    try {
+      const o = JSON.parse(v.slice(3)) as Record<string, unknown>;
+      return {
+        sourceType: 'standing',
+        phaseId: String(o.phaseId ?? ''),
+        poolId: typeof o.poolId === 'string' ? o.poolId : null,
+        poolRank: typeof o.poolRank === 'number' ? o.poolRank : null,
+        rank: typeof o.rank === 'number' && o.rank >= 1 ? o.rank : 1,
+        afterDrawBlockId: typeof o.afterDrawBlockId === 'string' ? o.afterDrawBlockId : null,
+      };
+    } catch {
+      return { sourceType: 'tbd' };
+    }
+  }
   if (v.startsWith('reg:')) {
     const rest = v.slice(4);
     if (rest === '') return { sourceType: 'registration', registrationId: null };
@@ -222,15 +261,15 @@ export function outputRoutingLabel(place: number, competitorCount: number): stri
   return `${ordinalPlaceLabel(place)} place goes to`;
 }
 
-/** Registration ids (teams) placed directly on a draw game slot. */
+/** Registration ids (teams) placed directly on a draw game slot or pool entry. */
 export function teamIdsAssignedOnDraw(draw: TournamentDrawState): Set<number> {
   const ids = new Set<number>();
-  for (const g of Object.values(draw.games)) {
-    for (const slot of g.slots) {
-      if (slot.sourceType === 'registration' && slot.registrationId != null) {
-        ids.add(slot.registrationId);
-      }
+  const add = (slot: TournamentSlotSource) => {
+    if (slot.sourceType === 'registration' && slot.registrationId != null) {
+      ids.add(slot.registrationId);
     }
-  }
+  };
+  for (const g of Object.values(draw.games)) g.slots.forEach(add);
+  for (const pool of draw.pools) pool.entries.forEach((e) => add(e.source));
   return ids;
 }

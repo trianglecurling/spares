@@ -39,7 +39,6 @@ export async function countActiveLeaguesForMember(memberId: number, sessionId: n
       and(
         eq(schema.leagueRoster.member_id, memberId),
         eq(schema.leagues.session_id, sessionId),
-        eq(schema.leagueRoster.status, 'active'),
         eq(schema.leagueRoster.is_temporary_sabbatical_fill, 0),
       ),
     );

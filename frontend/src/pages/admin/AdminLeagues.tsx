@@ -13,7 +13,10 @@ import Modal from '../../components/Modal';
 import ChoiceInput, { type ChoiceOption } from '../../components/ChoiceInput';
 import {
   defaultDrawDurationMinutes,
+  ICE_PREP_MINUTES_MAX,
+  ICE_PREP_TIME_HELPER,
   extraDrawKey,
+  parseIcePrepMinutes,
   type LeagueExtraDraw,
   type LeaguePlayFormat,
 } from '../../utils/leagueSchedule';
@@ -74,6 +77,8 @@ interface League {
   predecessorLeagueId: number | null;
   successorLeagueId: number | null;
   drawDurationMinutes: number;
+  /** Ice prep minutes aligned with drawTimes. */
+  icePrepMinutes: number[];
   drawTimes: string[];
   exceptions: string[];
   extraDraws: LeagueExtraDraw[];
@@ -129,6 +134,7 @@ export default function Leagues() {
     startDate: '',
     endDate: '',
     drawDurationMinutes: defaultDrawDurationMinutes('teams'),
+    icePrepMinutes: [0],
     drawTimes: [''],
     exceptions: [] as string[],
     extraDraws: [] as LeagueExtraDraw[],
@@ -212,6 +218,7 @@ export default function Leagues() {
       startDate: '',
       endDate: '',
       drawDurationMinutes: defaultDrawDurationMinutes('teams'),
+      icePrepMinutes: [0],
       drawTimes: [''],
       exceptions: [],
       extraDraws: [],
@@ -278,6 +285,12 @@ export default function Leagues() {
     setSubmitting(true);
 
     try {
+      const configuredDrawTimes = formData.drawTimes
+        .map((time, index) => ({
+          time: time.trim(),
+          icePrepMinutes: formData.icePrepMinutes[index] ?? 0,
+        }))
+        .filter((drawTime) => drawTime.time !== '');
       const uniqueExceptions = Array.from(new Set(formData.exceptions)).sort();
       const uniqueExtraDraws = Array.from(
         new Map(
@@ -293,7 +306,8 @@ export default function Leagues() {
         startDate: formData.startDate,
         endDate: formData.endDate,
         drawDurationMinutes: formData.drawDurationMinutes,
-        drawTimes: formData.drawTimes.filter((t) => t.trim() !== ''),
+        icePrepMinutes: configuredDrawTimes.map((drawTime) => drawTime.icePrepMinutes),
+        drawTimes: configuredDrawTimes.map((drawTime) => drawTime.time),
         exceptions: uniqueExceptions,
         extraDraws: uniqueExtraDraws,
       };
@@ -314,6 +328,7 @@ export default function Leagues() {
     setFormData({
       ...formData,
       drawTimes: [...formData.drawTimes, ''],
+      icePrepMinutes: [...formData.icePrepMinutes, 0],
     });
   };
 
@@ -323,10 +338,17 @@ export default function Leagues() {
     setFormData({ ...formData, drawTimes: newDrawTimes });
   };
 
+  const updateIcePrepMinutes = (index: number, value: string) => {
+    const next = [...formData.icePrepMinutes];
+    next[index] = parseIcePrepMinutes(value);
+    setFormData({ ...formData, icePrepMinutes: next });
+  };
+
   const removeDrawTime = (index: number) => {
     setFormData({
       ...formData,
       drawTimes: formData.drawTimes.filter((_, i) => i !== index),
+      icePrepMinutes: formData.icePrepMinutes.filter((_, i) => i !== index),
     });
   };
 
@@ -780,23 +802,45 @@ export default function Leagues() {
           </div>
 
           <div>
-            <label className="app-label">
+            <p className="app-label">
               Draw times <span className="text-red-500">*</span>
-            </label>
+            </p>
+            <p className="mb-2 text-sm text-gray-500 dark:text-gray-400">{ICE_PREP_TIME_HELPER}</p>
             {formData.drawTimes.map((time, index) => (
-              <div key={index} className="flex space-x-2 mb-2">
-                <input
-                  type="time"
-                  value={time}
-                  onChange={(e) => updateDrawTime(index, e.target.value)}
-                  className="app-input flex-1"
-                  required
-                />
+              <div key={index} className="mb-3 flex flex-wrap items-end gap-2">
+                <div className="min-w-0 flex-1">
+                  <label htmlFor={`drawTime-${index}`} className="app-label">
+                    Draw time {index + 1}
+                  </label>
+                  <input
+                    type="time"
+                    id={`drawTime-${index}`}
+                    value={time}
+                    onChange={(e) => updateDrawTime(index, e.target.value)}
+                    className="app-input"
+                    required
+                  />
+                </div>
+                <div className="w-36">
+                  <label htmlFor={`drawIcePrep-${index}`} className="app-label">
+                    Ice prep (minutes)
+                  </label>
+                  <input
+                    type="number"
+                    id={`drawIcePrep-${index}`}
+                    min={0}
+                    max={ICE_PREP_MINUTES_MAX}
+                    step={1}
+                    value={formData.icePrepMinutes[index] ?? 0}
+                    onChange={(e) => updateIcePrepMinutes(index, e.target.value)}
+                    className="app-input"
+                  />
+                </div>
                 {formData.drawTimes.length > 1 && (
                   <button
                     type="button"
                     onClick={() => removeDrawTime(index)}
-                    className="px-3 py-2 text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300"
+                    className="px-3 py-2 text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
                   >
                     Remove
                   </button>

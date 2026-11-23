@@ -20,17 +20,28 @@ const publicSignupBodySchema = z.object({
   name: z.string().trim().min(1).max(200),
   email: z.string().trim().email().max(320),
   comments: z.string().max(2000).nullable().optional(),
+  token: z.string().max(200).optional(),
 });
 
 export async function publicVolunteeringRoutes(fastify: FastifyInstance): Promise<void> {
-  fastify.get<{ Params: { slug: string } }>(
+  fastify.get<{ Params: { slug: string }; Querystring: { token?: string } }>(
     '/public/volunteering/programs/:slug',
-    { schema: { tags: ['public-volunteering'] } },
+    {
+      schema: {
+        tags: ['public-volunteering'],
+        querystring: {
+          type: 'object',
+          properties: {
+            token: { type: 'string', description: 'Share token required for unlisted sign-ups' },
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const slug = request.params.slug?.trim();
       if (!slug) return sendApiError(reply, 400, 'Invalid program slug');
       try {
-        return { program: await getPublicProgram(slug) };
+        return { program: await getPublicProgram(slug, request.query.token) };
       } catch (err) {
         return handleServiceError(reply, err);
       }

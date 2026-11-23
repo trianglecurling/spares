@@ -13,6 +13,7 @@ import {
   initialPublicListingAt,
   isPublicSpareListable,
   isPublicSpareVisibleToMember,
+  isUrgentSpareRequest,
   memberIdsForTeams,
 } from './spareByePriorityLogic.js';
 
@@ -169,7 +170,7 @@ describe('initialPublicListingAt / isPublicSpareListable', () => {
     expect(
       initialPublicListingAt({
         now,
-        isLessThan24Hours: true,
+        isUrgent: true,
         hasByePriority: true,
       }),
     ).toEqual(now);
@@ -179,7 +180,7 @@ describe('initialPublicListingAt / isPublicSpareListable', () => {
     expect(
       initialPublicListingAt({
         now,
-        isLessThan24Hours: false,
+        isUrgent: false,
         hasByePriority: false,
       }),
     ).toEqual(now);
@@ -189,7 +190,7 @@ describe('initialPublicListingAt / isPublicSpareListable', () => {
     expect(
       initialPublicListingAt({
         now,
-        isLessThan24Hours: false,
+        isUrgent: false,
         hasByePriority: true,
       }),
     ).toEqual(PUBLIC_LISTING_HIDDEN_UNTIL_BYE_DONE);
@@ -310,6 +311,31 @@ describe('canReplaceNextNotificationAt', () => {
 
   test('refuses a general-pool stagger that would replace a later bye hold', () => {
     expect(canReplaceNextNotificationAt(hourLater, tenSecondsLater)).toBe(false);
+  });
+});
+
+describe('isUrgentSpareRequest', () => {
+  const timeZone = 'America/New_York';
+
+  test('reads the game time as club time, not server time', () => {
+    // 7:00 PM EDT on Sep 29 is 23:00 UTC; 23.5 hours after 23:30 UTC the day before.
+    const now = new Date('2026-09-28T23:30:00.000Z');
+    const base = { gameDate: '2026-09-29', gameTime: '19:00', now, timeZone };
+    expect(isUrgentSpareRequest({ ...base, urgentThresholdHours: 24 })).toBe(true);
+    expect(isUrgentSpareRequest({ ...base, urgentThresholdHours: 23 })).toBe(false);
+  });
+
+  test('accepts time strings with seconds', () => {
+    const now = new Date('2026-09-27T12:00:00.000Z');
+    expect(
+      isUrgentSpareRequest({
+        gameDate: '2026-09-29',
+        gameTime: '19:00:00',
+        now,
+        timeZone,
+        urgentThresholdHours: 24,
+      }),
+    ).toBe(false);
   });
 });
 

@@ -29,7 +29,7 @@ function getFocusableElements(container: HTMLElement): HTMLElement[] {
   );
 }
 
-export function useFocusTrap(isOpen: boolean) {
+export function useFocusTrap(isOpen: boolean, initialFocusId?: string) {
   const containerRef = useRef<HTMLDivElement>(null);
   const previousActiveElementRef = useRef<HTMLElement | null>(null);
 
@@ -45,6 +45,13 @@ export function useFocusTrap(isOpen: boolean) {
     container.setAttribute('data-focus-trap', '');
 
     const focusInitialElement = () => {
+      if (initialFocusId) {
+        const preferred = document.getElementById(initialFocusId);
+        if (preferred && container.contains(preferred)) {
+          preferred.focus();
+          return;
+        }
+      }
       const focusableElements = getFocusableElements(container);
       focusableElements[0]?.focus();
     };
@@ -107,7 +114,7 @@ export function useFocusTrap(isOpen: boolean) {
         previousActiveElementRef.current.focus();
       }
     };
-  }, [isOpen]);
+  }, [initialFocusId, isOpen]);
 
   return containerRef;
 }

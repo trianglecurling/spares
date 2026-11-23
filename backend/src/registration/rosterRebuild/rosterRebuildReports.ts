@@ -68,7 +68,6 @@ export const EXPORT_CSV_HEADERS = [
   'member_id',
   'member_name',
   'member_email',
-  'status',
   'placement_type',
   'is_temporary_sabbatical_fill',
   'related_sabbatical_id',
@@ -224,7 +223,6 @@ export function rosterExportToCsv(
       cell(row.memberId),
       row.memberName,
       row.memberEmail,
-      cell(row.status),
       cell(row.placementType),
       cell(row.isTemporarySabbaticalFill),
       cell(row.relatedSabbaticalId),
@@ -381,7 +379,6 @@ export function parseRosterExportCsv(text: string): Array<{
   leagueName: string;
   memberName: string;
   memberEmail: string;
-  status: string;
 }> {
   const { headers, rows } = parseCsv(text);
   const index = Object.fromEntries(headers.map((header, i) => [header, i]));
@@ -391,7 +388,6 @@ export function parseRosterExportCsv(text: string): Array<{
     leagueName: row[index.league_name] ?? '',
     memberName: row[index.member_name] ?? '',
     memberEmail: row[index.member_email] ?? '',
-    status: row[index.status] ?? '',
   }));
 }
 

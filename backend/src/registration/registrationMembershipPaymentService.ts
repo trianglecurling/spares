@@ -70,6 +70,7 @@ import { getWaitlistQueuePosition, insertWaitlistAuditEvent } from './waitlistAu
 import { assignWaitlistJoinOrder, isLifetimeWaitlistMember } from './waitlistQueueService.js';
 import { syncMemberOtherClubExperienceYears } from './otherClubExperienceSync.js';
 import { loadExistingWaitlistEntriesForMember, waitlistEntryIncludesMember } from './waitlistMemberMembership.js';
+import { loadMembersRosteredForWaitlist } from './waitlistRosterExclusion.js';
 import { sendWaitlistEntryJoinedNotifications } from './waitlistJoinedNotificationService.js';
 import type { Member } from '../types.js';
 import { memberCanManageRegistrations } from '../utils/registrationStaffAccess.js';
@@ -795,7 +796,6 @@ async function loadActiveLeagueIds(memberId: number, sessionId: number): Promise
     .where(
       and(
         eq(schema.leagueRoster.member_id, memberId),
-        eq(schema.leagueRoster.status, 'active'),
         eq(schema.leagues.session_id, sessionId)
       )
     );
@@ -1962,6 +1962,12 @@ async function persistRegistrationWaitlists(input: {
       .where(eq(schema.leagues.id, entry.leagueId))
       .limit(1);
     if (!league?.waitlistId || league.sessionId == null) continue;
+    const rosteredInLeague = await loadMembersRosteredForWaitlist({
+      executor: input.tx,
+      waitlistId: league.waitlistId,
+      memberIds: [input.curlerMemberId],
+    });
+    if (rosteredInLeague.size > 0) continue;
 
     const activeEntries = await input.tx
       .select()

@@ -23,6 +23,8 @@ import {
   rosterBulkBodySchema,
   rosterBulkResponseSchema,
   rosterListResponseSchema,
+  rosterSpotTypeBodySchema,
+  rosterSpotTypeResponseSchema,
   declaredByotTeamListResponseSchema,
   rosterSearchResponseSchema,
   rosterUnassignedResponseSchema,
@@ -66,6 +68,10 @@ import {
 } from './leagueRosterManagerInsights.js';
 import { loadRosterRegistrationStatuses } from '../registration/rosterRegistrationStatusService.js';
 import { deriveRosterPlacementSource } from '../registration/rosterPlacementSource.js';
+import { removeMembersFromLeagueRoster } from '../registration/leagueRosterRemoval.js';
+import { removeWaitlistEntriesForRosteredMembers } from '../registration/waitlistRosterExclusion.js';
+import { nextRosterSpotTypeFields } from '../registration/rosterSpotType.js';
+import type { LeagueRosterPlacementTypeSqlite } from '../db/drizzle-schema.js';
 import type { Member } from '../types.js';
 import { memberCanViewRosterPlacement } from '../utils/memberStaffAccess.js';
 import {
@@ -233,6 +239,12 @@ const rosterAddSchema = z.object({
 const rosterBulkAddSchema = z.object({
   names: z.array(z.string().min(1)).min(1),
 });
+
+const rosterSpotTypeSchema = z.object({
+  isTemporarySabbaticalFill: z.boolean(),
+});
+
+const ACTIVE_SABBATICAL_STATUSES_FOR_FILL = ['active', 'returning', 'staff_overridden'] as const;
 
 const managerAddSchema = z.object({
   memberId: z.number().int().positive(),
@@ -1110,10 +1122,20 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
           .send({ error: 'Social members cannot be added to a league roster.' });
       }
 
-      const result = await db
-        .insert(schema.leagueRoster)
-        .values({ league_id: leagueId, member_id: body.memberId })
-        .returning();
+      const result = await db.transaction(async (tx) => {
+        const inserted = await tx
+          .insert(schema.leagueRoster)
+          .values({ league_id: leagueId, member_id: body.memberId })
+          .returning();
+        await removeWaitlistEntriesForRosteredMembers({
+          executor: tx,
+          leagueId,
+          memberIds: [body.memberId],
+          actorMemberId: member.id,
+          source: 'staff_action',
+        });
+        return inserted;
+      });
 
       return { id: result[0].id, leagueId, memberId: body.memberId };
     }
@@ -1218,10 +1240,19 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
 
       const toInsert = uniqueMatchedIds.filter((id) => !existingIds.has(id));
       if (toInsert.length > 0) {
-        await db
-          .insert(schema.leagueRoster)
-          .values(toInsert.map((memberId) => ({ league_id: leagueId, member_id: memberId })))
-          .onConflictDoNothing();
+        await db.transaction(async (tx) => {
+          await tx
+            .insert(schema.leagueRoster)
+            .values(toInsert.map((memberId) => ({ league_id: leagueId, member_id: memberId })))
+            .onConflictDoNothing();
+          await removeWaitlistEntriesForRosteredMembers({
+            executor: tx,
+            leagueId,
+            memberIds: toInsert,
+            actorMemberId: member.id,
+            source: 'staff_action',
+          });
+        });
       }
 
       for (const entry of unmatched) {
@@ -1281,37 +1312,117 @@ export async function leagueSetupRoutes(fastify: FastifyInstance) {
         return reply.code(403).send({ error: 'Forbidden' });
       }
 
-      const { db, schema } = getDrizzleDb();
-      const assignments = await db
-        .select({ id: schema.teamMembers.id })
-        .from(schema.teamMembers)
-        .innerJoin(schema.leagueTeams, eq(schema.teamMembers.team_id, schema.leagueTeams.id))
-        .where(
-          and(
-            eq(schema.leagueTeams.league_id, leagueId),
-            eq(schema.teamMembers.member_id, memberIdNum)
-          )
-        )
-        .limit(1);
+      const { db } = getDrizzleDb();
+      const removed = await db.transaction((tx) =>
+        removeMembersFromLeagueRoster({ executor: tx, leagueId, memberIds: [memberIdNum] }),
+      );
 
-      if (assignments.length > 0) {
-        return reply.code(400).send({ error: 'Member is assigned to a team in this league.' });
-      }
-
-      const result = await db
-        .delete(schema.leagueRoster)
-        .where(
-          and(
-            eq(schema.leagueRoster.league_id, leagueId),
-            eq(schema.leagueRoster.member_id, memberIdNum)
-          )
-        );
-
-      if (getAffectedRows(result) === 0) {
+      if (removed === 0) {
         return reply.code(404).send({ error: 'Roster member not found.' });
       }
 
       return { success: true };
+    }
+  );
+
+  fastify.patch<{ Reply: ApiReply<unknown> }>(
+    '/leagues/:id/roster/:memberId',
+    {
+      schema: {
+        tags: ['league-setup'],
+        params: leagueMemberParamsSchema,
+        body: rosterSpotTypeBodySchema,
+        response: {
+          200: rosterSpotTypeResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      const member = request.member;
+      const { id, memberId } = request.params as { id: string; memberId: string };
+      const leagueId = parseInt(id, 10);
+      const memberIdNum = parseInt(memberId, 10);
+
+      if (!member || !(await hasLeagueAdministratorAccess(member, leagueId))) {
+        return reply.code(403).send({ error: 'Forbidden' });
+      }
+      if (!Number.isInteger(leagueId) || !Number.isInteger(memberIdNum)) {
+        return reply.code(400).send({ error: 'Invalid league or member id.' });
+      }
+
+      const body = rosterSpotTypeSchema.parse(request.body);
+      const { db, schema } = getDrizzleDb();
+      const [rosterRow] = await db
+        .select({
+          id: schema.leagueRoster.id,
+          placement_type: schema.leagueRoster.placement_type,
+          is_temporary_sabbatical_fill: schema.leagueRoster.is_temporary_sabbatical_fill,
+          related_sabbatical_id: schema.leagueRoster.related_sabbatical_id,
+        })
+        .from(schema.leagueRoster)
+        .where(
+          and(
+            eq(schema.leagueRoster.league_id, leagueId),
+            eq(schema.leagueRoster.member_id, memberIdNum),
+          ),
+        )
+        .limit(1);
+
+      if (!rosterRow) {
+        return reply.code(404).send({ error: 'Roster member not found.' });
+      }
+
+      let availableSabbaticalId: number | null = null;
+      const currentTemporary = Number(rosterRow.is_temporary_sabbatical_fill) === 1;
+      if (body.isTemporarySabbaticalFill && rosterRow.related_sabbatical_id == null) {
+        const [sabbatical] = await db
+          .select({ id: schema.curlingLeagueSabbaticals.id })
+          .from(schema.curlingLeagueSabbaticals)
+          .where(
+            and(
+              eq(schema.curlingLeagueSabbaticals.current_league_id, leagueId),
+              inArray(schema.curlingLeagueSabbaticals.status, [...ACTIVE_SABBATICAL_STATUSES_FOR_FILL]),
+            ),
+          )
+          .limit(1);
+        availableSabbaticalId = sabbatical?.id ?? null;
+      }
+
+      const next = nextRosterSpotTypeFields({
+        isTemporarySabbaticalFill: body.isTemporarySabbaticalFill,
+        placementType: (rosterRow.placement_type ?? null) as LeagueRosterPlacementTypeSqlite | null,
+        relatedSabbaticalId: rosterRow.related_sabbatical_id ?? null,
+        availableSabbaticalId,
+      });
+
+      if (
+        currentTemporary === next.isTemporarySabbaticalFill &&
+        (rosterRow.placement_type ?? null) === next.placementType &&
+        (rosterRow.related_sabbatical_id ?? null) === next.relatedSabbaticalId
+      ) {
+        return { isTemporarySabbaticalFill: next.isTemporarySabbaticalFill };
+      }
+
+      await db.transaction(async (tx) => {
+        await tx
+          .update(schema.leagueRoster)
+          .set({
+            is_temporary_sabbatical_fill: next.isTemporarySabbaticalFill ? 1 : 0,
+            placement_type: next.placementType,
+            related_sabbatical_id: next.relatedSabbaticalId,
+            updated_at: sql`CURRENT_TIMESTAMP`,
+          })
+          .where(eq(schema.leagueRoster.id, rosterRow.id));
+        await removeWaitlistEntriesForRosteredMembers({
+          executor: tx,
+          leagueId,
+          memberIds: [memberIdNum],
+          actorMemberId: member.id,
+          source: 'staff_action',
+        });
+      });
+
+      return { isTemporarySabbaticalFill: next.isTemporarySabbaticalFill };
     }
   );
 

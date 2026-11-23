@@ -5,6 +5,7 @@ import PublicStateCard from '../components/PublicStateCard';
 import SeoMeta from '../components/SeoMeta';
 import PublicNotFoundPage from './PublicNotFoundPage';
 import TeamTournamentDrawPathDiagram from '../components/TeamTournamentDrawPathDiagram';
+import PublicTeamPoolPlay from '../components/PublicTeamPoolPlay';
 import { useDelayedTrueWhile } from '../hooks/useDelayedTrueWhile';
 import api from '../utils/api';
 import type { TournamentDrawState } from '../utils/tournamentDrawModel';
@@ -398,6 +399,7 @@ export default function PublicEventTeamPage() {
             </div>
           ) : publicDraw != null ? (
             <div className="flex flex-1 min-h-0 flex-col w-full min-w-0">
+              <PublicTeamPoolPlay draw={publicDraw} teamId={team.id} teamsById={drawTabTeamsById} />
               <TeamTournamentDrawPathDiagram
                 alignContentColumnRef={alignColumnRef}
                 draw={publicDraw}

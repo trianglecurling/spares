@@ -1,6 +1,7 @@
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import { MAX_DESIRED_LEAGUE_COUNT, type CurlingRegistrationStatusSqlite } from '../db/drizzle-schema.js';
+import { removeMembersFromLeagueRoster } from './leagueRosterRemoval.js';
 
 type PlacementExecutor = Pick<ReturnType<typeof getDrizzleDb>['db'], 'select' | 'update' | 'delete'>;
 
@@ -86,7 +87,6 @@ export async function releaseOverflowLeaguePlacements(input: {
     .where(
       and(
         eq(schema.leagueRoster.member_id, input.memberId),
-        eq(schema.leagueRoster.status, 'active'),
         eq(schema.leagues.session_id, input.sessionId),
       ),
     );
@@ -104,10 +104,7 @@ export async function releaseOverflowLeaguePlacements(input: {
     .slice(0, overflow);
 
   for (const row of releaseOrder) {
-    await executor
-      .update(schema.leagueRoster)
-      .set({ status: 'removed', updated_at: sql`CURRENT_TIMESTAMP` })
-      .where(eq(schema.leagueRoster.id, row.id));
+    await removeMembersFromLeagueRoster({ executor, leagueId: row.leagueId, memberIds: [input.memberId] });
   }
   return releaseOrder.map((row) => row.leagueId);
 }

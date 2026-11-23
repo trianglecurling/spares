@@ -20,6 +20,21 @@ describe('spareRequestDeepLinkAlert', () => {
     expect(message).toContain('not currently available for you to accept');
     expect(message).not.toContain('deleted');
   });
+
+  test('explains the bye exclusive window with the opening time when known', () => {
+    const message = spareRequestDeepLinkAlert('open', {
+      inByeWindow: true,
+      opensAt: '2026-01-10T18:00:00.000Z',
+      formatOpensAt: () => 'Sat 1:00 PM',
+    });
+    expect(message).toContain('Players on bye get first chance');
+    expect(message).toContain('Sat 1:00 PM');
+  });
+
+  test('explains the bye exclusive window without a time when the window is still pending', () => {
+    const message = spareRequestDeepLinkAlert('open', { inByeWindow: true, opensAt: null });
+    expect(message).toContain('when their exclusive window ends');
+  });
 });
 
 describe('spareRequestDeepLinkLoadErrorAlert', () => {

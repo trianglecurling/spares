@@ -27,6 +27,7 @@ import {
   parseVolunteerSignupKind,
   type VolunteerProgramView,
 } from '../../utils/volunteering';
+import VolunteerReportDownload from '../../components/volunteering/VolunteerReportDownload';
 import AdminVolunteerProgramDuplicateModal from './AdminVolunteerProgramDuplicateModal';
 
 export default function AdminVolunteering() {
@@ -287,6 +288,7 @@ export function AdminVolunteeringPrograms() {
 
   return (
     <>
+      {!generalTab && canCreate ? <VolunteerReportDownload /> : null}
       {!loading ? (
         <AppPageControlsRow
           left={
@@ -369,6 +371,11 @@ export function AdminVolunteeringPrograms() {
                           {!row.published ? (
                             <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">
                               Unpublished
+                            </span>
+                          ) : null}
+                          {row.unlisted ? (
+                            <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                              Unlisted
                             </span>
                           ) : null}
                           {isArchivedAt(row.archivedAt) ? (

@@ -23,7 +23,9 @@ import { memberCanManageRegistrations } from '../utils/registrationStaffAccess.j
 import {
   addChargedLeague,
   emptyRegistrationChargeSet,
+  isTemporaryFillFlag,
   mergeRegistrationChargeSets,
+  sessionPlacementChargeSet,
   type RegistrationChargeSet,
 } from './registrationBillingChargeSet.js';
 import {
@@ -155,8 +157,8 @@ async function loadBillingPriceSettings(): Promise<{
 async function loadSessionPlacementChargeLeagues(input: {
   sessionId: number;
   memberIds: number[];
-}): Promise<Map<number, number[]>> {
-  const extraByMember = new Map<number, number[]>();
+}): Promise<Map<number, RegistrationChargeSet>> {
+  const extraByMember = new Map<number, RegistrationChargeSet>();
   if (input.memberIds.length === 0) return extraByMember;
   const { db, schema } = getDrizzleDb();
   const [teamRows, playInRows, sessionRosterRows] = await Promise.all([
@@ -196,27 +198,48 @@ async function loadSessionPlacementChargeLeagues(input: {
       .select({
         memberId: schema.leagueRoster.member_id,
         leagueId: schema.leagueRoster.league_id,
+        temporaryFill: schema.leagueRoster.is_temporary_sabbatical_fill,
       })
       .from(schema.leagueRoster)
       .innerJoin(schema.leagues, eq(schema.leagues.id, schema.leagueRoster.league_id))
       .where(
         and(
           inArray(schema.leagueRoster.member_id, input.memberIds),
-          eq(schema.leagueRoster.status, 'active'),
           eq(schema.leagues.session_id, input.sessionId),
         ),
       ),
   ]);
 
-  const push = (memberId: number | null, leagueId: number) => {
+  const teamLeagueIds = new Map<number, number[]>();
+  const playInLeagueIds = new Map<number, number[]>();
+  const rosterSeats = new Map<number, Array<{ leagueId: number; temporaryFill: number | boolean | null }>>();
+  const memberIds = new Set<number>();
+  const collect = (memberId: number | null, target: Map<number, number[]>, leagueId: number) => {
     if (memberId == null) return;
-    const list = extraByMember.get(memberId) ?? [];
+    memberIds.add(memberId);
+    const list = target.get(memberId) ?? [];
     list.push(leagueId);
-    extraByMember.set(memberId, list);
+    target.set(memberId, list);
   };
-  for (const row of teamRows) push(row.memberId, row.leagueId);
-  for (const row of playInRows) push(row.memberId, row.leagueId);
-  for (const row of sessionRosterRows) push(row.memberId, row.leagueId);
+  for (const row of teamRows) collect(row.memberId, teamLeagueIds, row.leagueId);
+  for (const row of playInRows) collect(row.memberId, playInLeagueIds, row.leagueId);
+  for (const row of sessionRosterRows) {
+    if (row.memberId == null) continue;
+    memberIds.add(row.memberId);
+    const list = rosterSeats.get(row.memberId) ?? [];
+    list.push({ leagueId: row.leagueId, temporaryFill: row.temporaryFill });
+    rosterSeats.set(row.memberId, list);
+  }
+  for (const memberId of memberIds) {
+    extraByMember.set(
+      memberId,
+      sessionPlacementChargeSet({
+        teamLeagueIds: teamLeagueIds.get(memberId) ?? [],
+        playInLeagueIds: playInLeagueIds.get(memberId) ?? [],
+        rosterSeats: rosterSeats.get(memberId) ?? [],
+      }),
+    );
+  }
   return extraByMember;
 }
 
@@ -249,11 +272,11 @@ export function addSabbaticalSelectionsForBilling(
 }
 
 function chargeSetFromRosterRows(
-  rows: Array<{ leagueId: number; temporaryFill: number }>,
+  rows: Array<{ leagueId: number; temporaryFill: number | boolean | null }>,
 ): RegistrationChargeSet {
   const current = emptyRegistrationChargeSet();
   for (const row of rows) {
-    addChargedLeague(current, row.leagueId, row.temporaryFill === 1);
+    addChargedLeague(current, row.leagueId, isTemporaryFillFlag(row.temporaryFill));
   }
   return {
     chargedLeagueIds: [...new Set(current.chargedLeagueIds)],
@@ -282,7 +305,6 @@ export async function loadPlacedRosterChargeSet(input: {
         and(
           eq(schema.leagueRoster.member_id, input.curlerMemberId),
           eq(schema.leagueRoster.source_registration_id, input.registrationId),
-          eq(schema.leagueRoster.status, 'active'),
         ),
       ),
     registration
@@ -290,11 +312,12 @@ export async function loadPlacedRosterChargeSet(input: {
           sessionId: registration.sessionId,
           memberIds: [input.curlerMemberId],
         })
-      : Promise.resolve(new Map<number, number[]>()),
+      : Promise.resolve(new Map<number, RegistrationChargeSet>()),
   ]);
-  return mergeRegistrationChargeSets(chargeSetFromRosterRows(placedRows), {
-    chargedLeagueIds: extrasByMember.get(input.curlerMemberId) ?? [],
-  });
+  return mergeRegistrationChargeSets(
+    chargeSetFromRosterRows(placedRows),
+    extrasByMember.get(input.curlerMemberId),
+  );
 }
 
 export async function computeRegistrationNetPaidMinor(registrationId: number): Promise<number> {
@@ -544,7 +567,6 @@ export async function listStaffRegistrationBilling(input: {
           .where(
             and(
               inArray(schema.leagueRoster.source_registration_id, registrationIds),
-              eq(schema.leagueRoster.status, 'active'),
             ),
           ),
         db
@@ -593,7 +615,7 @@ export async function listStaffRegistrationBilling(input: {
         sessionId: session.id,
         memberIds: curlerMemberIds,
       })
-    : new Map<number, number[]>();
+    : new Map<number, RegistrationChargeSet>();
   const sabbaticalRows =
     curlerMemberIds.length > 0
       ? await db
@@ -618,8 +640,8 @@ export async function listStaffRegistrationBilling(input: {
   for (const row of selectionRows) {
     if (row.leagueId != null) missingLeagueIds.add(row.leagueId);
   }
-  for (const leagueIds of extrasByMember.values()) {
-    for (const leagueId of leagueIds) missingLeagueIds.add(leagueId);
+  for (const charges of extrasByMember.values()) {
+    for (const leagueId of charges.chargedLeagueIds) missingLeagueIds.add(leagueId);
   }
   for (const row of sabbaticalRows) missingLeagueIds.add(row.leagueId);
   const unknownLeagueIds = [...missingLeagueIds].filter((id) => leagues[id] == null);
@@ -649,12 +671,12 @@ export async function listStaffRegistrationBilling(input: {
     if (row.registrationId == null) continue;
     addChargeSet(row.registrationId, {
       chargedLeagueIds: [row.leagueId],
-      temporaryFillLeagueIds: row.temporaryFill === 1 ? [row.leagueId] : [],
+      temporaryFillLeagueIds: isTemporaryFillFlag(row.temporaryFill) ? [row.leagueId] : [],
     });
   }
-  for (const [memberId, leagueIds] of extrasByMember) {
+  for (const [memberId, charges] of extrasByMember) {
     for (const registrationId of registrationsByMember.get(memberId) ?? []) {
-      addChargeSet(registrationId, { chargedLeagueIds: leagueIds });
+      addChargeSet(registrationId, charges);
     }
   }
 
@@ -664,7 +686,7 @@ export async function listStaffRegistrationBilling(input: {
     list.push({
       selectionType: row.selectionType,
       leagueId: row.leagueId,
-      isTemporarySabbaticalFill: row.temporaryFill === 1,
+      isTemporarySabbaticalFill: isTemporaryFillFlag(row.temporaryFill),
     });
     selectionsByRegistration.set(row.registrationId, list);
   }

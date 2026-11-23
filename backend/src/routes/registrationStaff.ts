@@ -11,6 +11,7 @@ import {
   triggerDeferredRegistrationPayment,
 } from '../registration/registrationMembershipPaymentService.js';
 import { issueStaffRegistrationRefund, listStaffRegistrationBilling, RegistrationBillingValidationError } from '../registration/registrationBillingService.js';
+import { listStaffRegistrationNameTags } from '../registration/registrationNameTags.js';
 import {
   getLatestRosterConfirmationEmailJob,
   getRosterConfirmationEmailPreview,
@@ -22,6 +23,7 @@ import { resolveFrontendBaseUrl } from '../utils/frontendUrl.js';
 import { getStaffRegistrationStats } from '../registration/registrationStaffStats.js';
 import {
   staffRegistrationBillingResponseSchema,
+  staffRegistrationNameTagsResponseSchema,
   staffRegistrationRefundResponseSchema,
   staffRequestPaymentResponseSchema,
   staffRosterConfirmationEmailListResponseSchema,
@@ -419,6 +421,37 @@ export async function protectedRegistrationStaffRoutes(fastify: FastifyInstance)
       try {
         const query = statsQuerySchema.parse(request.query);
         return await listStaffRegistrationBilling({
+          actor: (request as AuthenticatedRequest).member,
+          sessionId: query.sessionId,
+        });
+      } catch (error) {
+        if (handleStaffRegistrationError(reply, error)) return;
+        throw error;
+      }
+    },
+  );
+
+  fastify.get(
+    '/registration/staff/name-tags',
+    {
+      schema: {
+        tags: ['registration-staff'],
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['sessionId'],
+          properties: {
+            sessionId: { type: 'number' },
+          },
+        },
+        response: { 200: staffRegistrationNameTagsResponseSchema },
+      },
+    },
+    async (request, reply) => {
+      if (!requireRegistrationManage(request, reply)) return;
+      try {
+        const query = statsQuerySchema.parse(request.query);
+        return await listStaffRegistrationNameTags({
           actor: (request as AuthenticatedRequest).member,
           sessionId: query.sessionId,
         });

@@ -1,29 +1,14 @@
 import type { TournamentGameNode, TournamentGameResult } from './tournamentDrawModel';
+import { twoSidedOutcome } from '../../../backend/src/utils/tournamentPoolStandings';
 
 export type ResolvedGameOutcome = 'slot0' | 'slot1' | 'tie' | null;
 
-/** Derive winner / tie from stored result (two-sided games). */
+/** Derive winner / tie from stored result (two-sided games). Pool standings points take precedence. */
 export function outcomeFromResult(game: TournamentGameNode): ResolvedGameOutcome {
-  const r = game.result;
-  if (!r) return null;
-  if (r.entryKind === 'pick_winner') {
-    return r.winnerSlot === 0 ? 'slot0' : 'slot1';
-  }
-  if (r.entryKind === 'final_score') {
-    const [a, b] = r.finalScores;
-    if (a > b) return 'slot0';
-    if (b > a) return 'slot1';
-    return 'tie';
-  }
-  if (r.entryKind === 'ends') {
-    if (r.complete === false) return null;
-    const s0 = r.ends.side0.reduce((x, y) => x + y, 0);
-    const s1 = r.ends.side1.reduce((x, y) => x + y, 0);
-    if (s0 > s1) return 'slot0';
-    if (s1 > s0) return 'slot1';
-    return 'tie';
-  }
-  return null;
+  const outcome = twoSidedOutcome(game);
+  if (outcome === 0) return 'slot0';
+  if (outcome === 1) return 'slot1';
+  return outcome;
 }
 
 /** Slot indices in finish order (1st place first) for multi_score games. */

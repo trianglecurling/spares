@@ -84,3 +84,14 @@ export function memberHasScope(
 ): boolean {
   return resolveScopeEffect(member, requestedScope, context) === 'allow';
 }
+
+/** Calendar managers, admins, and server admins. `false` must not hide a later true flag. */
+export function canManageCalendar(member: AuthenticatedMember | null | undefined): boolean {
+  if (!member) return false;
+  return Boolean(
+    member.isCalendarAdmin ||
+      member.isAdmin ||
+      member.isServerAdmin ||
+      memberHasScope(member, 'calendar.manage')
+  );
+}

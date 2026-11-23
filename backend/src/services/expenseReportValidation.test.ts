@@ -2,13 +2,31 @@ import { describe, expect, test } from 'bun:test';
 import {
   expenseAllowsDurableGood,
   hasMixedExpenseCurrencies,
+  expenseReportRequiresReimbursement,
   isSubmitterEditableStatus,
+  manualExpenseReportStatusError,
   mileageCapCents,
-  shouldSendCheckMailedEmail,
+  planReimbursementCheck,
   sumExpenseAmountsMinor,
   validateExpenseReportPayload,
   type ExpenseReportPayloadInput,
+  type ReimbursementCheckReportInput,
 } from './expenseReportValidation.js';
+
+function checkReport(overrides: Partial<ReimbursementCheckReportInput> = {}): ReimbursementCheckReportInput {
+  return {
+    id: 1,
+    status: 'approved',
+    memberId: 7,
+    submitterName: 'Ada Member',
+    submitterEmail: 'ada@example.com',
+    requestedAmountMinor: 2500,
+    requestedCurrency: 'usd',
+    usedClubCreditCard: false,
+    submittedAt: '2026-03-01T00:00:00.000Z',
+    ...overrides,
+  };
+}
 
 function baseExpense(overrides: Partial<ExpenseReportPayloadInput> = {}): ExpenseReportPayloadInput {
   return {
@@ -178,9 +196,34 @@ describe('expense report validation', () => {
       toKind: 'club',
       roundTripMiles: 10,
       tripPurpose: 'bar',
+      mailingAddress: {
+        addressLine1: '1 Ice House Rd',
+        city: 'Durham',
+        state: 'North Carolina',
+        country: 'United States',
+        postalCode: '27701',
+      },
       expenses: [],
     });
     expect(errors.some((error) => error.field === 'requestedAmountMinor')).toBe(true);
+  });
+
+  test('requires a mailing address for mileage reimbursement', () => {
+    const errors = validateExpenseReportPayload({
+      kind: 'mileage',
+      submitterName: 'Ada Member',
+      submitterEmail: 'ada@example.com',
+      askClubCreditCard: false,
+      requestedAmountMinor: 140,
+      activityDate: '2026-08-01',
+      fromKind: 'home',
+      toKind: 'club',
+      roundTripMiles: 10,
+      tripPurpose: 'bar',
+      mailingAddress: null,
+      expenses: [],
+    });
+    expect(errors.some((error) => error.field === 'mailingAddress')).toBe(true);
   });
 
   test('requires a club card answer only when asked', () => {
@@ -208,12 +251,68 @@ describe('expense report validation', () => {
   test('locks submitter edits after pending review', () => {
     expect(isSubmitterEditableStatus('pending_review')).toBe(true);
     expect(isSubmitterEditableStatus('processing')).toBe(false);
-    expect(isSubmitterEditableStatus('check_mailed')).toBe(false);
+    expect(isSubmitterEditableStatus('approved')).toBe(false);
     expect(isSubmitterEditableStatus('complete')).toBe(false);
   });
 
-  test('sends check-mailed email only on transition into that status', () => {
-    expect(shouldSendCheckMailedEmail('pending_review', 'check_mailed')).toBe(true);
-    expect(shouldSendCheckMailedEmail('check_mailed', 'check_mailed')).toBe(false);
+  test('reserves Approved for reimbursement reports', () => {
+    expect(expenseReportRequiresReimbursement({ usedClubCreditCard: false, requestedAmountMinor: 100 })).toBe(true);
+    expect(expenseReportRequiresReimbursement({ usedClubCreditCard: true, requestedAmountMinor: 0 })).toBe(false);
+    expect(
+      manualExpenseReportStatusError({ nextStatus: 'approved', requiresReimbursement: false })
+    ).toMatch(/Approved is only/);
+    expect(
+      manualExpenseReportStatusError({ nextStatus: 'complete', requiresReimbursement: true })
+    ).toMatch(/Issue a reimbursement check/);
+    expect(
+      manualExpenseReportStatusError({ nextStatus: 'complete', requiresReimbursement: false })
+    ).toBeNull();
+    expect(
+      manualExpenseReportStatusError({ nextStatus: 'approved', requiresReimbursement: true })
+    ).toBeNull();
+  });
+
+  test('plans one reimbursement check for several reports from one person', () => {
+    const result = planReimbursementCheck([
+      checkReport({ id: 2, memberId: 7, submitterEmail: 'Ada@Example.com', requestedAmountMinor: 1500, submittedAt: '2026-03-02T00:00:00.000Z' }),
+      checkReport({ id: 1, memberId: 7, requestedAmountMinor: 500, submittedAt: '2026-03-01T00:00:00.000Z' }),
+    ]);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.plan.amountMinor).toBe(2000);
+    expect(result.plan.reportIds).toEqual([1, 2]);
+    expect(result.plan.payeeEmail).toBe('Ada@Example.com');
+    expect(result.plan.memberId).toBe(7);
+  });
+
+  test('rejects a reimbursement check that mixes people', () => {
+    const result = planReimbursementCheck([
+      checkReport({ id: 1, memberId: 7 }),
+      checkReport({ id: 2, memberId: 8, submitterName: 'Bea', submitterEmail: 'bea@example.com' }),
+    ]);
+    expect(result).toEqual({ ok: false, message: 'A reimbursement check can cover only one person.' });
+  });
+
+  test('treats guest reports with the same email as one person', () => {
+    const result = planReimbursementCheck([
+      checkReport({ id: 1, memberId: null, submitterEmail: 'Guest@Example.com' }),
+      checkReport({ id: 2, memberId: null, submitterEmail: 'guest@example.com' }),
+    ]);
+    expect(result.ok).toBe(true);
+  });
+
+  test('requires approval before a reimbursement check', () => {
+    const pending = planReimbursementCheck([checkReport({ status: 'pending_review' })]);
+    const processing = planReimbursementCheck([checkReport({ status: 'processing' })]);
+    expect(pending.ok).toBe(false);
+    expect(processing.ok).toBe(false);
+    if (pending.ok || processing.ok) return;
+    expect(pending.message).toContain('Set the status to Approved');
+    expect(processing.message).toContain('Set the status to Approved');
+  });
+
+  test('does not put a club card report on a reimbursement check', () => {
+    const result = planReimbursementCheck([checkReport({ usedClubCreditCard: true, requestedAmountMinor: 0 })]);
+    expect(result).toEqual({ ok: false, message: 'This report does not request a reimbursement.' });
   });
 });

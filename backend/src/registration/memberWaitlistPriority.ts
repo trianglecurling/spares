@@ -2,7 +2,12 @@ import { and, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import type { Member } from '../types.js';
 import { RegistrationMemberValidationError, removeMemberWaitlistEntry } from './registrationMemberService.js';
-import { timestampToMillis, WAITLIST_OFFER_RESPONSE_PREFERENCE_LABELS, loadPriorityLeagueIdsByMember, waitlistOfferPreferenceForLeagues } from './waitlistOfferPreference.js';
+import { WAITLIST_OFFER_RESPONSE_PREFERENCE_LABELS, loadPriorityLeagueIdsByMember, waitlistOfferPreferenceForLeagues } from './waitlistOfferPreference.js';
+import {
+  orderMemberWaitlistPreference,
+  sortMemberWaitlistPriorityEntries,
+  type MemberWaitlistPrioritySortKey,
+} from './memberWaitlistOrder.js';
 import { insertWaitlistAuditEvent } from './waitlistAudit.js';
 import { isPrimaryWaitlistEntryMember, waitlistEntryIncludesMember } from './waitlistMemberMembership.js';
 import { getMemberWaitlistJoinContext, joinMemberWaitlist } from './memberWaitlistJoinService.js';
@@ -12,29 +17,13 @@ import { hydrateTeamRosterPlacementsForEntry } from './waitlistTeamRoster.js';
 import { clampWaitlistPreferenceOrder, isWaitlistPreferenceOrderClamped } from './waitlistPreferenceOrder.js';
 import { sendWaitlistEntriesJoinedNotifications } from './waitlistJoinedNotificationService.js';
 
-export type MemberWaitlistPrioritySortKey = {
-  id: number;
-  priorityRank: number | null;
-  joinedAt: Date | string | number;
-};
+export { sortMemberWaitlistPriorityEntries, type MemberWaitlistPrioritySortKey };
 
 export type MemberWaitlistSaveEntry = {
   waitlistId: number;
   teamRosterText?: string | null;
   teamRosterPlacements?: Array<{ memberId: number }> | null;
 };
-
-export function sortMemberWaitlistPriorityEntries<T extends MemberWaitlistPrioritySortKey>(entries: T[]): T[] {
-  return [...entries].sort((a, b) => {
-    const rankA = a.priorityRank ?? Number.MAX_SAFE_INTEGER;
-    const rankB = b.priorityRank ?? Number.MAX_SAFE_INTEGER;
-    if (rankA !== rankB) return rankA - rankB;
-    const joinedA = timestampToMillis(a.joinedAt) ?? 0;
-    const joinedB = timestampToMillis(b.joinedAt) ?? 0;
-    if (joinedA !== joinedB) return joinedA - joinedB;
-    return a.id - b.id;
-  });
-}
 
 export function nextTrailingPriorityRank(
   entries: Array<{ id: number; priorityRank: number | null }>,
@@ -279,9 +268,10 @@ export async function getMemberWaitlists(member: Member) {
   const overview = await listWaitlistsOverview();
   const waitlistById = new Map(overview.waitlists.map((waitlist) => [waitlist.id, waitlist]));
   const pendingByEntryId = await loadPendingOffersByEntryId(entries.map((entry) => entry.id));
-  const sorted = clampWaitlistPreferenceOrder(
-    sortMemberWaitlistPriorityEntries(withRosterFlag(entries, waitlistById)),
+  const byotWaitlistIds = new Set(
+    overview.waitlists.filter((waitlist) => requiresByotRoster(waitlist)).map((waitlist) => waitlist.id),
   );
+  const sorted = orderMemberWaitlistPreference(entries, byotWaitlistIds);
   const sessionIds = [
     ...new Set(
       sorted.flatMap((entry) =>

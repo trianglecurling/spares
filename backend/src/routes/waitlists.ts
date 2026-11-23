@@ -118,6 +118,7 @@ const createOfferSchema = z.object({
 const reorderSchema = z.object({
   entryIds: z.array(z.number().int().positive()).min(1),
   frozenEntryCount: z.number().int().min(0).optional(),
+  movedEntryId: z.number().int().positive().optional(),
   reason: z.string().min(1),
 });
 const freezeSchema = z.object({
@@ -294,6 +295,7 @@ export async function waitlistRoutes(fastify: FastifyInstance): Promise<void> {
         waitlistId: params.waitlistId,
         entryIds: body.entryIds,
         frozenEntryCount: body.frozenEntryCount,
+        movedEntryId: body.movedEntryId,
         reason: body.reason,
         actorMemberId: member.id,
       });

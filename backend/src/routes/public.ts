@@ -246,7 +246,15 @@ export async function publicRoutes(fastify: FastifyInstance) {
                           typeId: { type: 'string' },
                           source: { type: 'string' },
                           kind: { type: 'string', enum: ['league', 'bonspiel', 'other'] },
-                          title: { type: 'string' },
+                          title: {
+                            type: 'string',
+                            description:
+                              'Activity label. Member ice bookings use "Member ice booking — {name}" when the booker is known.',
+                          },
+                          memberName: {
+                            type: 'string',
+                            description: 'Member who booked the ice. Present for member ice bookings.',
+                          },
                           start: { type: 'string' },
                           end: { type: 'string' },
                           slug: { type: 'string' },
@@ -345,7 +353,7 @@ export async function publicRoutes(fastify: FastifyInstance) {
     return listPublicArticles(featuredParam === 'true');
   });
 
-  // GET /public/articles/by-id/:id — event detail body (linked published public event only)
+  // GET /public/articles/by-id/:id — event detail body (linked published event, any visibility)
   fastify.get<{ Params: { id: string } }>('/public/articles/by-id/:id', async (request, reply) => {
     const id = Number.parseInt(request.params.id, 10);
     if (!Number.isFinite(id)) {

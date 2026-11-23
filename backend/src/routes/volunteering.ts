@@ -46,17 +46,22 @@ import {
   updateAdminHourLog,
   updateMyHourLog,
 } from '../services/volunteerHourLogService.js';
+import { exportVolunteerReport } from '../services/volunteerReportService.js';
 import {
   VOLUNTEER_HOUR_LOG_ADDITIONAL_MEMBERS_MAX,
   VolunteerHourLogValidationError,
 } from '../utils/volunteerHourLogs.js';
+import {
+  parseVolunteerReportRange,
+  VolunteerReportValidationError,
+} from '../utils/volunteerReport.js';
 
 interface AuthenticatedRequest extends FastifyRequest {
   member: Member;
 }
 
 async function handleServiceError(reply: any, err: unknown) {
-  if (err instanceof VolunteerHourLogValidationError) {
+  if (err instanceof VolunteerHourLogValidationError || err instanceof VolunteerReportValidationError) {
     return sendValidationError(reply, err.message, err.details);
   }
   if (err instanceof VolunteeringServiceError) {
@@ -81,6 +86,7 @@ const programBodySchema = z.object({
     .nullable()
     .optional(),
   published: z.boolean().optional(),
+  unlisted: z.boolean().optional(),
   featureOnDashboard: z.boolean().optional(),
   publicSignups: z.boolean().optional(),
   signupKind: z.enum(['volunteering', 'general']).optional(),
@@ -160,6 +166,7 @@ const signupBodySchema = z.object({
   comments: z.string().max(2000).nullable().optional(),
   memberIds: z.array(z.number().int().positive()).optional(),
   guestNames: z.array(z.string().min(1).max(200)).optional(),
+  token: z.string().max(200).optional(),
 });
 
 const signupCommentsBodySchema = z.object({
@@ -200,16 +207,26 @@ export async function volunteeringRoutes(fastify: FastifyInstance): Promise<void
     }
   });
 
-  fastify.get<{ Params: { slug: string } }>(
+  fastify.get<{ Params: { slug: string }; Querystring: { token?: string } }>(
     '/volunteering/programs/:slug',
-    { schema: { tags: ['volunteering'] } },
+    {
+      schema: {
+        tags: ['volunteering'],
+        querystring: {
+          type: 'object',
+          properties: {
+            token: { type: 'string', description: 'Share token required for unlisted sign-ups' },
+          },
+        },
+      },
+    },
     async (request, reply) => {
       const member = getMember(request as AuthenticatedRequest);
       if (!member) return sendApiError(reply, 401, 'Unauthorized');
       const slug = request.params.slug?.trim();
       if (!slug) return sendApiError(reply, 400, 'Invalid program slug');
       try {
-        return { program: await getHubProgram(member, slug) };
+        return { program: await getHubProgram(member, slug, request.query.token) };
       } catch (err) {
         return handleServiceError(reply, err);
       }
@@ -849,6 +866,26 @@ export async function volunteeringRoutes(fastify: FastifyInstance): Promise<void
       try {
         await removeSignupAsManager(signupId, member);
         return reply.code(204).send();
+      } catch (err) {
+        return handleServiceError(reply, err);
+      }
+    }
+  );
+
+  fastify.get<{ Querystring: { from?: string; to?: string } }>(
+    '/volunteering/admin/report',
+    { schema: { tags: ['volunteering'] } },
+    async (request, reply) => {
+      const member = getMember(request as AuthenticatedRequest);
+      if (!member) return sendApiError(reply, 401, 'Unauthorized');
+      try {
+        const range = parseVolunteerReportRange(request.query?.from, request.query?.to);
+        const result = await exportVolunteerReport(member, range);
+        return reply
+          .header('Content-Type', 'text/csv; charset=utf-8')
+          .header('Content-Disposition', `attachment; filename="${result.filename}"`)
+          .header('Cache-Control', 'private, no-store')
+          .send(result.csv);
       } catch (err) {
         return handleServiceError(reply, err);
       }

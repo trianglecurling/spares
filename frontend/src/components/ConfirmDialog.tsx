@@ -14,6 +14,10 @@ interface ConfirmDialogProps {
   cancelText?: string;
   variant?: 'danger' | 'warning' | 'info';
   confirmDisabled?: boolean;
+  /** When set, the dialog focuses this control instead of the first focusable element. */
+  initialFocusId?: string;
+  /** Extra classes for the dialog panel. Defaults to a narrow confirmation width. */
+  panelClassName?: string;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -27,10 +31,12 @@ export default function ConfirmDialog({
   cancelText = 'Cancel',
   variant = 'warning',
   confirmDisabled = false,
+  initialFocusId,
+  panelClassName = 'max-w-md',
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
-  const modalRef = useFocusTrap(isOpen);
+  const modalRef = useFocusTrap(isOpen, initialFocusId);
 
   // Allow Escape key to cancel the dialog
   useEffect(() => {
@@ -85,7 +91,7 @@ export default function ConfirmDialog({
           role="dialog"
           aria-modal="true"
           aria-labelledby={title ? 'confirm-dialog-title' : undefined}
-          className="relative w-full max-w-md rounded-lg border border-gray-200 bg-white p-6 shadow-xl dark:border-gray-700 dark:bg-gray-800"
+          className={`relative w-full rounded-lg border border-gray-200 bg-white p-6 shadow-xl dark:border-gray-700 dark:bg-gray-800 ${panelClassName}`}
         >
           <div className="flex items-start">
             <div className={`flex-shrink-0 ${styles.iconBg} rounded-full p-2`}>

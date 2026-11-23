@@ -2,10 +2,19 @@ import { Link, useLocation } from 'react-router-dom';
 import Footer from '../../components/Footer';
 import HelpHeader from '../../components/HelpHeader';
 import { helpSections } from '../Help';
+import {
+  formatHours,
+  formatMinutes,
+  formatSeconds,
+  useSpareSettings,
+} from '../../hooks/useSpareSettings';
 
 export default function Notifications() {
   const location = useLocation();
   const currentPath = location.pathname;
+  const { settings } = useSpareSettings();
+  const urgent = formatHours(settings.urgentThresholdHours);
+  const cooldown = formatHours(settings.reissueCooldownHours);
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
@@ -62,7 +71,7 @@ export default function Notifications() {
                     </h2>
 
                     <h3 className="text-xl font-semibold mb-3 mt-4 text-[#121033] dark:text-gray-100">
-                      Less Than 24 Hours Before Game Time
+                      Less Than {urgent} Before Game Time
                     </h3>
                     <ul className="list-disc list-inside space-y-2">
                       <li>All matching members receive notifications immediately</li>
@@ -72,7 +81,7 @@ export default function Notifications() {
                     </ul>
 
                     <h3 className="text-xl font-semibold mb-3 mt-6 text-[#121033] dark:text-gray-100">
-                      More Than 24 Hours Before Game Time
+                      More Than {urgent} Before Game Time
                     </h3>
                     <p className="mb-3">
                       For requests with more time, the system prioritizes members on bye, then
@@ -83,16 +92,17 @@ export default function Notifications() {
                         League members on bye for that day are notified first (all at once)
                       </li>
                       <li>
-                        The request stays off other members&apos; dashboards for one hour so bye
-                        players get first chance
+                        The request stays off other members&apos; dashboards for{' '}
+                        {formatMinutes(settings.byePriorityWindowMinutes)} so bye players get
+                        first chance
                       </li>
                       <li>
-                        After that hour, remaining available members are notified one at a time in
+                        After that, remaining available members are notified one at a time in
                         random order
                       </li>
                       <li>
-                        After each of those notifications, the system waits a few minutes
-                        (configurable by administrators)
+                        After each of those notifications, the system waits{' '}
+                        {formatSeconds(settings.notificationDelaySeconds)}
                       </li>
                       <li>If someone signs up, notifications stop automatically</li>
                       <li>
@@ -161,7 +171,7 @@ export default function Notifications() {
                     </p>
                     <ol className="list-decimal list-inside space-y-2">
                       <li>
-                        <strong>After 72 hours:</strong> If it's been more than 72 hours since
+                        <strong>After {cooldown}:</strong> If it's been at least {cooldown} since
                         notifications were last sent
                       </li>
                       <li>

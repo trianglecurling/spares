@@ -4,7 +4,8 @@ import AdminPayments from './AdminPayments';
 
 export default function AdminPaymentsRoute() {
   const { segment } = useParams<{ segment?: string }>();
-  const activeTab = segment === 'item-names' ? 'item-names' : 'activity';
+  const activeTab =
+    segment === 'item-names' ? 'item-names' : segment === 'refunds' ? 'refunds' : 'activity';
 
   return (
     <ProtectedRoute requiredScope="payments.read">

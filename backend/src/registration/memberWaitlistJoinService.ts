@@ -17,6 +17,7 @@ import {
 import { getEffectiveRegistrationWindow } from './registrationShellService.js';
 import { getActiveWaitlistEntryPosition, resolvePlacementLeagueForWaitlist } from './waitlistEntityService.js';
 import { addWaitlistEntry, WaitlistStaffValidationError } from './waitlistStaffService.js';
+import { loadMembersRosteredForWaitlist } from './waitlistRosterExclusion.js';
 import {
   findActiveWaitlistEntryForMemberOnWaitlist,
   loadExistingWaitlistEntriesForMember,
@@ -244,7 +245,6 @@ async function loadLeagueHoldsFromRoster(memberId: number, sessionId: number): P
     .where(
       and(
         eq(schema.leagueRoster.member_id, memberId),
-        eq(schema.leagueRoster.status, 'active'),
         eq(schema.leagues.session_id, sessionId),
       ),
     );
@@ -513,7 +513,10 @@ export async function getMemberWaitlistJoinContext(member: Member, waitlistId: n
 
   const waitlistEligibility = validateWaitlistEligibility(context, league);
   const experienceEvaluation = memberWaitlistExperienceEvaluation(context, league);
+  const rosteredInLeague =
+    (await loadMembersRosteredForWaitlist({ waitlistId, memberIds: [member.id] })).size > 0;
   const blockingErrors = uniqueMessages([
+    ...(rosteredInLeague ? [`You are already on the roster for ${league.name}.`] : []),
     ...waitlistEligibility.blockingErrors
       .filter((error) => error.code !== 'registration_closed' && error.code !== 'insufficient_experience')
       .map((error) => error.message),

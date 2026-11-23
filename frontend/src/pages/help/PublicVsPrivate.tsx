@@ -2,10 +2,14 @@ import { Link, useLocation } from 'react-router-dom';
 import Footer from '../../components/Footer';
 import HelpHeader from '../../components/HelpHeader';
 import { helpSections } from '../Help';
+import { formatHours, formatMinutes, useSpareSettings } from '../../hooks/useSpareSettings';
 
 export default function PublicVsPrivate() {
   const location = useLocation();
   const currentPath = location.pathname;
+  const { settings } = useSpareSettings();
+  const urgent = formatHours(settings.urgentThresholdHours);
+  const byeWindow = formatMinutes(settings.byePriorityWindowMinutes);
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
@@ -60,7 +64,7 @@ export default function PublicVsPrivate() {
                     <ul className="list-disc list-inside space-y-2">
                       <li>
                         <strong>Visibility:</strong> Appears on member dashboards after any bye
-                        priority window (immediately when under 24 hours before the game)
+                        priority window (immediately when under {urgent} before the game)
                       </li>
                       <li>
                         <strong>Notifications:</strong>
@@ -69,12 +73,12 @@ export default function PublicVsPrivate() {
                             Members on bye for that league day are notified first
                           </li>
                           <li>
-                            If less than 24 hours before game time: All matching members are
+                            If less than {urgent} before game time: All matching members are
                             notified immediately
                           </li>
                           <li>
-                            If more than 24 hours before game time: After a one-hour bye window,
-                            remaining members are notified gradually, one at a time
+                            If more than {urgent} before game time: After a {byeWindow} bye
+                            window, remaining members are notified gradually, one at a time
                           </li>
                         </ul>
                       </li>
@@ -85,7 +89,7 @@ export default function PublicVsPrivate() {
                       </li>
                       <li>
                         <strong>Skip position:</strong> If requesting a skip, only members
-                        comfortable skipping will receive notifications
+                        comfortable skipping will receive notifications, plus members on bye
                       </li>
                       <li>
                         <strong>Control:</strong> You can pause notifications if needed, then
@@ -162,9 +166,10 @@ export default function PublicVsPrivate() {
                       Switching Between Types
                     </h2>
                     <p className="mb-3">
-                      You can't change a request from public to private (or vice versa) after it's
-                      created. If you need to change the type, you'll need to cancel the existing
-                      request and create a new one.
+                      You can open a private request to everyone by choosing &quot;Make public&quot;
+                      on the &quot;My requests&quot; page. Public notifications then start from the
+                      beginning, including the bye window. A public request can&apos;t be made
+                      private; cancel it and create a new private request instead.
                     </p>
                   </section>
                 </div>

@@ -38,6 +38,7 @@ export function getAdminLinks(member: AuthenticatedMember | null): MemberNavLink
       : []),
     ...(canManageWaivers ? [{ to: '/admin/waivers', label: 'Manage waivers' }] : []),
     ...(canManageLeagues ? [{ to: '/admin/facility', label: 'Manage facility info' }] : []),
+    ...(canManageLeagues ? [{ to: '/admin/sparing', label: 'Manage sparing' }] : []),
     ...(canManageContent ? [{ to: '/admin/content', label: 'Manage content' }] : []),
     ...(canManageGovernance ? [{ to: '/admin/governance', label: 'Manage governance' }] : []),
     ...(canAccessEventsAdmin ? [{ to: '/admin/events', label: 'Manage events' }] : []),

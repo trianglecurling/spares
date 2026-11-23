@@ -161,8 +161,7 @@ export async function sendPlacementPaymentLinksBatch(input: {
   const { db, schema } = getDrizzleDb();
   const placedRows = await db
     .selectDistinct({ registrationId: schema.leagueRoster.source_registration_id })
-    .from(schema.leagueRoster)
-    .where(and(eq(schema.leagueRoster.status, 'active')));
+    .from(schema.leagueRoster);
   const registrationIds = [
     ...new Set(
       placedRows

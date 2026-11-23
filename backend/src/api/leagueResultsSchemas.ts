@@ -149,9 +149,19 @@ export const standingRowSchema = {
     wins: { type: 'number' },
     losses: { type: 'number' },
     ties: { type: 'number' },
-    h2hResult: { type: ['string', 'null'], enum: ['win', 'loss', null] },
-    h2hOpponentName: { type: ['string', 'null'] },
-    h2hPairIndex: { type: ['number', 'null'] },
+    h2hResults: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          result: { type: 'string', enum: ['win', 'loss'] },
+          opponentName: { type: 'string' },
+          pairIndex: { type: 'number' },
+        },
+        required: ['result', 'opponentName', 'pairIndex'],
+      },
+    },
   },
   required: [
     'rank',
@@ -164,9 +174,7 @@ export const standingRowSchema = {
     'wins',
     'losses',
     'ties',
-    'h2hResult',
-    'h2hOpponentName',
-    'h2hPairIndex',
+    'h2hResults',
   ],
 } as const;
 

@@ -95,3 +95,58 @@ export function storedIndexById<T extends { id: number }>(
   const index = storedEntries.findIndex((entry) => entry.id === entryId);
   return index >= 0 ? index : null;
 }
+
+export type WaitlistSingleMove = {
+  entryId: number;
+  fromPosition: number;
+  toPosition: number;
+};
+
+function listsMatchWithoutEntry(previousIds: number[], nextIds: number[], entryId: number): boolean {
+  const previous = previousIds.filter((id) => id !== entryId);
+  const next = nextIds.filter((id) => id !== entryId);
+  if (previous.length !== next.length) return false;
+  return previous.every((id, index) => id === next[index]);
+}
+
+/**
+ * Identify the one waitlist entry a reorder relocated.
+ * `movedEntryId` is the dragged row. Without it, a single relocation is inferred
+ * from the largest position change. Adjacent swaps stay unresolved unless the
+ * dragged entry is named, because either neighbor could explain the new order.
+ */
+export function resolveSingleWaitlistMove(input: {
+  previousIds: number[];
+  nextIds: number[];
+  movedEntryId?: number | null;
+}): WaitlistSingleMove | null {
+  const previousIndex = new Map(input.previousIds.map((id, index) => [id, index]));
+  const nextIndex = new Map(input.nextIds.map((id, index) => [id, index]));
+
+  const toMove = (entryId: number): WaitlistSingleMove | null => {
+    const from = previousIndex.get(entryId);
+    const to = nextIndex.get(entryId);
+    if (from == null || to == null) return null;
+    return { entryId, fromPosition: from + 1, toPosition: to + 1 };
+  };
+
+  if (input.movedEntryId != null) {
+    return toMove(input.movedEntryId);
+  }
+
+  const changed: Array<{ entryId: number; delta: number }> = [];
+  for (const [entryId, from] of previousIndex) {
+    const to = nextIndex.get(entryId);
+    if (to == null || to === from) continue;
+    changed.push({ entryId, delta: Math.abs(to - from) });
+  }
+  if (changed.length === 0) return null;
+
+  const maxDelta = Math.max(...changed.map((row) => row.delta));
+  let leaders = changed.filter((row) => row.delta === maxDelta);
+  if (leaders.length > 1) {
+    leaders = leaders.filter((row) => listsMatchWithoutEntry(input.previousIds, input.nextIds, row.entryId));
+  }
+  if (leaders.length !== 1) return null;
+  return toMove(leaders[0]!.entryId);
+}

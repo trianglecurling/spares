@@ -1094,7 +1094,10 @@ export interface paths {
                                     source: string;
                                     /** @enum {string} */
                                     kind: "league" | "bonspiel" | "other";
+                                    /** @description Activity label. Member ice bookings use "Member ice booking — {name}" when the booker is known. */
                                     title: string;
+                                    /** @description Member who booked the ice. Present for member ice bookings. */
+                                    memberName?: string;
                                     start: string;
                                     end: string;
                                     slug?: string;
@@ -2688,7 +2691,10 @@ export interface paths {
         };
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    /** @description Share token required for unlisted sign-ups */
+                    token?: string;
+                };
                 header?: never;
                 path: {
                     slug: string;
@@ -2976,6 +2982,13 @@ export interface paths {
                             statusChangedByName?: null | string;
                             statusChangedAt?: null | string;
                             lastUpdatedByName?: null | string;
+                            reimbursementCheck?: null | {
+                                id: number;
+                                checkNumber: string;
+                                amountMinor: number;
+                                currency: string;
+                                issuedAt: string;
+                            };
                             notes?: {
                                 id: number;
                                 authorName: string;
@@ -3109,6 +3122,13 @@ export interface paths {
                             statusChangedByName?: null | string;
                             statusChangedAt?: null | string;
                             lastUpdatedByName?: null | string;
+                            reimbursementCheck?: null | {
+                                id: number;
+                                checkNumber: string;
+                                amountMinor: number;
+                                currency: string;
+                                issuedAt: string;
+                            };
                             notes?: {
                                 id: number;
                                 authorName: string;
@@ -3234,6 +3254,13 @@ export interface paths {
                             statusChangedByName?: null | string;
                             statusChangedAt?: null | string;
                             lastUpdatedByName?: null | string;
+                            reimbursementCheck?: null | {
+                                id: number;
+                                checkNumber: string;
+                                amountMinor: number;
+                                currency: string;
+                                issuedAt: string;
+                            };
                             notes?: {
                                 id: number;
                                 authorName: string;
@@ -3329,6 +3356,274 @@ export interface paths {
                         [name: string]: unknown;
                     };
                     content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/public/stones": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            stones: {
+                                id: number;
+                                wcfRegistrationNumber: string;
+                                alSerialNumber: string;
+                                notes: null | string;
+                                current: null | {
+                                    /** @enum {null|string} */
+                                    sheet: "A" | "B" | "C" | "D" | null;
+                                    /** @enum {null|string} */
+                                    color: "red" | "yellow" | null;
+                                    rockNumber: null | number;
+                                    /** @enum {string} */
+                                    side: "A" | "B";
+                                    effectiveDate: string;
+                                };
+                                lastMaintenance: {
+                                    texturing: null | string;
+                                    bandNarrowing: null | string;
+                                    imprinting: null | string;
+                                };
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/public/stones/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            since: string;
+                            entries: {
+                                id: string;
+                                date: string;
+                                /** @enum {string} */
+                                kind: "added" | "moved" | "swapped" | "rotated" | "flipped" | "maintenance";
+                                /** @enum {null|string} */
+                                activityType: "texturing" | "band_narrowing" | "imprinting" | null;
+                                passes: null | number;
+                                rotations: null | number;
+                                sandpaperGrit: null | number;
+                                /** @enum {null|string} */
+                                sandpaperCondition: "new" | "used_once" | "used_twice" | null;
+                                bandWidthsMm: (null | number)[];
+                                notes: null | string;
+                                stones: {
+                                    id: number;
+                                    wcfRegistrationNumber: string;
+                                    /** @enum {string} */
+                                    side: "A" | "B";
+                                    from: null | {
+                                        /** @enum {null|string} */
+                                        sheet: "A" | "B" | "C" | "D" | null;
+                                        /** @enum {null|string} */
+                                        color: "red" | "yellow" | null;
+                                        rockNumber: null | number;
+                                    };
+                                    to: null | {
+                                        /** @enum {null|string} */
+                                        sheet: "A" | "B" | "C" | "D" | null;
+                                        /** @enum {null|string} */
+                                        color: "red" | "yellow" | null;
+                                        rockNumber: null | number;
+                                    };
+                                }[];
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/public/stones/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            stone: {
+                                id: number;
+                                wcfRegistrationNumber: string;
+                                alSerialNumber: string;
+                                notes: null | string;
+                                current: null | {
+                                    /** @enum {null|string} */
+                                    sheet: "A" | "B" | "C" | "D" | null;
+                                    /** @enum {null|string} */
+                                    color: "red" | "yellow" | null;
+                                    rockNumber: null | number;
+                                    /** @enum {string} */
+                                    side: "A" | "B";
+                                    effectiveDate: string;
+                                };
+                                lastMaintenance: {
+                                    texturing: null | string;
+                                    bandNarrowing: null | string;
+                                    imprinting: null | string;
+                                };
+                            };
+                            placements: {
+                                id: number;
+                                /** @enum {null|string} */
+                                sheet: "A" | "B" | "C" | "D" | null;
+                                /** @enum {null|string} */
+                                color: "red" | "yellow" | null;
+                                rockNumber: null | number;
+                                /** @enum {string} */
+                                side: "A" | "B";
+                                effectiveDate: string;
+                                /** @enum {string} */
+                                changeType: "added" | "moved" | "swapped" | "rotated" | "flipped";
+                                relatedStone: null | {
+                                    id: number;
+                                    wcfRegistrationNumber: string;
+                                };
+                                notes: null | string;
+                                groupSize: number;
+                                dateRange: {
+                                    min: null | string;
+                                    max: null | string;
+                                };
+                                canUndo: boolean;
+                            }[];
+                            maintenance: {
+                                id: number;
+                                stoneId: number;
+                                /** @enum {string} */
+                                activityType: "texturing" | "band_narrowing" | "imprinting";
+                                /** @enum {string} */
+                                side: "A" | "B";
+                                performedOn: string;
+                                passes: null | number;
+                                rotations: null | number;
+                                sandpaperGrit: null | number;
+                                /** @enum {null|string} */
+                                sandpaperCondition: "new" | "used_once" | "used_twice" | null;
+                                bandWidthsMm: (null | number)[];
+                                comments: null | string;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/public/spare-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            notificationDelaySeconds: number;
+                            byePriorityWindowMinutes: number;
+                            urgentThresholdHours: number;
+                            reissueCooldownHours: number;
+                        };
+                    };
                 };
             };
         };
@@ -6512,6 +6807,7 @@ export interface paths {
                             /** @enum {string} */
                             teamFormation: "coordinator" | "skips_draft";
                             drawDurationMinutes: number;
+                            icePrepMinutes: number[];
                             drawTimes: string[];
                             exceptions: string[];
                             extraDraws: {
@@ -6561,6 +6857,7 @@ export interface paths {
                         predecessorLeagueId?: number | null;
                         successorLeagueId?: number | null;
                         drawDurationMinutes?: number;
+                        icePrepMinutes?: number[];
                         drawTimes: string[];
                         exceptions?: string[];
                         extraDraws?: {
@@ -6615,6 +6912,7 @@ export interface paths {
                             /** @enum {string} */
                             teamFormation: "coordinator" | "skips_draft";
                             drawDurationMinutes: number;
+                            icePrepMinutes: number[];
                             drawTimes: string[];
                             exceptions: string[];
                             extraDraws: {
@@ -6745,6 +7043,7 @@ export interface paths {
                                 /** @enum {string} */
                                 teamFormation: "coordinator" | "skips_draft";
                                 drawDurationMinutes: number;
+                                icePrepMinutes: number[];
                                 drawTimes: string[];
                                 exceptions: string[];
                                 extraDraws: {
@@ -6851,6 +7150,7 @@ export interface paths {
                         /** @enum {string} */
                         teamFormation?: "coordinator" | "skips_draft";
                         drawDurationMinutes?: number;
+                        icePrepMinutes?: number[];
                         drawTimes?: string[];
                         exceptions?: string[];
                         extraDraws?: {
@@ -6905,6 +7205,7 @@ export interface paths {
                             /** @enum {string} */
                             teamFormation: "coordinator" | "skips_draft";
                             drawDurationMinutes: number;
+                            icePrepMinutes: number[];
                             drawTimes: string[];
                             exceptions: string[];
                             extraDraws: {
@@ -6949,6 +7250,7 @@ export interface paths {
                                 startDate: string;
                                 endDate: string;
                                 drawDurationMinutes: number;
+                                icePrepMinutes: number[];
                                 drawTimes: string[];
                                 exceptions: string[];
                                 extraDraws: {
@@ -6996,6 +7298,7 @@ export interface paths {
                             startDate: string;
                             endDate: string;
                             drawDurationMinutes?: number;
+                            icePrepMinutes?: number[];
                             drawTimes: string[];
                             exceptions?: string[];
                             extraDraws?: {
@@ -7054,6 +7357,7 @@ export interface paths {
                                 /** @enum {string} */
                                 teamFormation: "coordinator" | "skips_draft";
                                 drawDurationMinutes: number;
+                                icePrepMinutes: number[];
                                 drawTimes: string[];
                                 exceptions: string[];
                                 extraDraws: {
@@ -7846,7 +8150,37 @@ export interface paths {
         };
         options?: never;
         head?: never;
-        patch?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                    memberId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        isTemporarySabbaticalFill: boolean;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            isTemporarySabbaticalFill: boolean;
+                        };
+                    };
+                };
+            };
+        };
         trace?: never;
     };
     "/leagues/{id}/managers": {
@@ -9640,10 +9974,12 @@ export interface paths {
                                 wins: number;
                                 losses: number;
                                 ties: number;
-                                /** @enum {null|string} */
-                                h2hResult: "win" | "loss" | null;
-                                h2hOpponentName: null | string;
-                                h2hPairIndex: null | number;
+                                h2hResults: {
+                                    /** @enum {string} */
+                                    result: "win" | "loss";
+                                    opponentName: string;
+                                    pairIndex: number;
+                                }[];
                             }[];
                         }[];
                     };
@@ -10386,6 +10722,24 @@ export interface paths {
                                     time: string;
                                     opponentName: null | string;
                                 }[];
+                                isManager: boolean;
+                                managedTeams: {
+                                    id: number;
+                                    name: null | string;
+                                    players: {
+                                        memberId: number;
+                                        name: string;
+                                        role: null | string;
+                                        sparePosition: ("lead" | "second" | "vice" | "skip") | null;
+                                        isSelf: boolean;
+                                    }[];
+                                    games: {
+                                        id: number;
+                                        date: string;
+                                        time: string;
+                                        opponentName: null | string;
+                                    }[];
+                                }[];
                             }[];
                         };
                     };
@@ -10677,6 +11031,8 @@ export interface paths {
                         "application/json": {
                             id: number;
                             status: string;
+                            inByeWindow?: boolean;
+                            opensToViewerAt?: null | string;
                         };
                     };
                 };
@@ -11206,6 +11562,17 @@ export interface paths {
                             notifiedMembers: number;
                             nextNotificationAt: null | string;
                             notificationPaused: boolean;
+                            phases: null | {
+                                bye: {
+                                    total: number;
+                                    notified: number;
+                                };
+                                general: {
+                                    total: number;
+                                    notified: number;
+                                    startsAt: null | string;
+                                };
+                            };
                         };
                     };
                 };
@@ -11295,6 +11662,55 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/spare-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        notificationDelaySeconds?: number;
+                        byePriorityWindowMinutes?: number;
+                        urgentThresholdHours?: number;
+                        reissueCooldownHours?: number;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            notificationDelaySeconds: number;
+                            byePriorityWindowMinutes: number;
+                            urgentThresholdHours: number;
+                            reissueCooldownHours: number;
+                        };
+                    };
+                };
+            };
+        };
         trace?: never;
     };
     "/public-config": {
@@ -12143,6 +12559,122 @@ export interface paths {
         trace?: never;
     };
     "/content/homepage/featured-articles/reorder": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/content/homepage/event-lookup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/content/homepage/featured-events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/content/homepage/featured-events/reorder": {
         parameters: {
             query?: never;
             header?: never;
@@ -15075,6 +15607,51 @@ export interface paths {
                 };
             };
         };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/payments/refunds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    limit?: number;
+                    offset?: number;
+                    search?: string;
+                    provider?: "stripe" | "paypal" | "square";
+                    subjectType?: "donation" | "membership" | "event_registration" | "curling_registration";
+                    status?: "requested" | "approved" | "rejected" | "processing" | "succeeded" | "failed";
+                    range?: "this_month" | "last_month" | "this_fiscal_year" | "custom";
+                    from?: string;
+                    to?: string;
+                    sort?: "issuedAt" | "amount" | "status" | "recipient" | "subject" | "provider" | "issuedBy";
+                    order?: "asc" | "desc";
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -20300,6 +20877,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/registration/staff/name-tags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query: {
+                    sessionId: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            sessionId: number;
+                            sessionName: string;
+                            nameTags: {
+                                registrationId: number;
+                                curlerId: null | number;
+                                curlerName: string;
+                                nameTagName: string;
+                                includePronouns: boolean;
+                                pronouns: null | string;
+                                quantity: number;
+                                /** @enum {string} */
+                                kind: "new_member" | "paid_replacement";
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/registration/staff/roster-confirmation-emails": {
         parameters: {
             query?: never;
@@ -23211,7 +23839,10 @@ export interface paths {
         };
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    /** @description Share token required for unlisted sign-ups */
+                    token?: string;
+                };
                 header?: never;
                 path: {
                     slug: string;
@@ -24192,6 +24823,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/volunteering/admin/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/volunteering/admin/hour-logs": {
         parameters: {
             query?: never;
@@ -24360,6 +25024,7 @@ export interface paths {
                                 kind: string;
                                 status: string;
                                 statusLabel: string;
+                                memberId: null | number;
                                 submitterName: string;
                                 submitterEmail: string;
                                 totalAmountMinor: number;
@@ -24469,6 +25134,13 @@ export interface paths {
                             statusChangedByName?: null | string;
                             statusChangedAt?: null | string;
                             lastUpdatedByName?: null | string;
+                            reimbursementCheck?: null | {
+                                id: number;
+                                checkNumber: string;
+                                amountMinor: number;
+                                currency: string;
+                                issuedAt: string;
+                            };
                             notes?: {
                                 id: number;
                                 authorName: string;
@@ -24616,6 +25288,13 @@ export interface paths {
                             statusChangedByName?: null | string;
                             statusChangedAt?: null | string;
                             lastUpdatedByName?: null | string;
+                            reimbursementCheck?: null | {
+                                id: number;
+                                checkNumber: string;
+                                amountMinor: number;
+                                currency: string;
+                                issuedAt: string;
+                            };
                             notes?: {
                                 id: number;
                                 authorName: string;
@@ -24755,6 +25434,13 @@ export interface paths {
                             statusChangedByName?: null | string;
                             statusChangedAt?: null | string;
                             lastUpdatedByName?: null | string;
+                            reimbursementCheck?: null | {
+                                id: number;
+                                checkNumber: string;
+                                amountMinor: number;
+                                currency: string;
+                                issuedAt: string;
+                            };
                             notes?: {
                                 id: number;
                                 authorName: string;
@@ -24889,6 +25575,9 @@ export interface paths {
                     pageSize?: number;
                     status?: string;
                     search?: string;
+                    range?: "" | "this_month" | "last_month" | "this_fiscal_year" | "custom";
+                    from?: string;
+                    to?: string;
                 };
                 header?: never;
                 path?: never;
@@ -24908,6 +25597,7 @@ export interface paths {
                                 kind: string;
                                 status: string;
                                 statusLabel: string;
+                                memberId: null | number;
                                 submitterName: string;
                                 submitterEmail: string;
                                 totalAmountMinor: number;
@@ -24919,6 +25609,20 @@ export interface paths {
                             page: number;
                             pageSize: number;
                             total: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
                         };
                     };
                 };
@@ -24940,6 +25644,469 @@ export interface paths {
         };
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/expenses/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    status?: string;
+                    search?: string;
+                    range?: "" | "this_month" | "last_month" | "this_fiscal_year" | "custom";
+                    from?: string;
+                    to?: string;
+                    /** @description Comma-separated expense report ids. When present, the other filters are ignored. */
+                    ids?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description CSV of expense reports matching the filters or selection */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": string;
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/expenses/documents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description ZIP of receipts and other documents for the filtered or selected expense reports */
+        get: {
+            parameters: {
+                query?: {
+                    status?: string;
+                    search?: string;
+                    range?: "" | "this_month" | "last_month" | "this_fiscal_year" | "custom";
+                    from?: string;
+                    to?: string;
+                    /** @description Comma-separated expense report ids. When present, the other filters are ignored. */
+                    ids?: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/expenses/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        ids: number[];
+                        /** @enum {string} */
+                        status: "pending_review" | "processing" | "approved" | "complete";
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            updatedCount: number;
+                            unchangedCount: number;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/expenses/checks/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Preview one reimbursement check for the selected expense reports before it is issued. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        ids: number[];
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            payeeName: string;
+                            payeePhone: null | string;
+                            payeeAddress: null | {
+                                addressLine1?: string;
+                                addressLine2?: string;
+                                city?: string;
+                                state?: string;
+                                country?: string;
+                                postalCode?: string;
+                            };
+                            amountMinor: number;
+                            currency: string;
+                            reports: {
+                                id: number;
+                                kind: string;
+                                submittedAt: string;
+                                amountMinor: number;
+                                currency: string;
+                                description: null | string;
+                            }[];
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/expenses/checks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Issue one reimbursement check covering the selected expense reports for a single person. */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        ids: number[];
+                        checkNumber: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            id: number;
+                            checkNumber: string;
+                            payeeName: string;
+                            payeeEmail: string;
+                            amountMinor: number;
+                            currency: string;
+                            reportIds: number[];
+                            emailSent: boolean;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                403: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+                /** @description Default Response */
+                409: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: string;
+                            details?: unknown;
+                        } & {
+                            [key: string]: unknown;
+                        };
+                    };
+                };
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;
@@ -25086,6 +26253,13 @@ export interface paths {
                             statusChangedByName?: null | string;
                             statusChangedAt?: null | string;
                             lastUpdatedByName?: null | string;
+                            reimbursementCheck?: null | {
+                                id: number;
+                                checkNumber: string;
+                                amountMinor: number;
+                                currency: string;
+                                issuedAt: string;
+                            };
                             notes?: {
                                 id: number;
                                 authorName: string;
@@ -25205,7 +26379,7 @@ export interface paths {
                 content: {
                     "application/json": {
                         /** @enum {string} */
-                        status?: "pending_review" | "processing" | "check_mailed" | "complete";
+                        status?: "pending_review" | "processing" | "approved" | "complete";
                     };
                 };
             };
@@ -25279,6 +26453,13 @@ export interface paths {
                             statusChangedByName?: null | string;
                             statusChangedAt?: null | string;
                             lastUpdatedByName?: null | string;
+                            reimbursementCheck?: null | {
+                                id: number;
+                                checkNumber: string;
+                                amountMinor: number;
+                                currency: string;
+                                issuedAt: string;
+                            };
                             notes?: {
                                 id: number;
                                 authorName: string;
@@ -25428,6 +26609,13 @@ export interface paths {
                             statusChangedByName?: null | string;
                             statusChangedAt?: null | string;
                             lastUpdatedByName?: null | string;
+                            reimbursementCheck?: null | {
+                                id: number;
+                                checkNumber: string;
+                                amountMinor: number;
+                                currency: string;
+                                issuedAt: string;
+                            };
                             notes?: {
                                 id: number;
                                 authorName: string;
@@ -25593,6 +26781,13 @@ export interface paths {
                             statusChangedByName?: null | string;
                             statusChangedAt?: null | string;
                             lastUpdatedByName?: null | string;
+                            reimbursementCheck?: null | {
+                                id: number;
+                                checkNumber: string;
+                                amountMinor: number;
+                                currency: string;
+                                issuedAt: string;
+                            };
                             notes?: {
                                 id: number;
                                 authorName: string;
@@ -25849,6 +27044,768 @@ export interface paths {
             };
         };
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/stones": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        wcfRegistrationNumber: string;
+                        alSerialNumber: string;
+                        notes?: string | null;
+                        /** @enum {null|string} */
+                        sheet: "A" | "B" | "C" | "D" | null;
+                        /** @enum {null|string} */
+                        color: "red" | "yellow" | null;
+                        rockNumber: null | number;
+                        /** @enum {string} */
+                        side: "A" | "B";
+                        effectiveDate: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            stone: {
+                                id: number;
+                                wcfRegistrationNumber: string;
+                                alSerialNumber: string;
+                                notes: null | string;
+                                current: null | {
+                                    /** @enum {null|string} */
+                                    sheet: "A" | "B" | "C" | "D" | null;
+                                    /** @enum {null|string} */
+                                    color: "red" | "yellow" | null;
+                                    rockNumber: null | number;
+                                    /** @enum {string} */
+                                    side: "A" | "B";
+                                    effectiveDate: string;
+                                };
+                                lastMaintenance: {
+                                    texturing: null | string;
+                                    bandNarrowing: null | string;
+                                    imprinting: null | string;
+                                };
+                            };
+                            placements: {
+                                id: number;
+                                /** @enum {null|string} */
+                                sheet: "A" | "B" | "C" | "D" | null;
+                                /** @enum {null|string} */
+                                color: "red" | "yellow" | null;
+                                rockNumber: null | number;
+                                /** @enum {string} */
+                                side: "A" | "B";
+                                effectiveDate: string;
+                                /** @enum {string} */
+                                changeType: "added" | "moved" | "swapped" | "rotated" | "flipped";
+                                relatedStone: null | {
+                                    id: number;
+                                    wcfRegistrationNumber: string;
+                                };
+                                notes: null | string;
+                                groupSize: number;
+                                dateRange: {
+                                    min: null | string;
+                                    max: null | string;
+                                };
+                                canUndo: boolean;
+                            }[];
+                            maintenance: {
+                                id: number;
+                                stoneId: number;
+                                /** @enum {string} */
+                                activityType: "texturing" | "band_narrowing" | "imprinting";
+                                /** @enum {string} */
+                                side: "A" | "B";
+                                performedOn: string;
+                                passes: null | number;
+                                rotations: null | number;
+                                sandpaperGrit: null | number;
+                                /** @enum {null|string} */
+                                sandpaperCondition: "new" | "used_once" | "used_twice" | null;
+                                bandWidthsMm: (null | number)[];
+                                comments: null | string;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/stones/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        effectiveDate: string;
+                        /** @enum {string} */
+                        side: "A" | "B";
+                        rows: {
+                            wcfRegistrationNumber: string;
+                            alSerialNumber: string;
+                            /** @enum {null|string} */
+                            sheet: "A" | "B" | "C" | "D" | null;
+                            /** @enum {null|string} */
+                            color: "red" | "yellow" | null;
+                            rockNumber: null | number;
+                        }[];
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            created: number;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/stones/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        effectiveDate: string;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            moved: number;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/stones/maintenance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        stoneIds: number[];
+                        /** @enum {string} */
+                        side: "A" | "B" | "current";
+                        /** @enum {string} */
+                        activityType: "texturing" | "band_narrowing" | "imprinting";
+                        performedOn: string;
+                        passes?: number | null;
+                        rotations?: number | null;
+                        /** @enum {integer|null} */
+                        sandpaperGrit?: 60 | 80 | 100 | null;
+                        /** @enum {null|string} */
+                        sandpaperCondition?: "new" | "used_once" | "used_twice" | null;
+                        bandWidthsMm?: (number | null)[] | null;
+                        comments?: string | null;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            created: number;
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/stones/maintenance/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            success: boolean;
+                        };
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {string} */
+                        side: "A" | "B";
+                        /** @enum {string} */
+                        activityType: "texturing" | "band_narrowing" | "imprinting";
+                        performedOn: string;
+                        passes?: number | null;
+                        rotations?: number | null;
+                        /** @enum {integer|null} */
+                        sandpaperGrit?: 60 | 80 | 100 | null;
+                        /** @enum {null|string} */
+                        sandpaperCondition?: "new" | "used_once" | "used_twice" | null;
+                        bandWidthsMm?: (number | null)[] | null;
+                        comments?: string | null;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            success: boolean;
+                        };
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/stones/placements/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            affected: number;
+                        };
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        effectiveDate: string;
+                        notes?: string | null;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            affected: number;
+                        };
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/stones/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            success: boolean;
+                        };
+                    };
+                };
+            };
+        };
+        options?: never;
+        head?: never;
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        wcfRegistrationNumber: string;
+                        alSerialNumber: string;
+                        notes: string | null;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            stone: {
+                                id: number;
+                                wcfRegistrationNumber: string;
+                                alSerialNumber: string;
+                                notes: null | string;
+                                current: null | {
+                                    /** @enum {null|string} */
+                                    sheet: "A" | "B" | "C" | "D" | null;
+                                    /** @enum {null|string} */
+                                    color: "red" | "yellow" | null;
+                                    rockNumber: null | number;
+                                    /** @enum {string} */
+                                    side: "A" | "B";
+                                    effectiveDate: string;
+                                };
+                                lastMaintenance: {
+                                    texturing: null | string;
+                                    bandNarrowing: null | string;
+                                    imprinting: null | string;
+                                };
+                            };
+                            placements: {
+                                id: number;
+                                /** @enum {null|string} */
+                                sheet: "A" | "B" | "C" | "D" | null;
+                                /** @enum {null|string} */
+                                color: "red" | "yellow" | null;
+                                rockNumber: null | number;
+                                /** @enum {string} */
+                                side: "A" | "B";
+                                effectiveDate: string;
+                                /** @enum {string} */
+                                changeType: "added" | "moved" | "swapped" | "rotated" | "flipped";
+                                relatedStone: null | {
+                                    id: number;
+                                    wcfRegistrationNumber: string;
+                                };
+                                notes: null | string;
+                                groupSize: number;
+                                dateRange: {
+                                    min: null | string;
+                                    max: null | string;
+                                };
+                                canUndo: boolean;
+                            }[];
+                            maintenance: {
+                                id: number;
+                                stoneId: number;
+                                /** @enum {string} */
+                                activityType: "texturing" | "band_narrowing" | "imprinting";
+                                /** @enum {string} */
+                                side: "A" | "B";
+                                performedOn: string;
+                                passes: null | number;
+                                rotations: null | number;
+                                sandpaperGrit: null | number;
+                                /** @enum {null|string} */
+                                sandpaperCondition: "new" | "used_once" | "used_twice" | null;
+                                bandWidthsMm: (null | number)[];
+                                comments: null | string;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        trace?: never;
+    };
+    "/stones/{id}/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        /** @enum {null|string} */
+                        sheet: "A" | "B" | "C" | "D" | null;
+                        /** @enum {null|string} */
+                        color: "red" | "yellow" | null;
+                        rockNumber: null | number;
+                        effectiveDate: string;
+                        notes?: string | null;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            stone: {
+                                id: number;
+                                wcfRegistrationNumber: string;
+                                alSerialNumber: string;
+                                notes: null | string;
+                                current: null | {
+                                    /** @enum {null|string} */
+                                    sheet: "A" | "B" | "C" | "D" | null;
+                                    /** @enum {null|string} */
+                                    color: "red" | "yellow" | null;
+                                    rockNumber: null | number;
+                                    /** @enum {string} */
+                                    side: "A" | "B";
+                                    effectiveDate: string;
+                                };
+                                lastMaintenance: {
+                                    texturing: null | string;
+                                    bandNarrowing: null | string;
+                                    imprinting: null | string;
+                                };
+                            };
+                            placements: {
+                                id: number;
+                                /** @enum {null|string} */
+                                sheet: "A" | "B" | "C" | "D" | null;
+                                /** @enum {null|string} */
+                                color: "red" | "yellow" | null;
+                                rockNumber: null | number;
+                                /** @enum {string} */
+                                side: "A" | "B";
+                                effectiveDate: string;
+                                /** @enum {string} */
+                                changeType: "added" | "moved" | "swapped" | "rotated" | "flipped";
+                                relatedStone: null | {
+                                    id: number;
+                                    wcfRegistrationNumber: string;
+                                };
+                                notes: null | string;
+                                groupSize: number;
+                                dateRange: {
+                                    min: null | string;
+                                    max: null | string;
+                                };
+                                canUndo: boolean;
+                            }[];
+                            maintenance: {
+                                id: number;
+                                stoneId: number;
+                                /** @enum {string} */
+                                activityType: "texturing" | "band_narrowing" | "imprinting";
+                                /** @enum {string} */
+                                side: "A" | "B";
+                                performedOn: string;
+                                passes: null | number;
+                                rotations: null | number;
+                                sandpaperGrit: null | number;
+                                /** @enum {null|string} */
+                                sandpaperCondition: "new" | "used_once" | "used_twice" | null;
+                                bandWidthsMm: (null | number)[];
+                                comments: null | string;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/stones/{id}/flip": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": {
+                        effectiveDate: string;
+                        notes?: string | null;
+                    };
+                };
+            };
+            responses: {
+                /** @description Default Response */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            stone: {
+                                id: number;
+                                wcfRegistrationNumber: string;
+                                alSerialNumber: string;
+                                notes: null | string;
+                                current: null | {
+                                    /** @enum {null|string} */
+                                    sheet: "A" | "B" | "C" | "D" | null;
+                                    /** @enum {null|string} */
+                                    color: "red" | "yellow" | null;
+                                    rockNumber: null | number;
+                                    /** @enum {string} */
+                                    side: "A" | "B";
+                                    effectiveDate: string;
+                                };
+                                lastMaintenance: {
+                                    texturing: null | string;
+                                    bandNarrowing: null | string;
+                                    imprinting: null | string;
+                                };
+                            };
+                            placements: {
+                                id: number;
+                                /** @enum {null|string} */
+                                sheet: "A" | "B" | "C" | "D" | null;
+                                /** @enum {null|string} */
+                                color: "red" | "yellow" | null;
+                                rockNumber: null | number;
+                                /** @enum {string} */
+                                side: "A" | "B";
+                                effectiveDate: string;
+                                /** @enum {string} */
+                                changeType: "added" | "moved" | "swapped" | "rotated" | "flipped";
+                                relatedStone: null | {
+                                    id: number;
+                                    wcfRegistrationNumber: string;
+                                };
+                                notes: null | string;
+                                groupSize: number;
+                                dateRange: {
+                                    min: null | string;
+                                    max: null | string;
+                                };
+                                canUndo: boolean;
+                            }[];
+                            maintenance: {
+                                id: number;
+                                stoneId: number;
+                                /** @enum {string} */
+                                activityType: "texturing" | "band_narrowing" | "imprinting";
+                                /** @enum {string} */
+                                side: "A" | "B";
+                                performedOn: string;
+                                passes: null | number;
+                                rotations: null | number;
+                                sandpaperGrit: null | number;
+                                /** @enum {null|string} */
+                                sandpaperCondition: "new" | "used_once" | "used_twice" | null;
+                                bandWidthsMm: (null | number)[];
+                                comments: null | string;
+                            }[];
+                        };
+                    };
+                };
+            };
+        };
         delete?: never;
         options?: never;
         head?: never;

@@ -495,6 +495,31 @@ function TeamScoreColumnHeading({
   );
 }
 
+/** Overlays the power-play mark so the score box stays the same size and stays centered. */
+export function EndScoreStack({
+  powerPlay = false,
+  className,
+  children,
+}: {
+  powerPlay?: boolean;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className={`relative ${className ?? ''}`}>
+      {children}
+      {powerPlay ? (
+        <span
+          className="pointer-events-none absolute right-0.5 top-0.5 text-[0.6rem] font-medium leading-none text-primary-teal"
+          title="Power play"
+        >
+          PP
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 function EndScoreCell({
   entry,
   side,
@@ -518,12 +543,7 @@ function EndScoreCell({
   const showHammerPlaceholder = display === '' && hasNextEndHammer;
 
   return (
-    <div className="flex flex-col items-center gap-0.5">
-      {hasPowerPlay ? (
-        <span className="text-[0.65rem] font-medium leading-none text-primary-teal" title="Power play">
-          PP
-        </span>
-      ) : null}
+    <EndScoreStack powerPlay={hasPowerPlay}>
       <button
         type="button"
         disabled={disabled}
@@ -549,7 +569,7 @@ function EndScoreCell({
           display
         )}
       </button>
-    </div>
+    </EndScoreStack>
   );
 }
 

@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import type { ExistingWaitlistEntry } from './registrationContext.js';
 import { WaitlistStaffValidationError } from './waitlistErrors.js';
+import { loadMembersRosteredForWaitlist } from './waitlistRosterExclusion.js';
 import { parseTeamRosterPlacements } from './waitlistTeamRoster.js';
 
 export function waitlistTeammateContactMessage(primaryMemberName: string): string {
@@ -87,6 +88,19 @@ export async function assertMembersAvailableForWaitlist(input: {
   const { db, schema } = getDrizzleDb();
   const uniqueMemberIds = [...new Set(input.memberIds)];
   if (uniqueMemberIds.length === 0) return;
+
+  const rosteredMemberIds = await loadMembersRosteredForWaitlist({
+    waitlistId: input.waitlistId,
+    memberIds: uniqueMemberIds,
+  });
+  if (rosteredMemberIds.size > 0) {
+    throw new WaitlistStaffValidationError({
+      teamRosterPlacements:
+        uniqueMemberIds.length === 1
+          ? 'This member is already on the roster for this league.'
+          : 'A team member is already on the roster for this league.',
+    });
+  }
 
   const rows = await db
     .select({

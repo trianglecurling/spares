@@ -54,6 +54,7 @@ import {
   defaultVolunteerCreditHours,
   parseVolunteerSignupKind,
   volunteerHoursFromRange,
+  volunteerProgramSharePath,
   volunteerProgramUiTerms,
   VOLUNTEER_CREDIT_HOURS_STEP,
   maxVolunteerCreditHoursOnStep,
@@ -234,6 +235,8 @@ export default function AdminVolunteerProgramEditor() {
   const [pointOfContact, setPointOfContact] = useState('');
   const [locationChoice, setLocationChoice] = useState<VolunteerLocationChoice>(VOLUNTEER_LOCATION_CLUB);
   const [published, setPublished] = useState(false);
+  const [unlisted, setUnlisted] = useState(false);
+  const [shareToken, setShareToken] = useState('');
   const [featureOnDashboard, setFeatureOnDashboard] = useState(true);
   const [publicSignups, setPublicSignups] = useState(false);
   const [signupKind, setSignupKind] = useState<VolunteerSignupKind>(() =>
@@ -286,6 +289,8 @@ export default function AdminVolunteerProgramEditor() {
       // API already nulls club-default locations; clubName only matters for legacy raw values.
       setLocationChoice(volunteerLocationChoiceFromStored(data.location, clubName));
       setPublished(Boolean(data.published));
+      setUnlisted(Boolean(data.unlisted));
+      setShareToken(data.shareToken?.trim() ?? '');
       setFeatureOnDashboard(data.featureOnDashboard !== false);
       setPublicSignups(Boolean(data.publicSignups));
       setSignupKind(parseVolunteerSignupKind(data.signupKind));
@@ -476,6 +481,7 @@ export default function AdminVolunteerProgramEditor() {
         pointOfContact: pointOfContact.trim(),
         location: volunteerLocationStoredFromChoice(locationChoice, clubName),
         published,
+        unlisted,
         featureOnDashboard: signupKind === 'volunteering' ? featureOnDashboard : false,
         publicSignups,
         signupKind,
@@ -583,6 +589,7 @@ export default function AdminVolunteerProgramEditor() {
         pointOfContact: pointOfContact.trim(),
         location: volunteerLocationStoredFromChoice(locationChoice, clubName),
         published,
+        unlisted,
         featureOnDashboard: signupKind === 'volunteering' ? featureOnDashboard : false,
         publicSignups,
         signupKind,
@@ -1416,40 +1423,42 @@ export default function AdminVolunteerProgramEditor() {
               onChange={setPublished}
               helperText={
                 signupKind === 'general'
-                  ? 'Published programs appear on the Other sign-ups tab.'
-                  : 'Published programs appear on the Volunteering tab.'
+                  ? 'Published programs appear on the Other sign-ups tab, unless they are unlisted.'
+                  : 'Published programs appear on the Volunteering tab, unless they are unlisted.'
               }
+            />
+            <FormCheckbox
+              label="Unlisted"
+              checked={unlisted}
+              onChange={setUnlisted}
+              helperText="Hide this sign-up from Volunteering & sign-ups, the member dashboard, and calendar sign-up links. People with the sign-up URL can still open it. The URL includes a secret token so it cannot be guessed."
             />
             {signupKind === 'volunteering' ? (
               <FormCheckbox
                 label="Feature on dashboard"
                 checked={featureOnDashboard}
                 onChange={setFeatureOnDashboard}
-                helperText="When enabled, open shifts from this program can appear in the member dashboard opportunities section."
+                helperText="When enabled, open shifts from this program can appear in the member dashboard opportunities section. Unlisted programs stay off the dashboard."
               />
             ) : null}
             <FormCheckbox
               label="Allow public sign-ups"
               checked={publicSignups}
               onChange={setPublicSignups}
-              helperText="Anyone with the public program URL can sign up with a name and email. The page is not linked from the site; share the URL directly. Club members who open the URL are sent to the member program page."
+              helperText="Anyone with the public program URL can sign up with a name and email. The page is not linked from the site; share the URL directly. The URL includes a secret token. Club members who open the URL are sent to the member program page."
             />
-            {publicSignups && !isNew && savedSlug ? (
+            {unlisted && !isNew && savedSlug && shareToken ? (
               <FormField
-                label="Public sign-up URL"
-                htmlFor={`${baseId}-public-url`}
-                helperText={
-                  published
-                    ? 'Share this link for public sign-ups. It only works while the program is published and public sign-ups stay enabled.'
-                    : 'Publish the program for this URL to work for the public.'
-                }
+                label="Sign-up URL"
+                htmlFor={`${baseId}-member-url`}
+                helperText="Share this link with club members. While the sign-up is unlisted, the token is required and the sign-up stays off Volunteering & sign-ups."
               >
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                   <input
-                    id={`${baseId}-public-url`}
+                    id={`${baseId}-member-url`}
                     className="app-input min-w-0 flex-1"
                     readOnly
-                    value={`${window.location.origin}/volunteering/public/programs/${savedSlug}`}
+                    value={`${window.location.origin}${volunteerProgramSharePath('member', savedSlug, shareToken)}`}
                   />
                   <Button
                     type="button"
@@ -1457,7 +1466,43 @@ export default function AdminVolunteerProgramEditor() {
                     onClick={async () => {
                       try {
                         await navigator.clipboard.writeText(
-                          `${window.location.origin}/volunteering/public/programs/${savedSlug}`
+                          `${window.location.origin}${volunteerProgramSharePath('member', savedSlug, shareToken)}`
+                        );
+                        showAlert('Sign-up URL copied', 'success');
+                      } catch {
+                        showAlert('Could not copy URL', 'error');
+                      }
+                    }}
+                  >
+                    Copy sign-up URL
+                  </Button>
+                </div>
+              </FormField>
+            ) : null}
+            {publicSignups && !isNew && savedSlug ? (
+              <FormField
+                label="Public sign-up URL"
+                htmlFor={`${baseId}-public-url`}
+                helperText={
+                  published
+                    ? 'Share this link for public sign-ups. It includes a secret token and only works while the program is published and public sign-ups stay enabled.'
+                    : 'Publish the program for this URL to work for the public. The link includes a secret token.'
+                }
+              >
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <input
+                    id={`${baseId}-public-url`}
+                    className="app-input min-w-0 flex-1"
+                    readOnly
+                    value={`${window.location.origin}${volunteerProgramSharePath('public', savedSlug, shareToken)}`}
+                  />
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(
+                          `${window.location.origin}${volunteerProgramSharePath('public', savedSlug, shareToken)}`
                         );
                         showAlert('Public URL copied', 'success');
                       } catch {
@@ -1465,7 +1510,7 @@ export default function AdminVolunteerProgramEditor() {
                       }
                     }}
                   >
-                    Copy URL
+                    Copy public URL
                   </Button>
                 </div>
               </FormField>
@@ -1474,7 +1519,7 @@ export default function AdminVolunteerProgramEditor() {
           <FormSection
             title="Calendar event"
             surface="panel"
-            description="Attach a free-form calendar event so people can open the event and go to this sign-up. If public sign-ups are on, the link also appears on the public calendar."
+            description="Attach a free-form calendar event so people can open the event and go to this sign-up. If public sign-ups are on, the link also appears on the public calendar. Unlisted sign-ups are not linked from the calendar."
           >
             <AttachCalendarEventField
               value={attachedCalendarEvent}

@@ -7,6 +7,8 @@ import {
   addExpenseReportNote,
   createExpenseReport,
   deleteExpenseReportForAdmin,
+  downloadExpenseDocumentsForAdmin,
+  exportExpenseReportsForAdmin,
   getExpenseAdminSummary,
   getExpenseReceiptFileForAdmin,
   getExpenseReceiptFileForMember,
@@ -15,17 +17,23 @@ import {
   listExpenseReportsForAdmin,
   listExpenseReportsForMember,
   streamExpenseReceiptFile,
+  issueExpenseReimbursementCheck,
+  previewExpenseReimbursementCheck,
   updateExpenseReportAdmin,
   updateExpenseReportRecord,
+  updateExpenseReportStatusesForAdmin,
+  ExpenseReportError,
 } from '../services/expenseReportService.js';
 import {
   EXPENSE_REPORT_STATUSES,
 } from '../services/expenseReportConstants.js';
+import { EXPENSE_DATE_RANGES } from '../services/expenseReportDateRange.js';
 import { abuseRouteRateLimits } from '../plugins/abuseRateLimits.js';
 import {
   expenseListItemSchema,
   expenseReportViewSchema,
   handleExpenseError,
+  mailingAddressJsonSchema,
   parseExpenseWriteRequest,
 } from './publicExpenses.js';
 
@@ -104,6 +112,144 @@ const listQuerySchema = z.object({
   status: z.enum(EXPENSE_REPORT_STATUSES).optional().or(z.literal('')),
   search: z.string().optional(),
 });
+
+const adminFilterQuerySchema = z.object({
+  status: z.enum(EXPENSE_REPORT_STATUSES).optional().or(z.literal('')),
+  search: z.string().optional(),
+  range: z.enum(EXPENSE_DATE_RANGES).optional().or(z.literal('')),
+  from: z.string().optional(),
+  to: z.string().optional(),
+});
+
+const adminListQuerySchema = adminFilterQuerySchema.extend({
+  page: z.coerce.number().int().min(1).optional(),
+  pageSize: z.coerce.number().int().min(1).max(100).optional(),
+});
+
+const adminFilterQuerystringProperties = {
+  status: { type: 'string' },
+  search: { type: 'string' },
+  range: { type: 'string', enum: ['', ...EXPENSE_DATE_RANGES] },
+  from: { type: 'string' },
+  to: { type: 'string' },
+} as const;
+
+const adminSelectionQuerystringProperties = {
+  ...adminFilterQuerystringProperties,
+  ids: {
+    type: 'string',
+    description: 'Comma-separated expense report ids. When present, the other filters are ignored.',
+  },
+} as const;
+
+const MAX_SELECTED_EXPENSE_REPORTS = 500;
+
+const adminSelectionQuerySchema = adminFilterQuerySchema.extend({
+  ids: z.string().max(12_000).optional(),
+});
+
+function selectedReportIdsFromQuery(value: string | undefined): number[] | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+  const parts = trimmed.split(',').map((part) => part.trim()).filter(Boolean);
+  if (parts.length === 0) return undefined;
+  if (parts.length > MAX_SELECTED_EXPENSE_REPORTS) {
+    throw new ExpenseReportError('Select 500 expense reports or fewer.', 400);
+  }
+  const ids = new Set<number>();
+  for (const part of parts) {
+    if (!/^[1-9]\d*$/.test(part)) {
+      throw new ExpenseReportError('Expense report ids must be positive integers.', 400);
+    }
+    const id = Number(part);
+    if (!Number.isSafeInteger(id)) {
+      throw new ExpenseReportError('Expense report ids must be positive integers.', 400);
+    }
+    ids.add(id);
+  }
+  return [...ids];
+}
+
+const bulkStatusSchema = z.object({
+  ids: z.array(z.number().int().positive()).min(1).max(MAX_SELECTED_EXPENSE_REPORTS),
+  status: z.enum(EXPENSE_REPORT_STATUSES),
+});
+
+const issueCheckSchema = z.object({
+  ids: z.array(z.number().int().positive()).min(1).max(MAX_SELECTED_EXPENSE_REPORTS),
+  checkNumber: z.string().trim().min(1).max(40),
+});
+
+const checkPreviewReportSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    id: { type: 'number' },
+    kind: { type: 'string' },
+    submittedAt: { type: 'string' },
+    amountMinor: { type: 'number' },
+    currency: { type: 'string' },
+    description: { type: ['string', 'null'] },
+  },
+  required: ['id', 'kind', 'submittedAt', 'amountMinor', 'currency', 'description'],
+} as const;
+
+const checkPreviewResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    payeeName: { type: 'string' },
+    payeePhone: { type: ['string', 'null'] },
+    payeeAddress: mailingAddressJsonSchema,
+    amountMinor: { type: 'number' },
+    currency: { type: 'string' },
+    reports: { type: 'array', items: checkPreviewReportSchema },
+  },
+  required: ['payeeName', 'payeePhone', 'payeeAddress', 'amountMinor', 'currency', 'reports'],
+} as const;
+
+const issueCheckResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    id: { type: 'number' },
+    checkNumber: { type: 'string' },
+    payeeName: { type: 'string' },
+    payeeEmail: { type: 'string' },
+    amountMinor: { type: 'number' },
+    currency: { type: 'string' },
+    reportIds: { type: 'array', items: { type: 'number' } },
+    emailSent: { type: 'boolean' },
+  },
+  required: ['id', 'checkNumber', 'payeeName', 'payeeEmail', 'amountMinor', 'currency', 'reportIds', 'emailSent'],
+} as const;
+
+const bulkStatusResponseSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    updatedCount: { type: 'number' },
+    unchangedCount: { type: 'number' },
+  },
+  required: ['updatedCount', 'unchangedCount'],
+} as const;
+
+function adminFiltersFromQuery(query: z.infer<typeof adminFilterQuerySchema>) {
+  return {
+    status: query.status || undefined,
+    search: query.search,
+    range: query.range || undefined,
+    from: query.from,
+    to: query.to,
+  };
+}
+
+function adminSelectionFromQuery(query: z.infer<typeof adminSelectionQuerySchema>) {
+  return {
+    ...adminFiltersFromQuery(query),
+    ids: selectedReportIdsFromQuery(query.ids),
+  };
+}
 
 const adminPatchSchema = z.object({
   status: z.enum(EXPENSE_REPORT_STATUSES).optional(),
@@ -279,22 +425,243 @@ export async function protectedExpenseRoutes(fastify: FastifyInstance): Promise<
           properties: {
             page: { type: 'number' },
             pageSize: { type: 'number' },
-            status: { type: 'string' },
-            search: { type: 'string' },
+            ...adminFilterQuerystringProperties,
           },
         },
-        response: { 200: listResponseSchema, 403: apiErrorResponseSchema },
+        response: {
+          200: listResponseSchema,
+          400: apiErrorResponseSchema,
+          403: apiErrorResponseSchema,
+        },
       },
     },
     async (request, reply) => {
       if (!requireExpensesRead(request, reply)) return;
-      const query = listQuerySchema.parse(request.query);
-      return listExpenseReportsForAdmin({
-        page: query.page,
-        pageSize: query.pageSize,
-        status: query.status || undefined,
-        search: query.search,
-      });
+      try {
+        const query = adminListQuerySchema.parse(request.query);
+        return await listExpenseReportsForAdmin({
+          page: query.page,
+          pageSize: query.pageSize,
+          ...adminFiltersFromQuery(query),
+        });
+      } catch (err) {
+        return handleExpenseError(reply, err);
+      }
+    }
+  );
+
+  fastify.get(
+    '/admin/expenses/export',
+    {
+      schema: {
+        tags: ['expenses'],
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: adminSelectionQuerystringProperties,
+        },
+        response: {
+          200: { type: 'string', description: 'CSV of expense reports matching the filters or selection' },
+          400: apiErrorResponseSchema,
+          403: apiErrorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      if (!requireExpensesRead(request, reply)) return;
+      try {
+        const query = adminSelectionQuerySchema.parse(request.query);
+        const result = await exportExpenseReportsForAdmin(adminSelectionFromQuery(query));
+        return reply
+          .header('Content-Type', 'text/csv; charset=utf-8')
+          .header('Content-Disposition', `attachment; filename="${result.filename}"`)
+          .header('Cache-Control', 'private, no-store')
+          .send(result.csv);
+      } catch (err) {
+        return handleExpenseError(reply, err);
+      }
+    }
+  );
+
+  fastify.get(
+    '/admin/expenses/documents',
+    {
+      schema: {
+        tags: ['expenses'],
+        description: 'ZIP of receipts and other documents for the filtered or selected expense reports',
+        querystring: {
+          type: 'object',
+          additionalProperties: false,
+          properties: adminSelectionQuerystringProperties,
+        },
+        response: {
+          400: apiErrorResponseSchema,
+          403: apiErrorResponseSchema,
+          404: apiErrorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      if (!requireExpensesRead(request, reply)) return;
+      try {
+        const query = adminSelectionQuerySchema.parse(request.query);
+        const result = await downloadExpenseDocumentsForAdmin(adminSelectionFromQuery(query));
+        return reply
+          .header('Content-Type', 'application/zip')
+          .header('Content-Length', String(result.zip.length))
+          .header('Content-Disposition', `attachment; filename="${result.filename}"`)
+          .header('Cache-Control', 'private, no-store')
+          .send(result.zip);
+      } catch (err) {
+        return handleExpenseError(reply, err);
+      }
+    }
+  );
+
+  fastify.post(
+    '/admin/expenses/status',
+    {
+      schema: {
+        tags: ['expenses'],
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['ids', 'status'],
+          properties: {
+            ids: {
+              type: 'array',
+              minItems: 1,
+              maxItems: MAX_SELECTED_EXPENSE_REPORTS,
+              items: { type: 'number' },
+            },
+            status: { type: 'string', enum: [...EXPENSE_REPORT_STATUSES] },
+          },
+        },
+        response: {
+          200: bulkStatusResponseSchema,
+          400: apiErrorResponseSchema,
+          403: apiErrorResponseSchema,
+          404: apiErrorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      if (!requireExpensesManage(request, reply)) return;
+      const member = request.member;
+      if (!member) {
+        sendApiError(reply, 401, 'Unauthorized');
+        return;
+      }
+      const parsed = bulkStatusSchema.safeParse(request.body);
+      if (!parsed.success) {
+        sendApiError(reply, 400, 'Choose a status and at least one expense report.');
+        return;
+      }
+      try {
+        return await updateExpenseReportStatusesForAdmin(
+          parsed.data.ids,
+          parsed.data.status,
+          staffActorFromMember(member)
+        );
+      } catch (err) {
+        return handleExpenseError(reply, err);
+      }
+    }
+  );
+
+  fastify.post(
+    '/admin/expenses/checks/preview',
+    {
+      schema: {
+        tags: ['expenses'],
+        description: 'Preview one reimbursement check for the selected expense reports before it is issued.',
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['ids'],
+          properties: {
+            ids: {
+              type: 'array',
+              minItems: 1,
+              maxItems: MAX_SELECTED_EXPENSE_REPORTS,
+              items: { type: 'number' },
+            },
+          },
+        },
+        response: {
+          200: checkPreviewResponseSchema,
+          400: apiErrorResponseSchema,
+          403: apiErrorResponseSchema,
+          404: apiErrorResponseSchema,
+          409: apiErrorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      if (!requireExpensesManage(request, reply)) return;
+      const parsed = issueCheckSchema.pick({ ids: true }).safeParse(request.body);
+      if (!parsed.success) {
+        sendApiError(reply, 400, 'Select at least one expense report.');
+        return;
+      }
+      try {
+        return await previewExpenseReimbursementCheck(parsed.data.ids);
+      } catch (err) {
+        return handleExpenseError(reply, err);
+      }
+    }
+  );
+
+  fastify.post(
+    '/admin/expenses/checks',
+    {
+      schema: {
+        tags: ['expenses'],
+        description: 'Issue one reimbursement check covering the selected expense reports for a single person.',
+        body: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['ids', 'checkNumber'],
+          properties: {
+            ids: {
+              type: 'array',
+              minItems: 1,
+              maxItems: MAX_SELECTED_EXPENSE_REPORTS,
+              items: { type: 'number' },
+            },
+            checkNumber: { type: 'string', minLength: 1, maxLength: 40 },
+          },
+        },
+        response: {
+          200: issueCheckResponseSchema,
+          400: apiErrorResponseSchema,
+          403: apiErrorResponseSchema,
+          404: apiErrorResponseSchema,
+          409: apiErrorResponseSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      if (!requireExpensesManage(request, reply)) return;
+      const member = request.member;
+      if (!member) {
+        sendApiError(reply, 401, 'Unauthorized');
+        return;
+      }
+      const parsed = issueCheckSchema.safeParse(request.body);
+      if (!parsed.success) {
+        sendApiError(reply, 400, 'Enter the check number and select at least one expense report.');
+        return;
+      }
+      try {
+        return await issueExpenseReimbursementCheck(
+          parsed.data.ids,
+          parsed.data.checkNumber,
+          staffActorFromMember(member)
+        );
+      } catch (err) {
+        return handleExpenseError(reply, err);
+      }
     }
   );
 

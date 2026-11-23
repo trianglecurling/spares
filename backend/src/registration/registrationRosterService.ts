@@ -2,6 +2,8 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import { getDrizzleDb } from '../db/drizzle-db.js';
 import type { CurlingRegistrationStatusSqlite, LeagueRosterPlacementTypeSqlite } from '../db/drizzle-schema.js';
 import { immediateChargeEntries, type PriorityLabelResult } from './leaguePriorityRules.js';
+import { removeMembersFromLeagueRoster } from './leagueRosterRemoval.js';
+import { removeWaitlistEntriesForRosteredMembers } from './waitlistRosterExclusion.js';
 import type { LeagueConfig, RegistrationContext } from './registrationContext.js';
 
 type DbExecutor = Pick<
@@ -133,7 +135,7 @@ export async function ensureImmediateChargeRosterForLeague(leagueId: number): Pr
   const alreadyOnRoster = await db
     .select({ memberId: schema.leagueRoster.member_id })
     .from(schema.leagueRoster)
-    .where(and(eq(schema.leagueRoster.league_id, leagueId), eq(schema.leagueRoster.status, 'active')));
+    .where(eq(schema.leagueRoster.league_id, leagueId));
   const alreadyOnRosterIds = new Set(alreadyOnRoster.map((row) => row.memberId));
 
   const registrations = await db
@@ -257,33 +259,6 @@ export function rosterPlacementsForRegistration(
   ];
 }
 
-async function removeRegistrationRosterRows(
-  executor: DbExecutor,
-  rows: Array<{ id: number; league_id: number; member_id: number }>,
-): Promise<void> {
-  const { schema } = getDrizzleDb();
-  if (rows.length === 0) return;
-
-  for (const row of rows) {
-    const assignments = await executor
-      .select({ id: schema.teamMembers.id })
-      .from(schema.teamMembers)
-      .innerJoin(schema.leagueTeams, eq(schema.teamMembers.team_id, schema.leagueTeams.id))
-      .where(and(eq(schema.leagueTeams.league_id, row.league_id), eq(schema.teamMembers.member_id, row.member_id)))
-      .limit(1);
-
-    if (assignments.length > 0) {
-      await executor
-        .update(schema.leagueRoster)
-        .set({ status: 'removed', updated_at: sql`CURRENT_TIMESTAMP` })
-        .where(eq(schema.leagueRoster.id, row.id));
-      continue;
-    }
-
-    await executor.delete(schema.leagueRoster).where(eq(schema.leagueRoster.id, row.id));
-  }
-}
-
 /**
  * Saving, submitting, or paying a registration must never drop a roster seat.
  * Staff-manual, waitlist, and other placements can exist for leagues that are
@@ -337,17 +312,18 @@ export async function removeAllRegistrationRosterPlacements(input: {
   const executor = input.tx ?? db;
 
   const rosterRows = await executor
-    .select()
+    .select({ leagueId: schema.leagueRoster.league_id })
     .from(schema.leagueRoster)
     .where(
       and(
         eq(schema.leagueRoster.member_id, input.curlerMemberId),
         eq(schema.leagueRoster.source_registration_id, input.registrationId),
-        eq(schema.leagueRoster.status, 'active'),
       ),
     );
 
-  await removeRegistrationRosterRows(executor, rosterRows);
+  for (const leagueId of new Set(rosterRows.map((row) => row.leagueId))) {
+    await removeMembersFromLeagueRoster({ executor, leagueId, memberIds: [input.curlerMemberId] });
+  }
 }
 
 export async function persistRegistrationRosterPlacements(input: {
@@ -378,7 +354,6 @@ export async function persistRegistrationRosterPlacements(input: {
 
     const rosterValues = {
       source_registration_id: input.registrationId,
-      status: 'active' as const,
       placement_type: placement.placementType,
       is_temporary_sabbatical_fill: placement.placementType === 'temporary_sabbatical_fill' ? 1 : 0,
       related_sabbatical_id: null,
@@ -397,6 +372,15 @@ export async function persistRegistrationRosterPlacements(input: {
       league_id: placement.leagueId,
       member_id: input.curlerMemberId,
       ...rosterValues,
+    });
+  }
+
+  for (const leagueId of new Set(placements.map((placement) => placement.leagueId))) {
+    await removeWaitlistEntriesForRosteredMembers({
+      executor,
+      leagueId,
+      memberIds: [input.curlerMemberId],
+      source: 'registration_submission',
     });
   }
 }

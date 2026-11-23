@@ -38,6 +38,10 @@ import {
   sendVolunteerCancellationEmails,
 } from './email.js';
 import { ensureUniqueVolunteerProgramSlug } from './volunteerProgramSlugs.js';
+import {
+  generateVolunteerProgramShareToken,
+  volunteerProgramShareTokensMatch,
+} from '../utils/volunteerProgramShareToken.js';
 import { compareVolunteerProgramsForDiscovery } from '../utils/volunteerProgramSort.js';
 import {
   VOLUNTEER_REMINDER_WINDOW_MS,
@@ -484,6 +488,9 @@ export type VolunteerProgramView = {
   location: string | null;
   startDate: string | null;
   published: boolean;
+  unlisted: boolean;
+  /** Present on admin reads. Omitted from member hub payloads. */
+  shareToken: string | null;
   featureOnDashboard: boolean;
   publicSignups: boolean;
   signupKind: VolunteerSignupKind;
@@ -727,6 +734,7 @@ export async function createProgram(input: {
   location?: string | null;
   startDate?: string | null;
   published?: boolean;
+  unlisted?: boolean;
   featureOnDashboard?: boolean;
   publicSignups?: boolean;
   signupKind?: VolunteerSignupKind;
@@ -767,6 +775,8 @@ export async function createProgram(input: {
         location: normalizeVolunteerLocation(input.location, clubName),
         start_date: startDate,
         published: input.published ? 1 : 0,
+        unlisted: input.unlisted ? 1 : 0,
+        share_token: generateVolunteerProgramShareToken(),
         // Default on so volunteering programs surface on dashboards unless explicitly opted out.
         feature_on_dashboard: canFeature && input.featureOnDashboard !== false ? 1 : 0,
         public_signups: input.publicSignups ? 1 : 0,
@@ -798,6 +808,7 @@ export async function updateProgram(
     location?: string | null;
     startDate?: string | null;
     published?: boolean;
+    unlisted?: boolean;
     featureOnDashboard?: boolean;
     publicSignups?: boolean;
     signupKind?: VolunteerSignupKind;
@@ -839,6 +850,12 @@ export async function updateProgram(
   }
   if (input.published !== undefined) {
     patch.published = input.published ? 1 : 0;
+  }
+  if (input.unlisted !== undefined) {
+    patch.unlisted = input.unlisted ? 1 : 0;
+  }
+  if (!String(existing[0].share_token ?? '').trim()) {
+    patch.share_token = generateVolunteerProgramShareToken();
   }
   const nextSignupKind =
     input.signupKind !== undefined
@@ -1024,6 +1041,7 @@ export async function duplicateProgram(
     startDate: newStartDate,
     featureOnDashboard: Number(source.feature_on_dashboard) === 1,
     publicSignups: Number(source.public_signups) === 1,
+    unlisted: Number(source.unlisted) === 1,
     signupKind: parseVolunteerSignupKind(source.signup_kind),
     priority: normalizePriority(source.priority),
     managerIds: input.managerIds,
@@ -1869,6 +1887,10 @@ async function buildProgramViews(options: {
       location: normalizeVolunteerLocation(program.location, clubName),
       startDate: normalizeDateOnly(program.start_date as any),
       published: Number(program.published) === 1,
+      unlisted: Number(program.unlisted) === 1,
+      shareToken: options.forHub
+        ? null
+        : String(program.share_token ?? '').trim() || null,
       featureOnDashboard: Number(program.feature_on_dashboard) === 1,
       publicSignups: Number(program.public_signups) === 1,
       signupKind: parseVolunteerSignupKind(program.signup_kind),
@@ -2242,6 +2264,7 @@ export async function calendarSignupsByDirectEventId(options: {
       title: schema.volunteerPrograms.title,
       publicSignups: schema.volunteerPrograms.public_signups,
       published: schema.volunteerPrograms.published,
+      unlisted: schema.volunteerPrograms.unlisted,
       archivedAt: schema.volunteerPrograms.archived_at,
     })
     .from(schema.volunteerPrograms)
@@ -2252,6 +2275,7 @@ export async function calendarSignupsByDirectEventId(options: {
     if (row.calendarEventId == null) continue;
     if (row.archivedAt) continue;
     if (Number(row.published) !== 1) continue;
+    if (Number(row.unlisted) === 1) continue;
     if (options.forPublic && Number(row.publicSignups) !== 1) continue;
     map.set(row.calendarEventId, {
       slug: String(row.slug),
@@ -2273,8 +2297,9 @@ export async function listHubPrograms(member: Member): Promise<{
     listHubCredentials(member.id),
   ]);
   const heldCredentialIds = new Set(myCredentials.map((credential) => credential.id));
-  const visiblePrograms = programs.filter((program) =>
-    volunteerProgramVisibleGivenCredentials(program, heldCredentialIds)
+  const visiblePrograms = programs.filter(
+    (program) =>
+      !program.unlisted && volunteerProgramVisibleGivenCredentials(program, heldCredentialIds)
   );
   // Discover opportunities: priority (lower first; missing = last), then earliest upcoming shift, then title.
   const sortedPrograms = [...visiblePrograms].sort((a, b) =>
@@ -2300,6 +2325,27 @@ export async function listAdminPrograms(
   });
 }
 
+async function assertUnlistedShareToken(
+  programId: number,
+  providedToken: string | null | undefined,
+  notFoundMessage: string
+): Promise<void> {
+  const { db, schema } = getDrizzleDb();
+  const [row] = await db
+    .select({
+      unlisted: schema.volunteerPrograms.unlisted,
+      shareToken: schema.volunteerPrograms.share_token,
+    })
+    .from(schema.volunteerPrograms)
+    .where(eq(schema.volunteerPrograms.id, programId))
+    .limit(1);
+  if (!row) throw new VolunteeringServiceError(notFoundMessage, 404);
+  if (Number(row.unlisted) !== 1) return;
+  if (!volunteerProgramShareTokensMatch(row.shareToken, providedToken)) {
+    throw new VolunteeringServiceError(notFoundMessage, 404);
+  }
+}
+
 async function resolveVolunteerProgramId(slugOrId: string): Promise<number | null> {
   const { db, schema } = getDrizzleDb();
   const key = slugOrId.trim();
@@ -2323,14 +2369,21 @@ async function resolveVolunteerProgramId(slugOrId: string): Promise<number | nul
   return null;
 }
 
-export async function getHubProgram(member: Member, slugOrId: string): Promise<VolunteerProgramView> {
+export async function getHubProgram(
+  member: Member,
+  slugOrId: string,
+  shareToken?: string | null
+): Promise<VolunteerProgramView> {
   const programId = await resolveVolunteerProgramId(slugOrId);
   if (programId == null) throw new VolunteeringServiceError('Program not found', 404);
+  await assertUnlistedShareToken(programId, shareToken, 'Program not found');
+  // Keep past shifts so the program page can show who signed up after a date has passed.
+  // The hub list stays upcoming-only.
   const programs = await buildProgramViews({
     member,
     includeArchived: false,
     programIds: [programId],
-    upcomingOnly: true,
+    upcomingOnly: false,
     forHub: true,
   });
   if (!programs[0]) throw new VolunteeringServiceError('Program not found', 404);
@@ -2394,6 +2447,7 @@ export async function listDashboardOpportunities(memberId: number): Promise<Dash
       and(
         isNull(schema.volunteerPrograms.archived_at),
         eq(schema.volunteerPrograms.published, 1),
+        eq(schema.volunteerPrograms.unlisted, 0),
         eq(schema.volunteerPrograms.feature_on_dashboard, 1),
         eq(schema.volunteerPrograms.signup_kind, 'volunteering'),
         gte(schema.volunteerShifts.start_dt, nowIso),
@@ -2630,6 +2684,8 @@ export type SignUpForShiftRoleInput = {
   comments?: string | null;
   memberIds?: number[];
   guestNames?: string[];
+  /** Required when the program is unlisted, unless the caller manages it. */
+  token?: string | null;
 };
 
 export async function signUpForShiftRole(
@@ -2671,6 +2727,8 @@ export async function signUpForShiftRole(
       startDt: schema.volunteerShifts.start_dt,
       endDt: schema.volunteerShifts.end_dt,
       published: schema.volunteerPrograms.published,
+      unlisted: schema.volunteerPrograms.unlisted,
+      shareToken: schema.volunteerPrograms.share_token,
       archivedAt: schema.volunteerPrograms.archived_at,
     })
     .from(schema.volunteerShiftRoles)
@@ -2690,6 +2748,13 @@ export async function signUpForShiftRole(
 
   const actorCanManage = await canManageProgram(actor, target.programId);
   if (Number(target.published) !== 1 && !actorCanManage) {
+    throw new VolunteeringServiceError('Opportunity not found', 404);
+  }
+  if (
+    Number(target.unlisted) === 1 &&
+    !actorCanManage &&
+    !volunteerProgramShareTokensMatch(target.shareToken, input.token)
+  ) {
     throw new VolunteeringServiceError('Opportunity not found', 404);
   }
 
@@ -3065,7 +3130,10 @@ export async function removeSignupAsManager(signupId: number, actor: Member): Pr
   return { programId: row.programId };
 }
 
-export async function getPublicProgram(slugOrId: string): Promise<PublicVolunteerProgramView> {
+export async function getPublicProgram(
+  slugOrId: string,
+  shareToken?: string | null
+): Promise<PublicVolunteerProgramView> {
   const { db, schema } = getDrizzleDb();
   const now = await getCurrentTimeAsync();
   const nowIso = now.toISOString();
@@ -3079,12 +3147,14 @@ export async function getPublicProgram(slugOrId: string): Promise<PublicVoluntee
     .where(eq(schema.volunteerPrograms.id, programId))
     .limit(1);
   const program = programs[0];
+  if (!program) throw new VolunteeringServiceError('Program not found', 404);
   if (
-    !program ||
-    program.archived_at ||
-    Number(program.published) !== 1 ||
-    Number(program.public_signups) !== 1
+    Number(program.unlisted) === 1 &&
+    !volunteerProgramShareTokensMatch(program.share_token, shareToken)
   ) {
+    throw new VolunteeringServiceError('Program not found', 404);
+  }
+  if (program.archived_at || Number(program.published) !== 1 || Number(program.public_signups) !== 1) {
     throw new VolunteeringServiceError('Program not found', 404);
   }
 
@@ -3178,7 +3248,7 @@ export async function getPublicProgram(slugOrId: string): Promise<PublicVoluntee
 
 export async function signUpPublicGuest(
   shiftRoleId: number,
-  input: { name: string; email: string; comments?: string | null }
+  input: { name: string; email: string; comments?: string | null; token?: string | null }
 ): Promise<{ manageUrl: string }> {
   const { db, schema } = getDrizzleDb();
   const now = await getCurrentTimeAsync();
@@ -3209,6 +3279,8 @@ export async function signUpPublicGuest(
       startDt: schema.volunteerShifts.start_dt,
       endDt: schema.volunteerShifts.end_dt,
       published: schema.volunteerPrograms.published,
+      unlisted: schema.volunteerPrograms.unlisted,
+      shareToken: schema.volunteerPrograms.share_token,
       publicSignups: schema.volunteerPrograms.public_signups,
       archivedAt: schema.volunteerPrograms.archived_at,
     })
@@ -3223,6 +3295,13 @@ export async function signUpPublicGuest(
     .limit(1);
 
   const target = rows[0];
+  if (
+    target &&
+    Number(target.unlisted) === 1 &&
+    !volunteerProgramShareTokensMatch(target.shareToken, input.token)
+  ) {
+    throw new VolunteeringServiceError('Opportunity not found', 404);
+  }
   if (
     !target ||
     target.archivedAt ||

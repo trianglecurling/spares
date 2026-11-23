@@ -2085,7 +2085,12 @@
                                   ]
                                 },
                                 "title": {
-                                  "type": "string"
+                                  "type": "string",
+                                  "description": "Activity label. Member ice bookings use \"Member ice booking — {name}\" when the booker is known."
+                                },
+                                "memberName": {
+                                  "type": "string",
+                                  "description": "Member who booked the ice. Present for member ice bookings."
                                 },
                                 "start": {
                                   "type": "string"
@@ -3243,6 +3248,15 @@
             "schema": {
               "type": "string"
             },
+            "in": "query",
+            "name": "token",
+            "required": false,
+            "description": "Share token required for unlisted sign-ups"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
             "in": "path",
             "name": "slug",
             "required": true
@@ -3721,6 +3735,37 @@
                         "string"
                       ]
                     },
+                    "reimbursementCheck": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "number"
+                        },
+                        "checkNumber": {
+                          "type": "string"
+                        },
+                        "amountMinor": {
+                          "type": "number"
+                        },
+                        "currency": {
+                          "type": "string"
+                        },
+                        "issuedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "checkNumber",
+                        "amountMinor",
+                        "currency",
+                        "issuedAt"
+                      ]
+                    },
                     "notes": {
                       "type": "array",
                       "items": {
@@ -4136,6 +4181,37 @@
                         "string"
                       ]
                     },
+                    "reimbursementCheck": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "number"
+                        },
+                        "checkNumber": {
+                          "type": "string"
+                        },
+                        "amountMinor": {
+                          "type": "number"
+                        },
+                        "currency": {
+                          "type": "string"
+                        },
+                        "issuedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "checkNumber",
+                        "amountMinor",
+                        "currency",
+                        "issuedAt"
+                      ]
+                    },
                     "notes": {
                       "type": "array",
                       "items": {
@@ -4549,6 +4625,37 @@
                         "string"
                       ]
                     },
+                    "reimbursementCheck": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "number"
+                        },
+                        "checkNumber": {
+                          "type": "string"
+                        },
+                        "amountMinor": {
+                          "type": "number"
+                        },
+                        "currency": {
+                          "type": "string"
+                        },
+                        "issuedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "checkNumber",
+                        "amountMinor",
+                        "currency",
+                        "issuedAt"
+                      ]
+                    },
                     "notes": {
                       "type": "array",
                       "items": {
@@ -4737,6 +4844,812 @@
         "responses": {
           "200": {
             "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/public/stones": {
+      "get": {
+        "tags": [
+          "curling-stones"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "stones": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "integer"
+                          },
+                          "wcfRegistrationNumber": {
+                            "type": "string"
+                          },
+                          "alSerialNumber": {
+                            "type": "string"
+                          },
+                          "notes": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "current": {
+                            "type": [
+                              "null",
+                              "object"
+                            ],
+                            "additionalProperties": false,
+                            "properties": {
+                              "sheet": {
+                                "type": [
+                                  "null",
+                                  "string"
+                                ],
+                                "enum": [
+                                  "A",
+                                  "B",
+                                  "C",
+                                  "D",
+                                  null
+                                ]
+                              },
+                              "color": {
+                                "type": [
+                                  "null",
+                                  "string"
+                                ],
+                                "enum": [
+                                  "red",
+                                  "yellow",
+                                  null
+                                ]
+                              },
+                              "rockNumber": {
+                                "type": [
+                                  "null",
+                                  "integer"
+                                ],
+                                "minimum": 1,
+                                "maximum": 8
+                              },
+                              "side": {
+                                "type": "string",
+                                "enum": [
+                                  "A",
+                                  "B"
+                                ]
+                              },
+                              "effectiveDate": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "sheet",
+                              "color",
+                              "rockNumber",
+                              "side",
+                              "effectiveDate"
+                            ]
+                          },
+                          "lastMaintenance": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                              "texturing": {
+                                "type": [
+                                  "null",
+                                  "string"
+                                ]
+                              },
+                              "bandNarrowing": {
+                                "type": [
+                                  "null",
+                                  "string"
+                                ]
+                              },
+                              "imprinting": {
+                                "type": [
+                                  "null",
+                                  "string"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "texturing",
+                              "bandNarrowing",
+                              "imprinting"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "wcfRegistrationNumber",
+                          "alSerialNumber",
+                          "notes",
+                          "current",
+                          "lastMaintenance"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "stones"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/public/stones/activity": {
+      "get": {
+        "tags": [
+          "curling-stones"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "since": {
+                      "type": "string"
+                    },
+                    "entries": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "date": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "added",
+                              "moved",
+                              "swapped",
+                              "rotated",
+                              "flipped",
+                              "maintenance"
+                            ]
+                          },
+                          "activityType": {
+                            "type": [
+                              "null",
+                              "string"
+                            ],
+                            "enum": [
+                              "texturing",
+                              "band_narrowing",
+                              "imprinting",
+                              null
+                            ]
+                          },
+                          "passes": {
+                            "type": [
+                              "null",
+                              "integer"
+                            ]
+                          },
+                          "rotations": {
+                            "type": [
+                              "null",
+                              "integer"
+                            ]
+                          },
+                          "sandpaperGrit": {
+                            "type": [
+                              "null",
+                              "integer"
+                            ]
+                          },
+                          "sandpaperCondition": {
+                            "type": [
+                              "null",
+                              "string"
+                            ],
+                            "enum": [
+                              "new",
+                              "used_once",
+                              "used_twice",
+                              null
+                            ]
+                          },
+                          "bandWidthsMm": {
+                            "type": "array",
+                            "items": {
+                              "type": [
+                                "null",
+                                "number"
+                              ]
+                            }
+                          },
+                          "notes": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "stones": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "properties": {
+                                "id": {
+                                  "type": "integer"
+                                },
+                                "wcfRegistrationNumber": {
+                                  "type": "string"
+                                },
+                                "side": {
+                                  "type": "string",
+                                  "enum": [
+                                    "A",
+                                    "B"
+                                  ]
+                                },
+                                "from": {
+                                  "type": [
+                                    "null",
+                                    "object"
+                                  ],
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "sheet": {
+                                      "type": [
+                                        "null",
+                                        "string"
+                                      ],
+                                      "enum": [
+                                        "A",
+                                        "B",
+                                        "C",
+                                        "D",
+                                        null
+                                      ]
+                                    },
+                                    "color": {
+                                      "type": [
+                                        "null",
+                                        "string"
+                                      ],
+                                      "enum": [
+                                        "red",
+                                        "yellow",
+                                        null
+                                      ]
+                                    },
+                                    "rockNumber": {
+                                      "type": [
+                                        "null",
+                                        "integer"
+                                      ],
+                                      "minimum": 1,
+                                      "maximum": 8
+                                    }
+                                  },
+                                  "required": [
+                                    "sheet",
+                                    "color",
+                                    "rockNumber"
+                                  ]
+                                },
+                                "to": {
+                                  "type": [
+                                    "null",
+                                    "object"
+                                  ],
+                                  "additionalProperties": false,
+                                  "properties": {
+                                    "sheet": {
+                                      "type": [
+                                        "null",
+                                        "string"
+                                      ],
+                                      "enum": [
+                                        "A",
+                                        "B",
+                                        "C",
+                                        "D",
+                                        null
+                                      ]
+                                    },
+                                    "color": {
+                                      "type": [
+                                        "null",
+                                        "string"
+                                      ],
+                                      "enum": [
+                                        "red",
+                                        "yellow",
+                                        null
+                                      ]
+                                    },
+                                    "rockNumber": {
+                                      "type": [
+                                        "null",
+                                        "integer"
+                                      ],
+                                      "minimum": 1,
+                                      "maximum": 8
+                                    }
+                                  },
+                                  "required": [
+                                    "sheet",
+                                    "color",
+                                    "rockNumber"
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "wcfRegistrationNumber",
+                                "side",
+                                "from",
+                                "to"
+                              ]
+                            }
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "date",
+                          "kind",
+                          "activityType",
+                          "passes",
+                          "rotations",
+                          "sandpaperGrit",
+                          "sandpaperCondition",
+                          "bandWidthsMm",
+                          "notes",
+                          "stones"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "since",
+                    "entries"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/public/stones/{id}": {
+      "get": {
+        "tags": [
+          "curling-stones"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d+$"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "stone": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "integer"
+                        },
+                        "wcfRegistrationNumber": {
+                          "type": "string"
+                        },
+                        "alSerialNumber": {
+                          "type": "string"
+                        },
+                        "notes": {
+                          "type": [
+                            "null",
+                            "string"
+                          ]
+                        },
+                        "current": {
+                          "type": [
+                            "null",
+                            "object"
+                          ],
+                          "additionalProperties": false,
+                          "properties": {
+                            "sheet": {
+                              "type": [
+                                "null",
+                                "string"
+                              ],
+                              "enum": [
+                                "A",
+                                "B",
+                                "C",
+                                "D",
+                                null
+                              ]
+                            },
+                            "color": {
+                              "type": [
+                                "null",
+                                "string"
+                              ],
+                              "enum": [
+                                "red",
+                                "yellow",
+                                null
+                              ]
+                            },
+                            "rockNumber": {
+                              "type": [
+                                "null",
+                                "integer"
+                              ],
+                              "minimum": 1,
+                              "maximum": 8
+                            },
+                            "side": {
+                              "type": "string",
+                              "enum": [
+                                "A",
+                                "B"
+                              ]
+                            },
+                            "effectiveDate": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "sheet",
+                            "color",
+                            "rockNumber",
+                            "side",
+                            "effectiveDate"
+                          ]
+                        },
+                        "lastMaintenance": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "texturing": {
+                              "type": [
+                                "null",
+                                "string"
+                              ]
+                            },
+                            "bandNarrowing": {
+                              "type": [
+                                "null",
+                                "string"
+                              ]
+                            },
+                            "imprinting": {
+                              "type": [
+                                "null",
+                                "string"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "texturing",
+                            "bandNarrowing",
+                            "imprinting"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "wcfRegistrationNumber",
+                        "alSerialNumber",
+                        "notes",
+                        "current",
+                        "lastMaintenance"
+                      ]
+                    },
+                    "placements": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "integer"
+                          },
+                          "sheet": {
+                            "type": [
+                              "null",
+                              "string"
+                            ],
+                            "enum": [
+                              "A",
+                              "B",
+                              "C",
+                              "D",
+                              null
+                            ]
+                          },
+                          "color": {
+                            "type": [
+                              "null",
+                              "string"
+                            ],
+                            "enum": [
+                              "red",
+                              "yellow",
+                              null
+                            ]
+                          },
+                          "rockNumber": {
+                            "type": [
+                              "null",
+                              "integer"
+                            ],
+                            "minimum": 1,
+                            "maximum": 8
+                          },
+                          "side": {
+                            "type": "string",
+                            "enum": [
+                              "A",
+                              "B"
+                            ]
+                          },
+                          "effectiveDate": {
+                            "type": "string"
+                          },
+                          "changeType": {
+                            "type": "string",
+                            "enum": [
+                              "added",
+                              "moved",
+                              "swapped",
+                              "rotated",
+                              "flipped"
+                            ]
+                          },
+                          "relatedStone": {
+                            "type": [
+                              "null",
+                              "object"
+                            ],
+                            "additionalProperties": false,
+                            "properties": {
+                              "id": {
+                                "type": "integer"
+                              },
+                              "wcfRegistrationNumber": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "wcfRegistrationNumber"
+                            ]
+                          },
+                          "notes": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "groupSize": {
+                            "type": "integer"
+                          },
+                          "dateRange": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                              "min": {
+                                "type": [
+                                  "null",
+                                  "string"
+                                ]
+                              },
+                              "max": {
+                                "type": [
+                                  "null",
+                                  "string"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "min",
+                              "max"
+                            ]
+                          },
+                          "canUndo": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "sheet",
+                          "color",
+                          "rockNumber",
+                          "side",
+                          "effectiveDate",
+                          "changeType",
+                          "relatedStone",
+                          "notes",
+                          "groupSize",
+                          "dateRange",
+                          "canUndo"
+                        ]
+                      }
+                    },
+                    "maintenance": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "integer"
+                          },
+                          "stoneId": {
+                            "type": "integer"
+                          },
+                          "activityType": {
+                            "type": "string",
+                            "enum": [
+                              "texturing",
+                              "band_narrowing",
+                              "imprinting"
+                            ]
+                          },
+                          "side": {
+                            "type": "string",
+                            "enum": [
+                              "A",
+                              "B"
+                            ]
+                          },
+                          "performedOn": {
+                            "type": "string"
+                          },
+                          "passes": {
+                            "type": [
+                              "null",
+                              "integer"
+                            ]
+                          },
+                          "rotations": {
+                            "type": [
+                              "null",
+                              "integer"
+                            ]
+                          },
+                          "sandpaperGrit": {
+                            "type": [
+                              "null",
+                              "integer"
+                            ]
+                          },
+                          "sandpaperCondition": {
+                            "type": [
+                              "null",
+                              "string"
+                            ],
+                            "enum": [
+                              "new",
+                              "used_once",
+                              "used_twice",
+                              null
+                            ]
+                          },
+                          "bandWidthsMm": {
+                            "type": "array",
+                            "items": {
+                              "type": [
+                                "null",
+                                "number"
+                              ]
+                            }
+                          },
+                          "comments": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "stoneId",
+                          "activityType",
+                          "side",
+                          "performedOn",
+                          "passes",
+                          "rotations",
+                          "sandpaperGrit",
+                          "sandpaperCondition",
+                          "bandWidthsMm",
+                          "comments"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "stone",
+                    "placements",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/public/spare-settings": {
+      "get": {
+        "tags": [
+          "spares"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "notificationDelaySeconds": {
+                      "type": "number"
+                    },
+                    "byePriorityWindowMinutes": {
+                      "type": "number"
+                    },
+                    "urgentThresholdHours": {
+                      "type": "number"
+                    },
+                    "reissueCooldownHours": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "notificationDelaySeconds",
+                    "byePriorityWindowMinutes",
+                    "urgentThresholdHours",
+                    "reissueCooldownHours"
+                  ]
+                }
+              }
+            }
           }
         }
       }
@@ -10460,6 +11373,12 @@
                       "drawDurationMinutes": {
                         "type": "number"
                       },
+                      "icePrepMinutes": {
+                        "type": "array",
+                        "items": {
+                          "type": "number"
+                        }
+                      },
                       "drawTimes": {
                         "type": "array",
                         "items": {
@@ -10525,6 +11444,7 @@
                       "publicNotes",
                       "teamFormation",
                       "drawDurationMinutes",
+                      "icePrepMinutes",
                       "drawTimes",
                       "exceptions",
                       "extraDraws"
@@ -10663,6 +11583,12 @@
                   },
                   "drawDurationMinutes": {
                     "type": "number"
+                  },
+                  "icePrepMinutes": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    }
                   },
                   "drawTimes": {
                     "type": "array",
@@ -10872,6 +11798,12 @@
                     "drawDurationMinutes": {
                       "type": "number"
                     },
+                    "icePrepMinutes": {
+                      "type": "array",
+                      "items": {
+                        "type": "number"
+                      }
+                    },
                     "drawTimes": {
                       "type": "array",
                       "items": {
@@ -10937,6 +11869,7 @@
                     "publicNotes",
                     "teamFormation",
                     "drawDurationMinutes",
+                    "icePrepMinutes",
                     "drawTimes",
                     "exceptions",
                     "extraDraws"
@@ -11207,6 +12140,12 @@
                           "drawDurationMinutes": {
                             "type": "number"
                           },
+                          "icePrepMinutes": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            }
+                          },
                           "drawTimes": {
                             "type": "array",
                             "items": {
@@ -11272,6 +12211,7 @@
                           "publicNotes",
                           "teamFormation",
                           "drawDurationMinutes",
+                          "icePrepMinutes",
                           "drawTimes",
                           "exceptions",
                           "extraDraws"
@@ -11445,6 +12385,12 @@
                   },
                   "drawDurationMinutes": {
                     "type": "number"
+                  },
+                  "icePrepMinutes": {
+                    "type": "array",
+                    "items": {
+                      "type": "number"
+                    }
                   },
                   "drawTimes": {
                     "type": "array",
@@ -11656,6 +12602,12 @@
                     "drawDurationMinutes": {
                       "type": "number"
                     },
+                    "icePrepMinutes": {
+                      "type": "array",
+                      "items": {
+                        "type": "number"
+                      }
+                    },
                     "drawTimes": {
                       "type": "array",
                       "items": {
@@ -11721,6 +12673,7 @@
                     "publicNotes",
                     "teamFormation",
                     "drawDurationMinutes",
+                    "icePrepMinutes",
                     "drawTimes",
                     "exceptions",
                     "extraDraws"
@@ -11831,6 +12784,12 @@
                           "drawDurationMinutes": {
                             "type": "number"
                           },
+                          "icePrepMinutes": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            }
+                          },
                           "drawTimes": {
                             "type": "array",
                             "items": {
@@ -11870,6 +12829,7 @@
                           "startDate",
                           "endDate",
                           "drawDurationMinutes",
+                          "icePrepMinutes",
                           "drawTimes",
                           "exceptions",
                           "extraDraws"
@@ -11929,6 +12889,12 @@
                         },
                         "drawDurationMinutes": {
                           "type": "number"
+                        },
+                        "icePrepMinutes": {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          }
                         },
                         "drawTimes": {
                           "type": "array",
@@ -12156,6 +13122,12 @@
                           "drawDurationMinutes": {
                             "type": "number"
                           },
+                          "icePrepMinutes": {
+                            "type": "array",
+                            "items": {
+                              "type": "number"
+                            }
+                          },
                           "drawTimes": {
                             "type": "array",
                             "items": {
@@ -12221,6 +13193,7 @@
                           "publicNotes",
                           "teamFormation",
                           "drawDurationMinutes",
+                          "icePrepMinutes",
                           "drawTimes",
                           "exceptions",
                           "extraDraws"
@@ -13574,6 +14547,69 @@
                   },
                   "required": [
                     "success"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "league-setup"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "isTemporarySabbaticalFill": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "isTemporarySabbaticalFill"
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "memberId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "isTemporarySabbaticalFill": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "isTemporarySabbaticalFill"
                   ]
                 }
               }
@@ -17051,28 +18087,32 @@
                             "ties": {
                               "type": "number"
                             },
-                            "h2hResult": {
-                              "type": [
-                                "null",
-                                "string"
-                              ],
-                              "enum": [
-                                "win",
-                                "loss",
-                                null
-                              ]
-                            },
-                            "h2hOpponentName": {
-                              "type": [
-                                "null",
-                                "string"
-                              ]
-                            },
-                            "h2hPairIndex": {
-                              "type": [
-                                "null",
-                                "number"
-                              ]
+                            "h2hResults": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "properties": {
+                                  "result": {
+                                    "type": "string",
+                                    "enum": [
+                                      "win",
+                                      "loss"
+                                    ]
+                                  },
+                                  "opponentName": {
+                                    "type": "string"
+                                  },
+                                  "pairIndex": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": [
+                                  "result",
+                                  "opponentName",
+                                  "pairIndex"
+                                ]
+                              }
                             }
                           },
                           "required": [
@@ -17086,9 +18126,7 @@
                             "wins",
                             "losses",
                             "ties",
-                            "h2hResult",
-                            "h2hOpponentName",
-                            "h2hPairIndex"
+                            "h2hResults"
                           ]
                         }
                       }
@@ -18315,6 +19353,110 @@
                                 "opponentName"
                               ]
                             }
+                          },
+                          "isManager": {
+                            "type": "boolean"
+                          },
+                          "managedTeams": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "additionalProperties": false,
+                              "properties": {
+                                "id": {
+                                  "type": "number"
+                                },
+                                "name": {
+                                  "type": [
+                                    "null",
+                                    "string"
+                                  ]
+                                },
+                                "players": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "memberId": {
+                                        "type": "number"
+                                      },
+                                      "name": {
+                                        "type": "string"
+                                      },
+                                      "role": {
+                                        "type": [
+                                          "null",
+                                          "string"
+                                        ]
+                                      },
+                                      "sparePosition": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string",
+                                            "enum": [
+                                              "lead",
+                                              "second",
+                                              "vice",
+                                              "skip"
+                                            ]
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "isSelf": {
+                                        "type": "boolean"
+                                      }
+                                    },
+                                    "required": [
+                                      "memberId",
+                                      "name",
+                                      "role",
+                                      "sparePosition",
+                                      "isSelf"
+                                    ]
+                                  }
+                                },
+                                "games": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "additionalProperties": false,
+                                    "properties": {
+                                      "id": {
+                                        "type": "number"
+                                      },
+                                      "date": {
+                                        "type": "string"
+                                      },
+                                      "time": {
+                                        "type": "string"
+                                      },
+                                      "opponentName": {
+                                        "type": [
+                                          "null",
+                                          "string"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "date",
+                                      "time",
+                                      "opponentName"
+                                    ]
+                                  }
+                                }
+                              },
+                              "required": [
+                                "id",
+                                "name",
+                                "players",
+                                "games"
+                              ]
+                            }
                           }
                         },
                         "required": [
@@ -18325,7 +19467,9 @@
                           "teamId",
                           "teamName",
                           "players",
-                          "games"
+                          "games",
+                          "isManager",
+                          "managedTeams"
                         ]
                       }
                     }
@@ -18895,6 +20039,15 @@
                     },
                     "status": {
                       "type": "string"
+                    },
+                    "inByeWindow": {
+                      "type": "boolean"
+                    },
+                    "opensToViewerAt": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
                     }
                   },
                   "required": [
@@ -19804,6 +20957,58 @@
                     },
                     "notificationPaused": {
                       "type": "boolean"
+                    },
+                    "phases": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "bye": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "total": {
+                              "type": "number"
+                            },
+                            "notified": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "total",
+                            "notified"
+                          ]
+                        },
+                        "general": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "total": {
+                              "type": "number"
+                            },
+                            "notified": {
+                              "type": "number"
+                            },
+                            "startsAt": {
+                              "type": [
+                                "null",
+                                "string"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "total",
+                            "notified",
+                            "startsAt"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "bye",
+                        "general"
+                      ]
                     }
                   },
                   "required": [
@@ -19811,7 +21016,8 @@
                     "totalMembers",
                     "notifiedMembers",
                     "nextNotificationAt",
-                    "notificationPaused"
+                    "notificationPaused",
+                    "phases"
                   ]
                 }
               }
@@ -19888,6 +21094,71 @@
                   },
                   "required": [
                     "success"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/spare-settings": {
+      "patch": {
+        "tags": [
+          "spares"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "notificationDelaySeconds": {
+                    "type": "number"
+                  },
+                  "byePriorityWindowMinutes": {
+                    "type": "number"
+                  },
+                  "urgentThresholdHours": {
+                    "type": "number"
+                  },
+                  "reissueCooldownHours": {
+                    "type": "number"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "notificationDelaySeconds": {
+                      "type": "number"
+                    },
+                    "byePriorityWindowMinutes": {
+                      "type": "number"
+                    },
+                    "urgentThresholdHours": {
+                      "type": "number"
+                    },
+                    "reissueCooldownHours": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "notificationDelaySeconds",
+                    "byePriorityWindowMinutes",
+                    "urgentThresholdHours",
+                    "reissueCooldownHours"
                   ]
                 }
               }
@@ -21069,6 +22340,40 @@
       }
     },
     "/content/homepage/featured-articles/reorder": {
+      "patch": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/content/homepage/event-lookup": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/content/homepage/featured-events": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "patch": {
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/content/homepage/featured-events/reorder": {
       "patch": {
         "responses": {
           "200": {
@@ -25310,6 +26615,146 @@
             "in": "path",
             "name": "id",
             "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/payments/refunds": {
+      "get": {
+        "tags": [
+          "payments"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "number"
+            },
+            "in": "query",
+            "name": "limit",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "number"
+            },
+            "in": "query",
+            "name": "offset",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "search",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "stripe",
+                "paypal",
+                "square"
+              ]
+            },
+            "in": "query",
+            "name": "provider",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "donation",
+                "membership",
+                "event_registration",
+                "curling_registration"
+              ]
+            },
+            "in": "query",
+            "name": "subjectType",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "requested",
+                "approved",
+                "rejected",
+                "processing",
+                "succeeded",
+                "failed"
+              ]
+            },
+            "in": "query",
+            "name": "status",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "this_month",
+                "last_month",
+                "this_fiscal_year",
+                "custom"
+              ]
+            },
+            "in": "query",
+            "name": "range",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "from",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "to",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "issuedAt",
+                "amount",
+                "status",
+                "recipient",
+                "subject",
+                "provider",
+                "issuedBy"
+              ]
+            },
+            "in": "query",
+            "name": "sort",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "asc",
+                "desc"
+              ]
+            },
+            "in": "query",
+            "name": "order",
+            "required": false
           }
         ],
         "responses": {
@@ -31234,6 +32679,102 @@
         }
       }
     },
+    "/registration/staff/name-tags": {
+      "get": {
+        "tags": [
+          "registration-staff"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "number"
+            },
+            "in": "query",
+            "name": "sessionId",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "sessionId",
+                    "sessionName",
+                    "nameTags"
+                  ],
+                  "properties": {
+                    "sessionId": {
+                      "type": "number"
+                    },
+                    "sessionName": {
+                      "type": "string"
+                    },
+                    "nameTags": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "registrationId",
+                          "curlerId",
+                          "curlerName",
+                          "nameTagName",
+                          "includePronouns",
+                          "pronouns",
+                          "quantity",
+                          "kind"
+                        ],
+                        "properties": {
+                          "registrationId": {
+                            "type": "number"
+                          },
+                          "curlerId": {
+                            "type": [
+                              "null",
+                              "number"
+                            ]
+                          },
+                          "curlerName": {
+                            "type": "string"
+                          },
+                          "nameTagName": {
+                            "type": "string"
+                          },
+                          "includePronouns": {
+                            "type": "boolean"
+                          },
+                          "pronouns": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "quantity": {
+                            "type": "number"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "new_member",
+                              "paid_replacement"
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/registration/staff/roster-confirmation-emails": {
       "get": {
         "tags": [
@@ -34541,6 +36082,15 @@
             "schema": {
               "type": "string"
             },
+            "in": "query",
+            "name": "token",
+            "required": false,
+            "description": "Share token required for unlisted sign-ups"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
             "in": "path",
             "name": "slug",
             "required": true
@@ -35194,6 +36744,18 @@
         }
       }
     },
+    "/volunteering/admin/report": {
+      "get": {
+        "tags": [
+          "volunteering"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/volunteering/admin/hour-logs": {
       "get": {
         "tags": [
@@ -35320,6 +36882,12 @@
                           "statusLabel": {
                             "type": "string"
                           },
+                          "memberId": {
+                            "type": [
+                              "null",
+                              "number"
+                            ]
+                          },
                           "submitterName": {
                             "type": "string"
                           },
@@ -35347,6 +36915,7 @@
                           "kind",
                           "status",
                           "statusLabel",
+                          "memberId",
                           "submitterName",
                           "submitterEmail",
                           "totalAmountMinor",
@@ -35679,6 +37248,37 @@
                       "type": [
                         "null",
                         "string"
+                      ]
+                    },
+                    "reimbursementCheck": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "number"
+                        },
+                        "checkNumber": {
+                          "type": "string"
+                        },
+                        "amountMinor": {
+                          "type": "number"
+                        },
+                        "currency": {
+                          "type": "string"
+                        },
+                        "issuedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "checkNumber",
+                        "amountMinor",
+                        "currency",
+                        "issuedAt"
                       ]
                     },
                     "notes": {
@@ -36116,6 +37716,37 @@
                         "string"
                       ]
                     },
+                    "reimbursementCheck": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "number"
+                        },
+                        "checkNumber": {
+                          "type": "string"
+                        },
+                        "amountMinor": {
+                          "type": "number"
+                        },
+                        "currency": {
+                          "type": "string"
+                        },
+                        "issuedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "checkNumber",
+                        "amountMinor",
+                        "currency",
+                        "issuedAt"
+                      ]
+                    },
                     "notes": {
                       "type": "array",
                       "items": {
@@ -36549,6 +38180,37 @@
                         "string"
                       ]
                     },
+                    "reimbursementCheck": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "number"
+                        },
+                        "checkNumber": {
+                          "type": "string"
+                        },
+                        "amountMinor": {
+                          "type": "number"
+                        },
+                        "currency": {
+                          "type": "string"
+                        },
+                        "issuedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "checkNumber",
+                        "amountMinor",
+                        "currency",
+                        "issuedAt"
+                      ]
+                    },
                     "notes": {
                       "type": "array",
                       "items": {
@@ -36798,6 +38460,37 @@
             "in": "query",
             "name": "search",
             "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "",
+                "this_month",
+                "last_month",
+                "this_fiscal_year",
+                "custom"
+              ]
+            },
+            "in": "query",
+            "name": "range",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "from",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "to",
+            "required": false
           }
         ],
         "responses": {
@@ -36827,6 +38520,12 @@
                           "statusLabel": {
                             "type": "string"
                           },
+                          "memberId": {
+                            "type": [
+                              "null",
+                              "number"
+                            ]
+                          },
                           "submitterName": {
                             "type": "string"
                           },
@@ -36854,6 +38553,7 @@
                           "kind",
                           "status",
                           "statusLabel",
+                          "memberId",
                           "submitterName",
                           "submitterEmail",
                           "totalAmountMinor",
@@ -36884,7 +38584,784 @@
               }
             }
           },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
           "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/expenses/export": {
+      "get": {
+        "tags": [
+          "expenses"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "status",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "search",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "",
+                "this_month",
+                "last_month",
+                "this_fiscal_year",
+                "custom"
+              ]
+            },
+            "in": "query",
+            "name": "range",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "from",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "to",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "ids",
+            "required": false,
+            "description": "Comma-separated expense report ids. When present, the other filters are ignored."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "CSV of expense reports matching the filters or selection",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string",
+                  "description": "CSV of expense reports matching the filters or selection"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/expenses/documents": {
+      "get": {
+        "tags": [
+          "expenses"
+        ],
+        "description": "ZIP of receipts and other documents for the filtered or selected expense reports",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "status",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "search",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "",
+                "this_month",
+                "last_month",
+                "this_fiscal_year",
+                "custom"
+              ]
+            },
+            "in": "query",
+            "name": "range",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "from",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "to",
+            "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "ids",
+            "required": false,
+            "description": "Comma-separated expense report ids. When present, the other filters are ignored."
+          }
+        ],
+        "responses": {
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/expenses/status": {
+      "post": {
+        "tags": [
+          "expenses"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "ids",
+                  "status"
+                ],
+                "properties": {
+                  "ids": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 500,
+                    "items": {
+                      "type": "number"
+                    }
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "pending_review",
+                      "processing",
+                      "approved",
+                      "complete"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "updatedCount": {
+                      "type": "number"
+                    },
+                    "unchangedCount": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "updatedCount",
+                    "unchangedCount"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/expenses/checks/preview": {
+      "post": {
+        "tags": [
+          "expenses"
+        ],
+        "description": "Preview one reimbursement check for the selected expense reports before it is issued.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "ids"
+                ],
+                "properties": {
+                  "ids": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 500,
+                    "items": {
+                      "type": "number"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "payeeName": {
+                      "type": "string"
+                    },
+                    "payeePhone": {
+                      "type": [
+                        "null",
+                        "string"
+                      ]
+                    },
+                    "payeeAddress": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "addressLine1": {
+                          "type": "string"
+                        },
+                        "addressLine2": {
+                          "type": "string"
+                        },
+                        "city": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string"
+                        },
+                        "country": {
+                          "type": "string"
+                        },
+                        "postalCode": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "amountMinor": {
+                      "type": "number"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "reports": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "number"
+                          },
+                          "kind": {
+                            "type": "string"
+                          },
+                          "submittedAt": {
+                            "type": "string"
+                          },
+                          "amountMinor": {
+                            "type": "number"
+                          },
+                          "currency": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "kind",
+                          "submittedAt",
+                          "amountMinor",
+                          "currency",
+                          "description"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "payeeName",
+                    "payeePhone",
+                    "payeeAddress",
+                    "amountMinor",
+                    "currency",
+                    "reports"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/expenses/checks": {
+      "post": {
+        "tags": [
+          "expenses"
+        ],
+        "description": "Issue one reimbursement check covering the selected expense reports for a single person.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "ids",
+                  "checkNumber"
+                ],
+                "properties": {
+                  "ids": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 500,
+                    "items": {
+                      "type": "number"
+                    }
+                  },
+                  "checkNumber": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 40
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "number"
+                    },
+                    "checkNumber": {
+                      "type": "string"
+                    },
+                    "payeeName": {
+                      "type": "string"
+                    },
+                    "payeeEmail": {
+                      "type": "string"
+                    },
+                    "amountMinor": {
+                      "type": "number"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "reportIds": {
+                      "type": "array",
+                      "items": {
+                        "type": "number"
+                      }
+                    },
+                    "emailSent": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "checkNumber",
+                    "payeeName",
+                    "payeeEmail",
+                    "amountMinor",
+                    "currency",
+                    "reportIds",
+                    "emailSent"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "details": {}
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
             "description": "Default Response",
             "content": {
               "application/json": {
@@ -37256,6 +39733,37 @@
                         "string"
                       ]
                     },
+                    "reimbursementCheck": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "number"
+                        },
+                        "checkNumber": {
+                          "type": "string"
+                        },
+                        "amountMinor": {
+                          "type": "number"
+                        },
+                        "currency": {
+                          "type": "string"
+                        },
+                        "issuedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "checkNumber",
+                        "amountMinor",
+                        "currency",
+                        "issuedAt"
+                      ]
+                    },
                     "notes": {
                       "type": "array",
                       "items": {
@@ -37414,7 +39922,7 @@
                     "enum": [
                       "pending_review",
                       "processing",
-                      "check_mailed",
+                      "approved",
                       "complete"
                     ]
                   }
@@ -37709,6 +40217,37 @@
                       "type": [
                         "null",
                         "string"
+                      ]
+                    },
+                    "reimbursementCheck": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "number"
+                        },
+                        "checkNumber": {
+                          "type": "string"
+                        },
+                        "amountMinor": {
+                          "type": "number"
+                        },
+                        "currency": {
+                          "type": "string"
+                        },
+                        "issuedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "checkNumber",
+                        "amountMinor",
+                        "currency",
+                        "issuedAt"
                       ]
                     },
                     "notes": {
@@ -38206,6 +40745,37 @@
                         "string"
                       ]
                     },
+                    "reimbursementCheck": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "number"
+                        },
+                        "checkNumber": {
+                          "type": "string"
+                        },
+                        "amountMinor": {
+                          "type": "number"
+                        },
+                        "currency": {
+                          "type": "string"
+                        },
+                        "issuedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "checkNumber",
+                        "amountMinor",
+                        "currency",
+                        "issuedAt"
+                      ]
+                    },
                     "notes": {
                       "type": "array",
                       "items": {
@@ -38680,6 +41250,37 @@
                         "string"
                       ]
                     },
+                    "reimbursementCheck": {
+                      "type": [
+                        "null",
+                        "object"
+                      ],
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "number"
+                        },
+                        "checkNumber": {
+                          "type": "string"
+                        },
+                        "amountMinor": {
+                          "type": "number"
+                        },
+                        "currency": {
+                          "type": "string"
+                        },
+                        "issuedAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "checkNumber",
+                        "amountMinor",
+                        "currency",
+                        "issuedAt"
+                      ]
+                    },
                     "notes": {
                       "type": "array",
                       "items": {
@@ -39058,6 +41659,2325 @@
                     "contentType",
                     "content",
                     "updatedAt"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stones": {
+      "post": {
+        "tags": [
+          "curling-stones"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "wcfRegistrationNumber": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "alSerialNumber": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "notes": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 2000
+                  },
+                  "sheet": {
+                    "type": [
+                      "null",
+                      "string"
+                    ],
+                    "enum": [
+                      "A",
+                      "B",
+                      "C",
+                      "D",
+                      null
+                    ]
+                  },
+                  "color": {
+                    "type": [
+                      "null",
+                      "string"
+                    ],
+                    "enum": [
+                      "red",
+                      "yellow",
+                      null
+                    ]
+                  },
+                  "rockNumber": {
+                    "type": [
+                      "null",
+                      "integer"
+                    ],
+                    "minimum": 1,
+                    "maximum": 8
+                  },
+                  "side": {
+                    "type": "string",
+                    "enum": [
+                      "A",
+                      "B"
+                    ]
+                  },
+                  "effectiveDate": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                  }
+                },
+                "required": [
+                  "wcfRegistrationNumber",
+                  "alSerialNumber",
+                  "sheet",
+                  "color",
+                  "rockNumber",
+                  "side",
+                  "effectiveDate"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "stone": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "integer"
+                        },
+                        "wcfRegistrationNumber": {
+                          "type": "string"
+                        },
+                        "alSerialNumber": {
+                          "type": "string"
+                        },
+                        "notes": {
+                          "type": [
+                            "null",
+                            "string"
+                          ]
+                        },
+                        "current": {
+                          "type": [
+                            "null",
+                            "object"
+                          ],
+                          "additionalProperties": false,
+                          "properties": {
+                            "sheet": {
+                              "type": [
+                                "null",
+                                "string"
+                              ],
+                              "enum": [
+                                "A",
+                                "B",
+                                "C",
+                                "D",
+                                null
+                              ]
+                            },
+                            "color": {
+                              "type": [
+                                "null",
+                                "string"
+                              ],
+                              "enum": [
+                                "red",
+                                "yellow",
+                                null
+                              ]
+                            },
+                            "rockNumber": {
+                              "type": [
+                                "null",
+                                "integer"
+                              ],
+                              "minimum": 1,
+                              "maximum": 8
+                            },
+                            "side": {
+                              "type": "string",
+                              "enum": [
+                                "A",
+                                "B"
+                              ]
+                            },
+                            "effectiveDate": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "sheet",
+                            "color",
+                            "rockNumber",
+                            "side",
+                            "effectiveDate"
+                          ]
+                        },
+                        "lastMaintenance": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "texturing": {
+                              "type": [
+                                "null",
+                                "string"
+                              ]
+                            },
+                            "bandNarrowing": {
+                              "type": [
+                                "null",
+                                "string"
+                              ]
+                            },
+                            "imprinting": {
+                              "type": [
+                                "null",
+                                "string"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "texturing",
+                            "bandNarrowing",
+                            "imprinting"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "wcfRegistrationNumber",
+                        "alSerialNumber",
+                        "notes",
+                        "current",
+                        "lastMaintenance"
+                      ]
+                    },
+                    "placements": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "integer"
+                          },
+                          "sheet": {
+                            "type": [
+                              "null",
+                              "string"
+                            ],
+                            "enum": [
+                              "A",
+                              "B",
+                              "C",
+                              "D",
+                              null
+                            ]
+                          },
+                          "color": {
+                            "type": [
+                              "null",
+                              "string"
+                            ],
+                            "enum": [
+                              "red",
+                              "yellow",
+                              null
+                            ]
+                          },
+                          "rockNumber": {
+                            "type": [
+                              "null",
+                              "integer"
+                            ],
+                            "minimum": 1,
+                            "maximum": 8
+                          },
+                          "side": {
+                            "type": "string",
+                            "enum": [
+                              "A",
+                              "B"
+                            ]
+                          },
+                          "effectiveDate": {
+                            "type": "string"
+                          },
+                          "changeType": {
+                            "type": "string",
+                            "enum": [
+                              "added",
+                              "moved",
+                              "swapped",
+                              "rotated",
+                              "flipped"
+                            ]
+                          },
+                          "relatedStone": {
+                            "type": [
+                              "null",
+                              "object"
+                            ],
+                            "additionalProperties": false,
+                            "properties": {
+                              "id": {
+                                "type": "integer"
+                              },
+                              "wcfRegistrationNumber": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "wcfRegistrationNumber"
+                            ]
+                          },
+                          "notes": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "groupSize": {
+                            "type": "integer"
+                          },
+                          "dateRange": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                              "min": {
+                                "type": [
+                                  "null",
+                                  "string"
+                                ]
+                              },
+                              "max": {
+                                "type": [
+                                  "null",
+                                  "string"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "min",
+                              "max"
+                            ]
+                          },
+                          "canUndo": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "sheet",
+                          "color",
+                          "rockNumber",
+                          "side",
+                          "effectiveDate",
+                          "changeType",
+                          "relatedStone",
+                          "notes",
+                          "groupSize",
+                          "dateRange",
+                          "canUndo"
+                        ]
+                      }
+                    },
+                    "maintenance": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "integer"
+                          },
+                          "stoneId": {
+                            "type": "integer"
+                          },
+                          "activityType": {
+                            "type": "string",
+                            "enum": [
+                              "texturing",
+                              "band_narrowing",
+                              "imprinting"
+                            ]
+                          },
+                          "side": {
+                            "type": "string",
+                            "enum": [
+                              "A",
+                              "B"
+                            ]
+                          },
+                          "performedOn": {
+                            "type": "string"
+                          },
+                          "passes": {
+                            "type": [
+                              "null",
+                              "integer"
+                            ]
+                          },
+                          "rotations": {
+                            "type": [
+                              "null",
+                              "integer"
+                            ]
+                          },
+                          "sandpaperGrit": {
+                            "type": [
+                              "null",
+                              "integer"
+                            ]
+                          },
+                          "sandpaperCondition": {
+                            "type": [
+                              "null",
+                              "string"
+                            ],
+                            "enum": [
+                              "new",
+                              "used_once",
+                              "used_twice",
+                              null
+                            ]
+                          },
+                          "bandWidthsMm": {
+                            "type": "array",
+                            "items": {
+                              "type": [
+                                "null",
+                                "number"
+                              ]
+                            }
+                          },
+                          "comments": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "stoneId",
+                          "activityType",
+                          "side",
+                          "performedOn",
+                          "passes",
+                          "rotations",
+                          "sandpaperGrit",
+                          "sandpaperCondition",
+                          "bandWidthsMm",
+                          "comments"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "stone",
+                    "placements",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stones/import": {
+      "post": {
+        "tags": [
+          "curling-stones"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "effectiveDate": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                  },
+                  "side": {
+                    "type": "string",
+                    "enum": [
+                      "A",
+                      "B"
+                    ]
+                  },
+                  "rows": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 200,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "wcfRegistrationNumber": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
+                        },
+                        "alSerialNumber": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 100
+                        },
+                        "sheet": {
+                          "type": [
+                            "null",
+                            "string"
+                          ],
+                          "enum": [
+                            "A",
+                            "B",
+                            "C",
+                            "D",
+                            null
+                          ]
+                        },
+                        "color": {
+                          "type": [
+                            "null",
+                            "string"
+                          ],
+                          "enum": [
+                            "red",
+                            "yellow",
+                            null
+                          ]
+                        },
+                        "rockNumber": {
+                          "type": [
+                            "null",
+                            "integer"
+                          ],
+                          "minimum": 1,
+                          "maximum": 8
+                        }
+                      },
+                      "required": [
+                        "wcfRegistrationNumber",
+                        "alSerialNumber",
+                        "sheet",
+                        "color",
+                        "rockNumber"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "effectiveDate",
+                  "side",
+                  "rows"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "created": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "created"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stones/rotate": {
+      "post": {
+        "tags": [
+          "curling-stones"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "effectiveDate": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                  }
+                },
+                "required": [
+                  "effectiveDate"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "moved": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "moved"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stones/maintenance": {
+      "post": {
+        "tags": [
+          "curling-stones"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "stoneIds": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 200,
+                    "items": {
+                      "type": "integer",
+                      "minimum": 1
+                    }
+                  },
+                  "side": {
+                    "type": "string",
+                    "enum": [
+                      "A",
+                      "B",
+                      "current"
+                    ]
+                  },
+                  "activityType": {
+                    "type": "string",
+                    "enum": [
+                      "texturing",
+                      "band_narrowing",
+                      "imprinting"
+                    ]
+                  },
+                  "performedOn": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                  },
+                  "passes": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 0,
+                    "maximum": 1000
+                  },
+                  "rotations": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 0,
+                    "maximum": 1000
+                  },
+                  "sandpaperGrit": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "enum": [
+                      60,
+                      80,
+                      100,
+                      null
+                    ]
+                  },
+                  "sandpaperCondition": {
+                    "type": [
+                      "null",
+                      "string"
+                    ],
+                    "enum": [
+                      "new",
+                      "used_once",
+                      "used_twice",
+                      null
+                    ]
+                  },
+                  "bandWidthsMm": {
+                    "type": [
+                      "array",
+                      "null"
+                    ],
+                    "minItems": 4,
+                    "maxItems": 4,
+                    "items": {
+                      "type": [
+                        "number",
+                        "null"
+                      ],
+                      "minimum": 0,
+                      "maximum": 100
+                    }
+                  },
+                  "comments": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 2000
+                  }
+                },
+                "required": [
+                  "stoneIds",
+                  "side",
+                  "activityType",
+                  "performedOn"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "created": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "created"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stones/maintenance/{id}": {
+      "patch": {
+        "tags": [
+          "curling-stones"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "side": {
+                    "type": "string",
+                    "enum": [
+                      "A",
+                      "B"
+                    ]
+                  },
+                  "activityType": {
+                    "type": "string",
+                    "enum": [
+                      "texturing",
+                      "band_narrowing",
+                      "imprinting"
+                    ]
+                  },
+                  "performedOn": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                  },
+                  "passes": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 0,
+                    "maximum": 1000
+                  },
+                  "rotations": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 0,
+                    "maximum": 1000
+                  },
+                  "sandpaperGrit": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "enum": [
+                      60,
+                      80,
+                      100,
+                      null
+                    ]
+                  },
+                  "sandpaperCondition": {
+                    "type": [
+                      "null",
+                      "string"
+                    ],
+                    "enum": [
+                      "new",
+                      "used_once",
+                      "used_twice",
+                      null
+                    ]
+                  },
+                  "bandWidthsMm": {
+                    "type": [
+                      "array",
+                      "null"
+                    ],
+                    "minItems": 4,
+                    "maxItems": 4,
+                    "items": {
+                      "type": [
+                        "number",
+                        "null"
+                      ],
+                      "minimum": 0,
+                      "maximum": 100
+                    }
+                  },
+                  "comments": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 2000
+                  }
+                },
+                "required": [
+                  "side",
+                  "activityType",
+                  "performedOn"
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d+$"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "curling-stones"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d+$"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stones/placements/{id}": {
+      "patch": {
+        "tags": [
+          "curling-stones"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "effectiveDate": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                  },
+                  "notes": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 2000
+                  }
+                },
+                "required": [
+                  "effectiveDate"
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d+$"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "affected": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "affected"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "curling-stones"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d+$"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "affected": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "affected"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stones/{id}": {
+      "patch": {
+        "tags": [
+          "curling-stones"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "wcfRegistrationNumber": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "alSerialNumber": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "notes": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 2000
+                  }
+                },
+                "required": [
+                  "wcfRegistrationNumber",
+                  "alSerialNumber",
+                  "notes"
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d+$"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "stone": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "integer"
+                        },
+                        "wcfRegistrationNumber": {
+                          "type": "string"
+                        },
+                        "alSerialNumber": {
+                          "type": "string"
+                        },
+                        "notes": {
+                          "type": [
+                            "null",
+                            "string"
+                          ]
+                        },
+                        "current": {
+                          "type": [
+                            "null",
+                            "object"
+                          ],
+                          "additionalProperties": false,
+                          "properties": {
+                            "sheet": {
+                              "type": [
+                                "null",
+                                "string"
+                              ],
+                              "enum": [
+                                "A",
+                                "B",
+                                "C",
+                                "D",
+                                null
+                              ]
+                            },
+                            "color": {
+                              "type": [
+                                "null",
+                                "string"
+                              ],
+                              "enum": [
+                                "red",
+                                "yellow",
+                                null
+                              ]
+                            },
+                            "rockNumber": {
+                              "type": [
+                                "null",
+                                "integer"
+                              ],
+                              "minimum": 1,
+                              "maximum": 8
+                            },
+                            "side": {
+                              "type": "string",
+                              "enum": [
+                                "A",
+                                "B"
+                              ]
+                            },
+                            "effectiveDate": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "sheet",
+                            "color",
+                            "rockNumber",
+                            "side",
+                            "effectiveDate"
+                          ]
+                        },
+                        "lastMaintenance": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "texturing": {
+                              "type": [
+                                "null",
+                                "string"
+                              ]
+                            },
+                            "bandNarrowing": {
+                              "type": [
+                                "null",
+                                "string"
+                              ]
+                            },
+                            "imprinting": {
+                              "type": [
+                                "null",
+                                "string"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "texturing",
+                            "bandNarrowing",
+                            "imprinting"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "wcfRegistrationNumber",
+                        "alSerialNumber",
+                        "notes",
+                        "current",
+                        "lastMaintenance"
+                      ]
+                    },
+                    "placements": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "integer"
+                          },
+                          "sheet": {
+                            "type": [
+                              "null",
+                              "string"
+                            ],
+                            "enum": [
+                              "A",
+                              "B",
+                              "C",
+                              "D",
+                              null
+                            ]
+                          },
+                          "color": {
+                            "type": [
+                              "null",
+                              "string"
+                            ],
+                            "enum": [
+                              "red",
+                              "yellow",
+                              null
+                            ]
+                          },
+                          "rockNumber": {
+                            "type": [
+                              "null",
+                              "integer"
+                            ],
+                            "minimum": 1,
+                            "maximum": 8
+                          },
+                          "side": {
+                            "type": "string",
+                            "enum": [
+                              "A",
+                              "B"
+                            ]
+                          },
+                          "effectiveDate": {
+                            "type": "string"
+                          },
+                          "changeType": {
+                            "type": "string",
+                            "enum": [
+                              "added",
+                              "moved",
+                              "swapped",
+                              "rotated",
+                              "flipped"
+                            ]
+                          },
+                          "relatedStone": {
+                            "type": [
+                              "null",
+                              "object"
+                            ],
+                            "additionalProperties": false,
+                            "properties": {
+                              "id": {
+                                "type": "integer"
+                              },
+                              "wcfRegistrationNumber": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "wcfRegistrationNumber"
+                            ]
+                          },
+                          "notes": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "groupSize": {
+                            "type": "integer"
+                          },
+                          "dateRange": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                              "min": {
+                                "type": [
+                                  "null",
+                                  "string"
+                                ]
+                              },
+                              "max": {
+                                "type": [
+                                  "null",
+                                  "string"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "min",
+                              "max"
+                            ]
+                          },
+                          "canUndo": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "sheet",
+                          "color",
+                          "rockNumber",
+                          "side",
+                          "effectiveDate",
+                          "changeType",
+                          "relatedStone",
+                          "notes",
+                          "groupSize",
+                          "dateRange",
+                          "canUndo"
+                        ]
+                      }
+                    },
+                    "maintenance": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "integer"
+                          },
+                          "stoneId": {
+                            "type": "integer"
+                          },
+                          "activityType": {
+                            "type": "string",
+                            "enum": [
+                              "texturing",
+                              "band_narrowing",
+                              "imprinting"
+                            ]
+                          },
+                          "side": {
+                            "type": "string",
+                            "enum": [
+                              "A",
+                              "B"
+                            ]
+                          },
+                          "performedOn": {
+                            "type": "string"
+                          },
+                          "passes": {
+                            "type": [
+                              "null",
+                              "integer"
+                            ]
+                          },
+                          "rotations": {
+                            "type": [
+                              "null",
+                              "integer"
+                            ]
+                          },
+                          "sandpaperGrit": {
+                            "type": [
+                              "null",
+                              "integer"
+                            ]
+                          },
+                          "sandpaperCondition": {
+                            "type": [
+                              "null",
+                              "string"
+                            ],
+                            "enum": [
+                              "new",
+                              "used_once",
+                              "used_twice",
+                              null
+                            ]
+                          },
+                          "bandWidthsMm": {
+                            "type": "array",
+                            "items": {
+                              "type": [
+                                "null",
+                                "number"
+                              ]
+                            }
+                          },
+                          "comments": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "stoneId",
+                          "activityType",
+                          "side",
+                          "performedOn",
+                          "passes",
+                          "rotations",
+                          "sandpaperGrit",
+                          "sandpaperCondition",
+                          "bandWidthsMm",
+                          "comments"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "stone",
+                    "placements",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "curling-stones"
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d+$"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stones/{id}/move": {
+      "post": {
+        "tags": [
+          "curling-stones"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "sheet": {
+                    "type": [
+                      "null",
+                      "string"
+                    ],
+                    "enum": [
+                      "A",
+                      "B",
+                      "C",
+                      "D",
+                      null
+                    ]
+                  },
+                  "color": {
+                    "type": [
+                      "null",
+                      "string"
+                    ],
+                    "enum": [
+                      "red",
+                      "yellow",
+                      null
+                    ]
+                  },
+                  "rockNumber": {
+                    "type": [
+                      "null",
+                      "integer"
+                    ],
+                    "minimum": 1,
+                    "maximum": 8
+                  },
+                  "effectiveDate": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                  },
+                  "notes": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 2000
+                  }
+                },
+                "required": [
+                  "sheet",
+                  "color",
+                  "rockNumber",
+                  "effectiveDate"
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d+$"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "stone": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "integer"
+                        },
+                        "wcfRegistrationNumber": {
+                          "type": "string"
+                        },
+                        "alSerialNumber": {
+                          "type": "string"
+                        },
+                        "notes": {
+                          "type": [
+                            "null",
+                            "string"
+                          ]
+                        },
+                        "current": {
+                          "type": [
+                            "null",
+                            "object"
+                          ],
+                          "additionalProperties": false,
+                          "properties": {
+                            "sheet": {
+                              "type": [
+                                "null",
+                                "string"
+                              ],
+                              "enum": [
+                                "A",
+                                "B",
+                                "C",
+                                "D",
+                                null
+                              ]
+                            },
+                            "color": {
+                              "type": [
+                                "null",
+                                "string"
+                              ],
+                              "enum": [
+                                "red",
+                                "yellow",
+                                null
+                              ]
+                            },
+                            "rockNumber": {
+                              "type": [
+                                "null",
+                                "integer"
+                              ],
+                              "minimum": 1,
+                              "maximum": 8
+                            },
+                            "side": {
+                              "type": "string",
+                              "enum": [
+                                "A",
+                                "B"
+                              ]
+                            },
+                            "effectiveDate": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "sheet",
+                            "color",
+                            "rockNumber",
+                            "side",
+                            "effectiveDate"
+                          ]
+                        },
+                        "lastMaintenance": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "texturing": {
+                              "type": [
+                                "null",
+                                "string"
+                              ]
+                            },
+                            "bandNarrowing": {
+                              "type": [
+                                "null",
+                                "string"
+                              ]
+                            },
+                            "imprinting": {
+                              "type": [
+                                "null",
+                                "string"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "texturing",
+                            "bandNarrowing",
+                            "imprinting"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "wcfRegistrationNumber",
+                        "alSerialNumber",
+                        "notes",
+                        "current",
+                        "lastMaintenance"
+                      ]
+                    },
+                    "placements": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "integer"
+                          },
+                          "sheet": {
+                            "type": [
+                              "null",
+                              "string"
+                            ],
+                            "enum": [
+                              "A",
+                              "B",
+                              "C",
+                              "D",
+                              null
+                            ]
+                          },
+                          "color": {
+                            "type": [
+                              "null",
+                              "string"
+                            ],
+                            "enum": [
+                              "red",
+                              "yellow",
+                              null
+                            ]
+                          },
+                          "rockNumber": {
+                            "type": [
+                              "null",
+                              "integer"
+                            ],
+                            "minimum": 1,
+                            "maximum": 8
+                          },
+                          "side": {
+                            "type": "string",
+                            "enum": [
+                              "A",
+                              "B"
+                            ]
+                          },
+                          "effectiveDate": {
+                            "type": "string"
+                          },
+                          "changeType": {
+                            "type": "string",
+                            "enum": [
+                              "added",
+                              "moved",
+                              "swapped",
+                              "rotated",
+                              "flipped"
+                            ]
+                          },
+                          "relatedStone": {
+                            "type": [
+                              "null",
+                              "object"
+                            ],
+                            "additionalProperties": false,
+                            "properties": {
+                              "id": {
+                                "type": "integer"
+                              },
+                              "wcfRegistrationNumber": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "wcfRegistrationNumber"
+                            ]
+                          },
+                          "notes": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "groupSize": {
+                            "type": "integer"
+                          },
+                          "dateRange": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                              "min": {
+                                "type": [
+                                  "null",
+                                  "string"
+                                ]
+                              },
+                              "max": {
+                                "type": [
+                                  "null",
+                                  "string"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "min",
+                              "max"
+                            ]
+                          },
+                          "canUndo": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "sheet",
+                          "color",
+                          "rockNumber",
+                          "side",
+                          "effectiveDate",
+                          "changeType",
+                          "relatedStone",
+                          "notes",
+                          "groupSize",
+                          "dateRange",
+                          "canUndo"
+                        ]
+                      }
+                    },
+                    "maintenance": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "integer"
+                          },
+                          "stoneId": {
+                            "type": "integer"
+                          },
+                          "activityType": {
+                            "type": "string",
+                            "enum": [
+                              "texturing",
+                              "band_narrowing",
+                              "imprinting"
+                            ]
+                          },
+                          "side": {
+                            "type": "string",
+                            "enum": [
+                              "A",
+                              "B"
+                            ]
+                          },
+                          "performedOn": {
+                            "type": "string"
+                          },
+                          "passes": {
+                            "type": [
+                              "null",
+                              "integer"
+                            ]
+                          },
+                          "rotations": {
+                            "type": [
+                              "null",
+                              "integer"
+                            ]
+                          },
+                          "sandpaperGrit": {
+                            "type": [
+                              "null",
+                              "integer"
+                            ]
+                          },
+                          "sandpaperCondition": {
+                            "type": [
+                              "null",
+                              "string"
+                            ],
+                            "enum": [
+                              "new",
+                              "used_once",
+                              "used_twice",
+                              null
+                            ]
+                          },
+                          "bandWidthsMm": {
+                            "type": "array",
+                            "items": {
+                              "type": [
+                                "null",
+                                "number"
+                              ]
+                            }
+                          },
+                          "comments": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "stoneId",
+                          "activityType",
+                          "side",
+                          "performedOn",
+                          "passes",
+                          "rotations",
+                          "sandpaperGrit",
+                          "sandpaperCondition",
+                          "bandWidthsMm",
+                          "comments"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "stone",
+                    "placements",
+                    "maintenance"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stones/{id}/flip": {
+      "post": {
+        "tags": [
+          "curling-stones"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "effectiveDate": {
+                    "type": "string",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                  },
+                  "notes": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 2000
+                  }
+                },
+                "required": [
+                  "effectiveDate"
+                ]
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d+$"
+            },
+            "in": "path",
+            "name": "id",
+            "required": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "stone": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "properties": {
+                        "id": {
+                          "type": "integer"
+                        },
+                        "wcfRegistrationNumber": {
+                          "type": "string"
+                        },
+                        "alSerialNumber": {
+                          "type": "string"
+                        },
+                        "notes": {
+                          "type": [
+                            "null",
+                            "string"
+                          ]
+                        },
+                        "current": {
+                          "type": [
+                            "null",
+                            "object"
+                          ],
+                          "additionalProperties": false,
+                          "properties": {
+                            "sheet": {
+                              "type": [
+                                "null",
+                                "string"
+                              ],
+                              "enum": [
+                                "A",
+                                "B",
+                                "C",
+                                "D",
+                                null
+                              ]
+                            },
+                            "color": {
+                              "type": [
+                                "null",
+                                "string"
+                              ],
+                              "enum": [
+                                "red",
+                                "yellow",
+                                null
+                              ]
+                            },
+                            "rockNumber": {
+                              "type": [
+                                "null",
+                                "integer"
+                              ],
+                              "minimum": 1,
+                              "maximum": 8
+                            },
+                            "side": {
+                              "type": "string",
+                              "enum": [
+                                "A",
+                                "B"
+                              ]
+                            },
+                            "effectiveDate": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "sheet",
+                            "color",
+                            "rockNumber",
+                            "side",
+                            "effectiveDate"
+                          ]
+                        },
+                        "lastMaintenance": {
+                          "type": "object",
+                          "additionalProperties": false,
+                          "properties": {
+                            "texturing": {
+                              "type": [
+                                "null",
+                                "string"
+                              ]
+                            },
+                            "bandNarrowing": {
+                              "type": [
+                                "null",
+                                "string"
+                              ]
+                            },
+                            "imprinting": {
+                              "type": [
+                                "null",
+                                "string"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "texturing",
+                            "bandNarrowing",
+                            "imprinting"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "wcfRegistrationNumber",
+                        "alSerialNumber",
+                        "notes",
+                        "current",
+                        "lastMaintenance"
+                      ]
+                    },
+                    "placements": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "integer"
+                          },
+                          "sheet": {
+                            "type": [
+                              "null",
+                              "string"
+                            ],
+                            "enum": [
+                              "A",
+                              "B",
+                              "C",
+                              "D",
+                              null
+                            ]
+                          },
+                          "color": {
+                            "type": [
+                              "null",
+                              "string"
+                            ],
+                            "enum": [
+                              "red",
+                              "yellow",
+                              null
+                            ]
+                          },
+                          "rockNumber": {
+                            "type": [
+                              "null",
+                              "integer"
+                            ],
+                            "minimum": 1,
+                            "maximum": 8
+                          },
+                          "side": {
+                            "type": "string",
+                            "enum": [
+                              "A",
+                              "B"
+                            ]
+                          },
+                          "effectiveDate": {
+                            "type": "string"
+                          },
+                          "changeType": {
+                            "type": "string",
+                            "enum": [
+                              "added",
+                              "moved",
+                              "swapped",
+                              "rotated",
+                              "flipped"
+                            ]
+                          },
+                          "relatedStone": {
+                            "type": [
+                              "null",
+                              "object"
+                            ],
+                            "additionalProperties": false,
+                            "properties": {
+                              "id": {
+                                "type": "integer"
+                              },
+                              "wcfRegistrationNumber": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "wcfRegistrationNumber"
+                            ]
+                          },
+                          "notes": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          },
+                          "groupSize": {
+                            "type": "integer"
+                          },
+                          "dateRange": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "properties": {
+                              "min": {
+                                "type": [
+                                  "null",
+                                  "string"
+                                ]
+                              },
+                              "max": {
+                                "type": [
+                                  "null",
+                                  "string"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "min",
+                              "max"
+                            ]
+                          },
+                          "canUndo": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "sheet",
+                          "color",
+                          "rockNumber",
+                          "side",
+                          "effectiveDate",
+                          "changeType",
+                          "relatedStone",
+                          "notes",
+                          "groupSize",
+                          "dateRange",
+                          "canUndo"
+                        ]
+                      }
+                    },
+                    "maintenance": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "id": {
+                            "type": "integer"
+                          },
+                          "stoneId": {
+                            "type": "integer"
+                          },
+                          "activityType": {
+                            "type": "string",
+                            "enum": [
+                              "texturing",
+                              "band_narrowing",
+                              "imprinting"
+                            ]
+                          },
+                          "side": {
+                            "type": "string",
+                            "enum": [
+                              "A",
+                              "B"
+                            ]
+                          },
+                          "performedOn": {
+                            "type": "string"
+                          },
+                          "passes": {
+                            "type": [
+                              "null",
+                              "integer"
+                            ]
+                          },
+                          "rotations": {
+                            "type": [
+                              "null",
+                              "integer"
+                            ]
+                          },
+                          "sandpaperGrit": {
+                            "type": [
+                              "null",
+                              "integer"
+                            ]
+                          },
+                          "sandpaperCondition": {
+                            "type": [
+                              "null",
+                              "string"
+                            ],
+                            "enum": [
+                              "new",
+                              "used_once",
+                              "used_twice",
+                              null
+                            ]
+                          },
+                          "bandWidthsMm": {
+                            "type": "array",
+                            "items": {
+                              "type": [
+                                "null",
+                                "number"
+                              ]
+                            }
+                          },
+                          "comments": {
+                            "type": [
+                              "null",
+                              "string"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "stoneId",
+                          "activityType",
+                          "side",
+                          "performedOn",
+                          "passes",
+                          "rotations",
+                          "sandpaperGrit",
+                          "sandpaperCondition",
+                          "bandWidthsMm",
+                          "comments"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "stone",
+                    "placements",
+                    "maintenance"
                   ]
                 }
               }

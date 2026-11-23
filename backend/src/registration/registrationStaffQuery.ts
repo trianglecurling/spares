@@ -543,7 +543,6 @@ function compileRule(handle: DrizzleHandle, rule: RegistrationQueryRule, asOfDat
         .where(
           and(
             eq(roster.league_id, leagueId),
-            eq(roster.status, 'active'),
             or(eq(roster.source_registration_id, registrations.id), eq(roster.member_id, registrations.curler_member_id)),
           ),
         ),
@@ -554,10 +553,7 @@ function compileRule(handle: DrizzleHandle, rule: RegistrationQueryRule, asOfDat
       .select({ id: roster.id })
       .from(roster)
       .where(
-        and(
-          eq(roster.status, 'active'),
-          or(eq(roster.source_registration_id, registrations.id), eq(roster.member_id, registrations.curler_member_id)),
-        ),
+        or(eq(roster.source_registration_id, registrations.id), eq(roster.member_id, registrations.curler_member_id)),
       ),
   );
 

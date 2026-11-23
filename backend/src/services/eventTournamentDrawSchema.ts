@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { migrateDrawPhasesJson } from '../utils/tournamentPoolStandings.js';
 
 function migrateSlotSourceRow(s: unknown): unknown {
   if (s == null || typeof s !== 'object') return { sourceType: 'tbd' };
@@ -145,7 +146,7 @@ function normalizeTournamentDrawStateInput(data: unknown): unknown {
     d = { ...d, textNodes: [] };
   }
 
-  return normalizeSheetsInDrawInput(d);
+  return normalizeSheetsInDrawInput(migrateDrawPhasesJson(d));
 }
 
 /** Bonspiel draw graph (versioned JSON stored on `events.tournament_draw_json`). */
@@ -161,6 +162,23 @@ export const tournamentSlotSourceSchema = z.union([
     gameId: z.union([z.string().min(1).max(80), z.null()]).optional(),
     place: z.number().int().min(1).max(32),
   }),
+  z.object({
+    sourceType: z.literal('pool_entry'),
+    entryId: z.union([z.string().min(1).max(80), z.null()]).optional(),
+  }),
+  z.object({
+    sourceType: z.literal('standing'),
+    phaseId: z.string().min(1).max(64),
+    poolId: z.string().min(1).max(64).nullable().optional(),
+    poolRank: z.number().int().min(1).max(64).nullable().optional(),
+    rank: z.number().int().min(1).max(500),
+    afterDrawBlockId: z.string().min(1).max(64).nullable().optional(),
+  }),
+  z.object({
+    sourceType: z.literal('qualifier'),
+    phaseId: z.string().min(1).max(64),
+    seed: z.number().int().min(1).max(500),
+  }),
 ]);
 
 export const tournamentBracketEventSchema = z.object({
@@ -169,6 +187,54 @@ export const tournamentBracketEventSchema = z.object({
   code: z.string().min(1).max(8),
   order: z.number().int().min(0).max(99),
   color: z.string().min(1).max(32),
+  phaseId: z.string().min(1).max(64),
+});
+
+export const tournamentPoolStandingsSettingsSchema = z.object({
+  pointsPossiblePerGame: z.number().finite().positive().max(1000),
+  rankBy: z.enum(['points', 'percentage']),
+  headToHead: z.boolean(),
+  tiebreakLabel: z.string().min(1).max(40),
+  tiebreakLowerIsBetter: z.boolean(),
+});
+
+export const tournamentAdvancingStepSchema = z.discriminatedUnion('kind', [
+  z.object({ id: z.string().min(1).max(64), kind: z.literal('top_per_pool'), count: z.number().int().min(1).max(64) }),
+  z.object({
+    id: z.string().min(1).max(64),
+    kind: z.literal('pool_place'),
+    poolId: z.string().min(1).max(64),
+    rank: z.number().int().min(1).max(500),
+  }),
+  z.object({ id: z.string().min(1).max(64), kind: z.literal('best_remaining'), count: z.number().int().min(1).max(500) }),
+]);
+
+export const tournamentPhaseSchema = z.object({
+  id: z.string().min(1).max(64),
+  name: z.string().min(1).max(120),
+  order: z.number().int().min(0).max(99),
+  kind: z.enum(['bracket', 'pool']),
+  standings: tournamentPoolStandingsSettingsSchema.optional(),
+  advancing: z.array(tournamentAdvancingStepSchema).max(64).optional(),
+});
+
+export const tournamentPoolSchema = z.object({
+  id: z.string().min(1).max(64),
+  phaseId: z.string().min(1).max(64),
+  name: z.string().min(1).max(120),
+  code: z.string().min(1).max(8),
+  order: z.number().int().min(0).max(99),
+  color: z.string().min(1).max(32),
+  entries: z
+    .array(z.object({ id: z.string().min(1).max(80), source: tournamentSlotSourceSchema }))
+    .max(200),
+});
+
+const nullableFinite = z.number().finite().nullable();
+
+export const tournamentGameStandingSchema = z.object({
+  points: z.tuple([nullableFinite, nullableFinite]),
+  tiebreak: z.tuple([nullableFinite, nullableFinite]),
 });
 
 export const tournamentGameResultSchema = z.discriminatedUnion('entryKind', [
@@ -214,7 +280,12 @@ export const tournamentGameResultSchema = z.discriminatedUnion('entryKind', [
 
 export const tournamentGameSchema = z.object({
   id: z.string().min(1).max(80),
+  /** Bracket lane for bracket-phase games; equals `phaseId` for pool games. */
   eventId: z.string().min(1).max(64),
+  phaseId: z.string().min(1).max(64),
+  /** Pool the game is listed under (null = cross-pool). Pool games only. */
+  poolId: z.string().min(1).max(64).nullable().optional(),
+  standing: tournamentGameStandingSchema.optional(),
   label: z.string().min(1).max(32),
   depth: z.number().int().min(0).max(64),
   verticalOrder: z.number().int().min(0).max(500),
@@ -288,6 +359,8 @@ export const tournamentTextNodeSchema = z
     showConnector: z.boolean(),
     connectorLineStyle: z.enum(['solid', 'dashed']),
     connectorColor: z.string().min(1).max(32).optional(),
+    /** Bracket phase whose canvas shows this note. Omitted = first bracket phase. */
+    phaseId: z.string().min(1).max(64).optional(),
   })
   .strict();
 
@@ -297,9 +370,11 @@ export const tournamentDrawStateSchema = z.preprocess(
     .object({
       version: z.literal(1),
       setup: z.object({
-        eventCount: z.number().int().min(1).max(16),
+        eventCount: z.number().int().min(0).max(16),
         events: z.array(tournamentBracketEventSchema).max(16),
       }),
+      phases: z.array(tournamentPhaseSchema).min(1).max(12),
+      pools: z.array(tournamentPoolSchema).max(64),
       canvas: z.object({
         zoom: z.number().min(0.25).max(4),
         panX: z.number().min(-20000).max(20000),
@@ -387,6 +462,7 @@ export type TournamentConnectionEdge = z.infer<typeof tournamentConnectionSchema
 export type TournamentBracketEvent = z.infer<typeof tournamentBracketEventSchema>;
 export type TournamentSlotSource = z.infer<typeof tournamentSlotSourceSchema>;
 export type TournamentTextNode = z.infer<typeof tournamentTextNodeSchema>;
+export type TournamentGameStandingPayload = z.infer<typeof tournamentGameStandingSchema>;
 
 const MAX_GAMES = 600;
 

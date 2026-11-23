@@ -109,12 +109,8 @@ describe('rankDivisionTeams', () => {
       { id: 2, rank: 1 },
       { id: 1, rank: 2 },
     ]);
-    expect(rows[0]?.h2hResult).toBe('win');
-    expect(rows[0]?.h2hOpponentName).toBe('Rocks');
-    expect(rows[0]?.h2hPairIndex).toBe(0);
-    expect(rows[1]?.h2hResult).toBe('loss');
-    expect(rows[1]?.h2hOpponentName).toBe('Sweepers');
-    expect(rows[1]?.h2hPairIndex).toBe(0);
+    expect(rows[0]?.h2hResults).toEqual([{ result: 'win', opponentName: 'Rocks', pairIndex: 0 }]);
+    expect(rows[1]?.h2hResults).toEqual([{ result: 'loss', opponentName: 'Sweepers', pairIndex: 0 }]);
   });
 
   test('keeps the same rank when H2H is disabled', () => {
@@ -125,34 +121,65 @@ describe('rankDivisionTeams', () => {
     );
     expect(rows.map((row) => row.rank)).toEqual([1, 1]);
     const byId = new Map(rows.map((row) => [row.teamId, row]));
-    expect(byId.get(2)?.h2hResult).toBe('win');
-    expect(byId.get(2)?.h2hOpponentName).toBe('Team 1');
-    expect(byId.get(2)?.h2hPairIndex).toBe(0);
-    expect(byId.get(1)?.h2hResult).toBe('loss');
-    expect(byId.get(1)?.h2hOpponentName).toBe('Team 2');
-    expect(byId.get(1)?.h2hPairIndex).toBe(0);
+    expect(byId.get(2)?.h2hResults).toEqual([{ result: 'win', opponentName: 'Team 1', pairIndex: 0 }]);
+    expect(byId.get(1)?.h2hResults).toEqual([{ result: 'loss', opponentName: 'Team 2', pairIndex: 0 }]);
   });
 
   test('keeps the same rank when two teams have not played', () => {
     const rows = rankDivisionTeams([team(1, [6], 3), team(2, [6], 3)], [], totalH2h);
     expect(rows.map((row) => row.rank)).toEqual([1, 1]);
-    expect(rows.map((row) => row.h2hResult)).toEqual([null, null]);
+    expect(rows.map((row) => row.h2hResults)).toEqual([[], []]);
   });
 
-  test('labels the adjacent pair that has a decisive H2H in a larger points group', () => {
+  test('labels the pair that has a decisive H2H in a larger points group', () => {
     const rows = rankDivisionTeams(
       [team(1, [6], 3), team(2, [6], 3), team(3, [6], 3)],
       [game(1, 2, [1], [0])],
       totalH2h
     );
     const byId = new Map(rows.map((row) => [row.teamId, row]));
-    expect(byId.get(1)?.h2hResult).toBe('win');
-    expect(byId.get(1)?.h2hOpponentName).toBe('Team 2');
-    expect(byId.get(1)?.h2hPairIndex).toBe(0);
-    expect(byId.get(2)?.h2hResult).toBe('loss');
-    expect(byId.get(2)?.h2hOpponentName).toBe('Team 1');
-    expect(byId.get(2)?.h2hPairIndex).toBe(0);
-    expect(byId.get(3)?.h2hResult).toBeNull();
+    expect(byId.get(1)?.h2hResults).toEqual([{ result: 'win', opponentName: 'Team 2', pairIndex: 0 }]);
+    expect(byId.get(2)?.h2hResults).toEqual([{ result: 'loss', opponentName: 'Team 1', pairIndex: 0 }]);
+    expect(byId.get(3)?.h2hResults).toEqual([]);
+  });
+
+  test('shows every decisive H2H in a tied group so a team can have a win and a loss', () => {
+    const rows = rankDivisionTeams(
+      [
+        team(1, [3], 2, { teamName: 'Norcross' }),
+        team(2, [3], 2, { teamName: 'Allen' }),
+        team(3, [3], 2, { teamName: 'Broadbelt' }),
+        team(4, [3], 2, { teamName: 'Sutton' }),
+        team(5, [3], 2, { teamName: 'Turcol' }),
+      ],
+      [game(1, 2, [3], [0]), game(2, 5, [3], [0])],
+      { headToHeadFirst: true, pointsPossiblePerGame: 3, rankBy: 'percentage' }
+    );
+    const byId = new Map(rows.map((row) => [row.teamId, row]));
+    expect(byId.get(1)?.h2hResults.map((h) => [h.result, h.opponentName])).toEqual([['win', 'Allen']]);
+    expect(byId.get(2)?.h2hResults.map((h) => [h.result, h.opponentName])).toEqual([
+      ['loss', 'Norcross'],
+      ['win', 'Turcol'],
+    ]);
+    expect(byId.get(5)?.h2hResults.map((h) => [h.result, h.opponentName])).toEqual([['loss', 'Allen']]);
+    expect(byId.get(2)?.h2hResults[0]?.pairIndex).toBe(byId.get(1)?.h2hResults[0]?.pairIndex);
+    expect(byId.get(2)?.h2hResults[1]?.pairIndex).toBe(byId.get(5)?.h2hResults[0]?.pairIndex);
+    expect(byId.get(2)?.h2hResults[0]?.pairIndex).not.toBe(byId.get(2)?.h2hResults[1]?.pairIndex);
+  });
+
+  test('ranks the direct H2H winner ahead in a larger tie and leaves unconnected teams tied', () => {
+    const rows = rankDivisionTeams(
+      [team(1, [3], 2), team(2, [3], 2), team(3, [3], 2), team(4, [3], 2), team(5, [3], 2)],
+      [game(1, 2, [3], [0]), game(2, 5, [3], [0])],
+      totalH2h
+    );
+    expect(rows.map((row) => ({ id: row.teamId, rank: row.rank }))).toEqual([
+      { id: 1, rank: 1 },
+      { id: 3, rank: 1 },
+      { id: 4, rank: 1 },
+      { id: 2, rank: 4 },
+      { id: 5, rank: 5 },
+    ]);
   });
 
   test('ranks a team that beat both tied opponents ahead of the remaining pair', () => {
@@ -199,10 +226,8 @@ describe('rankDivisionTeams', () => {
       { id: 2, rank: 1 },
       { id: 1, rank: 2 },
     ]);
-    expect(rows[0]?.h2hResult).toBe('win');
-    expect(rows[0]?.h2hOpponentName).toBe('A');
-    expect(rows[1]?.h2hResult).toBe('loss');
-    expect(rows[1]?.h2hOpponentName).toBe('B');
+    expect(rows[0]?.h2hResults.map((h) => [h.result, h.opponentName])).toEqual([['win', 'A']]);
+    expect(rows[1]?.h2hResults.map((h) => [h.result, h.opponentName])).toEqual([['loss', 'B']]);
   });
 
   test('does not label H2H when percentage ranking is on and totals match but percentages do not', () => {
@@ -211,9 +236,9 @@ describe('rankDivisionTeams', () => {
       [game(2, 1, [1], [0])],
       { headToHeadFirst: true, pointsPossiblePerGame: 2, rankBy: 'percentage' }
     );
-    expect(rows.map((row) => ({ id: row.teamId, pctPoints: row.tiebreakerValues[0], result: row.h2hResult }))).toEqual([
-      { id: 2, pctPoints: 8, result: null },
-      { id: 1, pctPoints: 8, result: null },
+    expect(rows.map((row) => ({ id: row.teamId, pctPoints: row.tiebreakerValues[0], h2h: row.h2hResults }))).toEqual([
+      { id: 2, pctPoints: 8, h2h: [] },
+      { id: 1, pctPoints: 8, h2h: [] },
     ]);
   });
 
@@ -224,9 +249,22 @@ describe('rankDivisionTeams', () => {
       totalH2h
     );
     const byId = new Map(rows.map((row) => [row.teamId, row]));
-    expect(byId.get(1)?.h2hPairIndex).toBe(byId.get(2)?.h2hPairIndex);
-    expect(byId.get(3)?.h2hPairIndex).toBe(byId.get(4)?.h2hPairIndex);
-    expect(byId.get(1)?.h2hPairIndex).not.toBe(byId.get(3)?.h2hPairIndex);
+    const pairIndex = (id: number) => byId.get(id)?.h2hResults[0]?.pairIndex;
+    expect(pairIndex(1)).toBe(pairIndex(2));
+    expect(pairIndex(3)).toBe(pairIndex(4));
+    expect(pairIndex(1)).not.toBe(pairIndex(3));
+  });
+
+  test('keeps the same rank on a percentage tie and lists the team with fewer losses first when points match', () => {
+    const rows = rankDivisionTeams(
+      [team(1, [0], 2, { losses: 2 }), team(2, [0], 1, { losses: 1 })],
+      [],
+      { headToHeadFirst: true, pointsPossiblePerGame: 3, rankBy: 'percentage' }
+    );
+    expect(rows.map((row) => ({ id: row.teamId, rank: row.rank }))).toEqual([
+      { id: 2, rank: 1 },
+      { id: 1, rank: 1 },
+    ]);
   });
 
   test('keeps the same rank on a percentage tie and lists the team with more total points first', () => {

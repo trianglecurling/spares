@@ -7,12 +7,11 @@ import { isBonspielCalendarType, parseCalendarTypeIds } from '../../../services/
 import { fetchIceBookingsAsCalendarEvents } from '../../../services/iceBookingsCalendar.js';
 import type { Member } from '../../../types.js';
 import { isCalendarAdmin } from '../../../utils/auth.js';
-import { memberIsSocialMember, memberIsSpareOnly } from '../../../utils/memberMembershipHelpers.js';
+import { eventVisibilityFilterForCalendar } from '../../../services/eventVisibilityAccess.js';
 import { notArchivedCondition } from '../../../utils/softDelete.js';
 
 const UPCOMING_BONSPIEL_LIMIT = 10;
 
-type CalendarVisibility = 'public' | 'active_members' | 'ice_members';
 type IceViewer = 'public' | 'member' | 'admin';
 
 export type PublicUpcomingBonspiel = {
@@ -29,6 +28,8 @@ export type CalendarFeedInput = {
   start: string;
   end: string;
   member?: Member;
+  /** Ice-day schedule only. Public calendar feeds keep booker names off the payload. */
+  includeIceBookingMemberNames?: boolean;
 };
 
 function parseRange(start: string, end: string) {
@@ -40,17 +41,8 @@ function parseRange(start: string, end: string) {
   return { rangeStart, rangeEnd };
 }
 
-function getVisibilityFilter(member?: Member): CalendarVisibility[] {
-  const visibilityFilter: CalendarVisibility[] = ['public'];
-  if (!member) {
-    return visibilityFilter;
-  }
-
-  visibilityFilter.push('active_members');
-  if (!memberIsSpareOnly(member) && !memberIsSocialMember(member)) {
-    visibilityFilter.push('ice_members');
-  }
-  return visibilityFilter;
+function getVisibilityFilter(member?: Member) {
+  return eventVisibilityFilterForCalendar(member);
 }
 
 function getIceViewer(member?: Member): IceViewer {
@@ -67,7 +59,9 @@ export async function getCalendarFeed(input: CalendarFeedInput) {
 
   const [direct, ice, eventItems, signupMap] = await Promise.all([
     fetchDirectCalendarEventsForRange(rangeStart, rangeEnd),
-    fetchIceBookingsAsCalendarEvents(rangeStart, rangeEnd, iceViewer),
+    fetchIceBookingsAsCalendarEvents(rangeStart, rangeEnd, iceViewer, {
+      includeMemberName: input.includeIceBookingMemberNames,
+    }),
     getEventTimespansForCalendar(input.start, input.end, visibilityFilter),
     calendarSignupsByDirectEventId({ forPublic: !input.member }),
   ]);

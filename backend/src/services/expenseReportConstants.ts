@@ -5,7 +5,7 @@ export const MAX_EXPENSE_ITEMS = 10;
 export const MAX_EXPENSE_DOCUMENTS = 10;
 export const FINANCE_CONTACT_EMAIL = 'finance@trianglecurling.com';
 
-export const EXPENSE_REPORT_STATUSES = ['pending_review', 'processing', 'check_mailed', 'complete'] as const;
+export const EXPENSE_REPORT_STATUSES = ['pending_review', 'processing', 'approved', 'complete'] as const;
 export const EXPENSE_REPORT_KINDS = ['expense', 'mileage'] as const;
 export const EXPENSE_RECEIPT_CURRENCIES = ['usd', 'cad', 'other'] as const;
 export const EXPENSE_DOCUMENT_TYPES = ['receipt', 'invoice', 'other_supporting_evidence'] as const;
@@ -38,7 +38,7 @@ export const ALLOWED_RECEIPT_MIME_TYPES = new Set([
 export const EXPENSE_STATUS_LABELS: Record<(typeof EXPENSE_REPORT_STATUSES)[number], string> = {
   pending_review: 'Pending review',
   processing: 'Processing',
-  check_mailed: 'Check mailed',
+  approved: 'Approved',
   complete: 'Complete',
 };
 
