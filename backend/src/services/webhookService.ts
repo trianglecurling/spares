@@ -1,6 +1,8 @@
 import crypto from 'crypto';
 import { and, desc, eq } from 'drizzle-orm';
+import { config } from '../config.js';
 import { getDrizzleDb } from '../db/drizzle-db.js';
+import { formatDateInTimeZone } from '../utils/timeZone.js';
 import {
   getWebhookEventDocumentation,
   isKnownWebhookEventType,
@@ -96,6 +98,52 @@ async function loadLatestChargeTransactionId(orderId: number): Promise<string | 
   return asString(transaction?.providerTransactionId);
 }
 
+function localCalendarDate(iso: string, timeZone: string): string | null {
+  const instant = new Date(iso);
+  if (Number.isNaN(instant.getTime())) return null;
+  return formatDateInTimeZone(instant, timeZone);
+}
+
+/** Earliest start and latest end of an event, as club-local YYYY-MM-DD dates. */
+export function eventRegistrationSubjectDates(
+  timespans: Array<{ startDt: string; endDt: string }>,
+  timeZone: string,
+): { eventStartDate?: string; eventEndDate?: string } {
+  let eventStartDate: string | null = null;
+  let eventEndDate: string | null = null;
+
+  for (const span of timespans) {
+    const startDate = localCalendarDate(span.startDt, timeZone);
+    const endDate = localCalendarDate(span.endDt, timeZone);
+    if (startDate && (eventStartDate == null || startDate < eventStartDate)) {
+      eventStartDate = startDate;
+    }
+    if (endDate && (eventEndDate == null || endDate > eventEndDate)) {
+      eventEndDate = endDate;
+    }
+  }
+
+  return {
+    ...(eventStartDate ? { eventStartDate } : {}),
+    ...(eventEndDate ? { eventEndDate } : {}),
+  };
+}
+
+async function loadEventRegistrationSubjectDates(eventId: number): Promise<{
+  eventStartDate?: string;
+  eventEndDate?: string;
+}> {
+  const { db, schema } = getDrizzleDb();
+  const spans = await db
+    .select({
+      startDt: schema.eventTimespans.start_dt,
+      endDt: schema.eventTimespans.end_dt,
+    })
+    .from(schema.eventTimespans)
+    .where(eq(schema.eventTimespans.event_id, eventId));
+  return eventRegistrationSubjectDates(spans, config.timeZone);
+}
+
 async function loadLatestRefundAmountMinor(orderId: number): Promise<number | null> {
   const { db, schema } = getDrizzleDb();
   const [refund] = await db
@@ -126,6 +174,7 @@ async function buildSubjectBlock(
       .select({
         contactName: schema.eventRegistrations.contact_name,
         contactEmail: schema.eventRegistrations.contact_email,
+        eventId: schema.events.id,
         eventTitle: schema.events.title,
         eventSlug: schema.events.slug,
       })
@@ -134,9 +183,11 @@ async function buildSubjectBlock(
       .where(eq(schema.eventRegistrations.id, subjectId))
       .limit(1);
     if (!row) return {};
+    const dates = await loadEventRegistrationSubjectDates(row.eventId);
     return {
       eventTitle: row.eventTitle,
       eventSlug: row.eventSlug,
+      ...dates,
       registrantName: row.contactName,
       registrantEmail: row.contactEmail,
     };
@@ -287,6 +338,8 @@ export function buildSampleWebhookData(eventType: WebhookEventType): Record<stri
         subject: {
           eventTitle: 'Sample event',
           eventSlug: 'sample-event',
+          eventStartDate: '2026-09-11',
+          eventEndDate: '2026-09-13',
           registrantName: 'Sample Registrant',
           registrantEmail: 'registrant@example.com',
         },
@@ -307,6 +360,8 @@ export function buildSampleWebhookData(eventType: WebhookEventType): Record<stri
         subject: {
           eventTitle: 'Sample event',
           eventSlug: 'sample-event',
+          eventStartDate: '2026-09-11',
+          eventEndDate: '2026-09-13',
           registrantName: 'Sample Registrant',
           registrantEmail: 'registrant@example.com',
         },
